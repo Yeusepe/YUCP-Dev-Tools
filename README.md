@@ -66,8 +66,8 @@ Then install "YUCP DevTools" from the package list in your project.
 
 ## 📚 Documentation
 
-- **Package Documentation**: See [Packages/com.yucp-devtools/README.md](Packages/com.yucp-devtools/README.md)
-- **Package Exporter Guide**: See [Editor/PackageExporter/Templates/README_Template.md](Packages/com.yucp-devtools/Editor/PackageExporter/Templates/README_Template.md)
+- **Package Documentation**: See [Packages/com.yucp.devtools/README.md](Packages/com.yucp.devtools/README.md)
+- **Package Exporter Guide**: See [Editor/PackageExporter/Templates/README_Template.md](Packages/com.yucp.devtools/Editor/PackageExporter/Templates/README_Template.md)
 - **YUCP Components**: https://github.com/Yeusepe/YUCP-Components
 
 ## 🤝 Support
@@ -78,7 +78,7 @@ Then install "YUCP DevTools" from the package list in your project.
 
 ## 📄 License
 
-MIT License - See [LICENSE.md](Packages/com.yucp-devtools/LICENSE.md)
+MIT License - See [LICENSE.md](Packages/com.yucp.devtools/LICENSE.md)
 
 ## 🏗️ Development
 
