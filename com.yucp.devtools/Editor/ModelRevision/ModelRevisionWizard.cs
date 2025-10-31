@@ -63,11 +63,11 @@ namespace YUCP.DevTools.Editor
             _rootElement = rootVisualElement;
 
             // Load UXML
-            var visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>("Packages/com.yucp.components/Editor/UI/ModelRevisionWizard.uxml");
+            var visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>("Packages/com.yucp.devtools/Editor/ModelRevision/ModelRevisionWizard.uxml");
             visualTree.CloneTree(_rootElement);
 
             // Load USS
-            var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>("Packages/com.yucp.components/Editor/UI/ModelRevisionWizard.uss");
+            var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>("Packages/com.yucp.devtools/Editor/ModelRevision/ModelRevisionWizard.uss");
             _rootElement.styleSheets.Add(styleSheet);
 
             _tabButtons = _rootElement.Q("tab-buttons").Children().OfType<Button>().ToList();

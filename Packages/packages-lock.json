@@ -220,14 +220,14 @@
       "source": "embedded",
       "dependencies": {}
     },
-    "com.yucp-devtools": {
-      "version": "file:com.yucp-devtools",
+    "com.yucp.components": {
+      "version": "file:com.yucp.components",
       "depth": 0,
       "source": "embedded",
       "dependencies": {}
     },
-    "com.yucp.components": {
-      "version": "file:com.yucp.components",
+    "com.yucp.devtools": {
+      "version": "file:com.yucp.devtools",
       "depth": 0,
       "source": "embedded",
       "dependencies": {}
