@@ -1,0 +1,516 @@
+/* ============================================================================
+   YUCP Design System - Shared Styles for All DevTools
+   Based on Package Guardian Design System
+   ============================================================================ */
+
+/* ============================================================================
+   COLOR PALETTE - YUCP Brand Colors
+   ============================================================================ */
+.yucp-window {
+    /* Base colors */
+    --yucp-bg-primary: #090909;      /* YUCP dark background */
+    --yucp-bg-secondary: #1a1a1a;    /* Card/panel background */
+    --yucp-bg-tertiary: #2a2a2a;     /* List items, inputs */
+    --yucp-bg-hover: #525252;        /* Hover states - YUCP gray */
+    
+    /* Borders */
+    --yucp-border-primary: #2a2a2a;
+    --yucp-border-secondary: #3a3a3a;
+    
+    /* Text */
+    --yucp-text-primary: #ffffff;    /* Main text */
+    --yucp-text-secondary: #b0b0b0;  /* Secondary text */
+    --yucp-text-tertiary: #808080;   /* Subtle text */
+    
+    /* Accent colors - YUCP Brand */
+    --yucp-accent-primary: #36BFB1;  /* YUCP Teal - primary actions */
+    --yucp-accent-success: #36BFB1;  /* Teal - added/success */
+    --yucp-accent-warning: #E2A54A;  /* Orange - warnings */
+    --yucp-accent-danger: #E24A4A;   /* Red - deleted/danger */
+    --yucp-accent-info: #5BA3FF;     /* Blue - info */
+}
+
+/* ============================================================================
+   BASE WINDOW & LAYOUT
+   ============================================================================ */
+.yucp-window {
+    flex-grow: 1;
+    background-color: #090909;
+}
+
+.yucp-main-container {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+/* ============================================================================
+   TOP BAR - Global Controls & Status (3-Section Layout)
+   ============================================================================ */
+.yucp-top-bar {
+    flex-direction: row;
+    min-height: 60px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    padding-left: 16px;
+    padding-right: 16px;
+    background-color: #1a1a1a;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+    align-items: center;
+    flex-wrap: nowrap;
+}
+
+/* Left section: Title and primary actions */
+.yucp-top-bar-left {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    margin-right: 24px;
+}
+
+/* Center section: Status badges and info */
+.yucp-top-bar-center {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    flex-grow: 0;
+}
+
+/* Right section: Secondary controls (auto-pushes to right) */
+.yucp-top-bar-right {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+/* ============================================================================
+   BUTTONS - Consistent sizing and styling
+   ============================================================================ */
+.yucp-button {
+    height: 32px;
+    padding-left: 16px;
+    padding-right: 16px;
+    border-radius: 0;
+    background-color: #525252;
+    border-width: 0;
+    color: #ffffff;
+    font-size: 12px;
+    -unity-font-style: normal;
+    margin-left: 4px;
+    margin-right: 4px;
+    -unity-text-align: middle-center;
+}
+
+.yucp-button:hover {
+    background-color: #666666;
+}
+
+.yucp-button:active {
+    background-color: #3a3a3a;
+}
+
+.yucp-button-primary {
+    background-color: #36BFB1;
+    color: #ffffff;
+}
+
+.yucp-button-primary:hover {
+    background-color: #48d1c3;
+}
+
+.yucp-button-primary:active {
+    background-color: #2da89c;
+}
+
+.yucp-button-danger {
+    background-color: #E24A4A;
+    color: #ffffff;
+}
+
+.yucp-button-danger:hover {
+    background-color: #e66666;
+}
+
+.yucp-button-danger:active {
+    background-color: #c93a3a;
+}
+
+.yucp-button-small {
+    height: 24px;
+    padding-left: 12px;
+    padding-right: 12px;
+    font-size: 11px;
+}
+
+.yucp-button-icon {
+    width: 32px;
+    height: 32px;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    padding-right: 0;
+    justify-content: center;
+    align-items: center;
+}
+
+/* ============================================================================
+   TYPOGRAPHY
+   ============================================================================ */
+.yucp-title {
+    font-size: 18px;
+    color: #ffffff;
+    -unity-font-style: bold;
+}
+
+.yucp-subtitle {
+    font-size: 14px;
+    color: #b0b0b0;
+    -unity-font-style: normal;
+}
+
+.yucp-label {
+    font-size: 12px;
+    color: #ffffff;
+}
+
+.yucp-label-secondary {
+    font-size: 11px;
+    color: #b0b0b0;
+}
+
+.yucp-label-small {
+    font-size: 10px;
+    color: #808080;
+}
+
+.yucp-text-mono {
+    font-size: 11px;
+    color: #b0b0b0;
+}
+
+/* ============================================================================
+   PANELS & SECTIONS
+   ============================================================================ */
+.yucp-panel {
+    flex-direction: column;
+    padding: 16px;
+}
+
+.yucp-panel-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+}
+
+.yucp-section {
+    margin-bottom: 16px;
+    margin-top: 8px;
+    padding: 16px;
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+}
+
+.yucp-section-title {
+    font-size: 11px;
+    -unity-font-style: bold;
+    margin-top: 16px;
+    margin-bottom: 8px;
+    color: #b0b0b0;
+    letter-spacing: 0.5px;
+}
+
+/* ============================================================================
+   LIST ITEMS - Solid backgrounds with left border accent (NO transparency)
+   ============================================================================ */
+.yucp-list-container {
+    flex-grow: 1;
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 16px;
+    margin-top: 8px;
+}
+
+.yucp-list-item {
+    flex-direction: row;
+    align-items: center;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
+    margin-bottom: 2px;
+    background-color: transparent;
+    border-radius: 0;
+    border-left-width: 3px;
+    border-left-color: transparent;
+}
+
+.yucp-list-item:hover {
+    background-color: #2a2a2a;  /* Solid, no alpha */
+}
+
+.yucp-list-item-selected {
+    border-left-color: #36BFB1;  /* Teal accent border only */
+    background-color: #2a2a2a;   /* Solid #2a2a2a, no transparency */
+}
+
+/* ============================================================================
+   STATUS INDICATORS - Rounded badges for status display
+   ============================================================================ */
+.yucp-status-badge {
+    padding-top: 4px;
+    padding-bottom: 4px;
+    padding-left: 12px;
+    padding-right: 12px;
+    border-radius: 4px;
+    background-color: #2a2a2a;
+    margin-right: 8px;
+    font-size: 11px;
+    color: #b0b0b0;
+    white-space: nowrap;
+}
+
+.yucp-status-badge-active {
+    background-color: rgba(54, 191, 177, 0.2);
+    color: #36BFB1;
+}
+
+.yucp-status-badge-success {
+    background-color: rgba(54, 191, 177, 0.2);
+    color: #36BFB1;
+}
+
+.yucp-status-badge-warning {
+    background-color: rgba(226, 165, 74, 0.2);
+    color: #E2A54A;
+}
+
+.yucp-status-badge-error {
+    background-color: rgba(226, 74, 74, 0.2);
+    color: #E24A4A;
+}
+
+/* ============================================================================
+   TAB SYSTEM
+   ============================================================================ */
+.yucp-tab-container {
+    flex-direction: row;
+    background-color: #1a1a1a;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+    padding: 0;
+    margin: 0;
+}
+
+.yucp-tab-button {
+    -unity-font-style: normal;
+    background-color: transparent;
+    color: #888888;
+    border-width: 0;
+    padding: 12px 20px;
+    margin: 0;
+    flex-shrink: 0;
+    min-width: 120px;
+    height: 44px;
+}
+
+.yucp-tab-button:hover {
+    background-color: #2a2a2a;
+    color: #ffffff;
+}
+
+.yucp-tab-button:active {
+    background-color: #0f0f0f;
+}
+
+.yucp-tab-button.active {
+    background-color: #36BFB1;
+    color: #ffffff;
+    border-bottom-width: 0;
+}
+
+.yucp-tab-content {
+    flex-grow: 1;
+    background-color: #090909;
+    padding: 20px;
+}
+
+.yucp-tab-page {
+    display: none;
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.yucp-tab-page.active {
+    display: flex;
+}
+
+/* ============================================================================
+   FORM ELEMENTS
+   ============================================================================ */
+.yucp-field-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.yucp-field-label {
+    width: 120px;
+    -unity-text-align: middle-left;
+    color: #ffffff;
+    margin-right: 10px;
+    font-size: 12px;
+}
+
+.yucp-text-field {
+    flex-grow: 1;
+    background-color: #2a2a2a;
+    color: #ffffff;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    border-radius: 0;
+    padding: 4px 8px;
+}
+
+.yucp-text-field:focus {
+    border-color: #36BFB1;
+}
+
+/* ============================================================================
+   SCROLLVIEWS
+   ============================================================================ */
+.yucp-scrollview {
+    flex-grow: 1;
+}
+
+/* ============================================================================
+   SEPARATORS & SPACING
+   ============================================================================ */
+.yucp-separator {
+    height: 1px;
+    background-color: #2a2a2a;
+    margin-top: 12px;
+    margin-bottom: 12px;
+}
+
+.yucp-spacer {
+    flex-grow: 1;
+}
+
+/* ============================================================================
+   EMPTY STATES
+   ============================================================================ */
+.yucp-empty-state {
+    flex-grow: 1;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+}
+
+.yucp-empty-state-icon {
+    font-size: 48px;
+    color: #808080;
+    margin-bottom: 12px;
+}
+
+.yucp-empty-state-title {
+    font-size: 16px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    margin-bottom: 6px;
+}
+
+.yucp-empty-state-description {
+    font-size: 12px;
+    color: #808080;
+    -unity-text-align: middle-center;
+    max-width: 300px;
+}
+
+/* ============================================================================
+   INFO BOXES
+   ============================================================================ */
+.yucp-info-box {
+    background-color: rgba(54, 191, 177, 0.1);
+    border-left-width: 3px;
+    border-left-color: #36BFB1;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.yucp-warning-box {
+    background-color: rgba(226, 165, 74, 0.1);
+    border-left-width: 3px;
+    border-left-color: #E2A54A;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.yucp-error-box {
+    background-color: rgba(226, 74, 74, 0.1);
+    border-left-width: 3px;
+    border-left-color: #E24A4A;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+/* ============================================================================
+   MODAL/OVERLAY STYLES
+   ============================================================================ */
+.yucp-modal-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.8);
+    justify-content: center;
+    align-items: center;
+}
+
+.yucp-modal-container {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 20px;
+    min-width: 400px;
+    max-width: 800px;
+}
+
+.yucp-modal-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+}
+
+.yucp-modal-title {
+    font-size: 16px;
+    color: #ffffff;
+    -unity-font-style: bold;
+}
+
+.yucp-modal-body {
+    flex-grow: 1;
+    margin-bottom: 16px;
+}
+
+.yucp-modal-footer {
+    flex-direction: row;
+    justify-content: flex-end;
+}
+

@@ -221,6 +221,9 @@ namespace YUCP.DevTools.Editor
         {
             if (_rootElement == null) return;
 
+            // Update status badges
+            UpdateStatusBadges();
+
             // Update ObjectField values
             var originalPrefabField = _rootElement.Q<ObjectField>("originalPrefabField");
             var newPrefabField = _rootElement.Q<ObjectField>("newPrefabField");
@@ -256,6 +259,56 @@ namespace YUCP.DevTools.Editor
             }
 
             SelectTab(0); // Default to Setup tab
+        }
+
+        private void UpdateStatusBadges()
+        {
+            var variantStatus = _rootElement.Q<Label>("variant-status");
+            var baseStatus = _rootElement.Q<Label>("base-status");
+            var readyStatus = _rootElement.Q<Label>("ready-status");
+
+            if (variantStatus != null)
+            {
+                if (_targetVariant != null)
+                {
+                    variantStatus.text = $"Variant: {_targetVariant.gameObject.name}";
+                    variantStatus.AddToClassList("status-badge-active");
+                }
+                else
+                {
+                    variantStatus.text = "No Variant";
+                    variantStatus.RemoveFromClassList("status-badge-active");
+                }
+            }
+
+            if (baseStatus != null)
+            {
+                if (_revisionBase != null)
+                {
+                    baseStatus.text = $"Base: {_revisionBase.name}";
+                    baseStatus.AddToClassList("status-badge-active");
+                }
+                else
+                {
+                    baseStatus.text = "No Base";
+                    baseStatus.RemoveFromClassList("status-badge-active");
+                }
+            }
+
+            if (readyStatus != null)
+            {
+                bool isReady = _targetVariant != null && _revisionBase != null;
+                if (isReady)
+                {
+                    readyStatus.text = "Ready";
+                    readyStatus.AddToClassList("status-badge-active");
+                }
+                else
+                {
+                    readyStatus.text = "Not Ready";
+                    readyStatus.RemoveFromClassList("status-badge-active");
+                }
+            }
         }
 
         private void OnSelectionChange()

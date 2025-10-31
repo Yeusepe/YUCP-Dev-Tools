@@ -1,7 +1,14 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="True">
     <ui:VisualElement class="root-container">
         <ui:VisualElement class="header-container">
-            <ui:Label text="Model Revision Manager" class="main-title" />
+            <ui:VisualElement class="header-content">
+                <ui:Label text="Model Revision Manager" class="main-title" />
+                <ui:VisualElement class="status-badges">
+                    <ui:Label name="variant-status" text="No Variant" class="status-badge" />
+                    <ui:Label name="base-status" text="No Base" class="status-badge" />
+                    <ui:Label name="ready-status" text="Ready" class="status-badge" />
+                </ui:VisualElement>
+            </ui:VisualElement>
         </ui:VisualElement>
         <ui:VisualElement class="main-content">
             <ui:VisualElement name="tab-buttons" class="tab-buttons">

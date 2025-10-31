@@ -1,4 +1,7 @@
-/* YUCP Package Exporter Window Styling */
+/* ============================================================================
+   YUCP Package Exporter Window Styling - YUCP Design System
+   Consistent with Package Guardian
+   ============================================================================ */
 
 .yucp-exporter-window {
     background-color: #090909;
@@ -8,10 +11,10 @@
 .yucp-header {
     flex-direction: row;
     align-items: center;
-    margin-bottom: 20px;
-    padding-bottom: 20px;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
     border-bottom-width: 1px;
-    border-bottom-color: rgba(255, 255, 255, 0.2);
+    border-bottom-color: #2a2a2a;
 }
 
 .yucp-logo {
@@ -21,132 +24,151 @@
 }
 
 .yucp-title {
-    font-size: 24px;
-    color: #36BFB1;
+    font-size: 18px;
+    color: #ffffff;
     -unity-font-style: bold;
-    -unity-font: resource("Fonts/YUCP/MADEINFINITYPersonalUse-Regular");
 }
 
 .profile-list-container {
     background-color: #1a1a1a;
-    border-radius: 4px;
-    padding: 10px;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
     min-width: 250px;
     max-width: 250px;
 }
 
 .profile-list-header {
-    font-size: 16px;
-    color: #36BFB1;
+    font-size: 11px;
+    color: #b0b0b0;
     -unity-font-style: bold;
-    margin-bottom: 10px;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
 }
 
+/* Profile items - solid backgrounds, left border accent (no transparency) */
 .profile-item {
-    background-color: #2a2a2a;
-    border-radius: 4px;
-    padding: 10px;
-    margin-bottom: 5px;
-    border-width: 1px;
-    border-color: #3a3a3a;
+    background-color: #1a1a1a;  /* Solid, no alpha */
+    border-radius: 0;
+    border-left-width: 3px;
+    border-left-color: transparent;
+    padding: 8px 12px;
+    margin-bottom: 2px;
 }
 
 .profile-item:hover {
-    background-color: #3a3a3a;
-    border-color: #36BFB1;
+    background-color: #2a2a2a;  /* Solid hover */
 }
 
 .profile-item-selected {
-    background-color: rgba(54, 191, 177, 0.3);
-    border-color: #36BFB1;
-    border-width: 2px;
+    background-color: #2a2a2a;  /* Solid selected, no transparency */
+    border-left-color: #36BFB1; /* Teal accent border only */
 }
 
 .section-header {
-    font-size: 14px;
-    color: #36BFB1;
+    font-size: 11px;
+    color: #b0b0b0;
     -unity-font-style: bold;
-    margin-top: 15px;
-    margin-bottom: 10px;
+    letter-spacing: 0.5px;
+    margin-top: 16px;
+    margin-bottom: 12px;
 }
 
 .export-button {
     background-color: #36BFB1;
-    color: white;
+    color: #ffffff;
     height: 50px;
-    font-size: 16px;
-    -unity-font-style: bold;
-    border-radius: 4px;
-    margin: 5px;
+    font-size: 14px;
+    -unity-font-style: normal;
+    border-radius: 0;
+    border-width: 0;
+    margin: 4px;
+    padding-left: 16px;
+    padding-right: 16px;
 }
 
 .export-button:hover {
-    background-color: #4DCCCA;
+    background-color: #48d1c3;
 }
 
 .export-button:active {
-    background-color: #29A8A5;
+    background-color: #2da89c;
 }
 
 .export-all-button {
     background-color: #36BFB1;
-    color: white;
+    color: #ffffff;
     height: 50px;
-    font-size: 16px;
-    -unity-font-style: bold;
-    border-radius: 4px;
-    margin: 5px;
+    font-size: 14px;
+    -unity-font-style: normal;
+    border-radius: 0;
+    border-width: 0;
+    margin: 4px;
+    padding-left: 16px;
+    padding-right: 16px;
 }
 
 .export-all-button:hover {
-    background-color: #4dd4cf;
+    background-color: #48d1c3;
+}
+
+.export-all-button:active {
+    background-color: #2da89c;
 }
 
 .summary-box {
     background-color: #1a1a1a;
-    border-radius: 4px;
-    padding: 15px;
-    margin: 10px 0;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
+    margin: 12px 0;
 }
 
 .summary-label {
-    color: white;
-    margin: 3px 0;
+    color: #ffffff;
+    font-size: 12px;
+    margin: 4px 0;
 }
 
 .progress-container {
-    background-color: #2a2a2a;
-    border-radius: 4px;
-    padding: 15px;
-    margin-top: 10px;
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
+    margin-top: 12px;
 }
 
 .progress-bar {
-    height: 30px;
-    background-color: #525252;
-    border-radius: 4px;
+    height: 20px;
+    background-color: #2a2a2a;
+    border-radius: 0;
 }
 
 .progress-bar-fill {
     background-color: #36BFB1;
     height: 100%;
-    border-radius: 4px;
+    border-radius: 0;
 }
 
 .validation-error {
-    background-color: rgba(255, 0, 0, 0.2);
-    border-color: #ff4444;
-    border-width: 1px;
-    border-radius: 4px;
-    padding: 10px;
-    color: #ffcccc;
+    background-color: rgba(226, 74, 74, 0.1);
+    border-left-width: 3px;
+    border-left-color: #E24A4A;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+    color: #E24A4A;
 }
 
 .validation-success {
-    background-color: rgba(0, 255, 0, 0.2);
-    border-color: #44ff44;
-    border-width: 1px;
-    border-radius: 4px;
-    padding: 10px;
-    color: #ccffcc;
+    background-color: rgba(54, 191, 177, 0.1);
+    border-left-width: 3px;
+    border-left-color: #36BFB1;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+    color: #36BFB1;
 }

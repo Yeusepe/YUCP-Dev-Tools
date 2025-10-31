@@ -68,16 +68,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (headerStyle == null)
             {
                 headerStyle = new GUIStyle(EditorStyles.largeLabel);
-                headerStyle.fontSize = 20;
-                headerStyle.normal.textColor = new Color(0.8f, 0.9f, 1f);
+                headerStyle.fontSize = 18;
+                headerStyle.normal.textColor = Color.white;
                 headerStyle.alignment = TextAnchor.MiddleLeft;
+                headerStyle.fontStyle = FontStyle.Bold;
             }
             
             if (sectionHeaderStyle == null)
             {
                 sectionHeaderStyle = new GUIStyle(EditorStyles.boldLabel);
-                sectionHeaderStyle.fontSize = 14;
-                sectionHeaderStyle.normal.textColor = new Color(0.2f, 0.75f, 0.73f); // Teal
+                sectionHeaderStyle.fontSize = 11;
+                sectionHeaderStyle.normal.textColor = new Color(0.69f, 0.69f, 0.69f);
             }
             
             if (profileButtonStyle == null)
@@ -93,20 +94,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 profileButtonStyle.border = new RectOffset(4, 4, 4, 4);
             }
             
-            if (selectedProfileButtonStyle == null)
-            {
-                selectedProfileButtonStyle = new GUIStyle(GUI.skin.button);
-                selectedProfileButtonStyle.alignment = TextAnchor.MiddleLeft;
-                selectedProfileButtonStyle.padding = new RectOffset(10, 10, 8, 8);
-                selectedProfileButtonStyle.normal.background = MakeTex(2, 2, new Color(0.2f, 0.75f, 0.73f, 0.5f));
-                selectedProfileButtonStyle.normal.textColor = new Color(0.2f, 0.75f, 0.73f);
-                selectedProfileButtonStyle.fontStyle = FontStyle.Bold;
-                selectedProfileButtonStyle.fontSize = 12;
-                selectedProfileButtonStyle.wordWrap = false;
-                selectedProfileButtonStyle.clipping = TextClipping.Overflow;
-                selectedProfileButtonStyle.fixedHeight = 0;
-                selectedProfileButtonStyle.border = new RectOffset(4, 4, 4, 4);
-            }
+            // Removed: selectedProfileButtonStyle - now using solid colors with left border accent
         }
         
         private Texture2D MakeTex(int width, int height, Color color)
@@ -160,45 +148,129 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         private void DrawHeader()
         {
-            GUILayout.Space(10);
+            // Top bar background - matching Package Guardian
+            EditorGUI.DrawRect(new Rect(0, 0, position.width, 60), new Color(0.1f, 0.1f, 0.1f, 1f));
             
-            // Logo and title with fixed height
-            GUILayout.BeginHorizontal(GUILayout.Height(60));
-            GUILayout.Space(20);
+            // Top bar with proper 3-section layout
+            GUILayout.BeginVertical(GUILayout.Height(60));
+            GUILayout.FlexibleSpace(); // Center vertically
             
-            if (logoTexture != null)
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(16); // Left padding
+            
+            // LEFT SECTION: Title
+            var titleStyle = new GUIStyle(EditorStyles.boldLabel);
+            titleStyle.fontSize = 18;
+            titleStyle.normal.textColor = Color.white;
+            titleStyle.fontStyle = FontStyle.Bold;
+            GUILayout.Label("Package Exporter", titleStyle, GUILayout.ExpandWidth(false));
+            
+            GUILayout.Space(24); // Space between title and badges
+            
+            // CENTER SECTION: Status badges
+            DrawStatusBadge($"Profiles: {allProfiles.Count}", false);
+            
+            if (selectedProfile != null)
             {
-                // Smaller logo to fit in fixed height
-                float logoHeight = 50;
-                float logoWidth = logoHeight * (2020f / 865f); // ~116px
-                
-                // Create a properly scaled texture display
-                Rect logoRect = GUILayoutUtility.GetRect(logoWidth, logoHeight, GUILayout.ExpandWidth(false));
-                GUI.DrawTexture(logoRect, logoTexture, ScaleMode.ScaleToFit, true);
-                GUILayout.Space(15);
+                DrawStatusBadge($"Selected: {selectedProfile.packageName}", true);
             }
             
-            GUILayout.BeginVertical();
-            GUILayout.FlexibleSpace();
-            GUILayout.Label("Package Exporter", headerStyle);
-            GUILayout.FlexibleSpace();
-            GUILayout.EndVertical();
+            if (isExporting)
+            {
+                DrawStatusBadge($"Exporting... {(currentProgress * 100):F0}%", true);
+            }
+            else
+            {
+                DrawStatusBadge("Ready", false);
+            }
             
+            // RIGHT SECTION: (reserved for future controls)
             GUILayout.FlexibleSpace();
+            
+            GUILayout.Space(16); // Right padding
             GUILayout.EndHorizontal();
             
-            GUILayout.Space(10);
+            GUILayout.FlexibleSpace(); // Center vertically
+            GUILayout.EndVertical();
+            
             DrawHorizontalLine();
+        }
+        
+        private void DrawStatusBadge(string text, bool active)
+        {
+            // Calculate size first
+            var measureStyle = new GUIStyle(GUI.skin.label);
+            measureStyle.fontSize = 11;
+            measureStyle.padding = new RectOffset(12, 12, 4, 4);
+            
+            var content = new GUIContent(text);
+            var size = measureStyle.CalcSize(content);
+            
+            // Get rect with margin
+            var rect = GUILayoutUtility.GetRect(size.x, 24, GUILayout.ExpandWidth(false));
+            
+            // Add margin to the right
+            var drawRect = new Rect(rect.x, rect.y, rect.width - 8, rect.height);
+            
+            // Draw rounded background
+            var bgColor = active 
+                ? new Color(0.21f, 0.75f, 0.69f, 0.2f)  // Teal tint
+                : new Color(0.16f, 0.16f, 0.16f, 1f);   // Dark gray
+            
+            DrawRoundedRect(drawRect, bgColor, 4f);
+            
+            // Draw text centered
+            var textStyle = new GUIStyle(GUI.skin.label);
+            textStyle.fontSize = 11;
+            textStyle.normal.textColor = active 
+                ? new Color(0.21f, 0.75f, 0.69f)  // Teal
+                : new Color(0.69f, 0.69f, 0.69f); // Gray
+            textStyle.alignment = TextAnchor.MiddleCenter;
+            
+            GUI.Label(drawRect, text, textStyle);
+        }
+        
+        private void DrawRoundedRect(Rect rect, Color color, float radius)
+        {
+            // Draw a rectangle with rounded corners using GUI
+            Handles.BeginGUI();
+            Handles.color = color;
+            
+            // Fill the main rectangle
+            EditorGUI.DrawRect(new Rect(rect.x + radius, rect.y, rect.width - radius * 2, rect.height), color);
+            EditorGUI.DrawRect(new Rect(rect.x, rect.y + radius, rect.width, rect.height - radius * 2), color);
+            
+            // Draw circles for corners
+            DrawCircle(new Vector2(rect.x + radius, rect.y + radius), radius, color);
+            DrawCircle(new Vector2(rect.xMax - radius, rect.y + radius), radius, color);
+            DrawCircle(new Vector2(rect.x + radius, rect.yMax - radius), radius, color);
+            DrawCircle(new Vector2(rect.xMax - radius, rect.yMax - radius), radius, color);
+            
+            Handles.EndGUI();
+        }
+        
+        private void DrawCircle(Vector2 center, float radius, Color color)
+        {
+            Handles.color = color;
+            Handles.DrawSolidDisc(center, Vector3.forward, radius);
         }
         
         private void DrawProfileList()
         {
-            GUILayout.Space(20);
+            // Left pane with proper padding
+            GUILayout.BeginVertical(GUILayout.Width(300), GUILayout.ExpandHeight(true));
+            GUILayout.Space(16); // Top padding
             
-            GUILayout.BeginVertical(GUILayout.Width(270), GUILayout.ExpandHeight(true));
+            GUILayout.BeginHorizontal();
+            GUILayout.Space(16); // Left padding
+            GUILayout.BeginVertical();
             
-            GUILayout.Label("Export Profiles", sectionHeaderStyle);
-            GUILayout.Space(5);
+            // Section header matching design system
+            var sectionStyle = new GUIStyle(EditorStyles.boldLabel);
+            sectionStyle.fontSize = 11;
+            sectionStyle.normal.textColor = new Color(0.69f, 0.69f, 0.69f);
+            sectionStyle.margin = new RectOffset(0, 0, 0, 8);
+            GUILayout.Label("EXPORT PROFILES", sectionStyle);
             
             if (selectedProfileIndices.Count > 1)
             {
@@ -226,68 +298,81 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     bool isSelected = selectedProfileIndices.Contains(i);
                     
-                    // Create a custom clickable area with proper text display
-                    GUILayout.BeginVertical();
+                    // Get rect for the entire item
+                    GUILayout.BeginHorizontal();
                     
-                    // Background box for the clickable area
-                    var boxStyle = new GUIStyle(GUI.skin.box);
+                    // Draw left border for selected items (3px teal accent)
                     if (isSelected)
                     {
-                        boxStyle.normal.background = MakeTex(2, 2, new Color(0.2f, 0.75f, 0.73f, 0.3f));
+                        var borderRect = GUILayoutUtility.GetRect(3, 32, GUILayout.ExpandWidth(false));
+                        EditorGUI.DrawRect(borderRect, new Color(0.21f, 0.75f, 0.69f)); // #36BFB1
+                    }
+                    else
+                    {
+                        GUILayout.Space(3); // Same width as border for alignment
                     }
                     
-                    GUILayout.BeginVertical(boxStyle);
+                    GUILayout.BeginVertical();
                     
-                    // Add padding around the text
-                    GUILayout.Space(8);
-                    GUILayout.BeginHorizontal();
-                    GUILayout.Space(10);
+                    // Background box matching Package Guardian (solid, no transparency)
+                    var boxStyle = new GUIStyle(GUI.skin.box);
+                    boxStyle.normal.background = MakeTex(2, 2, isSelected 
+                        ? new Color(0.16f, 0.16f, 0.16f, 1f)  // #2a2a2a solid
+                        : new Color(0.1f, 0.1f, 0.1f, 1f));   // #1a1a1a solid
+                    boxStyle.border = new RectOffset(0, 0, 0, 0);
+                    boxStyle.padding = new RectOffset(12, 12, 8, 8);
+                    boxStyle.margin = new RectOffset(0, 0, 0, 2);
+                    
+                    GUILayout.BeginVertical(boxStyle, GUILayout.MinHeight(32));
                     
                     // Text with proper styling
                     var labelStyle = new GUIStyle(EditorStyles.label);
-                    labelStyle.normal.textColor = isSelected ? new Color(0.2f, 0.75f, 0.73f) : Color.white;
+                    labelStyle.normal.textColor = Color.white;
                     labelStyle.fontSize = 12;
-                    labelStyle.fontStyle = isSelected ? FontStyle.Bold : FontStyle.Normal;
+                    labelStyle.fontStyle = FontStyle.Normal;
+                    labelStyle.alignment = TextAnchor.MiddleLeft;
                     
                     GUILayout.Label(GetProfileButtonLabel(profile), labelStyle);
-                    
-                    GUILayout.FlexibleSpace();
-                    GUILayout.Space(10);
-                    GUILayout.EndHorizontal();
-                    GUILayout.Space(8);
                     
                     GUILayout.EndVertical();
                     
                     // Make the entire area clickable with multi-selection support
-                    if (Event.current.type == EventType.MouseDown && GUILayoutUtility.GetLastRect().Contains(Event.current.mousePosition))
+                    var clickRect = GUILayoutUtility.GetLastRect();
+                    if (Event.current.type == EventType.MouseDown && clickRect.Contains(Event.current.mousePosition))
                     {
                         HandleProfileSelection(i, Event.current);
                         Event.current.Use();
                     }
                     
+                    // Hover effect
+                    if (Event.current.type == EventType.Repaint && clickRect.Contains(Event.current.mousePosition) && !isSelected)
+                    {
+                        EditorGUI.DrawRect(clickRect, new Color(0.16f, 0.16f, 0.16f, 0.3f)); // Subtle hover
+                    }
+                    
                     GUILayout.EndVertical();
-                    GUILayout.Space(5);
+                    GUILayout.EndHorizontal();
                 }
             }
             
             GUILayout.EndScrollView();
             
             // Profile management buttons
-            GUILayout.Space(5);
+            GUILayout.Space(8);
             GUILayout.BeginHorizontal();
             
-            if (GUILayout.Button("+ New", GUILayout.Height(30)))
+            if (GUILayout.Button("+ New", GUILayout.Height(32)))
             {
                 CreateNewProfile();
             }
             
             GUI.enabled = selectedProfile != null;
-            if (GUILayout.Button("Clone", GUILayout.Height(30)))
+            if (GUILayout.Button("Clone", GUILayout.Height(32)))
             {
                 CloneProfile(selectedProfile);
             }
             
-            if (GUILayout.Button("Delete", GUILayout.Height(30)))
+            if (GUILayout.Button("Delete", GUILayout.Height(32)))
             {
                 DeleteProfile(selectedProfile);
             }
@@ -295,39 +380,75 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             GUILayout.EndHorizontal();
             
-            GUILayout.Space(10);
+            GUILayout.Space(8);
             
-            if (GUILayout.Button("Refresh Profiles", GUILayout.Height(25)))
+            if (GUILayout.Button("Refresh Profiles", GUILayout.Height(28)))
             {
                 LoadProfiles();
             }
             
+            GUILayout.Space(16); // Bottom padding
             GUILayout.EndVertical();
+            GUILayout.Space(16); // Right padding
+            GUILayout.EndHorizontal();
             
-            GUILayout.Space(20);
+            GUILayout.EndVertical();
         }
         
         private void DrawSelectedProfile()
         {
+            // Right pane with proper padding
             GUILayout.BeginVertical(GUILayout.ExpandWidth(true));
             
             if (selectedProfile == null)
             {
-                GUILayout.Space(20);
-                GUILayout.Label("No profile selected", sectionHeaderStyle);
-                GUILayout.Space(10);
-                GUILayout.Label("Select a profile from the list or create a new one.", EditorStyles.wordWrappedLabel);
+                // Empty state - centered
+                GUILayout.FlexibleSpace();
+                
+                var emptyStyle = new GUIStyle(EditorStyles.label);
+                emptyStyle.fontSize = 16;
+                emptyStyle.fontStyle = FontStyle.Bold;
+                emptyStyle.normal.textColor = new Color(0.69f, 0.69f, 0.69f);
+                emptyStyle.alignment = TextAnchor.MiddleCenter;
+                
+                GUILayout.Label("No Profile Selected", emptyStyle);
+                GUILayout.Space(8);
+                
+                var descStyle = new GUIStyle(EditorStyles.label);
+                descStyle.fontSize = 12;
+                descStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
+                descStyle.alignment = TextAnchor.MiddleCenter;
+                descStyle.wordWrap = true;
+                
+                GUILayout.Label("Select a profile from the list or create a new one", descStyle);
+                
+                GUILayout.FlexibleSpace();
             }
             else
             {
-                GUILayout.Label($"Selected: {selectedProfile.name}", sectionHeaderStyle);
-                GUILayout.Space(10);
+                GUILayout.Space(16); // Top padding
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(20); // Left padding
+                
+                GUILayout.BeginVertical();
+                
+                // Profile title
+                var titleStyle = new GUIStyle(EditorStyles.boldLabel);
+                titleStyle.fontSize = 16;
+                titleStyle.normal.textColor = Color.white;
+                titleStyle.margin = new RectOffset(0, 0, 0, 16);
+                GUILayout.Label(selectedProfile.name, titleStyle);
                 
                 DrawProfileSummary(selectedProfile);
+                
+                GUILayout.Space(16); // Bottom padding
+                GUILayout.EndVertical();
+                
+                GUILayout.Space(20); // Right padding
+                GUILayout.EndHorizontal();
             }
             
             GUILayout.EndVertical();
-            GUILayout.Space(20);
         }
         
         private void DrawProfileSummary(ExportProfile profile)
