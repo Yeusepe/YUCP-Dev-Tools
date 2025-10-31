@@ -1,5 +1,5 @@
 {
-    "name": "com.yucp-devtools.Runtime",
+    "name": "com.yucp.devtools.Runtime",
     "rootNamespace": "YUCP.DevTools",
     "references": [
         "VRC.SDKBase",

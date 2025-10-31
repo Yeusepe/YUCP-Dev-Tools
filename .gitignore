@@ -57,10 +57,10 @@ sysinfo.txt
 *.unitypackage
 
 # YUCP Package Exporter - ConfuserEx auto-downloaded tools
-Packages/com.yucp-devtools/Tools/
+Packages/com.yucp.devtools/Tools/
 
 # YUCP Wiki documentation
-Packages/com.yucp-devtools/wiki/
+Packages/com.yucp.devtools/wiki/
 
 # Crashlytics generated file
 crashlytics-build.properties

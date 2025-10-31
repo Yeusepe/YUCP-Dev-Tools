@@ -1,9 +1,9 @@
 {
-    "name": "com.yucp-devtools.Editor",
+    "name": "com.yucp.devtools.Editor",
     "rootNamespace": "YUCP.DevTools.Editor",
     "references": [
         "VRC.SDKBase.Editor.BuildPipeline",
-        "com.yucp-devtools.Runtime",
+        "com.yucp.devtools.Runtime",
         "com.yucp.components.Runtime",
         "com.yucp.components.Editor",
         "VRCFury-Editor",

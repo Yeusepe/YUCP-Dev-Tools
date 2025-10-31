@@ -88,7 +88,7 @@ This repository uses GitHub Actions for automated package building and VPM listi
 ```
 YUCP-Dev-Tools/
 ├── Packages/
-│   └── com.yucp-devtools/          # Main package
+│   └── com.yucp.devtools/          # Main package
 ├── Website/                         # VPM listing website
 │   ├── index.html
 │   ├── source.json
@@ -99,7 +99,7 @@ YUCP-Dev-Tools/
 ### Building Releases
 
 Releases are automatically built via GitHub Actions when you:
-1. Update the version in `Packages/com.yucp-devtools/package.json`
+1. Update the version in `Packages/com.yucp.devtools/package.json`
 2. Run the "Build Release" action
 
 The listing at https://dev.vpm.yucp.club is automatically updated on each release.
