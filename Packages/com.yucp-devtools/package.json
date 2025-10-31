@@ -1,0 +1,17 @@
+{
+  "name": "com.yucp-devtools",
+  "displayName": "YUCP DevTools",
+  "version": "0.1.0",
+  "unity": "2022.3",
+  "description": "Development tools for YUCP packages including package exporter and model revision manager",
+  "author": {
+    "name": "YUCP Club",
+    "url": "http://vpm.yucp.club/"
+  },
+  "vpmDependencies": {
+    "com.yucp.components": ">=0.2.9",
+    "com.vrchat.core.vpm-resolver": ">=0.1.27"
+  },
+  "legacyPackages": []
+}
+

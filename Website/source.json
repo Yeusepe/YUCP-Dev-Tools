@@ -1,0 +1,17 @@
+{
+  "Name": "YUCP DevTools",
+  "Id": "com.yucp-devtools.listing",
+  "Url": "https://dev.vpm.yucp.club/index.json",
+  "Author": {
+    "Name": "YUCP Club",
+    "Url": "https://dev.vpm.yucp.club/",
+    "Email": "contact@yucp.club"
+  },
+  "Description": "Development tools for YUCP packages including package exporter and model revision manager.",
+  "InfoLink": {
+    "Text": "Documentation",
+    "Url": "https://github.com/Yeusepe/YUCP-DevTools"
+  },
+  "BannerUrl": "banner.png"
+}
+

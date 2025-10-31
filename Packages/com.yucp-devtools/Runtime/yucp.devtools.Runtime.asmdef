@@ -1,0 +1,22 @@
+{
+    "name": "com.yucp-devtools.Runtime",
+    "rootNamespace": "YUCP.DevTools",
+    "references": [
+        "VRC.SDKBase",
+        "com.yucp.components.Runtime",
+        "VRCFury",
+        "com.vrcfury.api"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [
+        "VRCSDKBase.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
+
