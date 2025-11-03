@@ -12,6 +12,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
     [CreateAssetMenu(fileName = "New Export Profile", menuName = "YUCP/Export Profile", order = 100)]
     public class ExportProfile : ScriptableObject
     {
+        [Header("Profile Settings")]
+        [Tooltip("Display name for this export profile")]
+        public string profileName = "";
+        
         [Header("Package Metadata")]
         [Tooltip("Package file name (without .unitypackage extension)")]
         public string packageName = "MyPackage";

@@ -45,6 +45,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private bool showOnlyExcluded = false;
         private bool showExportInspector = false;
         
+        // Delayed rename tracking
+        private double lastPackageNameChangeTime = 0;
+        private const double RENAME_DELAY_SECONDS = 1.5; // Wait 1.5 seconds after user stops typing
+        private ExportProfile pendingRenameProfile = null;
+        private string pendingRenamePackageName = "";
+        
+        // Track currently editing profile to prevent cross-profile editing
+        private ExportProfile currentlyEditingProfile = null;
+        
         private Texture2D logoTexture;
         private GUIStyle headerStyle;
         private GUIStyle profileButtonStyle;
@@ -68,17 +77,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (headerStyle == null)
             {
                 headerStyle = new GUIStyle(EditorStyles.largeLabel);
-                headerStyle.fontSize = 18;
-                headerStyle.normal.textColor = Color.white;
+                headerStyle.fontSize = 20;
+                headerStyle.normal.textColor = new Color(0.8f, 0.9f, 1f);
                 headerStyle.alignment = TextAnchor.MiddleLeft;
-                headerStyle.fontStyle = FontStyle.Bold;
             }
             
             if (sectionHeaderStyle == null)
             {
                 sectionHeaderStyle = new GUIStyle(EditorStyles.boldLabel);
-                sectionHeaderStyle.fontSize = 11;
-                sectionHeaderStyle.normal.textColor = new Color(0.69f, 0.69f, 0.69f);
+                sectionHeaderStyle.fontSize = 14;
+                sectionHeaderStyle.normal.textColor = new Color(0.2f, 0.75f, 0.73f); // Teal
             }
             
             if (profileButtonStyle == null)
@@ -94,7 +102,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 profileButtonStyle.border = new RectOffset(4, 4, 4, 4);
             }
             
-            // Removed: selectedProfileButtonStyle - now using solid colors with left border accent
+            if (selectedProfileButtonStyle == null)
+            {
+                selectedProfileButtonStyle = new GUIStyle(GUI.skin.button);
+                selectedProfileButtonStyle.alignment = TextAnchor.MiddleLeft;
+                selectedProfileButtonStyle.padding = new RectOffset(10, 10, 8, 8);
+                selectedProfileButtonStyle.normal.background = MakeTex(2, 2, new Color(0.2f, 0.75f, 0.73f, 0.5f));
+                selectedProfileButtonStyle.normal.textColor = new Color(0.2f, 0.75f, 0.73f);
+                selectedProfileButtonStyle.fontStyle = FontStyle.Bold;
+                selectedProfileButtonStyle.fontSize = 12;
+                selectedProfileButtonStyle.wordWrap = false;
+                selectedProfileButtonStyle.clipping = TextClipping.Overflow;
+                selectedProfileButtonStyle.fixedHeight = 0;
+                selectedProfileButtonStyle.border = new RectOffset(4, 4, 4, 4);
+            }
         }
         
         private Texture2D MakeTex(int width, int height, Color color)
@@ -113,6 +134,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             InitializeStyles();
             
+            // Check for delayed rename
+            CheckDelayedRename();
+            
             // Dark background
             EditorGUI.DrawRect(new Rect(0, 0, position.width, position.height), new Color(0.035f, 0.035f, 0.035f, 1f));
             
@@ -129,6 +153,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             DrawProfileList();
             
             mainScrollPos = GUILayout.BeginScrollView(mainScrollPos, GUILayout.ExpandHeight(true), GUILayout.ExpandWidth(true));
+            // Ensure currentlyEditingProfile is set when drawing selected profile
+            if (selectedProfile != null && currentlyEditingProfile != selectedProfile)
+            {
+                if (currentlyEditingProfile != null)
+                {
+                    EditorUtility.SetDirty(currentlyEditingProfile);
+                }
+                currentlyEditingProfile = selectedProfile;
+            }
+            
             DrawSelectedProfile();
             GUILayout.EndScrollView();
             
@@ -146,131 +180,134 @@ namespace YUCP.DevTools.Editor.PackageExporter
             GUILayout.EndVertical();
         }
         
+        /// <summary>
+        /// Checks if it's time to perform delayed rename after user stops typing.
+        /// </summary>
+        private void CheckDelayedRename()
+        {
+            if (pendingRenameProfile != null && !string.IsNullOrEmpty(pendingRenamePackageName))
+            {
+                double currentTime = EditorApplication.timeSinceStartup;
+                double timeSinceChange = currentTime - lastPackageNameChangeTime;
+                
+                if (timeSinceChange >= RENAME_DELAY_SECONDS)
+                {
+                    PerformDelayedRename(pendingRenameProfile, pendingRenamePackageName);
+                    pendingRenameProfile = null;
+                    pendingRenamePackageName = "";
+                }
+                else
+                {
+                    // Trigger repaint to check again soon
+                    Repaint();
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Performs the actual asset file rename.
+        /// </summary>
+        private void PerformDelayedRename(ExportProfile profile, string newPackageName)
+        {
+            if (profile == null) return;
+            
+            string currentPath = AssetDatabase.GetAssetPath(profile);
+            if (string.IsNullOrEmpty(currentPath)) return;
+            
+            // Get directory and construct new filename
+            string directory = Path.GetDirectoryName(currentPath);
+            string extension = Path.GetExtension(currentPath);
+            string newFileName = SanitizeFileName(newPackageName) + extension;
+            string newPath = Path.Combine(directory, newFileName).Replace('\\', '/');
+            
+            // Only rename if the name actually changed
+            if (newPath != currentPath)
+            {
+                string result = AssetDatabase.MoveAsset(currentPath, newPath);
+                if (string.IsNullOrEmpty(result))
+                {
+                    // Success - also sync profileName
+                    profile.profileName = profile.packageName;
+                    EditorUtility.SetDirty(profile);
+                    AssetDatabase.SaveAssets();
+                    Debug.Log($"[Package Exporter] Renamed profile asset to: {newPath}");
+                    
+                    // Reload profiles to update the list
+                    LoadProfiles();
+                    
+                    // Reselect the profile by finding it again
+                    var updatedProfile = AssetDatabase.LoadAssetAtPath<ExportProfile>(newPath);
+                    if (updatedProfile != null)
+                    {
+                        selectedProfile = updatedProfile;
+                        selectedProfileIndex = allProfiles.IndexOf(updatedProfile);
+                        currentlyEditingProfile = updatedProfile;
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"[Package Exporter] Failed to rename asset: {result}");
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Sanitizes a filename by removing invalid characters.
+        /// </summary>
+        private string SanitizeFileName(string fileName)
+        {
+            if (string.IsNullOrEmpty(fileName)) return "NewPackage";
+            
+            char[] invalidChars = Path.GetInvalidFileNameChars();
+            foreach (char c in invalidChars)
+            {
+                fileName = fileName.Replace(c, '_');
+            }
+            
+            return fileName;
+        }
+        
         private void DrawHeader()
         {
-            // Top bar background - matching Package Guardian
-            EditorGUI.DrawRect(new Rect(0, 0, position.width, 60), new Color(0.1f, 0.1f, 0.1f, 1f));
+            GUILayout.Space(10);
             
-            // Top bar with proper 3-section layout
-            GUILayout.BeginVertical(GUILayout.Height(60));
-            GUILayout.FlexibleSpace(); // Center vertically
+            // Logo and title with fixed height
+            GUILayout.BeginHorizontal(GUILayout.Height(60));
+            GUILayout.Space(20);
             
-            GUILayout.BeginHorizontal();
-            GUILayout.Space(16); // Left padding
-            
-            // LEFT SECTION: Title
-            var titleStyle = new GUIStyle(EditorStyles.boldLabel);
-            titleStyle.fontSize = 18;
-            titleStyle.normal.textColor = Color.white;
-            titleStyle.fontStyle = FontStyle.Bold;
-            GUILayout.Label("Package Exporter", titleStyle, GUILayout.ExpandWidth(false));
-            
-            GUILayout.Space(24); // Space between title and badges
-            
-            // CENTER SECTION: Status badges
-            DrawStatusBadge($"Profiles: {allProfiles.Count}", false);
-            
-            if (selectedProfile != null)
+            if (logoTexture != null)
             {
-                DrawStatusBadge($"Selected: {selectedProfile.packageName}", true);
+                // Smaller logo to fit in fixed height
+                float logoHeight = 50;
+                float logoWidth = logoHeight * (2020f / 865f); // ~116px
+                
+                // Create a properly scaled texture display
+                Rect logoRect = GUILayoutUtility.GetRect(logoWidth, logoHeight, GUILayout.ExpandWidth(false));
+                GUI.DrawTexture(logoRect, logoTexture, ScaleMode.ScaleToFit, true);
+                GUILayout.Space(15);
             }
             
-            if (isExporting)
-            {
-                DrawStatusBadge($"Exporting... {(currentProgress * 100):F0}%", true);
-            }
-            else
-            {
-                DrawStatusBadge("Ready", false);
-            }
-            
-            // RIGHT SECTION: (reserved for future controls)
+            GUILayout.BeginVertical();
             GUILayout.FlexibleSpace();
-            
-            GUILayout.Space(16); // Right padding
-            GUILayout.EndHorizontal();
-            
-            GUILayout.FlexibleSpace(); // Center vertically
+            GUILayout.Label("Package Exporter", headerStyle);
+            GUILayout.FlexibleSpace();
             GUILayout.EndVertical();
             
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            
+            GUILayout.Space(10);
             DrawHorizontalLine();
-        }
-        
-        private void DrawStatusBadge(string text, bool active)
-        {
-            // Calculate size first
-            var measureStyle = new GUIStyle(GUI.skin.label);
-            measureStyle.fontSize = 11;
-            measureStyle.padding = new RectOffset(12, 12, 4, 4);
-            
-            var content = new GUIContent(text);
-            var size = measureStyle.CalcSize(content);
-            
-            // Get rect with margin
-            var rect = GUILayoutUtility.GetRect(size.x, 24, GUILayout.ExpandWidth(false));
-            
-            // Add margin to the right
-            var drawRect = new Rect(rect.x, rect.y, rect.width - 8, rect.height);
-            
-            // Draw rounded background
-            var bgColor = active 
-                ? new Color(0.21f, 0.75f, 0.69f, 0.2f)  // Teal tint
-                : new Color(0.16f, 0.16f, 0.16f, 1f);   // Dark gray
-            
-            DrawRoundedRect(drawRect, bgColor, 4f);
-            
-            // Draw text centered
-            var textStyle = new GUIStyle(GUI.skin.label);
-            textStyle.fontSize = 11;
-            textStyle.normal.textColor = active 
-                ? new Color(0.21f, 0.75f, 0.69f)  // Teal
-                : new Color(0.69f, 0.69f, 0.69f); // Gray
-            textStyle.alignment = TextAnchor.MiddleCenter;
-            
-            GUI.Label(drawRect, text, textStyle);
-        }
-        
-        private void DrawRoundedRect(Rect rect, Color color, float radius)
-        {
-            // Draw a rectangle with rounded corners using GUI
-            Handles.BeginGUI();
-            Handles.color = color;
-            
-            // Fill the main rectangle
-            EditorGUI.DrawRect(new Rect(rect.x + radius, rect.y, rect.width - radius * 2, rect.height), color);
-            EditorGUI.DrawRect(new Rect(rect.x, rect.y + radius, rect.width, rect.height - radius * 2), color);
-            
-            // Draw circles for corners
-            DrawCircle(new Vector2(rect.x + radius, rect.y + radius), radius, color);
-            DrawCircle(new Vector2(rect.xMax - radius, rect.y + radius), radius, color);
-            DrawCircle(new Vector2(rect.x + radius, rect.yMax - radius), radius, color);
-            DrawCircle(new Vector2(rect.xMax - radius, rect.yMax - radius), radius, color);
-            
-            Handles.EndGUI();
-        }
-        
-        private void DrawCircle(Vector2 center, float radius, Color color)
-        {
-            Handles.color = color;
-            Handles.DrawSolidDisc(center, Vector3.forward, radius);
         }
         
         private void DrawProfileList()
         {
-            // Left pane with proper padding
-            GUILayout.BeginVertical(GUILayout.Width(300), GUILayout.ExpandHeight(true));
-            GUILayout.Space(16); // Top padding
+            GUILayout.Space(20);
             
-            GUILayout.BeginHorizontal();
-            GUILayout.Space(16); // Left padding
-            GUILayout.BeginVertical();
+            GUILayout.BeginVertical(GUILayout.Width(270), GUILayout.ExpandHeight(true));
             
-            // Section header matching design system
-            var sectionStyle = new GUIStyle(EditorStyles.boldLabel);
-            sectionStyle.fontSize = 11;
-            sectionStyle.normal.textColor = new Color(0.69f, 0.69f, 0.69f);
-            sectionStyle.margin = new RectOffset(0, 0, 0, 8);
-            GUILayout.Label("EXPORT PROFILES", sectionStyle);
+            GUILayout.Label("Export Profiles", sectionHeaderStyle);
+            GUILayout.Space(5);
             
             if (selectedProfileIndices.Count > 1)
             {
@@ -298,81 +335,81 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     bool isSelected = selectedProfileIndices.Contains(i);
                     
-                    // Get rect for the entire item
-                    GUILayout.BeginHorizontal();
-                    
-                    // Draw left border for selected items (3px teal accent)
-                    if (isSelected)
-                    {
-                        var borderRect = GUILayoutUtility.GetRect(3, 32, GUILayout.ExpandWidth(false));
-                        EditorGUI.DrawRect(borderRect, new Color(0.21f, 0.75f, 0.69f)); // #36BFB1
-                    }
-                    else
-                    {
-                        GUILayout.Space(3); // Same width as border for alignment
-                    }
-                    
+                    // Create a custom clickable area with proper text display
                     GUILayout.BeginVertical();
                     
-                    // Background box matching Package Guardian (solid, no transparency)
+                    // Background box for the clickable area
                     var boxStyle = new GUIStyle(GUI.skin.box);
-                    boxStyle.normal.background = MakeTex(2, 2, isSelected 
-                        ? new Color(0.16f, 0.16f, 0.16f, 1f)  // #2a2a2a solid
-                        : new Color(0.1f, 0.1f, 0.1f, 1f));   // #1a1a1a solid
-                    boxStyle.border = new RectOffset(0, 0, 0, 0);
-                    boxStyle.padding = new RectOffset(12, 12, 8, 8);
-                    boxStyle.margin = new RectOffset(0, 0, 0, 2);
+                    if (isSelected)
+                    {
+                        boxStyle.normal.background = MakeTex(2, 2, new Color(0.2f, 0.75f, 0.73f, 0.3f));
+                    }
                     
-                    GUILayout.BeginVertical(boxStyle, GUILayout.MinHeight(32));
+                    GUILayout.BeginVertical(boxStyle);
+                    
+                    // Add padding around the text
+                    GUILayout.Space(8);
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(10);
                     
                     // Text with proper styling
                     var labelStyle = new GUIStyle(EditorStyles.label);
-                    labelStyle.normal.textColor = Color.white;
+                    labelStyle.normal.textColor = isSelected ? new Color(0.2f, 0.75f, 0.73f) : Color.white;
                     labelStyle.fontSize = 12;
-                    labelStyle.fontStyle = FontStyle.Normal;
-                    labelStyle.alignment = TextAnchor.MiddleLeft;
+                    labelStyle.fontStyle = isSelected ? FontStyle.Bold : FontStyle.Normal;
                     
                     GUILayout.Label(GetProfileButtonLabel(profile), labelStyle);
+                    
+                    GUILayout.FlexibleSpace();
+                    GUILayout.Space(10);
+                    GUILayout.EndHorizontal();
+                    GUILayout.Space(8);
                     
                     GUILayout.EndVertical();
                     
                     // Make the entire area clickable with multi-selection support
-                    var clickRect = GUILayoutUtility.GetLastRect();
-                    if (Event.current.type == EventType.MouseDown && clickRect.Contains(Event.current.mousePosition))
+                    if (Event.current.type == EventType.MouseDown && GUILayoutUtility.GetLastRect().Contains(Event.current.mousePosition))
                     {
+                        // Save any pending changes before switching profiles
+                        if (currentlyEditingProfile != null && currentlyEditingProfile != profile)
+                        {
+                            EditorUtility.SetDirty(currentlyEditingProfile);
+                        }
+                        
                         HandleProfileSelection(i, Event.current);
+                        
+                        // Update currently editing profile after selection
+                        if (selectedProfile != null)
+                        {
+                            currentlyEditingProfile = selectedProfile;
+                        }
+                        
                         Event.current.Use();
                     }
                     
-                    // Hover effect
-                    if (Event.current.type == EventType.Repaint && clickRect.Contains(Event.current.mousePosition) && !isSelected)
-                    {
-                        EditorGUI.DrawRect(clickRect, new Color(0.16f, 0.16f, 0.16f, 0.3f)); // Subtle hover
-                    }
-                    
                     GUILayout.EndVertical();
-                    GUILayout.EndHorizontal();
+                    GUILayout.Space(5);
                 }
             }
             
             GUILayout.EndScrollView();
             
             // Profile management buttons
-            GUILayout.Space(8);
+            GUILayout.Space(5);
             GUILayout.BeginHorizontal();
             
-            if (GUILayout.Button("+ New", GUILayout.Height(32)))
+            if (GUILayout.Button("+ New", GUILayout.Height(30)))
             {
                 CreateNewProfile();
             }
             
             GUI.enabled = selectedProfile != null;
-            if (GUILayout.Button("Clone", GUILayout.Height(32)))
+            if (GUILayout.Button("Clone", GUILayout.Height(30)))
             {
                 CloneProfile(selectedProfile);
             }
             
-            if (GUILayout.Button("Delete", GUILayout.Height(32)))
+            if (GUILayout.Button("Delete", GUILayout.Height(30)))
             {
                 DeleteProfile(selectedProfile);
             }
@@ -380,75 +417,39 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             GUILayout.EndHorizontal();
             
-            GUILayout.Space(8);
+            GUILayout.Space(10);
             
-            if (GUILayout.Button("Refresh Profiles", GUILayout.Height(28)))
+            if (GUILayout.Button("Refresh Profiles", GUILayout.Height(25)))
             {
                 LoadProfiles();
             }
             
-            GUILayout.Space(16); // Bottom padding
             GUILayout.EndVertical();
-            GUILayout.Space(16); // Right padding
-            GUILayout.EndHorizontal();
             
-            GUILayout.EndVertical();
+            GUILayout.Space(20);
         }
         
         private void DrawSelectedProfile()
         {
-            // Right pane with proper padding
             GUILayout.BeginVertical(GUILayout.ExpandWidth(true));
             
             if (selectedProfile == null)
             {
-                // Empty state - centered
-                GUILayout.FlexibleSpace();
-                
-                var emptyStyle = new GUIStyle(EditorStyles.label);
-                emptyStyle.fontSize = 16;
-                emptyStyle.fontStyle = FontStyle.Bold;
-                emptyStyle.normal.textColor = new Color(0.69f, 0.69f, 0.69f);
-                emptyStyle.alignment = TextAnchor.MiddleCenter;
-                
-                GUILayout.Label("No Profile Selected", emptyStyle);
-                GUILayout.Space(8);
-                
-                var descStyle = new GUIStyle(EditorStyles.label);
-                descStyle.fontSize = 12;
-                descStyle.normal.textColor = new Color(0.5f, 0.5f, 0.5f);
-                descStyle.alignment = TextAnchor.MiddleCenter;
-                descStyle.wordWrap = true;
-                
-                GUILayout.Label("Select a profile from the list or create a new one", descStyle);
-                
-                GUILayout.FlexibleSpace();
+                GUILayout.Space(20);
+                GUILayout.Label("No profile selected", sectionHeaderStyle);
+                GUILayout.Space(10);
+                GUILayout.Label("Select a profile from the list or create a new one.", EditorStyles.wordWrappedLabel);
             }
             else
             {
-                GUILayout.Space(16); // Top padding
-                GUILayout.BeginHorizontal();
-                GUILayout.Space(20); // Left padding
-                
-                GUILayout.BeginVertical();
-                
-                // Profile title
-                var titleStyle = new GUIStyle(EditorStyles.boldLabel);
-                titleStyle.fontSize = 16;
-                titleStyle.normal.textColor = Color.white;
-                titleStyle.margin = new RectOffset(0, 0, 0, 16);
-                GUILayout.Label(selectedProfile.name, titleStyle);
+                GUILayout.Label($"Selected: {selectedProfile.name}", sectionHeaderStyle);
+                GUILayout.Space(10);
                 
                 DrawProfileSummary(selectedProfile);
-                
-                GUILayout.Space(16); // Bottom padding
-                GUILayout.EndVertical();
-                
-                GUILayout.Space(20); // Right padding
-                GUILayout.EndHorizontal();
             }
             
             GUILayout.EndVertical();
+            GUILayout.Space(20);
         }
         
         private void DrawProfileSummary(ExportProfile profile)
@@ -463,19 +464,54 @@ namespace YUCP.DevTools.Editor.PackageExporter
             GUILayout.Space(5);
             
             // Editable fields
+            // Editable fields - only edit if this is the currently selected profile
+            if (profile != currentlyEditingProfile && currentlyEditingProfile != null)
+            {
+                // Prevent editing of non-selected profile
+                GUI.enabled = false;
+            }
+            
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField(new GUIContent("Package Name", "Unique identifier for your package (e.g., com.yucp.mypackage)"), GUILayout.Width(120));
-            profile.packageName = EditorGUILayout.TextField(profile.packageName);
+            EditorGUILayout.LabelField(new GUIContent("Package Name", "Unique identifier for your package (e.g., com.yucp.mypackage). This also sets the profile name."), GUILayout.Width(120));
+            EditorGUI.BeginChangeCheck();
+            string newPackageName = EditorGUILayout.TextField(profile.packageName);
+            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
+            {
+                Undo.RecordObject(profile, "Change Package Name");
+                profile.packageName = newPackageName;
+                // Sync profile name with package name
+                profile.profileName = profile.packageName;
+                EditorUtility.SetDirty(profile);
+                
+                // Schedule delayed rename
+                lastPackageNameChangeTime = EditorApplication.timeSinceStartup;
+                pendingRenameProfile = profile;
+                pendingRenamePackageName = newPackageName;
+            }
             EditorGUILayout.EndHorizontal();
+            
+            GUI.enabled = true;
             
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField(new GUIContent("Version", "Package version following semantic versioning (e.g., 1.0.0)"), GUILayout.Width(120));
+            EditorGUI.BeginChangeCheck();
             profile.version = EditorGUILayout.TextField(profile.version);
+            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
+            {
+                Undo.RecordObject(profile, "Change Version");
+                EditorUtility.SetDirty(profile);
+            }
             EditorGUILayout.EndHorizontal();
             
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField(new GUIContent("Author", "Your name or organization"), GUILayout.Width(120));
+            EditorGUI.BeginChangeCheck();
             profile.author = EditorGUILayout.TextField(profile.author);
+            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
+            {
+                Undo.RecordObject(profile, "Change Author");
+                EditorUtility.SetDirty(profile);
+            }
             EditorGUILayout.EndHorizontal();
             
             EditorGUILayout.BeginHorizontal();
@@ -521,11 +557,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             EditorGUILayout.Space(5);
             EditorGUILayout.LabelField(new GUIContent("Description", "Brief description of what your package does"));
+            EditorGUI.BeginChangeCheck();
             profile.description = EditorGUILayout.TextArea(profile.description, GUILayout.Height(60));
-            
-            // Mark dirty when any field changes
-            if (GUI.changed)
+            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
             {
+                Undo.RecordObject(profile, "Change Description");
                 EditorUtility.SetDirty(profile);
             }
             
@@ -587,14 +623,32 @@ namespace YUCP.DevTools.Editor.PackageExporter
             GUILayout.Label("Export Options", summaryStyle, GUILayout.Height(20));
             GUILayout.Space(5);
             
+            EditorGUI.BeginChangeCheck();
             profile.includeDependencies = EditorGUILayout.Toggle(new GUIContent("Include Dependencies", "Include all dependency files directly in the exported package"), profile.includeDependencies);
             profile.recurseFolders = EditorGUILayout.Toggle(new GUIContent("Recurse Folders", "Search subfolders when collecting assets to export"), profile.recurseFolders);
+            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
+            {
+                Undo.RecordObject(profile, "Change Export Options");
+                EditorUtility.SetDirty(profile);
+            }
+            EditorGUI.BeginChangeCheck();
             profile.generatePackageJson = EditorGUILayout.Toggle(new GUIContent("Generate package.json", "Create a package.json file with dependency information for VPM compatibility"), profile.generatePackageJson);
             profile.autoIncrementVersion = EditorGUILayout.Toggle(new GUIContent("Auto-Increment Version", "Automatically increment the version number on each export"), profile.autoIncrementVersion);
+            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
+            {
+                Undo.RecordObject(profile, "Change Export Options");
+                EditorUtility.SetDirty(profile);
+            }
             
             EditorGUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
             EditorGUILayout.LabelField(new GUIContent("Export Path", "Folder where the exported .unitypackage file will be saved"), GUILayout.Width(120));
+            EditorGUI.BeginChangeCheck();
             profile.exportPath = EditorGUILayout.TextField(profile.exportPath, GUILayout.ExpandWidth(true));
+            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
+            {
+                Undo.RecordObject(profile, "Change Export Path");
+                EditorUtility.SetDirty(profile);
+            }
             if (GUILayout.Button(new GUIContent("Browse", "Select a folder to save the exported package"), GUILayout.Width(60)))
             {
                 string selectedPath = EditorUtility.OpenFolderPanel("Select Export Folder", "", "");
@@ -952,6 +1006,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Create new profile
             var profile = ScriptableObject.CreateInstance<ExportProfile>();
             profile.packageName = "NewPackage";
+            profile.profileName = profile.packageName; // Sync profile name with package name
             profile.version = "1.0.0";
             
             // Generate unique asset path
