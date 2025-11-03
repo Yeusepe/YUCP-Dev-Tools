@@ -24,16 +24,29 @@ namespace YUCP.DirectVpmInstaller
             // Note: Duplicate import prevention is handled by YUCPImportMonitor (global AssetPostprocessor)
             // in the com.yucp.components package, which runs BEFORE this installer
             
+            // Clear stale lock if present (crash recovery)
+            try { if (InstallerTxn.HasMarker("lock") && InstallerTxn.IsMarkerStale("lock", TimeSpan.FromMinutes(10))) InstallerTxn.ClearMarker("lock"); } catch { }
+
             // Find any YUCP temp install JSON files
             string[] tempJsonFiles = Directory.GetFiles(Application.dataPath, "YUCP_TempInstall_*.json", SearchOption.TopDirectoryOnly);
             
             if (tempJsonFiles.Length == 0)
+            {
+                // If a previous install completed, ensure cleanup convergence
+                if (InstallerTxn.HasMarker("complete"))
+                {
+                    CleanupInstallerScript();
+                }
                 return;
+            }
             
             string packageJsonPath = tempJsonFiles[0]; // Use the first one found
             
             try
             {
+                // Signal import coordination
+                InstallerTxn.SetMarker("pending");
+                InstallerTxn.SetMarker("lock");
                 var packageInfo = JObject.Parse(File.ReadAllText(packageJsonPath));
                 string bundledPackageName = packageInfo["name"]?.Value<string>();
                 string bundledPackageVersion = packageInfo["version"]?.Value<string>();
@@ -81,6 +94,8 @@ namespace YUCP.DirectVpmInstaller
                                                     throw new Exception("Post-install manifest verification failed");
                                             }
                                         }
+                                        // Mark install complete and cleanup
+                                        InstallerTxn.SetMarker("complete");
                                         CleanupTemporaryFiles(packageJsonPath);
                                         return;
                                     }
@@ -103,6 +118,7 @@ namespace YUCP.DirectVpmInstaller
                 
                 if (vpmDependencies == null || vpmDependencies.Count == 0)
                 {
+                    InstallerTxn.SetMarker("complete");
                     CleanupTemporaryFiles(packageJsonPath);
                     return;
                 }
@@ -110,6 +126,7 @@ namespace YUCP.DirectVpmInstaller
                 if (vpmRepositories == null || vpmRepositories.Count == 0)
                 {
                     Debug.LogError("[DirectVpmInstaller] No VPM repositories found in package.json");
+                    // Leave markers for guardian cleanup
                     CleanupTemporaryFiles(packageJsonPath);
                     return;
                 }
@@ -202,6 +219,7 @@ namespace YUCP.DirectVpmInstaller
                     }
                     
                     // Clean up temporary files
+                    InstallerTxn.SetMarker("complete");
                     CleanupTemporaryFiles(packageJsonPath);
                 }
                     else
@@ -228,6 +246,13 @@ namespace YUCP.DirectVpmInstaller
             catch (Exception ex)
             {
                 Debug.LogError($"[DirectVpmInstaller] Error: {ex.Message}");
+                try { InstallerTxn.SetMarker("error"); } catch { }
+            }
+            finally
+            {
+                // Always clear coordination markers
+                try { InstallerTxn.ClearMarker("lock"); } catch { }
+                try { InstallerTxn.ClearMarker("pending"); } catch { }
             }
         }
         
@@ -433,6 +458,18 @@ namespace YUCP.DirectVpmInstaller
                             File.Delete(metaPath);
                         
                         Debug.Log($"[DirectVpmInstaller] Deleted installer asmdef: {asmdefPath}");
+                    }
+                    
+                    // Also delete the InstallerTransactionManager script
+                    string[] txnScripts = Directory.GetFiles(editorPath, "YUCP_InstallerTxn_*.cs", SearchOption.TopDirectoryOnly);
+                    foreach (string txnPath in txnScripts)
+                    {
+                        File.Delete(txnPath);
+                        string metaPath = txnPath + ".meta";
+                        if (File.Exists(metaPath))
+                            File.Delete(metaPath);
+                        
+                        Debug.Log($"[DirectVpmInstaller] Deleted InstallerTransactionManager script: {txnPath}");
                     }
                     
                     // Also delete the FullDomainReload helper script
@@ -710,11 +747,12 @@ namespace YUCP.DirectVpmInstaller
                 
                 // Find all YUCP installer files (NOT guardian - guardian stays permanently)
                 string[] installerFiles = Directory.GetFiles(editorPath, "YUCP_Installer_*.cs", SearchOption.TopDirectoryOnly);
+                string[] installerTxnFiles = Directory.GetFiles(editorPath, "YUCP_InstallerTxn_*.cs", SearchOption.TopDirectoryOnly);
                 string[] installerAsmDefs = Directory.GetFiles(editorPath, "YUCP_Installer_*.asmdef", SearchOption.TopDirectoryOnly);
                 
                 int deletedCount = 0;
                 
-                foreach (string file in installerFiles.Concat(installerAsmDefs))
+                foreach (string file in installerFiles.Concat(installerTxnFiles).Concat(installerAsmDefs))
                 {
                     try
                     {

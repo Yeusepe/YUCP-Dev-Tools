@@ -16,6 +16,7 @@ namespace YUCP.DirectVpmInstaller
     {
         private const string TxnDirName = "YUCP";
         private const string TxnPrefix = "InstallerTxn_";
+        private const string MarkerPrefix = "install."; // pending | lock | complete | error
 
         private class TxnState
         {
@@ -39,6 +40,7 @@ namespace YUCP.DirectVpmInstaller
         private static string LogPath => Path.Combine(Application.dataPath, "..", "Library", TxnDirName, "installer.log");
         private static string QuarantineRoot => Path.Combine(Application.dataPath, "..", "Packages", ".yucp_quarantine");
         private static string ManifestPath => Path.Combine(TxnFolder, "Manifest_" + _current.id + ".json");
+        private static string MarkerPath(string name) => Path.Combine(TxnFolder, MarkerPrefix + name);
 
         private class ManifestEntry
         {
@@ -338,6 +340,51 @@ namespace YUCP.DirectVpmInstaller
                 Log("VerifyManifest error: " + ex.Message);
                 return false;
             }
+        }
+
+        // ===== Coordination Markers (shared with Mini Guardian) =====
+        public static void SetMarker(string name)
+        {
+            try
+            {
+                Directory.CreateDirectory(TxnFolder);
+                string path = MarkerPath(name);
+                File.WriteAllText(path, DateTime.UtcNow.ToString("o"));
+            }
+            catch (Exception ex)
+            {
+                Log("SetMarker error: " + ex.Message);
+            }
+        }
+
+        public static void ClearMarker(string name)
+        {
+            try
+            {
+                string path = MarkerPath(name);
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch (Exception ex)
+            {
+                Log("ClearMarker error: " + ex.Message);
+            }
+        }
+
+        public static bool HasMarker(string name)
+        {
+            try { return File.Exists(MarkerPath(name)); } catch { return false; }
+        }
+
+        public static bool IsMarkerStale(string name, TimeSpan maxAge)
+        {
+            try
+            {
+                string path = MarkerPath(name);
+                if (!File.Exists(path)) return false;
+                var when = File.GetLastWriteTimeUtc(path);
+                return (DateTime.UtcNow - when) > maxAge;
+            }
+            catch { return false; }
         }
 
         private static void Log(string msg)

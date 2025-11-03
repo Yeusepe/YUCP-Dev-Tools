@@ -744,47 +744,71 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     File.WriteAllText(Path.Combine(packageJsonFolder, "asset.meta"), packageJsonMeta);
                 }
                 
-                // 2a. Inject YUCPPackageGuardian.cs (permanent protection layer)
+                // 2a. Inject Mini Package Guardian (permanent protection layer)
                 // Only inject if com.yucp.components is NOT already a dependency (to avoid duplication)
                 bool hasYucpComponentsDependency = profile.dependencies != null && 
                     profile.dependencies.Any(d => d.enabled && d.packageName == "com.yucp.components");
                 
                 if (!hasYucpComponentsDependency)
                 {
+                    // Find the Mini Guardian
                     string guardianScriptPath = null;
-                    string[] foundGuardians = AssetDatabase.FindAssets("YUCPPackageGuardian t:Script");
+                    string[] foundGuardians = AssetDatabase.FindAssets("PackageGuardianMini t:Script");
                     
                     if (foundGuardians.Length > 0)
                     {
                         guardianScriptPath = AssetDatabase.GUIDToAssetPath(foundGuardians[0]);
-                        Debug.Log($"[PackageBuilder] Found YUCPPackageGuardian at: {guardianScriptPath}");
+                        Debug.Log($"[PackageBuilder] Found Mini Guardian at: {guardianScriptPath}");
                     }
                     
                     if (!string.IsNullOrEmpty(guardianScriptPath) && File.Exists(guardianScriptPath))
                     {
+                        // Get the guardian directory to find dependencies
+                        string guardianDir = Path.GetDirectoryName(guardianScriptPath);
+                        string packageGuardianDir = Directory.GetParent(guardianDir).FullName; // Go up to PackageGuardian folder
+                        
+                        // 1. Inject GuardianTransaction.cs (core dependency)
+                        string transactionPath = Path.Combine(packageGuardianDir, "Core", "Transactions", "GuardianTransaction.cs");
+                        if (File.Exists(transactionPath))
+                        {
+                            string transactionGuid = Guid.NewGuid().ToString("N");
+                            string transactionFolder = Path.Combine(tempExtractDir, transactionGuid);
+                            Directory.CreateDirectory(transactionFolder);
+                            
+                            string transactionContent = File.ReadAllText(transactionPath);
+                            File.WriteAllText(Path.Combine(transactionFolder, "asset"), transactionContent);
+                            // Place in Editor folder so it compiles with Editor scripts
+                            File.WriteAllText(Path.Combine(transactionFolder, "pathname"), "Packages/yucp.packageguardian/Editor/Core/Transactions/GuardianTransaction.cs");
+                            
+                            string transactionMeta = "fileFormatVersion: 2\nguid: " + transactionGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+                            File.WriteAllText(Path.Combine(transactionFolder, "asset.meta"), transactionMeta);
+                            
+                            Debug.Log("[PackageBuilder] Added GuardianTransaction.cs (core dependency)");
+                        }
+                        
+                        // 2. Inject PackageGuardianMini.cs
                         string guardianGuid = Guid.NewGuid().ToString("N");
                         string guardianFolder = Path.Combine(tempExtractDir, guardianGuid);
                         Directory.CreateDirectory(guardianFolder);
                         
                         string guardianContent = File.ReadAllText(guardianScriptPath);
                         File.WriteAllText(Path.Combine(guardianFolder, "asset"), guardianContent);
-                        // Use Packages path to make it part of the imported package, not Assets/Editor
-                        File.WriteAllText(Path.Combine(guardianFolder, "pathname"), $"Packages/yucp.packageguardian/Editor/YUCPPackageGuardian.cs");
+                        File.WriteAllText(Path.Combine(guardianFolder, "pathname"), "Packages/yucp.packageguardian/Editor/PackageGuardianMini.cs");
                         
                         string guardianMeta = "fileFormatVersion: 2\nguid: " + guardianGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                         File.WriteAllText(Path.Combine(guardianFolder, "asset.meta"), guardianMeta);
                         
-                        // Also create a minimal package.json for the guardian
+                        // 3. Create package.json for the guardian package
                         string guardianPackageJsonGuid = Guid.NewGuid().ToString("N");
                         string guardianPackageJsonFolder = Path.Combine(tempExtractDir, guardianPackageJsonGuid);
                         Directory.CreateDirectory(guardianPackageJsonFolder);
                         
                         string guardianPackageJson = @"{
   ""name"": ""yucp.packageguardian"",
-  ""displayName"": ""YUCP Package Guardian"",
-  ""version"": ""1.0.0"",
-  ""description"": ""Automatic import protection for YUCP packages"",
-  ""unity"": ""2022.3""
+  ""displayName"": ""YUCP Package Guardian (Mini)"",
+  ""version"": ""2.0.0"",
+  ""description"": ""Lightweight import protection for YUCP packages. Detects duplicates, reverts failed imports, and ensures error-free installation."",
+  ""unity"": ""2019.4""
 }";
                         File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "asset"), guardianPackageJson);
                         File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "pathname"), "Packages/yucp.packageguardian/package.json");
@@ -792,16 +816,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         string guardianPackageJsonMeta = "fileFormatVersion: 2\nguid: " + guardianPackageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                         File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "asset.meta"), guardianPackageJsonMeta);
                         
-                        Debug.Log("[PackageBuilder] Added YUCPPackageGuardian package (permanent import protection)");
+                        Debug.Log("[PackageBuilder] Added Mini Package Guardian (automatic import protection with transaction rollback)");
                     }
                     else
                     {
-                        Debug.LogWarning("[PackageBuilder] Could not find YUCPPackageGuardian.cs - package will have no import protection!");
+                        Debug.LogWarning("[PackageBuilder] Could not find PackageGuardianMini.cs - package will have no import protection!");
+                        Debug.LogWarning("[PackageBuilder] Install com.yucp.components to enable Mini Guardian bundling");
                     }
                 }
                 else
                 {
-                    Debug.Log("[PackageBuilder] Skipping YUCPPackageGuardian injection (com.yucp.components already provides it)");
+                    Debug.Log("[PackageBuilder] Skipping Mini Guardian injection (com.yucp.components already provides full Package Guardian)");
                 }
                 
                 // 2b. Inject DirectVpmInstaller.cs
@@ -862,6 +887,28 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                     
                     Debug.Log("[PackageBuilder] Added DirectVpmInstaller.cs to package");
+                    
+                    // Also inject InstallerTransactionManager.cs (required dependency for InstallerTxn)
+                    string txnManagerPath = Path.Combine(installerDir, "InstallerTransactionManager.cs");
+                    if (File.Exists(txnManagerPath))
+                    {
+                        string txnManagerGuid = Guid.NewGuid().ToString("N");
+                        string txnManagerFolder = Path.Combine(tempExtractDir, txnManagerGuid);
+                        Directory.CreateDirectory(txnManagerFolder);
+                        
+                        string txnManagerContent = File.ReadAllText(txnManagerPath);
+                        File.WriteAllText(Path.Combine(txnManagerFolder, "asset"), txnManagerContent);
+                        File.WriteAllText(Path.Combine(txnManagerFolder, "pathname"), $"Assets/Editor/YUCP_InstallerTxn_{installerGuid}.cs");
+                        
+                        string txnManagerMeta = "fileFormatVersion: 2\nguid: " + txnManagerGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+                        File.WriteAllText(Path.Combine(txnManagerFolder, "asset.meta"), txnManagerMeta);
+                        
+                        Debug.Log("[PackageBuilder] Added InstallerTransactionManager.cs to package");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[PackageBuilder] Could not find InstallerTransactionManager.cs template - installer will fail to compile!");
+                    }
                 }
                 else
                 {
