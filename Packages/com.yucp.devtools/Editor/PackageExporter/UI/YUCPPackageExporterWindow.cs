@@ -21,7 +21,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var window = GetWindow<YUCPPackageExporterWindow>();
             var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.devtools/Resources/DevTools.png");
             window.titleContent = new GUIContent("YUCP Package Exporter", icon);
-            window.minSize = new Vector2(900, 600);
+            window.minSize = new Vector2(400, 500); // Reduced minimum size for responsive design
             window.Show();
         }
         
@@ -29,6 +29,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private ScrollView _profileListScrollView;
         private ScrollView _rightPaneScrollView;
         private VisualElement _profileListContainer;
+        private VisualElement _profileListContainerOverlay;
         private VisualElement _profileDetailsContainer;
         private VisualElement _emptyState;
         private VisualElement _bottomBar;
@@ -67,6 +68,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private string dependenciesSearchFilter = "";
         
         private Texture2D logoTexture;
+        
+        // Responsive design elements
+        private Button _mobileToggleButton;
+        private VisualElement _leftPaneOverlay;
+        private VisualElement _overlayBackdrop;
+        private VisualElement _contentContainer;
+        private VisualElement _leftPane;
+        private bool _isOverlayOpen = false;
 
         private void OnEnable()
         {
@@ -100,11 +109,26 @@ namespace YUCP.DevTools.Editor.PackageExporter
             mainContainer.Add(CreateTopBar());
             
             // Content Container (Left + Right Panes)
-            var contentContainer = new VisualElement();
-            contentContainer.AddToClassList("pe-content-container");
-            contentContainer.Add(CreateLeftPane());
-            contentContainer.Add(CreateRightPane());
-            mainContainer.Add(contentContainer);
+            _contentContainer = new VisualElement();
+            _contentContainer.AddToClassList("pe-content-container");
+            
+            // Create overlay backdrop (for mobile menu)
+            _overlayBackdrop = new VisualElement();
+            _overlayBackdrop.AddToClassList("pe-overlay-backdrop");
+            _overlayBackdrop.RegisterCallback<ClickEvent>(evt => CloseOverlay());
+            _contentContainer.Add(_overlayBackdrop);
+            
+            // Create left pane overlay (for mobile)
+            _leftPaneOverlay = CreateLeftPane(isOverlay: true);
+            _leftPaneOverlay.AddToClassList("pe-left-pane-overlay");
+            _contentContainer.Add(_leftPaneOverlay);
+            
+            // Create normal left pane
+            _leftPane = CreateLeftPane(isOverlay: false);
+            _contentContainer.Add(_leftPane);
+            
+            _contentContainer.Add(CreateRightPane());
+            mainContainer.Add(_contentContainer);
             
             // Bottom Bar
             _bottomBar = CreateBottomBar();
@@ -118,12 +142,27 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Initial UI update
             UpdateProfileList();
             UpdateBottomBar();
+            
+            // Register for geometry changes to handle responsive layout
+            root.RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
+            
+            // Schedule initial responsive check after layout is ready
+            root.schedule.Execute(() => 
+            {
+                UpdateResponsiveLayout(rootVisualElement.resolvedStyle.width);
+            }).StartingIn(100);
         }
 
         private VisualElement CreateTopBar()
         {
             var topBar = new VisualElement();
             topBar.AddToClassList("pe-top-bar");
+            
+            // Mobile toggle button (hamburger menu)
+            _mobileToggleButton = new Button(ToggleOverlay);
+            _mobileToggleButton.text = "☰";
+            _mobileToggleButton.AddToClassList("pe-mobile-toggle");
+            topBar.Add(_mobileToggleButton);
             
             // Logo
             if (logoTexture != null)
@@ -153,7 +192,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return topBar;
         }
 
-        private VisualElement CreateLeftPane()
+        private VisualElement CreateLeftPane(bool isOverlay)
         {
             var leftPane = new VisualElement();
             leftPane.AddToClassList("pe-left-pane");
@@ -167,27 +206,39 @@ namespace YUCP.DevTools.Editor.PackageExporter
             container.Add(header);
             
             // Profile list scrollview
-            _profileListScrollView = new ScrollView();
-            _profileListScrollView.AddToClassList("pe-profile-list-scroll");
-            _profileListContainer = new VisualElement();
-            _profileListScrollView.Add(_profileListContainer);
-            container.Add(_profileListScrollView);
+            var scrollView = new ScrollView();
+            scrollView.AddToClassList("pe-profile-list-scroll");
+            
+            // Create and store the appropriate container
+            var profileListContainer = new VisualElement();
+            if (isOverlay)
+            {
+                _profileListContainerOverlay = profileListContainer;
+            }
+            else
+            {
+                _profileListScrollView = scrollView;
+                _profileListContainer = profileListContainer;
+            }
+            
+            scrollView.Add(profileListContainer);
+            container.Add(scrollView);
             
             // Profile buttons
             var buttonContainer = new VisualElement();
             buttonContainer.AddToClassList("pe-profile-buttons");
             
-            var newButton = new Button(CreateNewProfile) { text = "+ New" };
+            var newButton = new Button(() => { CreateNewProfile(); CloseOverlay(); }) { text = "+ New" };
             newButton.AddToClassList("pe-button");
             newButton.AddToClassList("pe-button-action");
             buttonContainer.Add(newButton);
             
-            var cloneButton = new Button(() => CloneProfile(selectedProfile)) { text = "Clone" };
+            var cloneButton = new Button(() => { CloneProfile(selectedProfile); CloseOverlay(); }) { text = "Clone" };
             cloneButton.AddToClassList("pe-button");
             cloneButton.AddToClassList("pe-button-action");
             buttonContainer.Add(cloneButton);
             
-            var deleteButton = new Button(() => DeleteProfile(selectedProfile)) { text = "Delete" };
+            var deleteButton = new Button(() => { DeleteProfile(selectedProfile); CloseOverlay(); }) { text = "Delete" };
             deleteButton.AddToClassList("pe-button");
             deleteButton.AddToClassList("pe-button-danger");
             buttonContainer.Add(deleteButton);
@@ -195,7 +246,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             container.Add(buttonContainer);
             
             // Refresh button
-            var refreshButton = new Button(RefreshProfiles) { text = "Refresh Profiles" };
+            var refreshButton = new Button(() => { RefreshProfiles(); CloseOverlay(); }) { text = "Refresh Profiles" };
             refreshButton.AddToClassList("pe-button");
             refreshButton.AddToClassList("pe-button-action");
             container.Add(refreshButton);
@@ -306,7 +357,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void UpdateProfileList()
         {
-            _profileListContainer.Clear();
+            // Update both containers (normal and overlay)
+            UpdateProfileListContainer(_profileListContainer);
+            UpdateProfileListContainer(_profileListContainerOverlay);
+        }
+        
+        private void UpdateProfileListContainer(VisualElement container)
+        {
+            if (container == null) return;
+            
+            container.Clear();
             
             if (allProfiles.Count == 0)
             {
@@ -315,12 +375,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
                 emptyLabel.style.paddingTop = 20;
                 emptyLabel.style.paddingBottom = 10;
-                _profileListContainer.Add(emptyLabel);
+                container.Add(emptyLabel);
                 
                 var hintLabel = new Label("Create one using the button below");
                 hintLabel.AddToClassList("pe-label-small");
                 hintLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
-                _profileListContainer.Add(hintLabel);
+                container.Add(hintLabel);
                 return;
             }
             
@@ -330,7 +390,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (profile == null) continue;
                 
                 var profileItem = CreateProfileItem(profile, i);
-                _profileListContainer.Add(profileItem);
+                container.Add(profileItem);
             }
         }
 
@@ -425,6 +485,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
             UpdateProfileList();
             UpdateProfileDetails();
             UpdateBottomBar();
+            
+            // Close overlay when profile is selected (for mobile)
+            CloseOverlay();
         }
 
         private void UpdateProfileDetails()
@@ -3296,6 +3359,145 @@ namespace YUCP.DevTools.Editor.PackageExporter
             editorContainer.Add(buttonRow);
             
             return editorContainer;
+        }
+        
+        // ============================================================================
+        // RESPONSIVE DESIGN METHODS
+        // ============================================================================
+        
+        private void OnGeometryChanged(GeometryChangedEvent evt)
+        {
+            UpdateResponsiveLayout(evt.newRect.width);
+        }
+        
+        private void UpdateResponsiveLayout(float width)
+        {
+            var root = rootVisualElement;
+            
+            // Remove all responsive classes first
+            root.RemoveFromClassList("pe-window-narrow");
+            root.RemoveFromClassList("pe-window-medium");
+            root.RemoveFromClassList("pe-window-wide");
+            
+            // Apply appropriate class based on width
+            if (width < 700f)
+            {
+                root.AddToClassList("pe-window-narrow");
+            }
+            else if (width < 900f)
+            {
+                root.AddToClassList("pe-window-medium");
+            }
+            else
+            {
+                root.AddToClassList("pe-window-wide");
+            }
+            
+            // Close overlay if window is wide enough
+            if (width >= 700f && _isOverlayOpen)
+            {
+                CloseOverlay();
+            }
+        }
+        
+        private void ToggleOverlay()
+        {
+            if (_isOverlayOpen)
+            {
+                CloseOverlay();
+            }
+            else
+            {
+                OpenOverlay();
+            }
+        }
+        
+        private void OpenOverlay()
+        {
+            _isOverlayOpen = true;
+            
+            // Show backdrop first
+            if (_overlayBackdrop != null)
+            {
+                _overlayBackdrop.style.display = DisplayStyle.Flex;
+                _overlayBackdrop.style.visibility = Visibility.Visible;
+                _overlayBackdrop.style.position = Position.Absolute;
+                _overlayBackdrop.style.left = 0;
+                _overlayBackdrop.style.right = 0;
+                _overlayBackdrop.style.top = 0;
+                _overlayBackdrop.style.bottom = 0;
+                _overlayBackdrop.style.opacity = 0;
+                _overlayBackdrop.BringToFront();
+                
+                // Fade in backdrop
+                _overlayBackdrop.schedule.Execute(() => 
+                {
+                    if (_overlayBackdrop != null)
+                    {
+                        _overlayBackdrop.style.opacity = 1;
+                    }
+                }).StartingIn(10);
+            }
+            
+            // Show overlay
+            if (_leftPaneOverlay != null)
+            {
+                // Force dimensions and positioning with inline styles
+                _leftPaneOverlay.style.display = DisplayStyle.Flex;
+                _leftPaneOverlay.style.visibility = Visibility.Visible;
+                _leftPaneOverlay.style.position = Position.Absolute;
+                _leftPaneOverlay.style.width = 270;
+                _leftPaneOverlay.style.top = 0;
+                _leftPaneOverlay.style.bottom = 0;
+                _leftPaneOverlay.style.left = -270;
+                _leftPaneOverlay.style.opacity = 0;
+                
+                // Ensure it's in front
+                _leftPaneOverlay.BringToFront();
+                
+                // Animate to visible position
+                _leftPaneOverlay.schedule.Execute(() => 
+                {
+                    if (_leftPaneOverlay != null)
+                    {
+                        _leftPaneOverlay.style.left = 0;
+                        _leftPaneOverlay.style.opacity = 1;
+                    }
+                }).StartingIn(10);
+            }
+        }
+        
+        private void CloseOverlay()
+        {
+            _isOverlayOpen = false;
+            
+            // Animate overlay out
+            if (_leftPaneOverlay != null)
+            {
+                _leftPaneOverlay.style.left = -270;
+                _leftPaneOverlay.style.opacity = 0;
+            }
+            
+            // Fade out backdrop
+            if (_overlayBackdrop != null)
+            {
+                _overlayBackdrop.style.opacity = 0;
+            }
+            
+            // Hide after animation completes (300ms)
+            rootVisualElement.schedule.Execute(() => 
+            {
+                if (_leftPaneOverlay != null && !_isOverlayOpen)
+                {
+                    _leftPaneOverlay.style.display = DisplayStyle.None;
+                    _leftPaneOverlay.style.visibility = Visibility.Hidden;
+                }
+                if (_overlayBackdrop != null && !_isOverlayOpen)
+                {
+                    _overlayBackdrop.style.display = DisplayStyle.None;
+                    _overlayBackdrop.style.visibility = Visibility.Hidden;
+                }
+            }).StartingIn(300);
         }
     }
 }

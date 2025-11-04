@@ -36,7 +36,6 @@
 .pe-window {
     flex-grow: 1;
     background-color: #090909;
-    min-width: 600px;
 }
 
 .pe-main-container {
@@ -84,6 +83,7 @@
     flex-direction: row;
     min-width: 0;
     overflow: hidden;
+    position: relative;
 }
 
 .pe-left-pane {
@@ -95,6 +95,9 @@
     border-right-color: #2a2a2a;
     padding: 20px;
     overflow: hidden;
+    transition-property: width, opacity;
+    transition-duration: 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-out;
 }
 
 .pe-right-pane {
@@ -103,6 +106,9 @@
     min-width: 0;
     background-color: #090909;
     overflow: hidden;
+    transition-property: opacity;
+    transition-duration: 0.3s;
+    transition-timing-function: ease-out;
 }
 
 .pe-right-pane .pe-panel {
@@ -329,6 +335,9 @@
     align-items: center;
     margin-bottom: 8px;
     overflow: hidden;
+    transition-property: flex-direction;
+    transition-duration: 0.3s;
+    transition-timing-function: ease-out;
 }
 
 .pe-form-label {
@@ -534,6 +543,9 @@
     flex-direction: row;
     justify-content: flex-end;
     align-items: center;
+    transition-property: flex-direction;
+    transition-duration: 0.3s;
+    transition-timing-function: ease-out;
 }
 
 .pe-export-info {
@@ -767,4 +779,184 @@
     margin-right: 16px;
     flex-shrink: 0;
 }
+
+/* ============================================================================
+   RESPONSIVE DESIGN - Mobile Menu Toggle
+   ============================================================================ */
+.pe-mobile-toggle {
+    height: 40px;
+    width: 40px;
+    min-width: 40px;
+    background-color: #3a3a3a;
+    border-width: 0;
+    border-radius: 0;
+    margin-right: 12px;
+    padding: 0;
+    -unity-text-align: middle-center;
+    font-size: 16px;
+    color: #ffffff;
+    display: none;
+    opacity: 0;
+    scale: 0.8 0.8;
+    transition-property: background-color, opacity, scale;
+    transition-duration: 0.1s, 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+}
+
+.pe-mobile-toggle:hover {
+    background-color: #36BFB1;
+    scale: 1 1;
+}
+
+.pe-mobile-toggle:active {
+    background-color: #2da89c;
+    scale: 0.95 0.95;
+}
+
+.pe-profile-dropdown-container {
+    display: none;
+    flex-direction: column;
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    margin: 0 20px 12px 20px;
+    padding: 12px;
+}
+
+.pe-profile-dropdown-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.pe-profile-dropdown-label {
+    font-size: 11px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    letter-spacing: 0.5px;
+}
+
+.pe-left-pane-overlay {
+    background-color: #090909;
+    border-right-width: 1px;
+    border-right-color: #2a2a2a;
+    padding: 20px;
+    transition-property: opacity, left;
+    transition-duration: 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-out;
+}
+
+.pe-overlay-backdrop {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    transition-property: opacity;
+    transition-duration: 0.3s;
+    transition-timing-function: ease-out;
+}
+
+/* ============================================================================
+   RESPONSIVE BREAKPOINTS
+   ============================================================================ */
+
+/* Narrow layout (< 700px) - Collapse left pane to dropdown/overlay */
+.pe-window-narrow .pe-left-pane {
+    display: none;
+    opacity: 0;
+}
+
+.pe-window-narrow .pe-mobile-toggle {
+    display: flex;
+    opacity: 1;
+    scale: 1 1;
+}
+
+.pe-window-narrow .pe-right-pane {
+    width: 100%;
+}
+
+.pe-window-narrow .pe-content-container {
+    position: relative;
+}
+
+.pe-window-narrow .pe-form-row {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.pe-window-narrow .pe-form-label {
+    width: 100%;
+    margin-bottom: 4px;
+}
+
+.pe-window-narrow .pe-export-buttons {
+    flex-direction: column;
+}
+
+.pe-window-narrow .pe-export-buttons Button {
+    width: 100%;
+    margin: 4px 0;
+}
+
+.pe-window-narrow .pe-export-info {
+    margin-bottom: 8px;
+}
+
+.pe-window-narrow .pe-profile-buttons {
+    flex-direction: column;
+}
+
+.pe-window-narrow .pe-profile-buttons Button {
+    width: 100%;
+}
+
+.pe-window-narrow .pe-top-bar {
+    flex-wrap: wrap;
+}
+
+.pe-window-narrow .pe-logo {
+    margin-bottom: 8px;
+}
+
+.pe-window-narrow .pe-stats-container {
+    flex-direction: column;
+}
+
+.pe-window-narrow .pe-stat-item {
+    margin-bottom: 8px;
+}
+
+.pe-window-narrow .pe-inspector-filters {
+    flex-wrap: wrap;
+}
+
+.pe-window-narrow .pe-filter-row {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.pe-window-narrow .pe-filter-row .pe-toggle {
+    margin-bottom: 8px;
+}
+
+/* Medium layout (700px - 900px) - Reduce left pane size */
+.pe-window-medium .pe-left-pane {
+    width: 220px;
+    min-width: 180px;
+}
+
+.pe-window-medium .pe-form-row {
+    flex-wrap: wrap;
+}
+
+.pe-window-medium .pe-form-label {
+    width: 100px;
+}
+
+/* Wide layout (> 900px) - Default behavior */
+/* Default styles already handle this case */
 
