@@ -333,7 +333,9 @@ MonoBehaviour:
   stripDebugSymbols: 1
   exportPath: C:/Users/svalp/Downloads
   profileSaveLocation: 
-  autoIncrementVersion: 0
+  autoIncrementVersion: 1
   incrementStrategy: 0
+  bumpDirectivesInFiles: 1
+  customVersionRule: {fileID: 11400000, guid: b101149d6ac848e409252f8335744be2, type: 2}
   lastExportTime: 2025-11-03 20:51:30
   exportCount: 5

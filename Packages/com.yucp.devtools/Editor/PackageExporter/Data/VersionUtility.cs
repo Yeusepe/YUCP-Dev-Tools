@@ -154,26 +154,96 @@ namespace YUCP.DevTools.Editor.PackageExporter
                    DateVersionPattern.IsMatch(versionString.Trim());
         }
         
-        /// <summary>
-        /// Format version string for display
-        /// </summary>
-        public static string FormatVersion(string versionString)
+    /// <summary>
+    /// Format version string for display
+    /// </summary>
+    public static string FormatVersion(string versionString)
+    {
+        if (!TryParseVersion(versionString, out int major, out int minor, out int patch, out int? build, out string prerelease, out string metadata))
         {
-            if (!TryParseVersion(versionString, out int major, out int minor, out int patch, out int? build, out string prerelease, out string metadata))
-            {
-                return versionString;
-            }
-            
-            string result = $"{major}.{minor}.{patch}";
-            if (build.HasValue)
-                result += $".{build.Value}";
-            if (!string.IsNullOrEmpty(prerelease))
-                result += $"-{prerelease}";
-            if (!string.IsNullOrEmpty(metadata))
-                result += $"+{metadata}";
-                
-            return result;
+            return versionString;
         }
+        
+        string result = $"{major}.{minor}.{patch}";
+        if (build.HasValue)
+            result += $".{build.Value}";
+        if (!string.IsNullOrEmpty(prerelease))
+            result += $"-{prerelease}";
+        if (!string.IsNullOrEmpty(metadata))
+            result += $"+{metadata}";
+            
+        return result;
     }
+    
+    /// <summary>
+    /// Bump version using smart version bumper with a specific rule
+    /// </summary>
+    public static string BumpVersionWithRule(string versionString, string ruleName, VersionBumpOptions options = null)
+    {
+        var rule = VersionBumpRules.GetRule(ruleName);
+        if (rule == null)
+        {
+            Debug.LogWarning($"[VersionUtility] Unknown rule: {ruleName}");
+            return versionString;
+        }
+        
+        return rule.Bump(versionString, options ?? new VersionBumpOptions());
+    }
+    
+    /// <summary>
+    /// Convert legacy VersionIncrementStrategy to smart bump options
+    /// </summary>
+    public static VersionBumpOptions ConvertStrategyToOptions(VersionIncrementStrategy strategy)
+    {
+        var options = new VersionBumpOptions();
+        
+        switch (strategy)
+        {
+            case VersionIncrementStrategy.Major:
+                options.Part = "major";
+                break;
+            case VersionIncrementStrategy.Minor:
+                options.Part = "minor";
+                break;
+            case VersionIncrementStrategy.Patch:
+                options.Part = "patch";
+                break;
+            case VersionIncrementStrategy.Build:
+                options.Part = "build";
+                break;
+        }
+        
+        return options;
+    }
+    
+    /// <summary>
+    /// Increment version using smart bump rules (new approach)
+    /// </summary>
+    public static string IncrementVersionSmart(string versionString, VersionIncrementStrategy strategy)
+    {
+        // Try to detect the version format and use the appropriate rule
+        var options = ConvertStrategyToOptions(strategy);
+        
+        // Try semver first
+        var semverRule = VersionBumpRules.GetRule("semver");
+        if (semverRule != null && semverRule.CanMatch(versionString))
+        {
+            return semverRule.Bump(versionString, options);
+        }
+        
+        // Try 4-part build version
+        if (strategy == VersionIncrementStrategy.Build)
+        {
+            var buildRule = VersionBumpRules.GetRule("build");
+            if (buildRule != null && buildRule.CanMatch(versionString))
+            {
+                return buildRule.Bump(versionString, options);
+            }
+        }
+        
+        // Fall back to legacy implementation
+        return IncrementVersion(versionString, strategy);
+    }
+}
 }
 

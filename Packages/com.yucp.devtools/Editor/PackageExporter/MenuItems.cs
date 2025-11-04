@@ -1,6 +1,7 @@
 using UnityEditor;
 using UnityEngine;
 using System.IO;
+using System.Linq;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -19,6 +20,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
         public static void CreateExportProfileHere()
         {
             CreateExportProfileInternal(useCurrentFolder: true);
+        }
+        
+        [MenuItem("Assets/Create/YUCP/Custom Version Rule", priority = 102)]
+        public static void CreateCustomVersionRule()
+        {
+            CreateCustomVersionRuleInternal();
         }
         
         private static void CreateExportProfileInternal(bool useCurrentFolder = false)
@@ -176,6 +183,65 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
             }
+        }
+        
+        [MenuItem("Tools/YUCP/Package Exporter/Smart Version Bump/Scan for @bump Directives")]
+        public static void ScanProjectForVersionDirectives()
+        {
+            var stats = ProjectVersionScanner.GetProjectStats();
+            
+            string message = stats.TotalFilesWithDirectives > 0
+                ? stats.ToString() + "\n\nUse 'Auto-Increment Version' in your export profiles to automatically bump these versions on export."
+                : "No @bump directives found in the project.\n\n" +
+                  "Add directives like:\n" +
+                  "  // @bump semver:patch\n" +
+                  "  // @bump dotted_tail\n" +
+                  "  // @bump wordnum\n\n" +
+                  "to your source files, then enable 'Auto-Increment Version' in your export profile.";
+            
+            EditorUtility.DisplayDialog(
+                "Version Directive Statistics",
+                message,
+                "OK"
+            );
+        }
+        
+        private static void CreateCustomVersionRuleInternal()
+        {
+            string selectedPath = AssetDatabase.GetAssetPath(Selection.activeObject);
+            string directory = "Assets";
+            
+            if (!string.IsNullOrEmpty(selectedPath))
+            {
+                if (Directory.Exists(selectedPath))
+                {
+                    directory = selectedPath;
+                }
+                else
+                {
+                    directory = Path.GetDirectoryName(selectedPath);
+                }
+            }
+            
+            var customRule = ScriptableObject.CreateInstance<CustomVersionRule>();
+            customRule.ruleName = "my_custom_rule";
+            customRule.displayName = "My Custom Rule";
+            customRule.description = "Custom version bumping rule";
+            customRule.regexPattern = @"\b(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)\b";
+            customRule.ruleType = CustomVersionRule.RuleType.Semver;
+            customRule.exampleInput = "1.0.0";
+            customRule.exampleOutput = "1.0.1";
+            
+            string assetPath = AssetDatabase.GenerateUniqueAssetPath(
+                Path.Combine(directory, "CustomVersionRule.asset"));
+            
+            AssetDatabase.CreateAsset(customRule, assetPath);
+            AssetDatabase.SaveAssets();
+            
+            Selection.activeObject = customRule;
+            EditorGUIUtility.PingObject(customRule);
+            
+            Debug.Log($"[YUCP] Created custom version rule: {assetPath}");
         }
     }
 }

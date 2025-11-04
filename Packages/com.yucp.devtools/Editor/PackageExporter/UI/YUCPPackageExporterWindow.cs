@@ -19,7 +19,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
         public static void ShowWindow()
         {
             var window = GetWindow<YUCPPackageExporterWindow>();
-            window.titleContent = new GUIContent("YUCP Package Exporter");
+            var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.devtools/Resources/DevTools.png");
+            window.titleContent = new GUIContent("YUCP Package Exporter", icon);
             window.minSize = new Vector2(900, 600);
             window.Show();
         }
@@ -75,7 +76,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         private void LoadResources()
         {
-            logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.components/Resources/Icons/Logo@2x.png");
+            logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.devtools/Resources/DevTools.png");
         }
         
         private void CreateGUI()
@@ -127,8 +128,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Logo
             if (logoTexture != null)
             {
-                var logo = new Image { image = logoTexture };
+                var logo = new Image();
+                logo.image = logoTexture;
+                logo.scaleMode = ScaleMode.ScaleToFit;
                 logo.AddToClassList("pe-logo");
+                
+                // Calculate dimensions based on aspect ratio to prevent distortion
+                float textureAspect = (float)logoTexture.width / logoTexture.height;
+                float maxHeight = 50f;
+                float calculatedWidth = maxHeight * textureAspect;
+                
+                // Apply calculated dimensions
+                logo.style.width = calculatedWidth;
+                logo.style.height = maxHeight;
+                
                 topBar.Add(logo);
             }
             
@@ -764,7 +777,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Increment Strategy (only if auto-increment is enabled)
             if (profile.autoIncrementVersion)
             {
-                var strategyRow = CreateFormRow("Increment Strategy", tooltip: "Which part of the version to increment");
+                var strategyRow = CreateFormRow("What to Bump", tooltip: "Choose which number to increment");
                 var strategyField = new EnumField(profile.incrementStrategy);
                 strategyField.AddToClassList("pe-form-field");
                 strategyField.RegisterValueChangedCallback(evt =>
@@ -774,10 +787,117 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         Undo.RecordObject(profile, "Change Increment Strategy");
                         profile.incrementStrategy = (VersionIncrementStrategy)evt.newValue;
                         EditorUtility.SetDirty(profile);
+                        UpdateProfileDetails(); // Refresh to show help
                     }
                 });
                 strategyRow.Add(strategyField);
                 section.Add(strategyRow);
+                
+                // Show what each strategy does
+                var strategyHelp = new Label(GetStrategyExplanation(profile.incrementStrategy));
+                strategyHelp.style.fontSize = 11;
+                strategyHelp.style.color = new UnityEngine.UIElements.StyleColor(new Color(0.6f, 0.8f, 1.0f));
+                strategyHelp.style.marginLeft = 4;
+                strategyHelp.style.marginTop = 2;
+                strategyHelp.style.marginBottom = 8;
+                strategyHelp.style.unityFontStyleAndWeight = FontStyle.Italic;
+                section.Add(strategyHelp);
+                
+                // Custom Version Rule (optional)
+                var customRuleRow = CreateFormRow("Custom Rule (Optional)", tooltip: "Use a custom version rule for special formats. Leave empty for standard semver.");
+                var customRuleField = new ObjectField { objectType = typeof(CustomVersionRule), value = profile.customVersionRule };
+                customRuleField.AddToClassList("pe-form-field");
+                customRuleField.RegisterValueChangedCallback(evt =>
+                {
+                    if (profile != null)
+                    {
+                        Undo.RecordObject(profile, "Change Custom Rule");
+                        profile.customVersionRule = evt.newValue as CustomVersionRule;
+                        if (profile.customVersionRule != null)
+                        {
+                            profile.customVersionRule.RegisterRule();
+                        }
+                        EditorUtility.SetDirty(profile);
+                        UpdateProfileDetails(); // Refresh UI
+                    }
+                });
+                customRuleRow.Add(customRuleField);
+                
+                var createRuleBtn = new Button(() => CreateCustomRule(profile)) { text = "New" };
+                createRuleBtn.AddToClassList("pe-button");
+                createRuleBtn.AddToClassList("pe-button-small");
+                createRuleBtn.tooltip = "Create a new custom version rule";
+                customRuleRow.Add(createRuleBtn);
+                
+                section.Add(customRuleRow);
+                
+                // Custom Rule Editor (show when a rule is assigned)
+                if (profile.customVersionRule != null)
+                {
+                    section.Add(CreateCustomRuleEditor(profile));
+                }
+                
+                // Bump Directives in Files toggle
+                var bumpDirectivesToggle = new Toggle("Auto-bump @directives in Files") { value = profile.bumpDirectivesInFiles };
+                bumpDirectivesToggle.AddToClassList("pe-toggle");
+                bumpDirectivesToggle.tooltip = "Automatically update versions in source files that have @bump directives";
+                bumpDirectivesToggle.RegisterValueChangedCallback(evt =>
+                {
+                    if (profile != null)
+                    {
+                        Undo.RecordObject(profile, "Change Bump Directives");
+                        profile.bumpDirectivesInFiles = evt.newValue;
+                        EditorUtility.SetDirty(profile);
+                        UpdateProfileDetails(); // Refresh to show/hide help text
+                    }
+                });
+                section.Add(bumpDirectivesToggle);
+                
+                // Help text for smart version bumping
+                if (profile.bumpDirectivesInFiles)
+                {
+                    var helpBox = new VisualElement();
+                    helpBox.style.backgroundColor = new UnityEngine.UIElements.StyleColor(new Color(0.2f, 0.2f, 0.2f, 0.3f));
+                    helpBox.style.borderTopWidth = 1;
+                    helpBox.style.borderBottomWidth = 1;
+                    helpBox.style.borderLeftWidth = 1;
+                    helpBox.style.borderRightWidth = 1;
+                    helpBox.style.borderTopColor = new UnityEngine.UIElements.StyleColor(new Color(0.1f, 0.1f, 0.1f));
+                    helpBox.style.borderBottomColor = new UnityEngine.UIElements.StyleColor(new Color(0.1f, 0.1f, 0.1f));
+                    helpBox.style.borderLeftColor = new UnityEngine.UIElements.StyleColor(new Color(0.1f, 0.1f, 0.1f));
+                    helpBox.style.borderRightColor = new UnityEngine.UIElements.StyleColor(new Color(0.1f, 0.1f, 0.1f));
+                    helpBox.style.borderTopLeftRadius = 4;
+                    helpBox.style.borderTopRightRadius = 4;
+                    helpBox.style.borderBottomLeftRadius = 4;
+                    helpBox.style.borderBottomRightRadius = 4;
+                    helpBox.style.paddingTop = 8;
+                    helpBox.style.paddingBottom = 8;
+                    helpBox.style.paddingLeft = 8;
+                    helpBox.style.paddingRight = 8;
+                    helpBox.style.marginTop = 8;
+                    helpBox.style.marginBottom = 8;
+                    
+                    var helpTitle = new Label("How to use:");
+                    helpTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+                    helpTitle.style.fontSize = 11;
+                    helpTitle.style.marginBottom = 4;
+                    helpBox.Add(helpTitle);
+                    
+                    string exampleRule = profile.customVersionRule != null 
+                        ? profile.customVersionRule.ruleName 
+                        : "semver";
+                    
+                    var helpText = new Label(
+                        $"Add comment directives to your source files:\n" +
+                        $"  public const string Version = \"1.0.0\"; // @bump {exampleRule}\n\n" +
+                        "When you export, these versions will auto-update according to your Increment Strategy.");
+                    helpText.style.fontSize = 11;
+                    helpText.style.color = new UnityEngine.UIElements.StyleColor(new Color(0.7f, 0.7f, 0.7f));
+                    helpText.style.whiteSpace = UnityEngine.UIElements.WhiteSpace.Normal;
+                    helpBox.Add(helpText);
+                    
+                    section.Add(helpBox);
+                }
             }
             
             // Export Path
@@ -2795,6 +2915,387 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 EditorUtility.DisplayDialog("File Not Found", $".yucpignore file not found:\n{ignoreFilePath}", "OK");
             }
+        }
+
+        private void ScanAndBumpVersionsInProfile(ExportProfile profile)
+        {
+            if (profile == null || profile.foldersToExport == null || profile.foldersToExport.Count == 0)
+            {
+                EditorUtility.DisplayDialog("No Folders", 
+                    "No folders to scan. Add folders to export first.", 
+                    "OK");
+                return;
+            }
+            
+            // Preview first
+            EditorUtility.DisplayProgressBar("Scanning for Version Directives", "Finding files...", 0.3f);
+            
+            var previewResults = ProjectVersionScanner.PreviewBumpInProfile(profile);
+            
+            EditorUtility.ClearProgressBar();
+            
+            if (previewResults.Count == 0)
+            {
+                EditorUtility.DisplayDialog("No Directives Found", 
+                    "No version bump directives (@bump) found in export folders.\n\n" +
+                    "Add directives like:\n" +
+                    "  // @bump semver:patch\n" +
+                    "  // @bump dotted_tail\n" +
+                    "  // @bump wordnum\n\n" +
+                    "to your source files.", 
+                    "OK");
+                return;
+            }
+            
+            // Show preview dialog
+            string previewMessage = SmartVersionBumper.GetBumpSummary(previewResults);
+            bool confirmed = EditorUtility.DisplayDialog(
+                "Version Bump Preview",
+                $"Found {previewResults.Count} version(s) to bump:\n\n{previewMessage}\n\nApply these changes?",
+                "Apply",
+                "Cancel"
+            );
+            
+            if (!confirmed)
+                return;
+            
+            // Apply the bumps
+            EditorUtility.DisplayProgressBar("Bumping Versions", "Updating files...", 0.7f);
+            
+            var results = ProjectVersionScanner.BumpVersionsInProfile(profile, writeBack: true);
+            
+            EditorUtility.ClearProgressBar();
+            
+            int successful = results.Count(r => r.Success);
+            int failed = results.Count(r => !r.Success);
+            
+            string resultMessage = $"Version bump complete!\n\n" +
+                                 $"Successful: {successful}\n" +
+                                 $"Failed: {failed}";
+            
+            if (failed > 0)
+            {
+                resultMessage += "\n\nCheck the console for details on failures.";
+                foreach (var failure in results.Where(r => !r.Success))
+                {
+                    Debug.LogWarning($"[YUCP] Version bump failed: {failure}");
+                }
+            }
+            
+            EditorUtility.DisplayDialog("Version Bump Complete", resultMessage, "OK");
+            
+            // Log successful bumps
+            foreach (var success in results.Where(r => r.Success))
+            {
+                Debug.Log($"[YUCP] {success}");
+            }
+            
+            AssetDatabase.Refresh();
+        }
+
+        private void CreateCustomRule(ExportProfile profile)
+        {
+            string savePath = EditorUtility.SaveFilePanelInProject(
+                "Create Custom Version Rule",
+                "CustomVersionRule",
+                "asset",
+                "Create a new custom version rule asset"
+            );
+            
+            if (string.IsNullOrEmpty(savePath))
+                return;
+            
+            var customRule = ScriptableObject.CreateInstance<CustomVersionRule>();
+            customRule.ruleName = "my_custom_rule";
+            customRule.displayName = "My Custom Rule";
+            customRule.description = "Custom version bumping rule";
+            customRule.regexPattern = @"\b(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)\b";
+            customRule.ruleType = CustomVersionRule.RuleType.Semver;
+            customRule.exampleInput = "1.0.0";
+            customRule.exampleOutput = "1.0.1";
+            
+            AssetDatabase.CreateAsset(customRule, savePath);
+            AssetDatabase.SaveAssets();
+            
+            Selection.activeObject = customRule;
+            EditorGUIUtility.PingObject(customRule);
+            
+            // Auto-assign to profile
+            if (profile != null)
+            {
+                Undo.RecordObject(profile, "Assign Custom Rule");
+                profile.customVersionRule = customRule;
+                customRule.RegisterRule();
+                EditorUtility.SetDirty(profile);
+                UpdateProfileDetails();
+            }
+            
+            EditorUtility.DisplayDialog(
+                "Custom Rule Created",
+                $"Custom version rule created at:\n{savePath}\n\n" +
+                "Edit the asset to configure:\n" +
+                "• Rule name\n" +
+                "• Regex pattern\n" +
+                "• Rule type\n" +
+                "• Test with examples",
+                "OK"
+            );
+        }
+
+        private void TestCustomRule(CustomVersionRule rule)
+        {
+            if (rule == null)
+                return;
+            
+            string result = rule.TestRule();
+            
+            EditorUtility.DisplayDialog(
+                $"Test Rule: {rule.displayName}",
+                $"Rule Name: {rule.ruleName}\n" +
+                $"Type: {rule.ruleType}\n" +
+                $"Pattern: {rule.regexPattern}\n\n" +
+                $"Example Input: {rule.exampleInput}\n" +
+                $"Expected Output: {rule.exampleOutput}\n" +
+                $"Actual Output: {result}\n\n" +
+                (result == rule.exampleOutput ? "✓ Test PASSED" : "✗ Test FAILED"),
+                "OK"
+            );
+        }
+
+        private string GetStrategyExplanation(VersionIncrementStrategy strategy)
+        {
+            return strategy switch
+            {
+                VersionIncrementStrategy.Major => "Breaking changes: 1.0.0 → 2.0.0",
+                VersionIncrementStrategy.Minor => "New features: 1.0.0 → 1.1.0",
+                VersionIncrementStrategy.Patch => "Bug fixes: 1.0.0 → 1.0.1",
+                VersionIncrementStrategy.Build => "Build number: 1.0.0.0 → 1.0.0.1",
+                _ => ""
+            };
+        }
+
+        private VisualElement CreateCustomRuleEditor(ExportProfile profile)
+        {
+            var rule = profile.customVersionRule;
+            if (rule == null) return new VisualElement();
+            
+            var editorContainer = new VisualElement();
+            editorContainer.style.backgroundColor = new UnityEngine.UIElements.StyleColor(new Color(0.25f, 0.3f, 0.35f, 0.3f));
+            editorContainer.style.borderTopWidth = 1;
+            editorContainer.style.borderBottomWidth = 1;
+            editorContainer.style.borderLeftWidth = 1;
+            editorContainer.style.borderRightWidth = 1;
+            editorContainer.style.borderTopColor = new UnityEngine.UIElements.StyleColor(new Color(0.3f, 0.4f, 0.5f));
+            editorContainer.style.borderBottomColor = new UnityEngine.UIElements.StyleColor(new Color(0.3f, 0.4f, 0.5f));
+            editorContainer.style.borderLeftColor = new UnityEngine.UIElements.StyleColor(new Color(0.3f, 0.4f, 0.5f));
+            editorContainer.style.borderRightColor = new UnityEngine.UIElements.StyleColor(new Color(0.3f, 0.4f, 0.5f));
+            editorContainer.style.borderTopLeftRadius = 4;
+            editorContainer.style.borderTopRightRadius = 4;
+            editorContainer.style.borderBottomLeftRadius = 4;
+            editorContainer.style.borderBottomRightRadius = 4;
+            editorContainer.style.paddingTop = 10;
+            editorContainer.style.paddingBottom = 10;
+            editorContainer.style.paddingLeft = 10;
+            editorContainer.style.paddingRight = 10;
+            editorContainer.style.marginTop = 8;
+            editorContainer.style.marginBottom = 8;
+            
+            var title = new Label($"Editing: {rule.displayName}");
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.fontSize = 12;
+            title.style.marginBottom = 8;
+            editorContainer.Add(title);
+            
+            // Rule Name
+            var ruleNameRow = CreateFormRow("Rule Name", tooltip: "Identifier used in @bump directives (lowercase, no spaces)");
+            var ruleNameField = new TextField { value = rule.ruleName };
+            ruleNameField.AddToClassList("pe-input");
+            ruleNameField.AddToClassList("pe-form-field");
+            ruleNameField.RegisterValueChangedCallback(evt =>
+            {
+                Undo.RecordObject(rule, "Change Rule Name");
+                rule.ruleName = evt.newValue;
+                EditorUtility.SetDirty(rule);
+            });
+            ruleNameRow.Add(ruleNameField);
+            editorContainer.Add(ruleNameRow);
+            
+            // Display Name
+            var displayNameRow = CreateFormRow("Display Name", tooltip: "Human-readable name");
+            var displayNameField = new TextField { value = rule.displayName };
+            displayNameField.AddToClassList("pe-input");
+            displayNameField.AddToClassList("pe-form-field");
+            displayNameField.RegisterValueChangedCallback(evt =>
+            {
+                Undo.RecordObject(rule, "Change Display Name");
+                rule.displayName = evt.newValue;
+                EditorUtility.SetDirty(rule);
+                UpdateProfileDetails(); // Refresh title
+            });
+            displayNameRow.Add(displayNameField);
+            editorContainer.Add(displayNameRow);
+            
+            // Description
+            var descLabel = new Label("Description");
+            descLabel.AddToClassList("pe-label");
+            descLabel.style.marginTop = 8;
+            descLabel.style.marginBottom = 4;
+            editorContainer.Add(descLabel);
+            
+            var descField = new TextField { value = rule.description, multiline = true };
+            descField.AddToClassList("pe-input");
+            descField.AddToClassList("pe-input-multiline");
+            descField.RegisterValueChangedCallback(evt =>
+            {
+                Undo.RecordObject(rule, "Change Description");
+                rule.description = evt.newValue;
+                EditorUtility.SetDirty(rule);
+            });
+            editorContainer.Add(descField);
+            
+            // Regex Pattern
+            var patternLabel = new Label("Regex Pattern");
+            patternLabel.AddToClassList("pe-label");
+            patternLabel.style.marginTop = 8;
+            patternLabel.style.marginBottom = 4;
+            editorContainer.Add(patternLabel);
+            
+            var patternField = new TextField { value = rule.regexPattern, multiline = true };
+            patternField.AddToClassList("pe-input");
+            patternField.AddToClassList("pe-input-multiline");
+            patternField.RegisterValueChangedCallback(evt =>
+            {
+                Undo.RecordObject(rule, "Change Regex Pattern");
+                rule.regexPattern = evt.newValue;
+                EditorUtility.SetDirty(rule);
+            });
+            editorContainer.Add(patternField);
+            
+            // Rule Type
+            var ruleTypeRow = CreateFormRow("Rule Type", tooltip: "Base behavior for this rule");
+            var ruleTypeField = new EnumField(rule.ruleType);
+            ruleTypeField.AddToClassList("pe-form-field");
+            ruleTypeField.RegisterValueChangedCallback(evt =>
+            {
+                Undo.RecordObject(rule, "Change Rule Type");
+                rule.ruleType = (CustomVersionRule.RuleType)evt.newValue;
+                EditorUtility.SetDirty(rule);
+            });
+            ruleTypeRow.Add(ruleTypeField);
+            editorContainer.Add(ruleTypeRow);
+            
+            // Options row
+            var optionsRow = new VisualElement();
+            optionsRow.style.flexDirection = FlexDirection.Row;
+            optionsRow.style.marginTop = 8;
+            
+            var supportsPartsToggle = new Toggle("Supports Parts") { value = rule.supportsParts };
+            supportsPartsToggle.AddToClassList("pe-toggle");
+            supportsPartsToggle.tooltip = "Whether the rule understands major/minor/patch";
+            supportsPartsToggle.RegisterValueChangedCallback(evt =>
+            {
+                Undo.RecordObject(rule, "Change Supports Parts");
+                rule.supportsParts = evt.newValue;
+                EditorUtility.SetDirty(rule);
+            });
+            optionsRow.Add(supportsPartsToggle);
+            
+            var preservePaddingToggle = new Toggle("Preserve Padding") { value = rule.preservePadding };
+            preservePaddingToggle.AddToClassList("pe-toggle");
+            preservePaddingToggle.tooltip = "Keep zero padding in numbers (007 → 008)";
+            preservePaddingToggle.RegisterValueChangedCallback(evt =>
+            {
+                Undo.RecordObject(rule, "Change Preserve Padding");
+                rule.preservePadding = evt.newValue;
+                EditorUtility.SetDirty(rule);
+            });
+            optionsRow.Add(preservePaddingToggle);
+            
+            editorContainer.Add(optionsRow);
+            
+            // Test section
+            var testLabel = new Label("Test");
+            testLabel.AddToClassList("pe-label");
+            testLabel.style.marginTop = 12;
+            testLabel.style.marginBottom = 4;
+            editorContainer.Add(testLabel);
+            
+            var testRow = new VisualElement();
+            testRow.style.flexDirection = FlexDirection.Row;
+            testRow.style.marginBottom = 4;
+            
+            var inputLabel = new Label("Input:");
+            inputLabel.style.width = 60;
+            inputLabel.style.marginRight = 4;
+            testRow.Add(inputLabel);
+            
+            var exampleInputField = new TextField { value = rule.exampleInput };
+            exampleInputField.AddToClassList("pe-input");
+            exampleInputField.style.flexGrow = 1;
+            exampleInputField.RegisterValueChangedCallback(evt =>
+            {
+                Undo.RecordObject(rule, "Change Example Input");
+                rule.exampleInput = evt.newValue;
+                EditorUtility.SetDirty(rule);
+            });
+            testRow.Add(exampleInputField);
+            
+            editorContainer.Add(testRow);
+            
+            var expectedRow = new VisualElement();
+            expectedRow.style.flexDirection = FlexDirection.Row;
+            expectedRow.style.marginBottom = 8;
+            
+            var expectedLabel = new Label("Expected:");
+            expectedLabel.style.width = 60;
+            expectedLabel.style.marginRight = 4;
+            expectedRow.Add(expectedLabel);
+            
+            var exampleOutputField = new TextField { value = rule.exampleOutput };
+            exampleOutputField.AddToClassList("pe-input");
+            exampleOutputField.style.flexGrow = 1;
+            exampleOutputField.RegisterValueChangedCallback(evt =>
+            {
+                Undo.RecordObject(rule, "Change Example Output");
+                rule.exampleOutput = evt.newValue;
+                EditorUtility.SetDirty(rule);
+            });
+            expectedRow.Add(exampleOutputField);
+            
+            editorContainer.Add(expectedRow);
+            
+            // Action buttons
+            var buttonRow = new VisualElement();
+            buttonRow.style.flexDirection = FlexDirection.Row;
+            buttonRow.style.justifyContent = Justify.FlexEnd;
+            buttonRow.style.marginTop = 8;
+            
+            var testBtn = new Button(() => TestCustomRule(rule)) { text = "Test Rule" };
+            testBtn.AddToClassList("pe-button");
+            testBtn.tooltip = "Test the rule with the example input";
+            buttonRow.Add(testBtn);
+            
+            var registerBtn = new Button(() => 
+            {
+                rule.RegisterRule();
+                EditorUtility.DisplayDialog("Rule Registered", $"Rule '{rule.ruleName}' has been registered and is ready to use.", "OK");
+            }) { text = "Save & Register" };
+            registerBtn.AddToClassList("pe-button");
+            registerBtn.tooltip = "Register this rule so it can be used";
+            buttonRow.Add(registerBtn);
+            
+            var selectBtn = new Button(() => 
+            {
+                Selection.activeObject = rule;
+                EditorGUIUtility.PingObject(rule);
+            }) { text = "Select Asset" };
+            selectBtn.AddToClassList("pe-button");
+            selectBtn.tooltip = "Select the rule asset in the project";
+            buttonRow.Add(selectBtn);
+            
+            editorContainer.Add(buttonRow);
+            
+            return editorContainer;
         }
     }
 }

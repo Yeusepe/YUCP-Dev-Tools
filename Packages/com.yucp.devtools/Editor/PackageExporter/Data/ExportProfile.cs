@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 
 namespace YUCP.DevTools.Editor.PackageExporter
@@ -104,6 +105,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Version increment strategy (which part to increment)")]
         public VersionIncrementStrategy incrementStrategy = VersionIncrementStrategy.Patch;
         
+        [Tooltip("When auto-increment is enabled, also scan and bump @bump directives in export folders")]
+        public bool bumpDirectivesInFiles = true;
+        
+        [Tooltip("Custom version rule to use (leave empty to use default semver)")]
+        public CustomVersionRule customVersionRule;
+        
         [Header("Statistics (Read-only)")]
         [Tooltip("Last successful export timestamp")]
         [SerializeField] private string lastExportTime = "";
@@ -133,7 +140,58 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// </summary>
         private void IncrementVersion()
         {
-            version = VersionUtility.IncrementVersion(version, incrementStrategy);
+            // Determine which rule to use
+            string ruleName = "semver"; // Default
+            
+            if (customVersionRule != null)
+            {
+                customVersionRule.RegisterRule();
+                ruleName = customVersionRule.ruleName;
+            }
+            
+            // Bump the profile's version using the selected rule
+            var options = VersionUtility.ConvertStrategyToOptions(incrementStrategy);
+            version = VersionUtility.BumpVersionWithRule(version, ruleName, options);
+            
+            // Also bump versions in files with @bump directives if enabled
+            if (bumpDirectivesInFiles && foldersToExport != null && foldersToExport.Count > 0)
+            {
+                BumpDirectivesInExportFolders();
+            }
+        }
+        
+        /// <summary>
+        /// Scan export folders and bump versions according to @bump directives
+        /// </summary>
+        private void BumpDirectivesInExportFolders()
+        {
+            try
+            {
+                var options = VersionUtility.ConvertStrategyToOptions(incrementStrategy);
+                var results = ProjectVersionScanner.BumpVersionsInProfile(this, writeBack: true, defaultOptions: options);
+                
+                if (results.Count > 0)
+                {
+                    int successful = results.Count(r => r.Success);
+                    int failed = results.Count(r => !r.Success);
+                    
+                    UnityEngine.Debug.Log($"[YUCP] Smart version bump: {successful} successful, {failed} failed");
+                    
+                    foreach (var result in results.Where(r => r.Success))
+                    {
+                        UnityEngine.Debug.Log($"[YUCP] {result}");
+                    }
+                    
+                    foreach (var result in results.Where(r => !r.Success))
+                    {
+                        UnityEngine.Debug.LogWarning($"[YUCP] {result}");
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                UnityEngine.Debug.LogError($"[YUCP] Failed to bump directives in files: {ex.Message}");
+            }
         }
         
         /// <summary>
