@@ -12,16 +12,227 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d2926ab1e27d1cf47914f6fe356510ff, type: 3}
   m_Name: Example_ExportProfile
   m_EditorClassIdentifier: 
+  profileName: 
   packageName: MyPackage
   version: 1.0.0
   author: Your Name
   description: A sample export profile showing how to configure package exports
   icon: {fileID: 0}
   foldersToExport:
-  - E:/Unity/YUCP-Components/Assets/YUCP Assets/ThinJacket/FBX
-  discoveredAssets: []
+  - E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+  discoveredAssets:
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants
+    included: 1
+    isFolder: 1
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Folder
+    fileSize: 0
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\FBX
+    included: 1
+    isFolder: 1
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Folder
+    fileSize: 0
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\FBX\JockedPants.blend
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: File
+    fileSize: 2507840
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\FBX\JockedPants.blend1
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: File
+    fileSize: 2510299
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\FBX\JockedPants.fbx
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Model
+    fileSize: 2322364
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\JockedPants.prefab
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Prefab
+    fileSize: 13651
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Materials
+    included: 1
+    isFolder: 1
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Folder
+    fileSize: 0
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Materials\Elastic
+      1.mat
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Material
+    fileSize: 132306
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Materials\Elastic.mat
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Material
+    fileSize: 132023
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Materials\OptimizedShaders
+    included: 1
+    isFolder: 1
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Folder
+    fileSize: 0
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Materials\OptimizedShaders\Elastic
+      1
+    included: 1
+    isFolder: 1
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Folder
+    fileSize: 0
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Materials\OptimizedShaders\Elastic
+      1\Poiyomi Pro.shader
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Shader
+    fileSize: 410925
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Materials\OptimizedShaders\Pants
+    included: 1
+    isFolder: 1
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Folder
+    fileSize: 0
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Materials\OptimizedShaders\Pants
+      1
+    included: 1
+    isFolder: 1
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Folder
+    fileSize: 0
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Materials\OptimizedShaders\Pants
+      1\Poiyomi Pro.shader
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Shader
+    fileSize: 433167
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Materials\OptimizedShaders\Pants\Poiyomi
+      Pro.shader
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Shader
+    fileSize: 433251
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Materials\Pants
+      1.mat
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Material
+    fileSize: 132503
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Materials\Pants.mat
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Material
+    fileSize: 132556
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Textures
+    included: 1
+    isFolder: 1
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Folder
+    fileSize: 0
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Textures\JockedPants.spp
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: File
+    fileSize: 45869262
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Textures\JockedPants_Elastics_AlbedoTransparency.png
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Texture
+    fileSize: 68320
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Textures\JockedPants_Elastics_MetallicSmoothness.png
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Texture
+    fileSize: 16408
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Textures\JockedPants_Elastics_Normal.png
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Texture
+    fileSize: 7087424
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Textures\JockedPants_Pants_AlbedoTransparency.png
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Texture
+    fileSize: 1118873
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Textures\JockedPants_Pants_MetallicSmoothness.png
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Texture
+    fileSize: 1286252
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\YUCP Assets\Jocked Pants\Textures\JockedPants_Pants_Normal.png
+    included: 1
+    isFolder: 0
+    sourceFolder: E:/Unity/YUCP-Components/Assets/YUCP Assets/Jocked Pants
+    assetType: Texture
+    fileSize: 6911563
+    isDependency: 0
+  - assetPath: E:\Unity\YUCP-Components\Assets\_PoiyomiShaders\Textures\LUTs\dfg-multiscatter-cloth.exr
+    included: 1
+    isFolder: 0
+    sourceFolder: '[Dependency]'
+    assetType: File
+    fileSize: 47850
+    isDependency: 1
+  - assetPath: E:\Unity\YUCP-Components\Assets\_PoiyomiShaders\Textures\Ramps\SkinLUT.png
+    included: 1
+    isFolder: 0
+    sourceFolder: '[Dependency]'
+    assetType: Texture
+    fileSize: 40948
+    isDependency: 1
+  - assetPath: E:\Unity\YUCP-Components\Packages\com.vrcfury.vrcfury\Runtime\VF\Model\VRCFury.cs
+    included: 1
+    isFolder: 0
+    sourceFolder: '[Dependency]'
+    assetType: Script
+    fileSize: 3357
+    isDependency: 1
   permanentIgnoreFolders: []
-  hasScannedAssets: 0
+  hasScannedAssets: 1
   includeDependencies: 1
   recurseFolders: 1
   excludeFilePatterns:
@@ -123,5 +334,6 @@ MonoBehaviour:
   exportPath: C:/Users/svalp/Downloads
   profileSaveLocation: 
   autoIncrementVersion: 0
-  lastExportTime: 2025-11-03 15:50:54
-  exportCount: 4
+  incrementStrategy: 0
+  lastExportTime: 2025-11-03 20:51:30
+  exportCount: 5

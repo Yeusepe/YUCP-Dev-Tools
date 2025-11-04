@@ -1,0 +1,770 @@
+/* ============================================================================
+   Package Exporter Design System - YUCP Brand Style
+   Based on Package Guardian design system
+   ============================================================================ */
+
+/* ============================================================================
+   COLOR PALETTE - YUCP Brand Colors
+   ============================================================================ */
+.pe-window {
+    /* Base colors */
+    --pe-bg-primary: #090909;      /* YUCP dark background */
+    --pe-bg-secondary: #1a1a1a;    /* Card/panel background */
+    --pe-bg-tertiary: #2a2a2a;     /* List items, inputs */
+    --pe-bg-hover: #525252;        /* Hover states - YUCP gray */
+    
+    /* Borders */
+    --pe-border-primary: #2a2a2a;
+    --pe-border-secondary: #3a3a3a;
+    
+    /* Text */
+    --pe-text-primary: #ffffff;    /* Main text */
+    --pe-text-secondary: #b0b0b0;  /* Secondary text */
+    --pe-text-tertiary: #808080;   /* Subtle text */
+    
+    /* Accent colors - YUCP Brand */
+    --pe-accent-primary: #36BFB1;  /* YUCP Teal - primary actions */
+    --pe-accent-success: #36BFB1;  /* Teal - added/success */
+    --pe-accent-warning: #E2A54A;  /* Orange - warnings */
+    --pe-accent-danger: #E24A4A;   /* Red - deleted/danger */
+    --pe-accent-info: #5BA3FF;     /* Blue - info */
+}
+
+/* ============================================================================
+   BASE WINDOW & LAYOUT
+   ============================================================================ */
+.pe-window {
+    flex-grow: 1;
+    background-color: #090909;
+    min-width: 600px;
+}
+
+.pe-main-container {
+    flex-grow: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* ============================================================================
+   TOP BAR - Header with Logo & Title
+   ============================================================================ */
+.pe-top-bar {
+    flex-direction: row;
+    min-height: 100px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+    padding-left: 20px;
+    padding-right: 20px;
+    background-color: #1a1a1a;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+    align-items: center;
+    flex-wrap: wrap;
+    overflow: hidden;
+}
+
+.pe-logo {
+    width: 116px;
+    height: 50px;
+    margin-right: 20px;
+    flex-shrink: 0;
+}
+
+.pe-title {
+    font-size: 20px;
+    color: #ffffff;
+    -unity-font-style: bold;
+}
+
+/* ============================================================================
+   3-PANE LAYOUT
+   ============================================================================ */
+.pe-content-container {
+    flex-grow: 1;
+    flex-direction: row;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.pe-left-pane {
+    width: 270px;
+    min-width: 200px;
+    flex-shrink: 0;
+    background-color: #090909;
+    border-right-width: 1px;
+    border-right-color: #2a2a2a;
+    padding: 20px;
+    overflow: hidden;
+}
+
+.pe-right-pane {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    background-color: #090909;
+    overflow: hidden;
+}
+
+.pe-right-pane .pe-panel {
+    padding-right: 24px;
+}
+
+/* ============================================================================
+   BUTTONS - Consistent sizing and styling
+   ============================================================================ */
+.pe-button {
+    height: 32px;
+    padding-left: 16px;
+    padding-right: 16px;
+    border-radius: 0;
+    background-color: #3a3a3a;
+    border-width: 0;
+    color: #ffffff;
+    font-size: 12px;
+    -unity-font-style: normal;
+    margin-left: 4px;
+    margin-right: 4px;
+    -unity-text-align: middle-center;
+    transition-duration: 0.1s;
+    transition-property: background-color, color;
+    transition-timing-function: ease-out;
+}
+
+.pe-button:hover {
+    background-color: #525252;
+    color: #ffffff;
+}
+
+.pe-button:active {
+    background-color: #2a2a2a;
+    color: #ffffff;
+}
+
+.pe-button-primary {
+    background-color: #36BFB1;
+    color: #ffffff;
+}
+
+.pe-button-primary:hover {
+    background-color: #48d1c3;
+}
+
+.pe-button-primary:active {
+    background-color: #2da89c;
+}
+
+.pe-button-action {
+    background-color: #3a3a3a;
+    color: #ffffff;
+}
+
+.pe-button-action:hover {
+    background-color: #36BFB1;
+    color: #ffffff;
+}
+
+.pe-button-action:active {
+    background-color: #2da89c;
+    color: #ffffff;
+}
+
+.pe-button-danger {
+    background-color: #3a3a3a;
+    color: #ffffff;
+}
+
+.pe-button-danger:hover {
+    background-color: #E24A4A;
+    color: #ffffff;
+}
+
+.pe-button-danger:active {
+    background-color: #c93a3a;
+    color: #ffffff;
+}
+
+.pe-button-export {
+    background-color: #5BA3FF;
+    color: #ffffff;
+}
+
+.pe-button-export:hover {
+    background-color: #7ab5ff;
+}
+
+.pe-button-export:active {
+    background-color: #4a92ee;
+}
+
+.pe-button-small {
+    height: 24px;
+    padding-left: 12px;
+    padding-right: 12px;
+    font-size: 11px;
+}
+
+.pe-button-large {
+    height: 50px;
+    font-size: 14px;
+    padding-left: 24px;
+    padding-right: 24px;
+}
+
+/* ============================================================================
+   TYPOGRAPHY
+   ============================================================================ */
+.pe-section-header {
+    font-size: 11px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+}
+
+.pe-label {
+    font-size: 12px;
+    color: #ffffff;
+}
+
+.pe-label-secondary {
+    font-size: 11px;
+    color: #b0b0b0;
+}
+
+.pe-label-small {
+    font-size: 10px;
+    color: #808080;
+}
+
+/* ============================================================================
+   PANELS & SECTIONS
+   ============================================================================ */
+.pe-panel {
+    flex-direction: column;
+    padding: 20px;
+}
+
+.pe-section {
+    margin-bottom: 16px;
+    padding: 12px;
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    overflow: hidden;
+}
+
+.pe-section-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    margin-bottom: 12px;
+    color: #ffffff;
+}
+
+/* ============================================================================
+   PROFILE LIST
+   ============================================================================ */
+.pe-profile-list-container {
+    flex-grow: 1;
+    flex-direction: column;
+}
+
+.pe-profile-list-scroll {
+    flex-grow: 1;
+    margin-bottom: 12px;
+}
+
+.pe-profile-item {
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-left-width: 3px;
+    border-left-color: transparent;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
+    margin-bottom: 4px;
+    flex-direction: column;
+    transition-duration: 0.1s;
+    transition-property: background-color, border-left-color;
+    transition-timing-function: ease-out;
+}
+
+.pe-profile-item:hover {
+    background-color: #2a2a2a;
+}
+
+.pe-profile-item-selected {
+    background-color: #2a2a2a;
+    border-left-color: #36BFB1;
+}
+
+.pe-profile-item-name {
+    font-size: 12px;
+    color: #ffffff;
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+}
+
+.pe-profile-item-info {
+    font-size: 10px;
+    color: #808080;
+}
+
+.pe-profile-buttons {
+    flex-direction: row;
+    margin-bottom: 8px;
+}
+
+.pe-profile-buttons Button {
+    flex-grow: 1;
+    margin: 2px;
+}
+
+/* ============================================================================
+   FORM FIELDS
+   ============================================================================ */
+.pe-form-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+
+.pe-form-label {
+    width: 120px;
+    font-size: 12px;
+    color: #b0b0b0;
+    flex-shrink: 0;
+}
+
+.pe-form-field {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.pe-input {
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    color: #ffffff;
+    padding: 6px 8px;
+    border-radius: 0;
+    min-height: 28px;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.pe-input:focus {
+    border-color: #36BFB1;
+}
+
+.pe-input .unity-text-field__input {
+    background-color: transparent;
+    border-width: 0;
+    color: #ffffff;
+    padding: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pe-input-multiline {
+    min-height: 80px;
+}
+
+.pe-input .unity-base-text-field__input {
+    background-color: transparent;
+    border-width: 0;
+    color: #ffffff;
+    padding: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ============================================================================
+   FOLDER LIST
+   ============================================================================ */
+.pe-folder-list {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 8px;
+    min-height: 100px;
+}
+
+.pe-folder-item {
+    flex-direction: row;
+    align-items: center;
+    padding: 6px 8px;
+    background-color: #2a2a2a;
+    margin-bottom: 4px;
+    border-radius: 0;
+    overflow: hidden;
+}
+
+.pe-folder-item-path {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    font-size: 11px;
+    color: #ffffff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pe-folder-item-remove {
+    width: 20px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0;
+    margin-left: 8px;
+    background-color: #3a3a3a;
+    color: #ffffff;
+    font-size: 14px;
+    -unity-text-align: middle-center;
+    flex-shrink: 0;
+    transition-duration: 0.1s;
+    transition-property: background-color;
+    transition-timing-function: ease-out;
+}
+
+.pe-folder-item-remove:hover {
+    background-color: #E24A4A;
+}
+
+/* ============================================================================
+   EXPORT INSPECTOR
+   ============================================================================ */
+.pe-inspector-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.pe-inspector-header .pe-section-title {
+    margin-bottom: 0;
+    flex-grow: 1;
+}
+
+.pe-inspector-search {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    margin-right: 8px;
+    overflow: hidden;
+}
+
+.pe-inspector-filters {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.pe-inspector-list {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 8px;
+    min-height: 200px;
+    max-height: 400px;
+}
+
+.pe-asset-item {
+    flex-direction: row;
+    align-items: center;
+    padding: 6px 8px;
+    margin-bottom: 2px;
+    background-color: #2a2a2a;
+    border-radius: 0;
+    transition-duration: 0.1s;
+    transition-property: background-color;
+    transition-timing-function: ease-out;
+}
+
+.pe-asset-item:hover {
+    background-color: #3a3a3a;
+}
+
+.pe-asset-item-checkbox {
+    margin-right: 8px;
+}
+
+.pe-asset-item-icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    -unity-text-align: middle-center;
+    font-size: 11px;
+    color: #36BFB1;
+}
+
+.pe-asset-item-name {
+    flex-grow: 1;
+    font-size: 11px;
+    color: #ffffff;
+}
+
+.pe-asset-item-type {
+    font-size: 10px;
+    color: #808080;
+    margin-right: 12px;
+}
+
+.pe-asset-item-size {
+    font-size: 10px;
+    color: #808080;
+}
+
+/* ============================================================================
+   BOTTOM BAR - Export Actions
+   ============================================================================ */
+.pe-bottom-bar {
+    flex-direction: column;
+    background-color: #1a1a1a;
+    border-top-width: 1px;
+    border-top-color: #2a2a2a;
+    padding: 16px 20px;
+    flex-shrink: 0;
+}
+
+.pe-export-buttons {
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+.pe-export-info {
+    flex-grow: 1;
+    flex-direction: row;
+    align-items: center;
+}
+
+.pe-multi-select-info {
+    padding: 8px 12px;
+    background-color: rgba(54, 191, 177, 0.15);
+    border-left-width: 3px;
+    border-left-color: #36BFB1;
+    border-radius: 0;
+    margin-right: 16px;
+}
+
+.pe-multi-select-text {
+    font-size: 12px;
+    color: #36BFB1;
+}
+
+/* ============================================================================
+   PROGRESS BAR
+   ============================================================================ */
+.pe-progress-container {
+    margin-top: 12px;
+}
+
+.pe-progress-bar {
+    height: 24px;
+    background-color: #2a2a2a;
+    border-radius: 0;
+    overflow: hidden;
+}
+
+.pe-progress-fill {
+    height: 100%;
+    background-color: #36BFB1;
+    border-radius: 0;
+}
+
+.pe-progress-text {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    -unity-text-align: middle-center;
+    font-size: 11px;
+    color: #ffffff;
+}
+
+/* ============================================================================
+   VALIDATION & FEEDBACK
+   ============================================================================ */
+.pe-validation-error {
+    background-color: rgba(226, 74, 74, 0.1);
+    border-left-width: 3px;
+    border-left-color: #E24A4A;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.pe-validation-error-text {
+    font-size: 12px;
+    color: #E24A4A;
+}
+
+.pe-validation-success {
+    background-color: rgba(54, 191, 177, 0.1);
+    border-left-width: 3px;
+    border-left-color: #36BFB1;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.pe-validation-success-text {
+    font-size: 12px;
+    color: #36BFB1;
+}
+
+/* ============================================================================
+   EMPTY STATE
+   ============================================================================ */
+.pe-empty-state {
+    flex-grow: 1;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+}
+
+.pe-empty-state-title {
+    font-size: 16px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    margin-bottom: 8px;
+    -unity-text-align: middle-center;
+}
+
+.pe-empty-state-description {
+    font-size: 12px;
+    color: #808080;
+    -unity-text-align: middle-center;
+    max-width: 300px;
+}
+
+/* ============================================================================
+   SCROLLVIEWS
+   ============================================================================ */
+.pe-scrollview {
+    flex-grow: 1;
+}
+
+/* ============================================================================
+   MISC UTILITIES
+   ============================================================================ */
+.pe-separator {
+    height: 1px;
+    background-color: #2a2a2a;
+    margin-top: 12px;
+    margin-bottom: 12px;
+}
+
+.pe-spacer {
+    flex-grow: 1;
+}
+
+.pe-horizontal-line {
+    height: 1px;
+    background-color: #2a2a2a;
+}
+
+/* ============================================================================
+   STATISTICS DISPLAY
+   ============================================================================ */
+.pe-stats-container {
+    flex-direction: row;
+    margin-top: 8px;
+}
+
+.pe-stat-item {
+    flex-direction: column;
+    margin-right: 20px;
+}
+
+.pe-stat-label {
+    font-size: 10px;
+    color: #808080;
+    margin-bottom: 4px;
+}
+
+.pe-stat-value {
+    font-size: 12px;
+    color: #ffffff;
+    -unity-font-style: bold;
+}
+
+/* ============================================================================
+   TOGGLE STYLES
+   ============================================================================ */
+.pe-toggle {
+    margin-top: 4px;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+
+.pe-toggle .unity-toggle__checkmark {
+    background-color: #2a2a2a;
+    border-color: #3a3a3a;
+    border-width: 1px;
+    flex-shrink: 0;
+}
+
+.pe-toggle:checked .unity-toggle__checkmark {
+    background-color: #36BFB1;
+    border-color: #36BFB1;
+}
+
+.pe-toggle .unity-label {
+    color: #ffffff;
+    font-size: 12px;
+    min-width: 80px;
+    flex-shrink: 0;
+}
+
+/* ============================================================================
+   HELP BOX STYLES
+   ============================================================================ */
+.pe-help-box {
+    background-color: rgba(91, 163, 255, 0.1);
+    border-left-width: 3px;
+    border-left-color: #5BA3FF;
+    padding: 12px;
+    margin: 8px 0;
+    border-radius: 0;
+}
+
+.pe-help-box-text {
+    font-size: 11px;
+    color: #5BA3FF;
+    white-space: normal;
+}
+
+/* ============================================================================
+   SEARCH AND FILTER ROWS
+   ============================================================================ */
+.pe-search-row {
+    flex-direction: row;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+
+.pe-search-row .pe-input {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.pe-filter-row {
+    flex-direction: row;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.pe-filter-row .pe-toggle {
+    margin-right: 16px;
+    flex-shrink: 0;
+}
+

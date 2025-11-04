@@ -101,6 +101,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Automatically increment version number after each export")]
         public bool autoIncrementVersion = false;
         
+        [Tooltip("Version increment strategy (which part to increment)")]
+        public VersionIncrementStrategy incrementStrategy = VersionIncrementStrategy.Patch;
+        
         [Header("Statistics (Read-only)")]
         [Tooltip("Last successful export timestamp")]
         [SerializeField] private string lastExportTime = "";
@@ -126,26 +129,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Increment the patch version number (e.g., 1.0.0 -> 1.0.1)
+        /// Increment the version number using the configured strategy
         /// </summary>
         private void IncrementVersion()
         {
-            try
-            {
-                string[] parts = version.Split('.');
-                if (parts.Length >= 3)
-                {
-                    if (int.TryParse(parts[2], out int patch))
-                    {
-                        parts[2] = (patch + 1).ToString();
-                        version = string.Join(".", parts);
-                    }
-                }
-            }
-            catch
-            {
-                // If version format is invalid, don't increment
-            }
+            version = VersionUtility.IncrementVersion(version, incrementStrategy);
         }
         
         /// <summary>
@@ -181,6 +169,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (string.IsNullOrWhiteSpace(version))
             {
                 errorMessage = "Version is required";
+                return false;
+            }
+            
+            if (!VersionUtility.IsValidVersion(version))
+            {
+                errorMessage = $"Invalid version format: '{version}'. Expected format: X.Y.Z (e.g., 1.0.0)";
                 return false;
             }
             

@@ -11,7 +11,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
     /// <summary>
     /// Main Package Exporter window with profile management and batch export capabilities.
-    /// Features YUCP-styled UI with logo, progress tracking, and multi-profile support.
+    /// Modern UI Toolkit implementation matching Package Guardian design system.
     /// </summary>
     public class YUCPPackageExporterWindow : EditorWindow
     {
@@ -20,24 +20,38 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var window = GetWindow<YUCPPackageExporterWindow>();
             window.titleContent = new GUIContent("YUCP Package Exporter");
-            window.minSize = new Vector2(700, 600);
+            window.minSize = new Vector2(900, 600);
             window.Show();
         }
         
+        // UI Elements
+        private ScrollView _profileListScrollView;
+        private ScrollView _rightPaneScrollView;
+        private VisualElement _profileListContainer;
+        private VisualElement _profileDetailsContainer;
+        private VisualElement _emptyState;
+        private VisualElement _bottomBar;
+        private VisualElement _progressContainer;
+        private VisualElement _progressFill;
+        private Label _progressText;
+        private VisualElement _multiSelectInfo;
+        private Button _exportSelectedButton;
+        private Button _exportAllButton;
+        
+        // State
         private List<ExportProfile> allProfiles = new List<ExportProfile>();
         private ExportProfile selectedProfile;
-        private int selectedProfileIndex = -1;
-        
-        private Vector2 profileListScrollPos;
-        private Vector2 mainScrollPos;
-        private Vector2 exportInspectorScrollPos;
+        private HashSet<int> selectedProfileIndices = new HashSet<int>();
+        private int lastClickedProfileIndex = -1;
         private bool isExporting = false;
         private float currentProgress = 0f;
         private string currentStatus = "";
         
-        // Multi-selection state for profiles
-        private HashSet<int> selectedProfileIndices = new HashSet<int>();
-        private int lastClickedProfileIndex = -1;
+        // Delayed rename tracking
+        private double lastPackageNameChangeTime = 0;
+        private const double RENAME_DELAY_SECONDS = 1.5;
+        private ExportProfile pendingRenameProfile = null;
+        private string pendingRenamePackageName = "";
         
         // Export Inspector state
         private string inspectorSearchFilter = "";
@@ -45,21 +59,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private bool showOnlyExcluded = false;
         private bool showExportInspector = false;
         
-        // Delayed rename tracking
-        private double lastPackageNameChangeTime = 0;
-        private const double RENAME_DELAY_SECONDS = 1.5; // Wait 1.5 seconds after user stops typing
-        private ExportProfile pendingRenameProfile = null;
-        private string pendingRenamePackageName = "";
+        // Exclusion Filters state
+        private bool showExclusionFilters = false;
         
-        // Track currently editing profile to prevent cross-profile editing
-        private ExportProfile currentlyEditingProfile = null;
+        // Dependencies filter state
+        private string dependenciesSearchFilter = "";
         
         private Texture2D logoTexture;
-        private GUIStyle headerStyle;
-        private GUIStyle profileButtonStyle;
-        private GUIStyle selectedProfileButtonStyle;
-        private GUIStyle sectionHeaderStyle;
-        
+
         private void OnEnable()
         {
             LoadProfiles();
@@ -68,127 +75,1918 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         private void LoadResources()
         {
-            // Load YUCP logo
             logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.components/Resources/Icons/Logo@2x.png");
         }
         
-        private void InitializeStyles()
+        private void CreateGUI()
         {
-            if (headerStyle == null)
+            var root = rootVisualElement;
+            root.AddToClassList("pe-window");
+            
+            // Load stylesheet
+            var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(
+                "Packages/com.yucp.devtools/Editor/PackageExporter/Styles/PackageExporter.uss");
+            if (styleSheet != null)
             {
-                headerStyle = new GUIStyle(EditorStyles.largeLabel);
-                headerStyle.fontSize = 20;
-                headerStyle.normal.textColor = new Color(0.8f, 0.9f, 1f);
-                headerStyle.alignment = TextAnchor.MiddleLeft;
+                root.styleSheets.Add(styleSheet);
             }
             
-            if (sectionHeaderStyle == null)
+            // Main container
+            var mainContainer = new VisualElement();
+            mainContainer.AddToClassList("pe-main-container");
+            
+            // Top Bar
+            mainContainer.Add(CreateTopBar());
+            
+            // Content Container (Left + Right Panes)
+            var contentContainer = new VisualElement();
+            contentContainer.AddToClassList("pe-content-container");
+            contentContainer.Add(CreateLeftPane());
+            contentContainer.Add(CreateRightPane());
+            mainContainer.Add(contentContainer);
+            
+            // Bottom Bar
+            _bottomBar = CreateBottomBar();
+            mainContainer.Add(_bottomBar);
+            
+            root.Add(mainContainer);
+            
+            // Schedule delayed rename checks
+            root.schedule.Execute(CheckDelayedRename).Every(100);
+            
+            // Initial UI update
+            UpdateProfileList();
+            UpdateBottomBar();
+        }
+
+        private VisualElement CreateTopBar()
+        {
+            var topBar = new VisualElement();
+            topBar.AddToClassList("pe-top-bar");
+            
+            // Logo
+            if (logoTexture != null)
             {
-                sectionHeaderStyle = new GUIStyle(EditorStyles.boldLabel);
-                sectionHeaderStyle.fontSize = 14;
-                sectionHeaderStyle.normal.textColor = new Color(0.2f, 0.75f, 0.73f); // Teal
+                var logo = new Image { image = logoTexture };
+                logo.AddToClassList("pe-logo");
+                topBar.Add(logo);
             }
             
-            if (profileButtonStyle == null)
+            // Title
+            var title = new Label("Package Exporter");
+            title.AddToClassList("pe-title");
+            topBar.Add(title);
+            
+            return topBar;
+        }
+
+        private VisualElement CreateLeftPane()
+        {
+            var leftPane = new VisualElement();
+            leftPane.AddToClassList("pe-left-pane");
+            
+            var container = new VisualElement();
+            container.AddToClassList("pe-profile-list-container");
+            
+            // Header
+            var header = new Label("EXPORT PROFILES");
+            header.AddToClassList("pe-section-header");
+            container.Add(header);
+            
+            // Profile list scrollview
+            _profileListScrollView = new ScrollView();
+            _profileListScrollView.AddToClassList("pe-profile-list-scroll");
+            _profileListContainer = new VisualElement();
+            _profileListScrollView.Add(_profileListContainer);
+            container.Add(_profileListScrollView);
+            
+            // Profile buttons
+            var buttonContainer = new VisualElement();
+            buttonContainer.AddToClassList("pe-profile-buttons");
+            
+            var newButton = new Button(CreateNewProfile) { text = "+ New" };
+            newButton.AddToClassList("pe-button");
+            newButton.AddToClassList("pe-button-action");
+            buttonContainer.Add(newButton);
+            
+            var cloneButton = new Button(() => CloneProfile(selectedProfile)) { text = "Clone" };
+            cloneButton.AddToClassList("pe-button");
+            cloneButton.AddToClassList("pe-button-action");
+            buttonContainer.Add(cloneButton);
+            
+            var deleteButton = new Button(() => DeleteProfile(selectedProfile)) { text = "Delete" };
+            deleteButton.AddToClassList("pe-button");
+            deleteButton.AddToClassList("pe-button-danger");
+            buttonContainer.Add(deleteButton);
+            
+            container.Add(buttonContainer);
+            
+            // Refresh button
+            var refreshButton = new Button(RefreshProfiles) { text = "Refresh Profiles" };
+            refreshButton.AddToClassList("pe-button");
+            refreshButton.AddToClassList("pe-button-action");
+            container.Add(refreshButton);
+            
+            leftPane.Add(container);
+            return leftPane;
+        }
+
+        private VisualElement CreateRightPane()
+        {
+            var rightPane = new VisualElement();
+            rightPane.AddToClassList("pe-right-pane");
+            
+            _rightPaneScrollView = new ScrollView();
+            _rightPaneScrollView.AddToClassList("pe-panel");
+            _rightPaneScrollView.AddToClassList("pe-scrollview");
+            
+            // Empty state
+            _emptyState = CreateEmptyState();
+            _rightPaneScrollView.Add(_emptyState);
+            
+            // Profile details container (initially empty)
+            _profileDetailsContainer = new VisualElement();
+            _profileDetailsContainer.style.display = DisplayStyle.None;
+            _rightPaneScrollView.Add(_profileDetailsContainer);
+            
+            rightPane.Add(_rightPaneScrollView);
+            return rightPane;
+        }
+
+        private VisualElement CreateEmptyState()
+        {
+            var emptyState = new VisualElement();
+            emptyState.AddToClassList("pe-empty-state");
+            
+            var title = new Label("No Profile Selected");
+            title.AddToClassList("pe-empty-state-title");
+            emptyState.Add(title);
+            
+            var description = new Label("Select a profile from the list or create a new one");
+            description.AddToClassList("pe-empty-state-description");
+            emptyState.Add(description);
+            
+            return emptyState;
+        }
+
+        private VisualElement CreateBottomBar()
+        {
+            var bottomBar = new VisualElement();
+            bottomBar.AddToClassList("pe-bottom-bar");
+            
+            // Export buttons container
+            var exportContainer = new VisualElement();
+            exportContainer.AddToClassList("pe-export-buttons");
+            
+            // Info section (left side)
+            var infoSection = new VisualElement();
+            infoSection.AddToClassList("pe-export-info");
+            
+            _multiSelectInfo = new VisualElement();
+            _multiSelectInfo.AddToClassList("pe-multi-select-info");
+            _multiSelectInfo.style.display = DisplayStyle.None;
+            var multiSelectText = new Label();
+            multiSelectText.AddToClassList("pe-multi-select-text");
+            multiSelectText.name = "multiSelectText";
+            _multiSelectInfo.Add(multiSelectText);
+            infoSection.Add(_multiSelectInfo);
+            
+            exportContainer.Add(infoSection);
+            
+            // Buttons (right side)
+            _exportSelectedButton = new Button(ExportSelectedProfiles);
+            _exportSelectedButton.AddToClassList("pe-button");
+            _exportSelectedButton.AddToClassList("pe-button-primary");
+            _exportSelectedButton.AddToClassList("pe-button-large");
+            exportContainer.Add(_exportSelectedButton);
+            
+            _exportAllButton = new Button(() => ExportAllProfiles()) { text = "Export All Profiles" };
+            _exportAllButton.AddToClassList("pe-button");
+            _exportAllButton.AddToClassList("pe-button-export");
+            _exportAllButton.AddToClassList("pe-button-large");
+            exportContainer.Add(_exportAllButton);
+            
+            bottomBar.Add(exportContainer);
+            
+            // Progress container
+            _progressContainer = new VisualElement();
+            _progressContainer.AddToClassList("pe-progress-container");
+            _progressContainer.style.display = DisplayStyle.None;
+            
+            var progressBar = new VisualElement();
+            progressBar.AddToClassList("pe-progress-bar");
+            
+            _progressFill = new VisualElement();
+            _progressFill.AddToClassList("pe-progress-fill");
+            _progressFill.style.width = Length.Percent(0);
+            progressBar.Add(_progressFill);
+            
+            _progressText = new Label("0%");
+            _progressText.AddToClassList("pe-progress-text");
+            progressBar.Add(_progressText);
+            
+            _progressContainer.Add(progressBar);
+            bottomBar.Add(_progressContainer);
+            
+            return bottomBar;
+        }
+
+        private void UpdateProfileList()
+        {
+            _profileListContainer.Clear();
+            
+            if (allProfiles.Count == 0)
             {
-                profileButtonStyle = new GUIStyle(GUI.skin.button);
-                profileButtonStyle.alignment = TextAnchor.MiddleLeft;
-                profileButtonStyle.padding = new RectOffset(10, 10, 8, 8);
-                profileButtonStyle.normal.textColor = Color.white;
-                profileButtonStyle.fontSize = 12;
-                profileButtonStyle.wordWrap = false;
-                profileButtonStyle.clipping = TextClipping.Overflow;
-                profileButtonStyle.fixedHeight = 0;
-                profileButtonStyle.border = new RectOffset(4, 4, 4, 4);
+                var emptyLabel = new Label("No profiles found");
+                emptyLabel.AddToClassList("pe-label-secondary");
+                emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
+                emptyLabel.style.paddingTop = 20;
+                emptyLabel.style.paddingBottom = 10;
+                _profileListContainer.Add(emptyLabel);
+                
+                var hintLabel = new Label("Create one using the button below");
+                hintLabel.AddToClassList("pe-label-small");
+                hintLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
+                _profileListContainer.Add(hintLabel);
+                return;
             }
             
-            if (selectedProfileButtonStyle == null)
+            for (int i = 0; i < allProfiles.Count; i++)
             {
-                selectedProfileButtonStyle = new GUIStyle(GUI.skin.button);
-                selectedProfileButtonStyle.alignment = TextAnchor.MiddleLeft;
-                selectedProfileButtonStyle.padding = new RectOffset(10, 10, 8, 8);
-                selectedProfileButtonStyle.normal.background = MakeTex(2, 2, new Color(0.2f, 0.75f, 0.73f, 0.5f));
-                selectedProfileButtonStyle.normal.textColor = new Color(0.2f, 0.75f, 0.73f);
-                selectedProfileButtonStyle.fontStyle = FontStyle.Bold;
-                selectedProfileButtonStyle.fontSize = 12;
-                selectedProfileButtonStyle.wordWrap = false;
-                selectedProfileButtonStyle.clipping = TextClipping.Overflow;
-                selectedProfileButtonStyle.fixedHeight = 0;
-                selectedProfileButtonStyle.border = new RectOffset(4, 4, 4, 4);
+                var profile = allProfiles[i];
+                if (profile == null) continue;
+                
+                var profileItem = CreateProfileItem(profile, i);
+                _profileListContainer.Add(profileItem);
             }
         }
-        
-        private Texture2D MakeTex(int width, int height, Color color)
+
+        private VisualElement CreateProfileItem(ExportProfile profile, int index)
         {
-            var pix = new Color[width * height];
-            for (int i = 0; i < pix.Length; i++)
-                pix[i] = color;
+            var item = new VisualElement();
+            item.AddToClassList("pe-profile-item");
             
-            var tex = new Texture2D(width, height);
-            tex.SetPixels(pix);
-            tex.Apply();
-            return tex;
-        }
-        
-        private void OnGUI()
-        {
-            InitializeStyles();
-            
-            // Check for delayed rename
-            CheckDelayedRename();
-            
-            // Dark background
-            EditorGUI.DrawRect(new Rect(0, 0, position.width, position.height), new Color(0.035f, 0.035f, 0.035f, 1f));
-            
-            GUILayout.BeginVertical();
-            
-            // Fixed height header
-            GUILayout.BeginVertical(GUILayout.Height(100));
-            DrawHeader();
-            GUILayout.EndVertical();
-            
-            // Main content area - fixed left panel, scrollable right panel
-            GUILayout.BeginHorizontal(GUILayout.ExpandHeight(true));
-            
-            DrawProfileList();
-            
-            mainScrollPos = GUILayout.BeginScrollView(mainScrollPos, GUILayout.ExpandHeight(true), GUILayout.ExpandWidth(true));
-            // Ensure currentlyEditingProfile is set when drawing selected profile
-            if (selectedProfile != null && currentlyEditingProfile != selectedProfile)
+            bool isSelected = selectedProfileIndices.Contains(index);
+            if (isSelected)
             {
-                if (currentlyEditingProfile != null)
+                item.AddToClassList("pe-profile-item-selected");
+            }
+            
+            // Profile name
+            var nameLabel = new Label(GetProfileDisplayName(profile));
+            nameLabel.AddToClassList("pe-profile-item-name");
+            item.Add(nameLabel);
+            
+            // Profile info
+            var infoText = $"v{profile.version}";
+            if (profile.foldersToExport.Count > 0)
+            {
+                infoText += $" • {profile.foldersToExport.Count} folder(s)";
+            }
+            var infoLabel = new Label(infoText);
+            infoLabel.AddToClassList("pe-profile-item-info");
+            item.Add(infoLabel);
+            
+            // Click handler with multi-selection support
+            item.RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.button == 0) // Left click
                 {
-                    EditorUtility.SetDirty(currentlyEditingProfile);
+                    HandleProfileSelection(index, evt);
+                    evt.StopPropagation();
                 }
-                currentlyEditingProfile = selectedProfile;
-            }
+            });
             
-            DrawSelectedProfile();
-            GUILayout.EndScrollView();
-            
-            GUILayout.EndHorizontal();
-            
-            // Sticky export buttons at bottom
-            GUILayout.FlexibleSpace();
-            DrawExportButtons();
-            
-            if (isExporting)
-            {
-                DrawProgressBar();
-            }
-            
-            GUILayout.EndVertical();
+            return item;
         }
-        
-        /// <summary>
-        /// Checks if it's time to perform delayed rename after user stops typing.
-        /// </summary>
+
+        private void HandleProfileSelection(int index, MouseDownEvent evt)
+        {
+            if (evt.ctrlKey || evt.commandKey)
+            {
+                // Ctrl/Cmd+Click: Toggle individual selection
+                if (selectedProfileIndices.Contains(index))
+                {
+                    selectedProfileIndices.Remove(index);
+                }
+                else
+                {
+                    selectedProfileIndices.Add(index);
+                }
+                lastClickedProfileIndex = index;
+            }
+            else if (evt.shiftKey && lastClickedProfileIndex >= 0)
+            {
+                // Shift+Click: Range selection
+                int start = Mathf.Min(lastClickedProfileIndex, index);
+                int end = Mathf.Max(lastClickedProfileIndex, index);
+                
+                for (int i = start; i <= end; i++)
+                {
+                    if (i < allProfiles.Count)
+                    {
+                        selectedProfileIndices.Add(i);
+                    }
+                }
+            }
+            else
+            {
+                // Normal click: Single selection
+                selectedProfileIndices.Clear();
+                selectedProfileIndices.Add(index);
+                lastClickedProfileIndex = index;
+            }
+            
+            // Update selected profile
+            if (selectedProfileIndices.Count > 0)
+            {
+                int firstIndex = selectedProfileIndices.Min();
+                selectedProfile = allProfiles[firstIndex];
+            }
+            else
+            {
+                selectedProfile = null;
+            }
+            
+            // Refresh UI
+            UpdateProfileList();
+            UpdateProfileDetails();
+            UpdateBottomBar();
+        }
+
+        private void UpdateProfileDetails()
+        {
+            if (selectedProfile == null)
+            {
+                _emptyState.style.display = DisplayStyle.Flex;
+                _profileDetailsContainer.style.display = DisplayStyle.None;
+                return;
+            }
+            
+            _emptyState.style.display = DisplayStyle.None;
+            _profileDetailsContainer.style.display = DisplayStyle.Flex;
+            _profileDetailsContainer.Clear();
+            
+            // Package Metadata Section
+            var metadataSection = CreateMetadataSection(selectedProfile);
+            _profileDetailsContainer.Add(metadataSection);
+            
+            // Quick Summary Section
+            var summarySection = CreateSummarySection(selectedProfile);
+            _profileDetailsContainer.Add(summarySection);
+            
+            // Validation Section
+            var validationSection = CreateValidationSection(selectedProfile);
+            _profileDetailsContainer.Add(validationSection);
+            
+            // Export Options Section
+            var optionsSection = CreateExportOptionsSection(selectedProfile);
+            _profileDetailsContainer.Add(optionsSection);
+            
+            // Export Folders Section
+            var foldersSection = CreateFoldersSection(selectedProfile);
+            _profileDetailsContainer.Add(foldersSection);
+            
+            // Exclusion Filters Section
+            var exclusionSection = CreateExclusionFiltersSection(selectedProfile);
+            _profileDetailsContainer.Add(exclusionSection);
+            
+            // Export Inspector Section
+            var inspectorSection = CreateExportInspectorSection(selectedProfile);
+            _profileDetailsContainer.Add(inspectorSection);
+            
+            // Dependencies Section
+            var dependenciesSection = CreateDependenciesSection(selectedProfile);
+            _profileDetailsContainer.Add(dependenciesSection);
+            
+            // Obfuscation Section
+            var obfuscationSection = CreateObfuscationSection(selectedProfile);
+            _profileDetailsContainer.Add(obfuscationSection);
+            
+            // Quick Actions
+            var actionsSection = CreateQuickActionsSection(selectedProfile);
+            _profileDetailsContainer.Add(actionsSection);
+        }
+
+        private VisualElement CreateMetadataSection(ExportProfile profile)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            
+            var title = new Label("Package Metadata");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            // Package Name
+            var nameRow = CreateFormRow("Package Name", tooltip: "Unique identifier for your package");
+            var nameField = new TextField { value = profile.packageName };
+            nameField.AddToClassList("pe-input");
+            nameField.AddToClassList("pe-form-field");
+            nameField.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Package Name");
+                    profile.packageName = evt.newValue;
+                    profile.profileName = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                    
+                    // Schedule delayed rename
+                    lastPackageNameChangeTime = EditorApplication.timeSinceStartup;
+                    pendingRenameProfile = profile;
+                    pendingRenamePackageName = evt.newValue;
+                    
+                    UpdateProfileList();
+                }
+            });
+            nameRow.Add(nameField);
+            section.Add(nameRow);
+            
+            // Version
+            var versionRow = CreateFormRow("Version", tooltip: "Package version (X.Y.Z)");
+            var versionField = new TextField { value = profile.version };
+            versionField.AddToClassList("pe-input");
+            versionField.AddToClassList("pe-form-field");
+            versionField.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Version");
+                    profile.version = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                    UpdateProfileList();
+                    UpdateValidationDisplay(profile);
+                }
+            });
+            versionRow.Add(versionField);
+            section.Add(versionRow);
+            
+            // Author
+            var authorRow = CreateFormRow("Author", tooltip: "Your name or organization");
+            var authorField = new TextField { value = profile.author };
+            authorField.AddToClassList("pe-input");
+            authorField.AddToClassList("pe-form-field");
+            authorField.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Author");
+                    profile.author = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                }
+            });
+            authorRow.Add(authorField);
+            section.Add(authorRow);
+            
+            // Icon
+            var iconRow = CreateFormRow("Icon", tooltip: "Package icon (PNG)");
+            var iconField = new ObjectField { objectType = typeof(Texture2D), value = profile.icon };
+            iconField.AddToClassList("pe-form-field");
+            iconField.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Icon");
+                    profile.icon = evt.newValue as Texture2D;
+                    EditorUtility.SetDirty(profile);
+                }
+            });
+            iconRow.Add(iconField);
+            var browseButton = new Button(() => BrowseForIcon(profile)) { text = "Browse" };
+            browseButton.AddToClassList("pe-button");
+            browseButton.AddToClassList("pe-button-small");
+            iconRow.Add(browseButton);
+            section.Add(iconRow);
+            
+            // Description
+            var descLabel = new Label("Description");
+            descLabel.AddToClassList("pe-label");
+            descLabel.style.marginTop = 8;
+            descLabel.style.marginBottom = 4;
+            section.Add(descLabel);
+            
+            var descField = new TextField { value = profile.description, multiline = true };
+            descField.AddToClassList("pe-input");
+            descField.AddToClassList("pe-input-multiline");
+            descField.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Description");
+                    profile.description = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                }
+            });
+            section.Add(descField);
+            
+            return section;
+        }
+
+        private VisualElement CreateSummarySection(ExportProfile profile)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            
+            var title = new Label("Quick Summary");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            var statsContainer = new VisualElement();
+            statsContainer.AddToClassList("pe-stats-container");
+            
+            // Folders
+            AddStatItem(statsContainer, "Folders to Export", profile.foldersToExport.Count.ToString());
+            
+            // Dependencies
+            if (profile.dependencies.Count > 0)
+            {
+                int bundled = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Bundle);
+                int referenced = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Dependency);
+                AddStatItem(statsContainer, "Dependencies", $"{bundled} bundled, {referenced} referenced");
+            }
+            
+            // Obfuscation
+            string obfuscationText = profile.enableObfuscation 
+                ? $"Enabled ({profile.assembliesToObfuscate.Count(a => a.enabled)} assemblies)" 
+                : "Disabled";
+            AddStatItem(statsContainer, "Obfuscation", obfuscationText);
+            
+            // Output path
+            string outputText = string.IsNullOrEmpty(profile.exportPath) ? "Desktop" : profile.exportPath;
+            AddStatItem(statsContainer, "Output", outputText);
+            
+            // Last export
+            if (!string.IsNullOrEmpty(profile.LastExportTime))
+            {
+                AddStatItem(statsContainer, "Last Export", profile.LastExportTime);
+            }
+            
+            section.Add(statsContainer);
+            return section;
+        }
+
+        private void AddStatItem(VisualElement container, string label, string value)
+        {
+            var item = new VisualElement();
+            item.AddToClassList("pe-stat-item");
+            
+            var labelElement = new Label(label);
+            labelElement.AddToClassList("pe-stat-label");
+            item.Add(labelElement);
+            
+            var valueElement = new Label(value);
+            valueElement.AddToClassList("pe-stat-value");
+            item.Add(valueElement);
+            
+            container.Add(item);
+        }
+
+        private VisualElement CreateValidationSection(ExportProfile profile)
+        {
+            var section = new VisualElement();
+            section.name = "validation-section";
+            
+            if (!profile.Validate(out string errorMessage))
+            {
+                var errorContainer = new VisualElement();
+                errorContainer.AddToClassList("pe-validation-error");
+                
+                var errorText = new Label($"Validation Error: {errorMessage}");
+                errorText.AddToClassList("pe-validation-error-text");
+                errorContainer.Add(errorText);
+                
+                section.Add(errorContainer);
+            }
+            else
+            {
+                var successContainer = new VisualElement();
+                successContainer.AddToClassList("pe-validation-success");
+                
+                var successText = new Label("Profile is valid and ready to export");
+                successText.AddToClassList("pe-validation-success-text");
+                successContainer.Add(successText);
+                
+                section.Add(successContainer);
+            }
+            
+            return section;
+        }
+
+        private void UpdateValidationDisplay(ExportProfile profile)
+        {
+            var validationSection = _profileDetailsContainer?.Q("validation-section");
+            if (validationSection != null && profile != null)
+            {
+                var parent = validationSection.parent;
+                var index = parent.IndexOf(validationSection);
+                parent.Remove(validationSection);
+                parent.Insert(index, CreateValidationSection(profile));
+            }
+        }
+
+        private VisualElement CreateExportOptionsSection(ExportProfile profile)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            
+            var title = new Label("Export Options");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            // Toggles container
+            var togglesContainer = new VisualElement();
+            togglesContainer.style.flexDirection = FlexDirection.Column;
+            togglesContainer.style.marginBottom = 8;
+            
+            // Include Dependencies
+            var includeDepsToggle = new Toggle("Include Dependencies") { value = profile.includeDependencies };
+            includeDepsToggle.AddToClassList("pe-toggle");
+            includeDepsToggle.tooltip = "Include all dependency files directly in the exported package";
+            includeDepsToggle.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Include Dependencies");
+                    profile.includeDependencies = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                }
+            });
+            togglesContainer.Add(includeDepsToggle);
+            
+            // Recurse Folders
+            var recurseFoldersToggle = new Toggle("Recurse Folders") { value = profile.recurseFolders };
+            recurseFoldersToggle.AddToClassList("pe-toggle");
+            recurseFoldersToggle.tooltip = "Search subfolders when collecting assets to export";
+            recurseFoldersToggle.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Recurse Folders");
+                    profile.recurseFolders = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                }
+            });
+            togglesContainer.Add(recurseFoldersToggle);
+            
+            // Generate package.json
+            var generateJsonToggle = new Toggle("Generate package.json") { value = profile.generatePackageJson };
+            generateJsonToggle.AddToClassList("pe-toggle");
+            generateJsonToggle.tooltip = "Create a package.json file with dependency information for VPM compatibility";
+            generateJsonToggle.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Generate Package Json");
+                    profile.generatePackageJson = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                }
+            });
+            togglesContainer.Add(generateJsonToggle);
+            
+            // Auto-Increment Version
+            var autoIncrementToggle = new Toggle("Auto-Increment Version") { value = profile.autoIncrementVersion };
+            autoIncrementToggle.AddToClassList("pe-toggle");
+            autoIncrementToggle.tooltip = "Automatically increment the version number on each export";
+            autoIncrementToggle.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Auto Increment Version");
+                    profile.autoIncrementVersion = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                    UpdateProfileDetails(); // Refresh to show/hide increment strategy
+                }
+            });
+            togglesContainer.Add(autoIncrementToggle);
+            
+            section.Add(togglesContainer);
+            
+            // Increment Strategy (only if auto-increment is enabled)
+            if (profile.autoIncrementVersion)
+            {
+                var strategyRow = CreateFormRow("Increment Strategy", tooltip: "Which part of the version to increment");
+                var strategyField = new EnumField(profile.incrementStrategy);
+                strategyField.AddToClassList("pe-form-field");
+                strategyField.RegisterValueChangedCallback(evt =>
+                {
+                    if (profile != null)
+                    {
+                        Undo.RecordObject(profile, "Change Increment Strategy");
+                        profile.incrementStrategy = (VersionIncrementStrategy)evt.newValue;
+                        EditorUtility.SetDirty(profile);
+                    }
+                });
+                strategyRow.Add(strategyField);
+                section.Add(strategyRow);
+            }
+            
+            // Export Path
+            var pathRow = CreateFormRow("Export Path", tooltip: "Folder where the exported .unitypackage file will be saved");
+            var pathField = new TextField { value = profile.exportPath };
+            pathField.AddToClassList("pe-input");
+            pathField.AddToClassList("pe-form-field");
+            pathField.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Export Path");
+                    profile.exportPath = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                }
+            });
+            pathRow.Add(pathField);
+            var browsePathButton = new Button(() => BrowseForPath(profile)) { text = "Browse" };
+            browsePathButton.AddToClassList("pe-button");
+            browsePathButton.AddToClassList("pe-button-small");
+            pathRow.Add(browsePathButton);
+            section.Add(pathRow);
+            
+            if (string.IsNullOrEmpty(profile.exportPath))
+            {
+                var hintBox = new VisualElement();
+                hintBox.AddToClassList("pe-help-box");
+                var hintText = new Label("Empty path = Desktop");
+                hintText.AddToClassList("pe-help-box-text");
+                hintBox.Add(hintText);
+                section.Add(hintBox);
+            }
+            
+            return section;
+        }
+
+        private VisualElement CreateFoldersSection(ExportProfile profile)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            
+            var title = new Label("Export Folders");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            if (profile.foldersToExport.Count == 0)
+            {
+                var warning = new VisualElement();
+                warning.AddToClassList("pe-validation-error");
+                var warningText = new Label("No folders added. Add folders to export.");
+                warningText.AddToClassList("pe-validation-error-text");
+                warning.Add(warningText);
+                section.Add(warning);
+            }
+            else
+            {
+                var folderList = new VisualElement();
+                folderList.AddToClassList("pe-folder-list");
+                
+                for (int i = 0; i < profile.foldersToExport.Count; i++)
+                {
+                    int index = i; // Capture for closure
+                    var folderItem = new VisualElement();
+                    folderItem.AddToClassList("pe-folder-item");
+                    
+                    var pathLabel = new Label(profile.foldersToExport[i]);
+                    pathLabel.AddToClassList("pe-folder-item-path");
+                    folderItem.Add(pathLabel);
+                    
+                    var removeButton = new Button(() => RemoveFolder(profile, index)) { text = "×" };
+                    removeButton.AddToClassList("pe-button");
+                    removeButton.AddToClassList("pe-folder-item-remove");
+                    folderItem.Add(removeButton);
+                    
+                    folderList.Add(folderItem);
+                }
+                
+                section.Add(folderList);
+            }
+            
+            var addButton = new Button(() => AddFolder(profile)) { text = "+ Add Folder" };
+            addButton.AddToClassList("pe-button");
+            addButton.AddToClassList("pe-button-action");
+            addButton.style.marginTop = 8;
+            section.Add(addButton);
+            
+            return section;
+        }
+
+        private VisualElement CreateExclusionFiltersSection(ExportProfile profile)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            
+            var header = new VisualElement();
+            header.AddToClassList("pe-inspector-header");
+            
+            var title = new Label("Exclusion Filters");
+            title.AddToClassList("pe-section-title");
+            header.Add(title);
+            
+            var toggleButton = new Button(() => 
+            {
+                showExclusionFilters = !showExclusionFilters;
+                UpdateProfileDetails();
+            }) 
+            { text = showExclusionFilters ? "▼" : "▶" };
+            toggleButton.AddToClassList("pe-button");
+            toggleButton.AddToClassList("pe-button-small");
+            header.Add(toggleButton);
+            
+            section.Add(header);
+            
+            if (!showExclusionFilters)
+            {
+                return section;
+            }
+            
+            var helpBox = new VisualElement();
+            helpBox.AddToClassList("pe-help-box");
+            helpBox.style.marginTop = 8;
+            var helpText = new Label("Exclude files and folders from export using patterns");
+            helpText.AddToClassList("pe-help-box-text");
+            helpBox.Add(helpText);
+            section.Add(helpBox);
+            
+            // File Patterns
+            var filePatternsLabel = new Label("File Patterns");
+            filePatternsLabel.AddToClassList("pe-label");
+            filePatternsLabel.style.marginTop = 8;
+            filePatternsLabel.style.marginBottom = 4;
+            filePatternsLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            section.Add(filePatternsLabel);
+            
+            var filePatternsContainer = new VisualElement();
+            filePatternsContainer.style.marginBottom = 8;
+            
+            foreach (var pattern in profile.excludeFilePatterns.ToList())
+            {
+                var patternItem = CreateStringListItem(pattern, () =>
+                {
+                    profile.excludeFilePatterns.Remove(pattern);
+                    EditorUtility.SetDirty(profile);
+                    AssetDatabase.SaveAssets();
+                    UpdateProfileDetails();
+                });
+                filePatternsContainer.Add(patternItem);
+            }
+            section.Add(filePatternsContainer);
+            
+            var addFilePatternButton = new Button(() =>
+            {
+                profile.excludeFilePatterns.Add("*.tmp");
+                EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
+                UpdateProfileDetails();
+            }) { text = "+ Add Pattern (e.g., *.tmp)" };
+            addFilePatternButton.AddToClassList("pe-button");
+            addFilePatternButton.style.marginBottom = 12;
+            section.Add(addFilePatternButton);
+            
+            // Folder Names
+            var folderNamesLabel = new Label("Folder Names");
+            folderNamesLabel.AddToClassList("pe-label");
+            folderNamesLabel.style.marginTop = 8;
+            folderNamesLabel.style.marginBottom = 4;
+            folderNamesLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            section.Add(folderNamesLabel);
+            
+            var folderNamesContainer = new VisualElement();
+            
+            foreach (var folderName in profile.excludeFolderNames.ToList())
+            {
+                var folderItem = CreateStringListItem(folderName, () =>
+                {
+                    profile.excludeFolderNames.Remove(folderName);
+                    EditorUtility.SetDirty(profile);
+                    AssetDatabase.SaveAssets();
+                    UpdateProfileDetails();
+                });
+                folderNamesContainer.Add(folderItem);
+            }
+            section.Add(folderNamesContainer);
+            
+            var addFolderNameButton = new Button(() =>
+            {
+                profile.excludeFolderNames.Add(".git");
+                EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
+                UpdateProfileDetails();
+            }) { text = "+ Add Folder Name (e.g., .git)" };
+            addFolderNameButton.AddToClassList("pe-button");
+            section.Add(addFolderNameButton);
+            
+            return section;
+        }
+
+        private VisualElement CreateStringListItem(string value, Action onRemove)
+        {
+            var item = new VisualElement();
+            item.AddToClassList("pe-folder-item");
+            
+            var textField = new TextField { value = value };
+            textField.AddToClassList("pe-input");
+            textField.style.flexGrow = 1;
+            textField.isReadOnly = true;
+            item.Add(textField);
+            
+            var removeButton = new Button(onRemove) { text = "×" };
+            removeButton.AddToClassList("pe-button");
+            removeButton.AddToClassList("pe-folder-item-remove");
+            item.Add(removeButton);
+            
+            return item;
+        }
+
+        private VisualElement CreateExportInspectorSection(ExportProfile profile)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            
+            var header = new VisualElement();
+            header.AddToClassList("pe-inspector-header");
+            
+            var title = new Label($"Export Inspector ({profile.discoveredAssets.Count} assets)");
+            title.AddToClassList("pe-section-title");
+            header.Add(title);
+            
+            var toggleButton = new Button(() => 
+            {
+                showExportInspector = !showExportInspector;
+                UpdateProfileDetails();
+            }) 
+            { text = showExportInspector ? "▼" : "▶" };
+            toggleButton.AddToClassList("pe-button");
+            toggleButton.AddToClassList("pe-button-small");
+            header.Add(toggleButton);
+            
+            section.Add(header);
+            
+            if (showExportInspector)
+            {
+                // Help box
+                var helpBox = new VisualElement();
+                helpBox.AddToClassList("pe-help-box");
+                var helpText = new Label("The Export Inspector shows all assets discovered from your export folders. Scan to discover assets, then deselect unwanted items or add folders to the permanent ignore list.");
+                helpText.AddToClassList("pe-help-box-text");
+                helpBox.Add(helpText);
+                section.Add(helpBox);
+                
+                // Action buttons
+                var actionButtons = new VisualElement();
+                actionButtons.style.flexDirection = FlexDirection.Row;
+                actionButtons.style.marginTop = 8;
+                actionButtons.style.marginBottom = 8;
+                
+                var scanButton = new Button(() => ScanAssetsForInspector(profile)) { text = "Scan Assets" };
+                scanButton.AddToClassList("pe-button");
+                scanButton.AddToClassList("pe-button-action");
+                scanButton.style.flexGrow = 1;
+                scanButton.SetEnabled(profile.foldersToExport.Count > 0);
+                actionButtons.Add(scanButton);
+                
+                var clearButton = new Button(() => ClearAssetScan(profile)) { text = "Clear Scan" };
+                clearButton.AddToClassList("pe-button");
+                clearButton.AddToClassList("pe-button-action");
+                clearButton.style.flexGrow = 1;
+                clearButton.SetEnabled(profile.discoveredAssets.Count > 0);
+                actionButtons.Add(clearButton);
+                
+                section.Add(actionButtons);
+                
+                // Show scan required message
+                if (!profile.HasScannedAssets)
+                {
+                    var warning = new VisualElement();
+                    warning.AddToClassList("pe-validation-error");
+                    var warningText = new Label("Click 'Scan Assets' to discover all assets from your export folders.");
+                    warningText.AddToClassList("pe-validation-error-text");
+                    warning.Add(warningText);
+                    section.Add(warning);
+                }
+                else
+                {
+                    // Statistics
+                    var statsLabel = new Label("Asset Statistics");
+                    statsLabel.AddToClassList("pe-label");
+                    statsLabel.style.marginTop = 8;
+                    statsLabel.style.marginBottom = 4;
+                    section.Add(statsLabel);
+                    
+                    var summaryBox = new VisualElement();
+                    summaryBox.AddToClassList("pe-help-box");
+                    var summaryText = new Label(AssetCollector.GetAssetSummary(profile.discoveredAssets));
+                    summaryText.AddToClassList("pe-help-box-text");
+                    summaryBox.Add(summaryText);
+                    section.Add(summaryBox);
+                    
+                    // Filter controls
+                    var filtersLabel = new Label("Filters");
+                    filtersLabel.AddToClassList("pe-label");
+                    filtersLabel.style.marginTop = 8;
+                    filtersLabel.style.marginBottom = 4;
+                    section.Add(filtersLabel);
+                    
+                    var searchRow = new VisualElement();
+                    searchRow.style.flexDirection = FlexDirection.Row;
+                    searchRow.style.marginBottom = 4;
+                    
+                    var searchField = new TextField { value = inspectorSearchFilter };
+                    searchField.AddToClassList("pe-input");
+                    searchField.style.flexGrow = 1;
+                    searchField.style.marginRight = 4;
+                    searchField.name = "inspector-search-field";
+                    searchField.RegisterValueChangedCallback(evt =>
+                    {
+                        inspectorSearchFilter = evt.newValue;
+                        // Don't call UpdateProfileDetails() - it recreates the entire UI
+                        // Instead, find and update the asset list container only
+                        var assetListContainer = section.Q<VisualElement>("asset-list-container");
+                        if (assetListContainer != null)
+                        {
+                            assetListContainer.Clear();
+                            RebuildAssetList(profile, assetListContainer);
+                        }
+                    });
+                    searchRow.Add(searchField);
+                    
+                    var clearSearchButton = new Button(() => 
+                    {
+                        inspectorSearchFilter = "";
+                        var searchField = section.Q<TextField>("inspector-search-field");
+                        if (searchField != null)
+                        {
+                            searchField.value = "";
+                        }
+                        var assetListContainer = section.Q<VisualElement>("asset-list-container");
+                        if (assetListContainer != null)
+                        {
+                            assetListContainer.Clear();
+                            RebuildAssetList(profile, assetListContainer);
+                        }
+                    }) { text = "Clear" };
+                    clearSearchButton.AddToClassList("pe-button");
+                    clearSearchButton.AddToClassList("pe-button-small");
+                    searchRow.Add(clearSearchButton);
+                    
+                    section.Add(searchRow);
+                    
+                    var filterToggles = new VisualElement();
+                    filterToggles.style.flexDirection = FlexDirection.Row;
+                    filterToggles.style.marginBottom = 8;
+                    
+                    var includedToggle = new Toggle("Show Only Included") { value = showOnlyIncluded };
+                    includedToggle.AddToClassList("pe-toggle");
+                    includedToggle.RegisterValueChangedCallback(evt =>
+                    {
+                        showOnlyIncluded = evt.newValue;
+                        if (evt.newValue) showOnlyExcluded = false;
+                        var assetListContainer = section.Q<VisualElement>("asset-list-container");
+                        if (assetListContainer != null)
+                        {
+                            assetListContainer.Clear();
+                            RebuildAssetList(profile, assetListContainer);
+                        }
+                    });
+                    filterToggles.Add(includedToggle);
+                    
+                    var excludedToggle = new Toggle("Show Only Excluded") { value = showOnlyExcluded };
+                    excludedToggle.AddToClassList("pe-toggle");
+                    excludedToggle.RegisterValueChangedCallback(evt =>
+                    {
+                        showOnlyExcluded = evt.newValue;
+                        if (evt.newValue) showOnlyIncluded = false;
+                        var assetListContainer = section.Q<VisualElement>("asset-list-container");
+                        if (assetListContainer != null)
+                        {
+                            assetListContainer.Clear();
+                            RebuildAssetList(profile, assetListContainer);
+                        }
+                    });
+                    filterToggles.Add(excludedToggle);
+                    
+                    section.Add(filterToggles);
+                    
+                    // Asset list header with actions
+                    var listHeader = new VisualElement();
+                    listHeader.style.flexDirection = FlexDirection.Row;
+                    listHeader.style.justifyContent = Justify.SpaceBetween;
+                    listHeader.style.marginBottom = 4;
+                    
+                    var listTitle = new Label("Discovered Assets");
+                    listTitle.AddToClassList("pe-label");
+                    listHeader.Add(listTitle);
+                    
+                    var listActions = new VisualElement();
+                    listActions.style.flexDirection = FlexDirection.Row;
+                    
+                    var includeAllButton = new Button(() => 
+                    {
+                        Undo.RecordObject(profile, "Include All Assets");
+                        foreach (var asset in profile.discoveredAssets)
+                            asset.included = true;
+                        EditorUtility.SetDirty(profile);
+                        AssetDatabase.SaveAssets();
+                        UpdateProfileDetails();
+                    }) { text = "Include All" };
+                    includeAllButton.AddToClassList("pe-button");
+                    includeAllButton.AddToClassList("pe-button-action");
+                    includeAllButton.AddToClassList("pe-button-small");
+                    listActions.Add(includeAllButton);
+                    
+                    var excludeAllButton = new Button(() => 
+                    {
+                        Undo.RecordObject(profile, "Exclude All Assets");
+                        foreach (var asset in profile.discoveredAssets)
+                            asset.included = false;
+                        EditorUtility.SetDirty(profile);
+                        AssetDatabase.SaveAssets();
+                        UpdateProfileDetails();
+                    }) { text = "Exclude All" };
+                    excludeAllButton.AddToClassList("pe-button");
+                    excludeAllButton.AddToClassList("pe-button-action");
+                    excludeAllButton.AddToClassList("pe-button-small");
+                    listActions.Add(excludeAllButton);
+                    
+                    listHeader.Add(listActions);
+                    section.Add(listHeader);
+                    
+                    // Filter assets
+                    var filteredAssets = profile.discoveredAssets.AsEnumerable();
+                    
+                    if (!string.IsNullOrWhiteSpace(inspectorSearchFilter))
+                    {
+                        filteredAssets = filteredAssets.Where(a => 
+                            a.assetPath.IndexOf(inspectorSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0);
+                    }
+                    
+                    if (showOnlyIncluded)
+                        filteredAssets = filteredAssets.Where(a => a.included);
+                    
+                    if (showOnlyExcluded)
+                        filteredAssets = filteredAssets.Where(a => !a.included);
+                    
+                    var filteredList = filteredAssets.ToList();
+                    
+                    // Asset list container (wraps the scrollview for easy rebuilding)
+                    var assetListContainer = new VisualElement();
+                    assetListContainer.name = "asset-list-container";
+                    RebuildAssetList(profile, assetListContainer);
+                    section.Add(assetListContainer);
+                    
+                    // Permanent ignore list
+                    var ignoreLabel = new Label("Permanent Ignore List");
+                    ignoreLabel.AddToClassList("pe-label");
+                    ignoreLabel.style.marginTop = 12;
+                    ignoreLabel.style.marginBottom = 4;
+                    section.Add(ignoreLabel);
+                    
+                    var ignoreHelpBox = new VisualElement();
+                    ignoreHelpBox.AddToClassList("pe-help-box");
+                    var ignoreHelpText = new Label("Folders in this list will be permanently ignored from all exports (like .gitignore).");
+                    ignoreHelpText.AddToClassList("pe-help-box-text");
+                    ignoreHelpBox.Add(ignoreHelpText);
+                    section.Add(ignoreHelpBox);
+                    
+                    if (profile.permanentIgnoreFolders == null || profile.permanentIgnoreFolders.Count == 0)
+                    {
+                        var noIgnoresLabel = new Label("No folders in ignore list.");
+                        noIgnoresLabel.AddToClassList("pe-label-secondary");
+                        noIgnoresLabel.style.paddingTop = 8;
+                        noIgnoresLabel.style.paddingBottom = 8;
+                        section.Add(noIgnoresLabel);
+                    }
+                    else
+                    {
+                        foreach (var ignoreFolder in profile.permanentIgnoreFolders.ToList())
+                        {
+                            var ignoreItem = new VisualElement();
+                            ignoreItem.AddToClassList("pe-folder-item");
+                            
+                            var ignorePathLabel = new Label(ignoreFolder);
+                            ignorePathLabel.AddToClassList("pe-folder-item-path");
+                            ignoreItem.Add(ignorePathLabel);
+                            
+                            var removeIgnoreButton = new Button(() => RemoveFromIgnoreList(profile, ignoreFolder)) { text = "×" };
+                            removeIgnoreButton.AddToClassList("pe-button");
+                            removeIgnoreButton.AddToClassList("pe-folder-item-remove");
+                            removeIgnoreButton.tooltip = "Remove from ignore list";
+                            ignoreItem.Add(removeIgnoreButton);
+                            
+                            section.Add(ignoreItem);
+                        }
+                    }
+                    
+                    var addIgnoreButton = new Button(() => 
+                    {
+                        string selectedFolder = EditorUtility.OpenFolderPanel("Select Folder to Ignore", Application.dataPath, "");
+                        if (!string.IsNullOrEmpty(selectedFolder))
+                        {
+                            string relativePath = GetRelativePath(selectedFolder);
+                            AddFolderToIgnoreList(profile, relativePath);
+                        }
+                    }) { text = "+ Add Folder to Ignore List" };
+                    addIgnoreButton.AddToClassList("pe-button");
+                    addIgnoreButton.style.marginTop = 8;
+                    section.Add(addIgnoreButton);
+                }
+            }
+            
+            return section;
+        }
+
+        private void RebuildAssetList(ExportProfile profile, VisualElement container)
+        {
+            // Filter assets
+            var filteredAssets = profile.discoveredAssets.AsEnumerable();
+            
+            if (!string.IsNullOrWhiteSpace(inspectorSearchFilter))
+            {
+                filteredAssets = filteredAssets.Where(a => 
+                    a.assetPath.IndexOf(inspectorSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0);
+            }
+            
+            if (showOnlyIncluded)
+                filteredAssets = filteredAssets.Where(a => a.included);
+            
+            if (showOnlyExcluded)
+                filteredAssets = filteredAssets.Where(a => !a.included);
+            
+            var filteredList = filteredAssets.ToList();
+            
+            // Asset list scrollview
+            var assetListScroll = new ScrollView();
+            assetListScroll.AddToClassList("pe-inspector-list");
+            
+            if (filteredList.Count == 0)
+            {
+                var emptyLabel = new Label("No assets match the current filters.");
+                emptyLabel.AddToClassList("pe-label-secondary");
+                emptyLabel.style.paddingTop = 20;
+                emptyLabel.style.paddingBottom = 20;
+                emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
+                assetListScroll.Add(emptyLabel);
+            }
+            else
+            {
+                // Group by folder
+                var groupedByFolder = filteredList
+                    .Where(a => !a.isFolder)
+                    .GroupBy(a => a.GetFolderPath())
+                    .OrderBy(g => g.Key);
+                
+                foreach (var group in groupedByFolder)
+                        {
+                            // Folder header
+                            var folderHeader = new VisualElement();
+                            folderHeader.style.flexDirection = FlexDirection.Row;
+                            folderHeader.style.justifyContent = Justify.SpaceBetween;
+                            folderHeader.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 1f);
+                            folderHeader.style.paddingTop = 6;
+                            folderHeader.style.paddingBottom = 6;
+                            folderHeader.style.paddingLeft = 8;
+                            folderHeader.style.paddingRight = 8;
+                            folderHeader.style.marginTop = 4;
+                            folderHeader.style.marginBottom = 2;
+                            
+                            var folderLabel = new Label(group.Key);
+                            folderLabel.AddToClassList("pe-label");
+                            folderLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                            folderHeader.Add(folderLabel);
+                            
+                            var folderActions = new VisualElement();
+                            folderActions.style.flexDirection = FlexDirection.Row;
+                            
+                            // .yucpignore Create/Edit button
+                            string folderFullPath = Path.GetFullPath(group.Key);
+                            bool hasIgnoreFile = YucpIgnoreHandler.HasIgnoreFile(folderFullPath);
+                            
+                            if (hasIgnoreFile)
+                            {
+                                var editIgnoreButton = new Button(() => OpenYucpIgnoreFile(folderFullPath)) { text = "Edit .yucpignore" };
+                                editIgnoreButton.AddToClassList("pe-button");
+                                editIgnoreButton.AddToClassList("pe-button-small");
+                                folderActions.Add(editIgnoreButton);
+                            }
+                            else
+                            {
+                                var createIgnoreButton = new Button(() => CreateYucpIgnoreFile(profile, folderFullPath)) { text = "Create .yucpignore" };
+                                createIgnoreButton.AddToClassList("pe-button");
+                                createIgnoreButton.AddToClassList("pe-button-small");
+                                folderActions.Add(createIgnoreButton);
+                            }
+                            
+                            var ignoreButton = new Button(() => AddFolderToIgnoreList(profile, group.Key)) { text = "Add to Ignore List" };
+                            ignoreButton.AddToClassList("pe-button");
+                            ignoreButton.AddToClassList("pe-button-small");
+                            folderActions.Add(ignoreButton);
+                            
+                            folderHeader.Add(folderActions);
+                            assetListScroll.Add(folderHeader);
+                            
+                            // Assets in folder
+                            foreach (var asset in group)
+                            {
+                                var assetItem = new VisualElement();
+                                assetItem.AddToClassList("pe-asset-item");
+                                
+                                // Checkbox
+                                var checkbox = new Toggle { value = asset.included };
+                                checkbox.AddToClassList("pe-asset-item-checkbox");
+                                checkbox.RegisterValueChangedCallback(evt =>
+                                {
+                                    Undo.RecordObject(profile, "Toggle Asset Inclusion");
+                                    asset.included = evt.newValue;
+                                    EditorUtility.SetDirty(profile);
+                                    AssetDatabase.SaveAssets();
+                                });
+                                assetItem.Add(checkbox);
+                                
+                                // Icon
+                                var icon = new Label(GetAssetTypeIcon(asset.assetType));
+                                icon.AddToClassList("pe-asset-item-icon");
+                                assetItem.Add(icon);
+                                
+                                // Name
+                                var nameLabel = new Label(asset.GetDisplayName());
+                                nameLabel.AddToClassList("pe-asset-item-name");
+                                if (asset.isDependency)
+                                {
+                                    nameLabel.text += " [Dep]";
+                                }
+                                assetItem.Add(nameLabel);
+                                
+                                // Type
+                                var typeLabel = new Label(asset.assetType);
+                                typeLabel.AddToClassList("pe-asset-item-type");
+                                assetItem.Add(typeLabel);
+                                
+                                // Size
+                                if (!asset.isFolder && asset.fileSize > 0)
+                                {
+                                    var sizeLabel = new Label(FormatBytes(asset.fileSize));
+                                    sizeLabel.AddToClassList("pe-asset-item-size");
+                                    assetItem.Add(sizeLabel);
+                                }
+                                
+                                assetListScroll.Add(assetItem);
+                            }
+                        }
+            }
+            
+            container.Add(assetListScroll);
+        }
+
+        private void RebuildDependencyList(ExportProfile profile, VisualElement section, VisualElement container)
+        {
+            // Filter dependencies based on search
+            var filteredDependencies = profile.dependencies.AsEnumerable();
+            
+            if (!string.IsNullOrWhiteSpace(dependenciesSearchFilter))
+            {
+                filteredDependencies = filteredDependencies.Where(d =>
+                    d.packageName.IndexOf(dependenciesSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    (!string.IsNullOrEmpty(d.displayName) && d.displayName.IndexOf(dependenciesSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0));
+            }
+            
+            // Apply toggle filters if they exist
+            var enabledFilter = section.Q<Toggle>("enabled-filter");
+            var vpmFilter = section.Q<Toggle>("vpm-filter");
+            
+            if (enabledFilter?.value == true)
+            {
+                filteredDependencies = filteredDependencies.Where(d => d.enabled);
+            }
+            
+            if (vpmFilter?.value == true)
+            {
+                filteredDependencies = filteredDependencies.Where(d => d.isVpmDependency);
+            }
+            
+            var filteredList = filteredDependencies.ToList();
+            
+            // Dependencies list
+            if (filteredList.Count == 0 && profile.dependencies.Count > 0)
+            {
+                var emptyLabel = new Label("No dependencies match the current filter.");
+                emptyLabel.AddToClassList("pe-label-secondary");
+                emptyLabel.style.paddingTop = 10;
+                emptyLabel.style.paddingBottom = 10;
+                container.Add(emptyLabel);
+            }
+            else if (profile.dependencies.Count == 0)
+            {
+                var emptyLabel = new Label("No dependencies configured. Add manually or scan.");
+                emptyLabel.AddToClassList("pe-label-secondary");
+                emptyLabel.style.paddingTop = 10;
+                emptyLabel.style.paddingBottom = 10;
+                container.Add(emptyLabel);
+            }
+            else
+            {
+                for (int i = 0; i < filteredList.Count; i++)
+                {
+                    var dep = filteredList[i];
+                    var originalIndex = profile.dependencies.IndexOf(dep);
+                    var depCard = CreateDependencyCard(dep, originalIndex, profile);
+                    container.Add(depCard);
+                }
+                
+                // Select all/none buttons
+                var selectButtons = new VisualElement();
+                selectButtons.style.flexDirection = FlexDirection.Row;
+                selectButtons.style.marginTop = 8;
+                selectButtons.style.marginBottom = 8;
+                
+                var selectAllButton = new Button(() => 
+                {
+                    foreach (var dep in profile.dependencies)
+                    {
+                        dep.enabled = true;
+                    }
+                    EditorUtility.SetDirty(profile);
+                    container.Clear();
+                    RebuildDependencyList(profile, section, container);
+                }) { text = "Select All" };
+                selectAllButton.AddToClassList("pe-button");
+                selectAllButton.AddToClassList("pe-button-action");
+                selectAllButton.style.flexGrow = 1;
+                selectAllButton.style.marginRight = 4;
+                selectButtons.Add(selectAllButton);
+                
+                var deselectAllButton = new Button(() => 
+                {
+                    foreach (var dep in profile.dependencies)
+                    {
+                        dep.enabled = false;
+                    }
+                    EditorUtility.SetDirty(profile);
+                    container.Clear();
+                    RebuildDependencyList(profile, section, container);
+                }) { text = "Deselect All" };
+                deselectAllButton.AddToClassList("pe-button");
+                deselectAllButton.AddToClassList("pe-button-action");
+                deselectAllButton.style.flexGrow = 1;
+                deselectAllButton.style.marginLeft = 4;
+                selectButtons.Add(deselectAllButton);
+                
+                container.Add(selectButtons);
+            }
+        }
+
+        private VisualElement CreateDependenciesSection(ExportProfile profile)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            
+            var title = new Label("Package Dependencies");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            var helpBox = new VisualElement();
+            helpBox.AddToClassList("pe-help-box");
+            var helpText = new Label("Bundle: Include dependency files directly in the exported package\nDependency: Add to package.json for automatic download when package is installed");
+            helpText.AddToClassList("pe-help-box-text");
+            helpBox.Add(helpText);
+            section.Add(helpBox);
+            
+            // Search/Filter for dependencies
+            if (profile.dependencies.Count > 0)
+            {
+                var searchRow = new VisualElement();
+                searchRow.style.flexDirection = FlexDirection.Row;
+                searchRow.style.marginTop = 8;
+                searchRow.style.marginBottom = 8;
+                
+                var searchField = new TextField { value = dependenciesSearchFilter };
+                searchField.AddToClassList("pe-input");
+                searchField.style.flexGrow = 1;
+                searchField.style.marginRight = 4;
+                searchField.name = "dependencies-search-field";
+                searchField.RegisterValueChangedCallback(evt =>
+                {
+                    dependenciesSearchFilter = evt.newValue;
+                    // Don't rebuild entire UI - just update dependency list
+                    var depListContainer = section.Q<VisualElement>("dep-list-container");
+                    if (depListContainer != null)
+                    {
+                        depListContainer.Clear();
+                        RebuildDependencyList(profile, section, depListContainer);
+                    }
+                });
+                searchRow.Add(searchField);
+                
+                var clearSearchButton = new Button(() => 
+                {
+                    dependenciesSearchFilter = "";
+                    var searchField = section.Q<TextField>("dependencies-search-field");
+                    if (searchField != null)
+                    {
+                        searchField.value = "";
+                    }
+                    var depListContainer = section.Q<VisualElement>("dep-list-container");
+                    if (depListContainer != null)
+                    {
+                        depListContainer.Clear();
+                        RebuildDependencyList(profile, section, depListContainer);
+                    }
+                }) { text = "Clear" };
+                clearSearchButton.AddToClassList("pe-button");
+                clearSearchButton.AddToClassList("pe-button-small");
+                searchRow.Add(clearSearchButton);
+                
+                section.Add(searchRow);
+                
+                // Filter toggles
+                var filterRow = new VisualElement();
+                filterRow.style.flexDirection = FlexDirection.Row;
+                filterRow.style.marginBottom = 8;
+                
+                var enabledToggle = new Toggle("Enabled Only") { value = false };
+                enabledToggle.name = "enabled-filter";
+                enabledToggle.AddToClassList("pe-toggle");
+                enabledToggle.RegisterValueChangedCallback(evt =>
+                {
+                    var depListContainer = section.Q<VisualElement>("dep-list-container");
+                    if (depListContainer != null)
+                    {
+                        depListContainer.Clear();
+                        RebuildDependencyList(profile, section, depListContainer);
+                    }
+                });
+                filterRow.Add(enabledToggle);
+                
+                var vpmToggle = new Toggle("VPM Only") { value = false };
+                vpmToggle.name = "vpm-filter";
+                vpmToggle.AddToClassList("pe-toggle");
+                vpmToggle.RegisterValueChangedCallback(evt =>
+                {
+                    var depListContainer = section.Q<VisualElement>("dep-list-container");
+                    if (depListContainer != null)
+                    {
+                        depListContainer.Clear();
+                        RebuildDependencyList(profile, section, depListContainer);
+                    }
+                });
+                filterRow.Add(vpmToggle);
+                
+                section.Add(filterRow);
+            }
+            
+            // Dependency list container (wraps the list for easy rebuilding)
+            var depListContainer = new VisualElement();
+            depListContainer.name = "dep-list-container";
+            RebuildDependencyList(profile, section, depListContainer);
+            section.Add(depListContainer);
+            
+            // Action buttons - row 1
+            var buttonRow1 = new VisualElement();
+            buttonRow1.style.flexDirection = FlexDirection.Row;
+            buttonRow1.style.marginTop = 8;
+            
+            var addButton = new Button(() => AddDependency(profile)) { text = "+ Add Dependency" };
+            addButton.AddToClassList("pe-button");
+            addButton.AddToClassList("pe-button-action");
+            addButton.style.flexGrow = 1;
+            addButton.style.marginRight = 4;
+            buttonRow1.Add(addButton);
+            
+            var scanButton = new Button(() => ScanProfileDependencies(profile)) { text = "Scan Installed" };
+            scanButton.AddToClassList("pe-button");
+            scanButton.AddToClassList("pe-button-action");
+            scanButton.style.flexGrow = 1;
+            scanButton.style.marginLeft = 4;
+            buttonRow1.Add(scanButton);
+            
+            section.Add(buttonRow1);
+            
+            // Action buttons - row 2 (Auto-Detect)
+            if (profile.dependencies.Count > 0 && profile.foldersToExport.Count > 0)
+            {
+                var autoDetectButton = new Button(() => AutoDetectUsedDependencies(profile)) { text = "Auto-Detect Used" };
+                autoDetectButton.AddToClassList("pe-button");
+                autoDetectButton.AddToClassList("pe-button-action");
+                autoDetectButton.style.marginTop = 8;
+                section.Add(autoDetectButton);
+            }
+            else if (profile.foldersToExport.Count == 0)
+            {
+                var hintBox = new VisualElement();
+                hintBox.AddToClassList("pe-help-box");
+                hintBox.style.marginTop = 8;
+                var hintText = new Label("Add export folders first, then use 'Auto-Detect Used' to find dependencies");
+                hintText.AddToClassList("pe-help-box-text");
+                hintBox.Add(hintText);
+                section.Add(hintBox);
+            }
+            
+            return section;
+        }
+
+        private VisualElement CreateDependencyCard(PackageDependency dep, int index, ExportProfile profile)
+        {
+            var card = new VisualElement();
+            card.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 1f);
+            card.style.marginBottom = 8;
+            card.style.paddingTop = 8;
+            card.style.paddingBottom = 8;
+            card.style.paddingLeft = 12;
+            card.style.paddingRight = 12;
+            card.style.borderLeftWidth = 3;
+            card.style.borderLeftColor = dep.enabled ? new Color(0.21f, 0.75f, 0.73f, 1f) : new Color(0.3f, 0.3f, 0.3f, 1f);
+            
+            // Header row
+            var headerRow = new VisualElement();
+            headerRow.style.flexDirection = FlexDirection.Row;
+            headerRow.style.alignItems = Align.Center;
+            headerRow.style.marginBottom = dep.enabled ? 8 : 0;
+            
+            // Enable checkbox
+            var enableToggle = new Toggle { value = dep.enabled };
+            enableToggle.AddToClassList("pe-toggle");
+            enableToggle.style.marginRight = 8;
+            enableToggle.RegisterValueChangedCallback(evt =>
+            {
+                dep.enabled = evt.newValue;
+                EditorUtility.SetDirty(profile);
+                UpdateProfileDetails();
+            });
+            headerRow.Add(enableToggle);
+            
+            // Package name label
+            string label = dep.isVpmDependency ? "[VPM] " : "";
+            label += string.IsNullOrEmpty(dep.displayName) ? dep.packageName : dep.displayName;
+            
+            var nameLabel = new Label(label);
+            nameLabel.AddToClassList("pe-label");
+            nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            nameLabel.style.flexGrow = 1;
+            headerRow.Add(nameLabel);
+            
+            // Remove button
+            var removeButton = new Button(() => 
+            {
+                profile.dependencies.RemoveAt(index);
+                EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
+                UpdateProfileDetails();
+            }) { text = "×" };
+            removeButton.AddToClassList("pe-button");
+            removeButton.AddToClassList("pe-button-danger");
+            removeButton.AddToClassList("pe-button-small");
+            removeButton.style.width = 25;
+            headerRow.Add(removeButton);
+            
+            card.Add(headerRow);
+            
+            // Content area - only show if enabled
+            if (dep.enabled)
+            {
+                // Package Name field
+                var packageNameRow = CreateFormRow("Package Name", tooltip: "Unique identifier for the package");
+                var packageNameField = new TextField { value = dep.packageName };
+                packageNameField.AddToClassList("pe-input");
+                packageNameField.AddToClassList("pe-form-field");
+                packageNameField.RegisterValueChangedCallback(evt =>
+                {
+                    dep.packageName = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                });
+                packageNameRow.Add(packageNameField);
+                card.Add(packageNameRow);
+                
+                // Version field
+                var versionRow = CreateFormRow("Version", tooltip: "Package version");
+                var versionField = new TextField { value = dep.packageVersion };
+                versionField.AddToClassList("pe-input");
+                versionField.AddToClassList("pe-form-field");
+                versionField.RegisterValueChangedCallback(evt =>
+                {
+                    dep.packageVersion = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                });
+                versionRow.Add(versionField);
+                card.Add(versionRow);
+                
+                // Display Name field
+                var displayNameRow = CreateFormRow("Display Name", tooltip: "Human-readable name");
+                var displayNameField = new TextField { value = dep.displayName };
+                displayNameField.AddToClassList("pe-input");
+                displayNameField.AddToClassList("pe-form-field");
+                displayNameField.RegisterValueChangedCallback(evt =>
+                {
+                    dep.displayName = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                    UpdateProfileDetails(); // Refresh to update card title
+                });
+                displayNameRow.Add(displayNameField);
+                card.Add(displayNameRow);
+                
+                // Export Mode dropdown
+                var exportModeRow = CreateFormRow("Export Mode", tooltip: "How this dependency should be handled");
+                var exportModeField = new EnumField(dep.exportMode);
+                exportModeField.AddToClassList("pe-form-field");
+                exportModeField.RegisterValueChangedCallback(evt =>
+                {
+                    dep.exportMode = (DependencyExportMode)evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                });
+                exportModeRow.Add(exportModeField);
+                card.Add(exportModeRow);
+                
+                // VPM Package toggle
+                var vpmToggle = new Toggle("VPM Package") { value = dep.isVpmDependency };
+                vpmToggle.AddToClassList("pe-toggle");
+                vpmToggle.tooltip = "Is this a VRChat Package Manager dependency?";
+                vpmToggle.RegisterValueChangedCallback(evt =>
+                {
+                    dep.isVpmDependency = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                    UpdateProfileDetails(); // Refresh to update card title
+                });
+                card.Add(vpmToggle);
+            }
+            
+            return card;
+        }
+
+        private VisualElement CreateObfuscationSection(ExportProfile profile)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            
+            var title = new Label("Assembly Obfuscation");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            var enableToggle = new Toggle("Enable Obfuscation") { value = profile.enableObfuscation };
+            enableToggle.AddToClassList("pe-toggle");
+            enableToggle.tooltip = "Protect compiled assemblies using ConfuserEx";
+            enableToggle.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Enable Obfuscation");
+                    profile.enableObfuscation = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                    UpdateProfileDetails(); // Refresh to show/hide obfuscation options
+                }
+            });
+            section.Add(enableToggle);
+            
+            if (profile.enableObfuscation)
+            {
+                // Protection Level
+                var presetRow = CreateFormRow("Protection Level", tooltip: "Choose how aggressively to obfuscate");
+                var presetField = new EnumField(profile.obfuscationPreset);
+                presetField.AddToClassList("pe-form-field");
+                presetField.RegisterValueChangedCallback(evt =>
+                {
+                    if (profile != null)
+                    {
+                        Undo.RecordObject(profile, "Change Obfuscation Preset");
+                        profile.obfuscationPreset = (ConfuserExPreset)evt.newValue;
+                        EditorUtility.SetDirty(profile);
+                    }
+                });
+                presetRow.Add(presetField);
+                section.Add(presetRow);
+                
+                // Strip Debug Symbols
+                var stripToggle = new Toggle("Strip Debug Symbols") { value = profile.stripDebugSymbols };
+                stripToggle.AddToClassList("pe-toggle");
+                stripToggle.RegisterValueChangedCallback(evt =>
+                {
+                    if (profile != null)
+                    {
+                        Undo.RecordObject(profile, "Change Strip Debug Symbols");
+                        profile.stripDebugSymbols = evt.newValue;
+                        EditorUtility.SetDirty(profile);
+                    }
+                });
+                section.Add(stripToggle);
+                
+                // Scan Assemblies button
+                var scanButton = new Button(() => ScanAllAssemblies(profile)) { text = "Scan Assemblies" };
+                scanButton.AddToClassList("pe-button");
+                scanButton.AddToClassList("pe-button-action");
+                scanButton.style.marginTop = 8;
+                section.Add(scanButton);
+                
+                // Assembly count
+                if (profile.assembliesToObfuscate.Count > 0)
+                {
+                    int enabledCount = profile.assembliesToObfuscate.Count(a => a.enabled);
+                    var countLabel = new Label($"Found {profile.assembliesToObfuscate.Count} assemblies ({enabledCount} selected)");
+                    countLabel.AddToClassList("pe-label-secondary");
+                    countLabel.style.marginTop = 8;
+                    section.Add(countLabel);
+                }
+            }
+            
+            return section;
+        }
+
+        private VisualElement CreateQuickActionsSection(ExportProfile profile)
+        {
+            var section = new VisualElement();
+            section.style.flexDirection = FlexDirection.Row;
+            section.style.marginTop = 16;
+            
+            var inspectorButton = new Button(() => 
+            {
+                Selection.activeObject = profile;
+                EditorGUIUtility.PingObject(profile);
+            }) 
+            { text = "Open in Inspector" };
+            inspectorButton.AddToClassList("pe-button");
+            inspectorButton.AddToClassList("pe-button-action");
+            inspectorButton.style.flexGrow = 1;
+            section.Add(inspectorButton);
+            
+            var saveButton = new Button(() => 
+            {
+                EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
+                Debug.Log($"[Package Exporter] Saved changes to {profile.name}");
+            }) 
+            { text = "Save Changes" };
+            saveButton.AddToClassList("pe-button");
+            saveButton.AddToClassList("pe-button-action");
+            saveButton.style.flexGrow = 1;
+            section.Add(saveButton);
+            
+            return section;
+        }
+
+        private VisualElement CreateFormRow(string labelText, string tooltip = "")
+        {
+            var row = new VisualElement();
+            row.AddToClassList("pe-form-row");
+            
+            var label = new Label(labelText);
+            label.AddToClassList("pe-form-label");
+            if (!string.IsNullOrEmpty(tooltip))
+            {
+                label.tooltip = tooltip;
+            }
+            row.Add(label);
+            
+            return row;
+        }
+
+        private void UpdateBottomBar()
+        {
+            // Update multi-select info
+            if (selectedProfileIndices.Count > 1)
+            {
+                _multiSelectInfo.style.display = DisplayStyle.Flex;
+                var textLabel = _multiSelectInfo.Q<Label>("multiSelectText");
+                if (textLabel != null)
+                {
+                    textLabel.text = $"{selectedProfileIndices.Count} profiles selected";
+                }
+            }
+            else
+            {
+                _multiSelectInfo.style.display = DisplayStyle.None;
+            }
+            
+            // Update export selected button
+            _exportSelectedButton.SetEnabled(selectedProfileIndices.Count > 0 && !isExporting);
+            if (selectedProfileIndices.Count == 1)
+            {
+                _exportSelectedButton.text = "Export Selected Profile";
+            }
+            else if (selectedProfileIndices.Count > 1)
+            {
+                _exportSelectedButton.text = $"Export Selected Profiles ({selectedProfileIndices.Count})";
+            }
+            else
+            {
+                _exportSelectedButton.text = "Export Selected";
+            }
+            
+            // Update export all button
+            _exportAllButton.SetEnabled(allProfiles.Count > 0 && !isExporting);
+        }
+
+        private void UpdateProgress(float progress, string status)
+        {
+            currentProgress = progress;
+            currentStatus = status;
+            
+            _progressFill.style.width = Length.Percent(progress * 100);
+            _progressText.text = $"{(progress * 100):F0}% - {status}";
+        }
+
+        // Helper methods
+        private string GetProfileDisplayName(ExportProfile profile)
+        {
+            return string.IsNullOrEmpty(profile.packageName) ? profile.name : profile.packageName;
+        }
+
         private void CheckDelayedRename()
         {
             if (pendingRenameProfile != null && !string.IsNullOrEmpty(pendingRenamePackageName))
             {
-                double currentTime = EditorApplication.timeSinceStartup;
-                double timeSinceChange = currentTime - lastPackageNameChangeTime;
+                double timeSinceChange = EditorApplication.timeSinceStartup - lastPackageNameChangeTime;
                 
                 if (timeSinceChange >= RENAME_DELAY_SECONDS)
                 {
@@ -196,17 +1994,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     pendingRenameProfile = null;
                     pendingRenamePackageName = "";
                 }
-                else
-                {
-                    // Trigger repaint to check again soon
-                    Repaint();
-                }
             }
         }
-        
-        /// <summary>
-        /// Performs the actual asset file rename.
-        /// </summary>
+
         private void PerformDelayedRename(ExportProfile profile, string newPackageName)
         {
             if (profile == null) return;
@@ -214,34 +2004,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
             string currentPath = AssetDatabase.GetAssetPath(profile);
             if (string.IsNullOrEmpty(currentPath)) return;
             
-            // Get directory and construct new filename
             string directory = Path.GetDirectoryName(currentPath);
             string extension = Path.GetExtension(currentPath);
             string newFileName = SanitizeFileName(newPackageName) + extension;
             string newPath = Path.Combine(directory, newFileName).Replace('\\', '/');
             
-            // Only rename if the name actually changed
             if (newPath != currentPath)
             {
                 string result = AssetDatabase.MoveAsset(currentPath, newPath);
                 if (string.IsNullOrEmpty(result))
                 {
-                    // Success - also sync profileName
                     profile.profileName = profile.packageName;
                     EditorUtility.SetDirty(profile);
                     AssetDatabase.SaveAssets();
                     Debug.Log($"[Package Exporter] Renamed profile asset to: {newPath}");
                     
-                    // Reload profiles to update the list
                     LoadProfiles();
                     
-                    // Reselect the profile by finding it again
                     var updatedProfile = AssetDatabase.LoadAssetAtPath<ExportProfile>(newPath);
                     if (updatedProfile != null)
                     {
                         selectedProfile = updatedProfile;
-                        selectedProfileIndex = allProfiles.IndexOf(updatedProfile);
-                        currentlyEditingProfile = updatedProfile;
+                        UpdateProfileList();
+                        UpdateProfileDetails();
                     }
                 }
                 else
@@ -250,10 +2035,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
         }
-        
-        /// <summary>
-        /// Sanitizes a filename by removing invalid characters.
-        /// </summary>
+
         private string SanitizeFileName(string fileName)
         {
             if (string.IsNullOrEmpty(fileName)) return "NewPackage";
@@ -266,648 +2048,75 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             return fileName;
         }
-        
-        private void DrawHeader()
+
+        private void BrowseForIcon(ExportProfile profile)
         {
-            GUILayout.Space(10);
-            
-            // Logo and title with fixed height
-            GUILayout.BeginHorizontal(GUILayout.Height(60));
-            GUILayout.Space(20);
-            
-            if (logoTexture != null)
+            string iconPath = EditorUtility.OpenFilePanel("Select Package Icon", "", "png,jpg,jpeg");
+            if (!string.IsNullOrEmpty(iconPath))
             {
-                // Smaller logo to fit in fixed height
-                float logoHeight = 50;
-                float logoWidth = logoHeight * (2020f / 865f); // ~116px
-                
-                // Create a properly scaled texture display
-                Rect logoRect = GUILayoutUtility.GetRect(logoWidth, logoHeight, GUILayout.ExpandWidth(false));
-                GUI.DrawTexture(logoRect, logoTexture, ScaleMode.ScaleToFit, true);
-                GUILayout.Space(15);
-            }
-            
-            GUILayout.BeginVertical();
-            GUILayout.FlexibleSpace();
-            GUILayout.Label("Package Exporter", headerStyle);
-            GUILayout.FlexibleSpace();
-            GUILayout.EndVertical();
-            
-            GUILayout.FlexibleSpace();
-            GUILayout.EndHorizontal();
-            
-            GUILayout.Space(10);
-            DrawHorizontalLine();
-        }
-        
-        private void DrawProfileList()
-        {
-            GUILayout.Space(20);
-            
-            GUILayout.BeginVertical(GUILayout.Width(270), GUILayout.ExpandHeight(true));
-            
-            GUILayout.Label("Export Profiles", sectionHeaderStyle);
-            GUILayout.Space(5);
-            
-            if (selectedProfileIndices.Count > 1)
-            {
-                EditorGUILayout.HelpBox(
-                    $"{selectedProfileIndices.Count} profiles selected. Use the export button below to export only these.",
-                    MessageType.None);
-                GUILayout.Space(5);
-            }
-            
-            // Profile list - expands to fill available height
-            profileListScrollPos = GUILayout.BeginScrollView(profileListScrollPos, GUI.skin.box, GUILayout.ExpandHeight(true));
-            
-            if (allProfiles.Count == 0)
-            {
-                GUILayout.Label("No profiles found", EditorStyles.centeredGreyMiniLabel);
-                GUILayout.Label("Create one using the button below", EditorStyles.centeredGreyMiniLabel);
-            }
-            else
-            {
-                for (int i = 0; i < allProfiles.Count; i++)
+                string projectPath = "Assets/YUCP/ExportProfiles/Icons/";
+                if (!AssetDatabase.IsValidFolder("Assets/YUCP/ExportProfiles/Icons"))
                 {
-                    var profile = allProfiles[i];
-                    if (profile == null)
-                        continue;
-                    
-                    bool isSelected = selectedProfileIndices.Contains(i);
-                    
-                    // Create a custom clickable area with proper text display
-                    GUILayout.BeginVertical();
-                    
-                    // Background box for the clickable area
-                    var boxStyle = new GUIStyle(GUI.skin.box);
-                    if (isSelected)
-                    {
-                        boxStyle.normal.background = MakeTex(2, 2, new Color(0.2f, 0.75f, 0.73f, 0.3f));
-                    }
-                    
-                    GUILayout.BeginVertical(boxStyle);
-                    
-                    // Add padding around the text
-                    GUILayout.Space(8);
-                    GUILayout.BeginHorizontal();
-                    GUILayout.Space(10);
-                    
-                    // Text with proper styling
-                    var labelStyle = new GUIStyle(EditorStyles.label);
-                    labelStyle.normal.textColor = isSelected ? new Color(0.2f, 0.75f, 0.73f) : Color.white;
-                    labelStyle.fontSize = 12;
-                    labelStyle.fontStyle = isSelected ? FontStyle.Bold : FontStyle.Normal;
-                    
-                    GUILayout.Label(GetProfileButtonLabel(profile), labelStyle);
-                    
-                    GUILayout.FlexibleSpace();
-                    GUILayout.Space(10);
-                    GUILayout.EndHorizontal();
-                    GUILayout.Space(8);
-                    
-                    GUILayout.EndVertical();
-                    
-                    // Make the entire area clickable with multi-selection support
-                    if (Event.current.type == EventType.MouseDown && GUILayoutUtility.GetLastRect().Contains(Event.current.mousePosition))
-                    {
-                        // Save any pending changes before switching profiles
-                        if (currentlyEditingProfile != null && currentlyEditingProfile != profile)
-                        {
-                            EditorUtility.SetDirty(currentlyEditingProfile);
-                        }
-                        
-                        HandleProfileSelection(i, Event.current);
-                        
-                        // Update currently editing profile after selection
-                        if (selectedProfile != null)
-                        {
-                            currentlyEditingProfile = selectedProfile;
-                        }
-                        
-                        Event.current.Use();
-                    }
-                    
-                    GUILayout.EndVertical();
-                    GUILayout.Space(5);
+                    if (!AssetDatabase.IsValidFolder("Assets/YUCP"))
+                        AssetDatabase.CreateFolder("Assets", "YUCP");
+                    if (!AssetDatabase.IsValidFolder("Assets/YUCP/ExportProfiles"))
+                        AssetDatabase.CreateFolder("Assets/YUCP", "ExportProfiles");
+                    AssetDatabase.CreateFolder("Assets/YUCP/ExportProfiles", "Icons");
                 }
-            }
-            
-            GUILayout.EndScrollView();
-            
-            // Profile management buttons
-            GUILayout.Space(5);
-            GUILayout.BeginHorizontal();
-            
-            if (GUILayout.Button("+ New", GUILayout.Height(30)))
-            {
-                CreateNewProfile();
-            }
-            
-            GUI.enabled = selectedProfile != null;
-            if (GUILayout.Button("Clone", GUILayout.Height(30)))
-            {
-                CloneProfile(selectedProfile);
-            }
-            
-            if (GUILayout.Button("Delete", GUILayout.Height(30)))
-            {
-                DeleteProfile(selectedProfile);
-            }
-            GUI.enabled = true;
-            
-            GUILayout.EndHorizontal();
-            
-            GUILayout.Space(10);
-            
-            if (GUILayout.Button("Refresh Profiles", GUILayout.Height(25)))
-            {
-                LoadProfiles();
-            }
-            
-            GUILayout.EndVertical();
-            
-            GUILayout.Space(20);
-        }
-        
-        private void DrawSelectedProfile()
-        {
-            GUILayout.BeginVertical(GUILayout.ExpandWidth(true));
-            
-            if (selectedProfile == null)
-            {
-                GUILayout.Space(20);
-                GUILayout.Label("No profile selected", sectionHeaderStyle);
-                GUILayout.Space(10);
-                GUILayout.Label("Select a profile from the list or create a new one.", EditorStyles.wordWrappedLabel);
-            }
-            else
-            {
-                GUILayout.Label($"Selected: {selectedProfile.name}", sectionHeaderStyle);
-                GUILayout.Space(10);
                 
-                DrawProfileSummary(selectedProfile);
-            }
-            
-            GUILayout.EndVertical();
-            GUILayout.Space(20);
-        }
-        
-        private void DrawProfileSummary(ExportProfile profile)
-        {
-            // Section header style
-            var summaryStyle = new GUIStyle(EditorStyles.boldLabel);
-            
-            // Package Metadata Section
-            GUILayout.BeginVertical(EditorStyles.helpBox);
-            
-            GUILayout.Label("Package Metadata", summaryStyle, GUILayout.Height(20));
-            GUILayout.Space(5);
-            
-            // Editable fields
-            // Editable fields - only edit if this is the currently selected profile
-            if (profile != currentlyEditingProfile && currentlyEditingProfile != null)
-            {
-                // Prevent editing of non-selected profile
-                GUI.enabled = false;
-            }
-            
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField(new GUIContent("Package Name", "Unique identifier for your package (e.g., com.yucp.mypackage). This also sets the profile name."), GUILayout.Width(120));
-            EditorGUI.BeginChangeCheck();
-            string newPackageName = EditorGUILayout.TextField(profile.packageName);
-            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
-            {
-                Undo.RecordObject(profile, "Change Package Name");
-                profile.packageName = newPackageName;
-                // Sync profile name with package name
-                profile.profileName = profile.packageName;
-                EditorUtility.SetDirty(profile);
+                string fileName = Path.GetFileName(iconPath);
+                string targetPath = projectPath + fileName;
                 
-                // Schedule delayed rename
-                lastPackageNameChangeTime = EditorApplication.timeSinceStartup;
-                pendingRenameProfile = profile;
-                pendingRenamePackageName = newPackageName;
-            }
-            EditorGUILayout.EndHorizontal();
-            
-            GUI.enabled = true;
-            
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField(new GUIContent("Version", "Package version following semantic versioning (e.g., 1.0.0)"), GUILayout.Width(120));
-            EditorGUI.BeginChangeCheck();
-            profile.version = EditorGUILayout.TextField(profile.version);
-            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
-            {
-                Undo.RecordObject(profile, "Change Version");
+                File.Copy(iconPath, targetPath, true);
+                AssetDatabase.ImportAsset(targetPath);
+                AssetDatabase.Refresh();
+                
+                profile.icon = AssetDatabase.LoadAssetAtPath<Texture2D>(targetPath);
                 EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
+                
+                UpdateProfileDetails();
             }
-            EditorGUILayout.EndHorizontal();
-            
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField(new GUIContent("Author", "Your name or organization"), GUILayout.Width(120));
-            EditorGUI.BeginChangeCheck();
-            profile.author = EditorGUILayout.TextField(profile.author);
-            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
-            {
-                Undo.RecordObject(profile, "Change Author");
-                EditorUtility.SetDirty(profile);
-            }
-            EditorGUILayout.EndHorizontal();
-            
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField(new GUIContent("Icon", "Package icon that will be displayed in the Unity Package Manager"), GUILayout.Width(120));
-            profile.icon = (Texture2D)EditorGUILayout.ObjectField(profile.icon, typeof(Texture2D), false);
-            
-            if (GUILayout.Button(new GUIContent("Browse", "Select an icon file from your computer"), GUILayout.Width(60)))
-            {
-                string iconPath = EditorUtility.OpenFilePanel("Select Package Icon", "", "png,jpg,jpeg");
-                if (!string.IsNullOrEmpty(iconPath))
-                {
-                    // Import the icon file
-                    string projectPath = "Assets/YUCP/ExportProfiles/Icons/";
-                    if (!AssetDatabase.IsValidFolder("Assets/YUCP/ExportProfiles/Icons"))
-                    {
-                        AssetDatabase.CreateFolder("Assets/YUCP/ExportProfiles", "Icons");
-                    }
-                    
-                    string fileName = Path.GetFileName(iconPath);
-                    string targetPath = projectPath + fileName;
-                    
-                    // Copy and import the file
-                    File.Copy(iconPath, targetPath, true);
-                    AssetDatabase.ImportAsset(targetPath);
-                    AssetDatabase.Refresh();
-                    
-                    // Load and assign the texture
-                    profile.icon = AssetDatabase.LoadAssetAtPath<Texture2D>(targetPath);
-                    EditorUtility.SetDirty(profile);
-                    AssetDatabase.SaveAssets();
-                }
-            }
-            EditorGUILayout.EndHorizontal();
-            
-            if (profile.icon != null)
-            {
-                GUILayout.BeginHorizontal();
-                GUILayout.FlexibleSpace();
-                GUILayout.Label(profile.icon, GUILayout.Width(64), GUILayout.Height(64));
-                GUILayout.FlexibleSpace();
-                GUILayout.EndHorizontal();
-            }
-            
-            EditorGUILayout.Space(5);
-            EditorGUILayout.LabelField(new GUIContent("Description", "Brief description of what your package does"));
-            EditorGUI.BeginChangeCheck();
-            profile.description = EditorGUILayout.TextArea(profile.description, GUILayout.Height(60));
-            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
-            {
-                Undo.RecordObject(profile, "Change Description");
-                EditorUtility.SetDirty(profile);
-            }
-            
-            GUILayout.EndVertical();
-            
-            GUILayout.Space(10);
-            
-            // Quick stats
-            GUILayout.BeginVertical(EditorStyles.helpBox);
-            
-            GUILayout.Label("Quick Summary", summaryStyle, GUILayout.Height(20));
-            GUILayout.Space(5);
-            
-            EditorGUILayout.LabelField("Folders to Export", profile.foldersToExport.Count.ToString());
-            
-            // Dependencies summary
-            if (profile.dependencies.Count > 0)
-            {
-                int bundled = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Bundle);
-                int referenced = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Dependency);
-                EditorGUILayout.LabelField("Dependencies", $"{bundled} bundled, {referenced} referenced");
-            }
-            
-            EditorGUILayout.LabelField("Obfuscation", profile.enableObfuscation ? "Enabled" : "Disabled");
-            
-            if (profile.enableObfuscation)
-            {
-                int enabledCount = profile.assembliesToObfuscate.Count(a => a.enabled);
-                EditorGUILayout.LabelField("Assemblies", $"{enabledCount} selected");
-                EditorGUILayout.LabelField("Protection Level", profile.obfuscationPreset.ToString());
-            }
-            
-            EditorGUILayout.LabelField("Output", string.IsNullOrEmpty(profile.exportPath) ? "Desktop" : profile.exportPath);
-            
-            if (!string.IsNullOrEmpty(profile.LastExportTime))
-            {
-                EditorGUILayout.LabelField("Last Export", profile.LastExportTime);
-            }
-            
-            GUILayout.EndVertical();
-            
-            GUILayout.Space(10);
-            
-            // Validation
-            if (!profile.Validate(out string errorMessage))
-            {
-                EditorGUILayout.HelpBox($"Validation Error: {errorMessage}", MessageType.Error);
-            }
-            else
-            {
-                EditorGUILayout.HelpBox("Profile is valid and ready to export", MessageType.Info);
-            }
-            
-            GUILayout.Space(10);
-            
-            // Export Options Section
-            GUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
-            
-            GUILayout.Label("Export Options", summaryStyle, GUILayout.Height(20));
-            GUILayout.Space(5);
-            
-            EditorGUI.BeginChangeCheck();
-            profile.includeDependencies = EditorGUILayout.Toggle(new GUIContent("Include Dependencies", "Include all dependency files directly in the exported package"), profile.includeDependencies);
-            profile.recurseFolders = EditorGUILayout.Toggle(new GUIContent("Recurse Folders", "Search subfolders when collecting assets to export"), profile.recurseFolders);
-            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
-            {
-                Undo.RecordObject(profile, "Change Export Options");
-                EditorUtility.SetDirty(profile);
-            }
-            EditorGUI.BeginChangeCheck();
-            profile.generatePackageJson = EditorGUILayout.Toggle(new GUIContent("Generate package.json", "Create a package.json file with dependency information for VPM compatibility"), profile.generatePackageJson);
-            profile.autoIncrementVersion = EditorGUILayout.Toggle(new GUIContent("Auto-Increment Version", "Automatically increment the version number on each export"), profile.autoIncrementVersion);
-            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
-            {
-                Undo.RecordObject(profile, "Change Export Options");
-                EditorUtility.SetDirty(profile);
-            }
-            
-            EditorGUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
-            EditorGUILayout.LabelField(new GUIContent("Export Path", "Folder where the exported .unitypackage file will be saved"), GUILayout.Width(120));
-            EditorGUI.BeginChangeCheck();
-            profile.exportPath = EditorGUILayout.TextField(profile.exportPath, GUILayout.ExpandWidth(true));
-            if (EditorGUI.EndChangeCheck() && profile == currentlyEditingProfile)
+        }
+
+        private void BrowseForPath(ExportProfile profile)
+        {
+            string selectedPath = EditorUtility.OpenFolderPanel("Select Export Folder", "", "");
+            if (!string.IsNullOrEmpty(selectedPath))
             {
                 Undo.RecordObject(profile, "Change Export Path");
+                profile.exportPath = selectedPath;
                 EditorUtility.SetDirty(profile);
+                UpdateProfileDetails();
             }
-            if (GUILayout.Button(new GUIContent("Browse", "Select a folder to save the exported package"), GUILayout.Width(60)))
-            {
-                string selectedPath = EditorUtility.OpenFolderPanel("Select Export Folder", "", "");
-                if (!string.IsNullOrEmpty(selectedPath))
-                {
-                    profile.exportPath = selectedPath;
-                }
-            }
-            EditorGUILayout.EndHorizontal();
-            
-            if (string.IsNullOrEmpty(profile.exportPath))
-            {
-                EditorGUILayout.HelpBox("Empty path = Desktop", MessageType.Info);
-            }
-            
-            if (GUI.changed)
-            {
-                EditorUtility.SetDirty(profile);
-            }
-            
-            GUILayout.EndVertical();
-            
-            GUILayout.Space(10);
-            
-            // Folders section
-            GUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
-            
-            GUILayout.Label("Export Folders", summaryStyle, GUILayout.Height(20));
-            GUILayout.Space(5);
-            
-            if (profile.foldersToExport.Count == 0)
-            {
-                EditorGUILayout.HelpBox("No folders added. Add folders to export.", MessageType.Warning);
-            }
-            else
-            {
-                for (int i = 0; i < profile.foldersToExport.Count; i++)
-                {
-                    GUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
-                    EditorGUILayout.LabelField(profile.foldersToExport[i], GUILayout.ExpandWidth(true));
-                    
-                        if (GUILayout.Button("X", GUILayout.Width(25), GUILayout.Height(20)))
-                        {
-                            Undo.RecordObject(profile, "Remove Export Folder");
-                            profile.foldersToExport.RemoveAt(i);
-                            EditorUtility.SetDirty(profile);
-                            AssetDatabase.SaveAssets();
-                            GUIUtility.ExitGUI();
-                        }
-                    
-                    GUILayout.EndHorizontal();
-                }
-            }
-            
-            GUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
-            if (GUILayout.Button(new GUIContent("+ Add Folder", "Add a folder to the list of folders that will be exported"), GUILayout.Height(30), GUILayout.ExpandWidth(true)))
-            {
-                string selectedFolder = EditorUtility.OpenFolderPanel("Select Folder to Export", Application.dataPath, "");
-                if (!string.IsNullOrEmpty(selectedFolder))
-                {
-                    string relativePath = GetRelativePath(selectedFolder);
-                    Undo.RecordObject(profile, "Add Export Folder");
-                    profile.foldersToExport.Add(relativePath);
-                    EditorUtility.SetDirty(profile);
-                    AssetDatabase.SaveAssets();
-                }
-            }
-            GUILayout.EndHorizontal();
-            
-            GUILayout.EndVertical();
-            
-            GUILayout.Space(10);
-            
-            // Export Inspector section
-            GUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
-            
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"Export Inspector ({profile.discoveredAssets.Count} assets)", summaryStyle, GUILayout.Height(20));
-            showExportInspector = GUILayout.Toggle(showExportInspector, showExportInspector ? "▼" : "▶", EditorStyles.label, GUILayout.Width(20));
-            GUILayout.EndHorizontal();
-            
-            if (showExportInspector)
-            {
-                GUILayout.Space(5);
-                DrawExportInspector(profile, summaryStyle);
-            }
-            
-            GUILayout.EndVertical();
-            
-            GUILayout.Space(10);
-            
-            // Dependencies section
-            GUILayout.BeginVertical(EditorStyles.helpBox);
-            
-            GUILayout.Label("Package Dependencies", summaryStyle, GUILayout.Height(20));
-            GUILayout.Space(5);
-            
-            EditorGUILayout.HelpBox(
-                "Bundle: Include dependency files directly in the exported package\n" +
-                "Dependency: Add to package.json for automatic download when package is installed",
-                MessageType.Info);
-            
-            GUILayout.Space(5);
-            
-            if (profile.dependencies.Count == 0)
-            {
-                EditorGUILayout.HelpBox("No dependencies configured. Add manually or scan.", MessageType.Info);
-            }
-            else
-            {
-                for (int i = 0; i < profile.dependencies.Count; i++)
-                {
-                    var dep = profile.dependencies[i];
-                    DrawDependencyCard(dep, i, profile);
-                }
-            }
-            
-            GUILayout.Space(5);
-            
-            // Select all/none buttons
-            GUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
-            
-            if (GUILayout.Button("Select All", GUILayout.Height(25)))
-            {
-                foreach (var dep in profile.dependencies)
-                {
-                    dep.enabled = true;
-                }
-                EditorUtility.SetDirty(profile);
-            }
-            
-            if (GUILayout.Button("Deselect All", GUILayout.Height(25)))
-            {
-                foreach (var dep in profile.dependencies)
-                {
-                    dep.enabled = false;
-                }
-                EditorUtility.SetDirty(profile);
-            }
-            
-            GUILayout.EndHorizontal();
-            
-            GUILayout.Space(5);
-            
-            GUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
-            
-            if (GUILayout.Button(new GUIContent("+ Add Dependency", "Add a new package dependency manually"), GUILayout.Height(30), GUILayout.ExpandWidth(true)))
-            {
-                var newDep = new PackageDependency("com.example.package", "1.0.0", "Example Package", false);
-                profile.dependencies.Add(newDep);
-                EditorUtility.SetDirty(profile);
-                AssetDatabase.SaveAssets();
-            }
-            
-            if (GUILayout.Button(new GUIContent("Scan Installed", "Automatically detect and add installed packages as dependencies"), GUILayout.Height(30), GUILayout.ExpandWidth(true)))
-            {
-                ScanProfileDependencies(profile);
-            }
-            
-            GUILayout.EndHorizontal();
-            
-            if (GUI.changed)
-            {
-                EditorUtility.SetDirty(profile);
-            }
-            
-            GUILayout.EndVertical();
-            
-            GUILayout.Space(10);
-            
-            // Obfuscation section
-            GUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.ExpandWidth(true));
-            
-            GUILayout.Label("Assembly Obfuscation", summaryStyle, GUILayout.Height(20));
-            GUILayout.Space(5);
-            
-            profile.enableObfuscation = EditorGUILayout.Toggle(new GUIContent("Enable Obfuscation", "Protect compiled assemblies using ConfuserEx to prevent reverse engineering"), profile.enableObfuscation);
-            
-            if (profile.enableObfuscation)
-            {
-                EditorGUI.indentLevel++;
-                
-                EditorGUILayout.BeginHorizontal(GUILayout.ExpandWidth(true));
-                EditorGUILayout.LabelField(new GUIContent("Protection Level", "Choose how aggressively to obfuscate the code"), GUILayout.Width(120));
-                profile.obfuscationPreset = (ConfuserExPreset)EditorGUILayout.EnumPopup(profile.obfuscationPreset, GUILayout.ExpandWidth(true));
-                EditorGUILayout.EndHorizontal();
-                
-                string presetDesc = ConfuserExPresetGenerator.GetPresetDescription(profile.obfuscationPreset);
-                if (!string.IsNullOrEmpty(presetDesc))
-                {
-                    EditorGUILayout.HelpBox(presetDesc, MessageType.None);
-                }
-                
-                profile.stripDebugSymbols = EditorGUILayout.Toggle(new GUIContent("Strip Debug Symbols", "Remove debug information to reduce file size and improve protection"), profile.stripDebugSymbols);
-                
-                EditorGUILayout.Space(5);
-                
-                if (GUILayout.Button(new GUIContent("Scan Assemblies", "Find assemblies in export folders and enabled dependencies"), GUILayout.Height(30), GUILayout.ExpandWidth(true)))
-                {
-                    ScanAllAssemblies(profile);
-                }
-                
-                EditorGUILayout.Space(5);
-                
-                if (profile.assembliesToObfuscate.Count > 0)
-                {
-                    EditorGUILayout.LabelField($"Found Assemblies ({profile.assembliesToObfuscate.Count(a => a.enabled)}/{profile.assembliesToObfuscate.Count} selected):", EditorStyles.boldLabel);
-                    
-                    EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                    for (int i = 0; i < profile.assembliesToObfuscate.Count; i++)
-                    {
-                        var assembly = profile.assembliesToObfuscate[i];
-                        
-                        string displayName = assembly.assemblyName;
-                        if (!new AssemblyScanner.AssemblyInfo(assembly.assemblyName, assembly.asmdefPath).exists)
-                        {
-                            displayName += " (not compiled)";
-                        }
-                        
-                        assembly.enabled = EditorGUILayout.ToggleLeft(displayName, assembly.enabled);
-                    }
-                    EditorGUILayout.EndVertical();
-                }
-                else
-                {
-                    EditorGUILayout.HelpBox("No assemblies found. Click 'Scan Assemblies' to find assemblies in your export folders and dependencies.", MessageType.Info);
-                }
-                
-                EditorGUI.indentLevel--;
-            }
-            
-            if (GUI.changed)
-            {
-                EditorUtility.SetDirty(profile);
-            }
-            
-            GUILayout.EndVertical();
-            
-            GUILayout.Space(10);
-            
-            // Quick actions
-            GUILayout.BeginHorizontal();
-            
-            if (GUILayout.Button(new GUIContent("Open in Inspector", "Open this profile in the Inspector for detailed editing"), GUILayout.Height(30)))
-            {
-                Selection.activeObject = profile;
-                EditorGUIUtility.PingObject(profile);
-            }
-            
-            if (GUILayout.Button(new GUIContent("Save Changes", "Save all changes made to this profile"), GUILayout.Height(30)))
-            {
-                EditorUtility.SetDirty(profile);
-                AssetDatabase.SaveAssets();
-                Debug.Log($"[Package Exporter] Saved changes to {profile.name}");
-            }
-            
-            GUILayout.EndHorizontal();
         }
-        
+
+        private void AddFolder(ExportProfile profile)
+        {
+            string selectedFolder = EditorUtility.OpenFolderPanel("Select Folder to Export", Application.dataPath, "");
+            if (!string.IsNullOrEmpty(selectedFolder))
+            {
+                string relativePath = GetRelativePath(selectedFolder);
+                Undo.RecordObject(profile, "Add Export Folder");
+                profile.foldersToExport.Add(relativePath);
+                EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
+                UpdateProfileDetails();
+            }
+        }
+
+        private void RemoveFolder(ExportProfile profile, int index)
+        {
+            if (index >= 0 && index < profile.foldersToExport.Count)
+            {
+                Undo.RecordObject(profile, "Remove Export Folder");
+                profile.foldersToExport.RemoveAt(index);
+                EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
+                UpdateProfileDetails();
+            }
+        }
+
         private string GetRelativePath(string absolutePath)
         {
             string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
@@ -924,48 +2133,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             return absolutePath;
         }
-        
-        
-        private void DrawProgressBar()
+
+        private void AddDependency(ExportProfile profile)
         {
-            GUILayout.BeginHorizontal();
-            GUILayout.Space(20);
-            
-            GUILayout.BeginVertical();
-            
-            GUILayout.Label(currentStatus, EditorStyles.label);
-            
-            Rect progressRect = GUILayoutUtility.GetRect(18, 18, GUILayout.ExpandWidth(true));
-            EditorGUI.ProgressBar(progressRect, currentProgress, $"{(currentProgress * 100):F0}%");
-            
-            GUILayout.EndVertical();
-            
-            GUILayout.Space(20);
-            GUILayout.EndHorizontal();
+            var newDep = new PackageDependency("com.example.package", "1.0.0", "Example Package", false);
+            Undo.RecordObject(profile, "Add Dependency");
+            profile.dependencies.Add(newDep);
+            EditorUtility.SetDirty(profile);
+            AssetDatabase.SaveAssets();
+            UpdateProfileDetails();
         }
-        
-        private void DrawHorizontalLine()
-        {
-            Rect rect = GUILayoutUtility.GetRect(1, 1, GUILayout.ExpandWidth(true));
-            EditorGUI.DrawRect(rect, new Color(0.5f, 0.5f, 0.5f, 0.5f));
-        }
-        
-        private string GetProfileButtonLabel(ExportProfile profile)
-        {
-            string label = profile.packageName;
-            if (!string.IsNullOrEmpty(profile.version))
-            {
-                label += $" v{profile.version}";
-            }
-            
-            return label;
-        }
-        
+
+        // Profile CRUD operations
         private void LoadProfiles()
         {
             allProfiles.Clear();
             
-            // Find all ExportProfile assets in the project
             string[] guids = AssetDatabase.FindAssets("t:ExportProfile");
             
             foreach (string guid in guids)
@@ -981,62 +2164,71 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             allProfiles = allProfiles.OrderBy(p => p.packageName).ToList();
             
-            Debug.Log($"[PackageExporter] Loaded {allProfiles.Count} export profiles");
+            Debug.Log($"[Package Exporter] Loaded {allProfiles.Count} export profiles");
             
             // Reselect if we had a selection
             if (selectedProfile != null)
             {
-                selectedProfileIndex = allProfiles.IndexOf(selectedProfile);
-                if (selectedProfileIndex < 0)
+                int index = allProfiles.IndexOf(selectedProfile);
+                if (index < 0)
                 {
                     selectedProfile = null;
+                    selectedProfileIndices.Clear();
                 }
             }
         }
-        
+
+        private void RefreshProfiles()
+        {
+            LoadProfiles();
+            UpdateProfileList();
+            UpdateProfileDetails();
+            UpdateBottomBar();
+        }
+
         private void CreateNewProfile()
         {
-            // Ensure export profiles directory exists
             string profilesDir = "Assets/YUCP/ExportProfiles";
             if (!Directory.Exists(profilesDir))
             {
                 Directory.CreateDirectory(profilesDir);
             }
             
-            // Create new profile
             var profile = ScriptableObject.CreateInstance<ExportProfile>();
             profile.packageName = "NewPackage";
-            profile.profileName = profile.packageName; // Sync profile name with package name
+            profile.profileName = profile.packageName;
             profile.version = "1.0.0";
             
-            // Generate unique asset path
             string assetPath = AssetDatabase.GenerateUniqueAssetPath(Path.Combine(profilesDir, "NewExportProfile.asset"));
             
             AssetDatabase.CreateAsset(profile, assetPath);
             AssetDatabase.SaveAssets();
             
-            Debug.Log($"[PackageExporter] Created new export profile: {assetPath}");
+            Debug.Log($"[Package Exporter] Created new export profile: {assetPath}");
             
             LoadProfiles();
             
-            // Select the new profile
             selectedProfile = profile;
-            selectedProfileIndex = allProfiles.IndexOf(profile);
+            int index = allProfiles.IndexOf(profile);
+            selectedProfileIndices.Clear();
+            selectedProfileIndices.Add(index);
+            lastClickedProfileIndex = index;
             
-            // Ping it in the project window
+            UpdateProfileList();
+            UpdateProfileDetails();
+            UpdateBottomBar();
+            
             EditorGUIUtility.PingObject(profile);
         }
-        
+
         private void CloneProfile(ExportProfile source)
         {
             if (source == null)
                 return;
             
-            // Create a copy
             var clone = Instantiate(source);
             clone.name = source.name + " (Clone)";
             
-            // Ensure directory exists
             string profilesDir = "Assets/YUCP/ExportProfiles";
             if (!Directory.Exists(profilesDir))
             {
@@ -1048,14 +2240,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
             AssetDatabase.CreateAsset(clone, assetPath);
             AssetDatabase.SaveAssets();
             
-            Debug.Log($"[PackageExporter] Cloned profile: {assetPath}");
+            Debug.Log($"[Package Exporter] Cloned profile: {assetPath}");
             
             LoadProfiles();
             
             selectedProfile = clone;
-            selectedProfileIndex = allProfiles.IndexOf(clone);
+            int index = allProfiles.IndexOf(clone);
+            selectedProfileIndices.Clear();
+            selectedProfileIndices.Add(index);
+            lastClickedProfileIndex = index;
+            
+            UpdateProfileList();
+            UpdateProfileDetails();
+            UpdateBottomBar();
         }
-        
+
         private void DeleteProfile(ExportProfile profile)
         {
             if (profile == null)
@@ -1076,17 +2275,40 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (selectedProfile == profile)
             {
                 selectedProfile = null;
-                selectedProfileIndex = -1;
+                selectedProfileIndices.Clear();
             }
             
             AssetDatabase.DeleteAsset(assetPath);
             AssetDatabase.SaveAssets();
             
-            Debug.Log($"[PackageExporter] Deleted profile: {assetPath}");
+            Debug.Log($"[Package Exporter] Deleted profile: {assetPath}");
             
             LoadProfiles();
+            UpdateProfileList();
+            UpdateProfileDetails();
+            UpdateBottomBar();
         }
-        
+
+        // Export operations
+        private void ExportSelectedProfiles()
+        {
+            if (selectedProfileIndices.Count == 0)
+            {
+                EditorUtility.DisplayDialog("No Selection", "No profiles are selected.", "OK");
+                return;
+            }
+            
+            if (selectedProfileIndices.Count == 1)
+            {
+                ExportProfile(selectedProfile);
+            }
+            else
+            {
+                var selectedProfiles = selectedProfileIndices.OrderBy(i => i).Select(i => allProfiles[i]).ToList();
+                ExportAllProfiles(selectedProfiles);
+            }
+        }
+
         private void ExportProfile(ExportProfile profile)
         {
             if (profile == null)
@@ -1098,7 +2320,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
             
-            // Show detailed export confirmation
             string foldersList = profile.foldersToExport.Count > 0 
                 ? string.Join("\n", profile.foldersToExport.Take(5)) + (profile.foldersToExport.Count > 5 ? $"\n... and {profile.foldersToExport.Count - 5} more" : "")
                 : "None configured";
@@ -1123,20 +2344,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             
             isExporting = true;
-            currentProgress = 0f;
-            currentStatus = "Starting export...";
+            _progressContainer.style.display = DisplayStyle.Flex;
+            UpdateProgress(0f, "Starting export...");
+            UpdateBottomBar();
             
             try
             {
                 var result = PackageBuilder.ExportPackage(profile, (progress, status) =>
                 {
-                    currentProgress = progress;
-                    currentStatus = status;
-                    Repaint();
+                    UpdateProgress(progress, status);
                 });
                 
                 isExporting = false;
-                Repaint();
+                _progressContainer.style.display = DisplayStyle.None;
+                UpdateBottomBar();
                 
                 if (result.success)
                 {
@@ -1157,8 +2378,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         EditorUtility.RevealInFinder(result.outputPath);
                     }
                     
-                    // Reload profiles to update statistics
                     LoadProfiles();
+                    UpdateProfileDetails();
                 }
                 else
                 {
@@ -1173,20 +2394,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
             catch (Exception ex)
             {
                 isExporting = false;
-                Repaint();
+                _progressContainer.style.display = DisplayStyle.None;
+                UpdateBottomBar();
                 
-                Debug.LogError($"[PackageExporter] Export failed: {ex.Message}");
+                Debug.LogError($"[Package Exporter] Export failed: {ex.Message}");
                 EditorUtility.DisplayDialog("Export Failed", $"An error occurred: {ex.Message}", "OK");
             }
         }
-        
+
         private void ExportAllProfiles(List<ExportProfile> profilesToExport = null)
         {
             var profiles = profilesToExport ?? allProfiles;
             if (profiles.Count == 0)
                 return;
             
-            // Validate all profiles first
             var invalidProfiles = new List<string>();
             foreach (var profile in profiles)
             {
@@ -1216,21 +2437,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             
             isExporting = true;
+            _progressContainer.style.display = DisplayStyle.Flex;
+            UpdateBottomBar();
             
             try
             {
                 var results = PackageBuilder.ExportMultiple(profiles, (index, total, progress, status) =>
                 {
                     float overallProgress = (index + progress) / total;
-                    currentProgress = overallProgress;
-                    currentStatus = $"[{index + 1}/{total}] {status}";
-                    Repaint();
+                    UpdateProgress(overallProgress, $"[{index + 1}/{total}] {status}");
                 });
                 
                 isExporting = false;
-                Repaint();
+                _progressContainer.style.display = DisplayStyle.None;
+                UpdateBottomBar();
                 
-                // Show summary
                 int successCount = results.Count(r => r.success);
                 int failCount = results.Count - successCount;
                 
@@ -1246,19 +2467,50 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 EditorUtility.DisplayDialog("Batch Export Complete", summaryMessage, "OK");
                 
-                // Reload profiles to update statistics
                 LoadProfiles();
+                UpdateProfileDetails();
             }
             catch (Exception ex)
             {
                 isExporting = false;
-                Repaint();
+                _progressContainer.style.display = DisplayStyle.None;
+                UpdateBottomBar();
                 
-                Debug.LogError($"[PackageExporter] Batch export failed: {ex.Message}");
+                Debug.LogError($"[Package Exporter] Batch export failed: {ex.Message}");
                 EditorUtility.DisplayDialog("Batch Export Failed", $"An error occurred: {ex.Message}", "OK");
             }
         }
-        
+
+        // Scanning operations (simplified implementations)
+        private void ScanAssetsForInspector(ExportProfile profile)
+        {
+            EditorUtility.DisplayProgressBar("Scanning Assets", "Discovering assets from export folders...", 0f);
+            
+            try
+            {
+                profile.discoveredAssets = AssetCollector.ScanExportFolders(profile, profile.includeDependencies);
+                profile.MarkScanned();
+                EditorUtility.SetDirty(profile);
+                
+                EditorUtility.DisplayDialog(
+                    "Scan Complete",
+                    $"Discovered {profile.discoveredAssets.Count} assets.\n\n" +
+                    AssetCollector.GetAssetSummary(profile.discoveredAssets),
+                    "OK");
+                
+                UpdateProfileDetails();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Package Exporter] Asset scan failed: {ex.Message}");
+                EditorUtility.DisplayDialog("Scan Failed", $"Failed to scan assets:\n{ex.Message}", "OK");
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+        }
+
         private void ScanProfileDependencies(ExportProfile profile)
         {
             EditorUtility.DisplayProgressBar("Scanning Dependencies", "Finding installed packages...", 0.3f);
@@ -1288,7 +2540,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 EditorUtility.DisplayProgressBar("Scanning Dependencies", "Auto-detecting usage...", 0.8f);
                 
-                // Auto-detect which dependencies are actually used
                 if (profile.foldersToExport.Count > 0)
                 {
                     DependencyScanner.AutoDetectUsedDependencies(profile);
@@ -1296,8 +2547,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 EditorUtility.SetDirty(profile);
                 AssetDatabase.SaveAssets();
-                
-                EditorUtility.ClearProgressBar();
                 
                 int vpmCount = dependencies.Count(d => d.isVpmDependency);
                 int autoEnabled = dependencies.Count(d => d.enabled);
@@ -1309,13 +2558,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                "Dependencies detected in your export folders have been automatically enabled.";
                 
                 EditorUtility.DisplayDialog("Scan Complete", message, "OK");
+                
+                UpdateProfileDetails();
             }
             finally
             {
                 EditorUtility.ClearProgressBar();
             }
         }
-        
+
         private void ScanAllAssemblies(ExportProfile profile)
         {
             try
@@ -1324,14 +2575,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 var foundAssemblies = new List<AssemblyScanner.AssemblyInfo>();
                 
-                // Scan export folders
                 EditorUtility.DisplayProgressBar("Scanning Assemblies", $"Scanning {profile.foldersToExport.Count} export folders...", 0.2f);
                 var folderAssemblies = AssemblyScanner.ScanFolders(profile.foldersToExport);
                 foundAssemblies.AddRange(folderAssemblies);
                 
                 EditorUtility.DisplayProgressBar("Scanning Assemblies", $"Found {folderAssemblies.Count} assemblies in export folders", 0.5f);
                 
-                // Count bundled dependencies
                 int bundledDepsCount = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Bundle);
                 
                 if (bundledDepsCount > 0)
@@ -1339,7 +2588,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     EditorUtility.DisplayProgressBar("Scanning Assemblies", $"Scanning {bundledDepsCount} bundled dependencies...", 0.6f);
                 }
                 
-                // Scan enabled dependencies
                 var dependencyAssemblies = AssemblyScanner.ScanVpmPackages(profile.dependencies);
                 foundAssemblies.AddRange(dependencyAssemblies);
                 
@@ -1368,500 +2616,66 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 EditorUtility.SetDirty(profile);
                 AssetDatabase.SaveAssets();
                 
-                EditorUtility.DisplayProgressBar("Scanning Assemblies", "Complete!", 1.0f);
-                
                 int existingCount = foundAssemblies.Count(a => a.exists);
                 EditorUtility.DisplayDialog("Scan Complete", 
                     $"Found {foundAssemblies.Count} assemblies ({existingCount} compiled)\n\nFrom export folders: {folderAssemblies.Count}\nFrom bundled dependencies: {dependencyAssemblies.Count}", 
                     "OK");
+                
+                UpdateProfileDetails();
             }
             finally
             {
                 EditorUtility.ClearProgressBar();
             }
         }
-        
-        private void DrawDependencyCard(PackageDependency dep, int index, ExportProfile profile)
+
+        // Helper methods for Export Inspector
+        private string GetAssetTypeIcon(string assetType)
         {
-            // Calculate card height based on whether it's expanded
-            float cardHeight = dep.enabled ? 175f : 35f;
-            
-            GUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(cardHeight));
-            
-            // Header row
-            GUILayout.BeginHorizontal(GUILayout.Height(25f));
-            
-            // Toggle checkbox
-            dep.enabled = EditorGUILayout.Toggle(new GUIContent("", "Enable or disable this dependency"), dep.enabled, GUILayout.Width(20f));
-            
-            // Package name label
-            string label = dep.isVpmDependency ? "[VPM] " : "";
-            label += string.IsNullOrEmpty(dep.displayName) ? dep.packageName : dep.displayName;
-            
-            GUILayout.Label(new GUIContent(label, "Package dependency configuration"), EditorStyles.boldLabel, GUILayout.ExpandWidth(true));
-            
-            // Remove button
-            if (GUILayout.Button(new GUIContent("X", "Remove this dependency"), GUILayout.Width(25f), GUILayout.Height(20f)))
+            return assetType switch
             {
-                profile.dependencies.RemoveAt(index);
+                "Script" => "C#",
+                "Prefab" => "P",
+                "Material" => "M",
+                "Texture" => "T",
+                "Scene" => "S",
+                "Shader" => "SH",
+                "Model" => "3D",
+                "Animation" => "A",
+                "Animator" => "AC",
+                "Assembly" => "DLL",
+                "Audio" => "AU",
+                "Font" => "F",
+                _ => "F"
+            };
+        }
+
+        private string FormatBytes(long bytes)
+        {
+            string[] sizes = { "B", "KB", "MB", "GB" };
+            double len = bytes;
+            int order = 0;
+            
+            while (len >= 1024 && order < sizes.Length - 1)
+            {
+                order++;
+                len = len / 1024;
+            }
+            
+            return $"{len:0.##} {sizes[order]}";
+        }
+
+        private void ClearAssetScan(ExportProfile profile)
+        {
+            if (EditorUtility.DisplayDialog("Clear Scan", 
+                "Clear all discovered assets and rescan later?", "Clear", "Cancel"))
+            {
+                profile.ClearScan();
                 EditorUtility.SetDirty(profile);
-                AssetDatabase.SaveAssets();
-                GUIUtility.ExitGUI();
-            }
-            
-            GUILayout.EndHorizontal();
-            
-            // Content area - only show if enabled
-            if (dep.enabled)
-            {
-                GUILayout.Space(5f);
-                
-                // Package Name field
-                GUILayout.BeginHorizontal(GUILayout.Height(20f));
-                GUILayout.Label(new GUIContent("Package Name:", "Unique identifier for the package"), GUILayout.Width(120f));
-                dep.packageName = EditorGUILayout.TextField(dep.packageName, GUILayout.ExpandWidth(true));
-                GUILayout.EndHorizontal();
-                
-                GUILayout.Space(2f);
-                
-                // Version field
-                GUILayout.BeginHorizontal(GUILayout.Height(20f));
-                GUILayout.Label(new GUIContent("Version:", "Package version"), GUILayout.Width(120f));
-                dep.packageVersion = EditorGUILayout.TextField(dep.packageVersion, GUILayout.ExpandWidth(true));
-                GUILayout.EndHorizontal();
-                
-                GUILayout.Space(2f);
-                
-                // Display Name field
-                GUILayout.BeginHorizontal(GUILayout.Height(20f));
-                GUILayout.Label(new GUIContent("Display Name:", "Human-readable name"), GUILayout.Width(120f));
-                dep.displayName = EditorGUILayout.TextField(dep.displayName, GUILayout.ExpandWidth(true));
-                GUILayout.EndHorizontal();
-                
-                GUILayout.Space(2f);
-                
-                // Export Mode dropdown
-                GUILayout.BeginHorizontal(GUILayout.Height(20f));
-                GUILayout.Label(new GUIContent("Export Mode:", "How this dependency should be handled"), GUILayout.Width(120f));
-                dep.exportMode = (DependencyExportMode)EditorGUILayout.EnumPopup(dep.exportMode, GUILayout.ExpandWidth(true));
-                GUILayout.EndHorizontal();
-                
-                GUILayout.Space(2f);
-                
-                // VPM Package toggle
-                GUILayout.BeginHorizontal(GUILayout.Height(20f));
-                dep.isVpmDependency = EditorGUILayout.Toggle(new GUIContent("VPM Package", "Is this a VRChat Package Manager dependency?"), dep.isVpmDependency);
-                GUILayout.EndHorizontal();
-                
-                GUILayout.Space(5f);
-            }
-            
-            GUILayout.EndVertical();
-            GUILayout.Space(5f);
-        }
-        
-        private void HandleProfileSelection(int index, Event currentEvent)
-        {
-            if (currentEvent.control || currentEvent.command)
-            {
-                // Ctrl/Cmd+Click: Toggle individual selection
-                if (selectedProfileIndices.Contains(index))
-                {
-                    selectedProfileIndices.Remove(index);
-                }
-                else
-                {
-                    selectedProfileIndices.Add(index);
-                }
-                lastClickedProfileIndex = index;
-                
-                // Update selectedProfile to the first selected item
-                if (selectedProfileIndices.Count > 0)
-                {
-                    selectedProfileIndex = selectedProfileIndices.Min();
-                    selectedProfile = allProfiles[selectedProfileIndex];
-                }
-                else
-                {
-                    selectedProfileIndex = -1;
-                    selectedProfile = null;
-                }
-            }
-            else if (currentEvent.shift && lastClickedProfileIndex >= 0)
-            {
-                // Shift+Click: Range selection
-                int start = Mathf.Min(lastClickedProfileIndex, index);
-                int end = Mathf.Max(lastClickedProfileIndex, index);
-                
-                for (int i = start; i <= end; i++)
-                {
-                    if (i < allProfiles.Count)
-                    {
-                        selectedProfileIndices.Add(i);
-                    }
-                }
-                
-                // Update selectedProfile to the first selected item
-                selectedProfileIndex = selectedProfileIndices.Min();
-                selectedProfile = allProfiles[selectedProfileIndex];
-            }
-            else
-            {
-                // Normal click: Single selection
-                selectedProfileIndices.Clear();
-                selectedProfileIndices.Add(index);
-                lastClickedProfileIndex = index;
-                selectedProfileIndex = index;
-                selectedProfile = allProfiles[index];
-            }
-            
-            Repaint();
-        }
-        
-        private void ExportSelectedProfiles()
-        {
-            if (selectedProfileIndices.Count == 0)
-            {
-                EditorUtility.DisplayDialog("No Selection", "No profiles are selected.", "OK");
-                return;
-            }
-            
-            var selectedProfiles = selectedProfileIndices.OrderBy(i => i).Select(i => allProfiles[i]).ToList();
-            
-            ExportAllProfiles(selectedProfiles);
-        }
-        
-        private void DrawExportButtons()
-        {
-            DrawHorizontalLine();
-            GUILayout.Space(10);
-            
-            GUILayout.BeginHorizontal();
-            
-            // Dynamic export button that changes based on selection
-            GUI.enabled = selectedProfileIndices.Count > 0 && !isExporting;
-            GUI.backgroundColor = new Color(0.2f, 0.75f, 0.73f); // Teal
-            
-            string buttonText;
-            if (selectedProfileIndices.Count == 1)
-            {
-                buttonText = "Export Selected Profile";
-            }
-            else
-            {
-                buttonText = $"Export Selected Profiles ({selectedProfileIndices.Count})";
-            }
-            
-            if (GUILayout.Button(buttonText, GUILayout.Height(50)))
-            {
-                if (selectedProfileIndices.Count == 1)
-                {
-                    ExportProfile(selectedProfile);
-                }
-                else
-                {
-                    ExportSelectedProfiles();
-                }
-            }
-            GUI.backgroundColor = Color.white;
-            GUI.enabled = true;
-            
-            GUILayout.EndHorizontal();
-            
-            GUILayout.Space(5);
-            
-            GUILayout.BeginHorizontal();
-            
-            GUI.enabled = allProfiles.Count > 0 && !isExporting;
-            GUI.backgroundColor = new Color(0.3f, 0.7f, 0.9f);
-            if (GUILayout.Button("Export All Profiles", GUILayout.Height(50)))
-            {
-                ExportAllProfiles();
-            }
-            GUI.backgroundColor = Color.white;
-            GUI.enabled = true;
-            
-            GUILayout.EndHorizontal();
-            
-            GUILayout.Space(10);
-        }
-        
-        /// <summary>
-        /// Draw the Export Inspector UI
-        /// </summary>
-        private void DrawExportInspector(ExportProfile profile, GUIStyle headerStyle)
-        {
-            EditorGUILayout.HelpBox(
-                "The Export Inspector shows all assets discovered from your export folders. " +
-                "Scan to discover assets, then deselect unwanted items or add folders to the permanent ignore list.",
-                MessageType.Info);
-            
-            // Action buttons
-            GUILayout.BeginHorizontal();
-            
-            GUI.enabled = profile.foldersToExport.Count > 0;
-            if (GUILayout.Button("Scan Assets", GUILayout.Height(30), GUILayout.ExpandWidth(true)))
-            {
-                ScanAssetsForInspector(profile);
-            }
-            GUI.enabled = true;
-            
-            GUI.enabled = profile.discoveredAssets.Count > 0;
-            if (GUILayout.Button("Clear Scan", GUILayout.Height(30), GUILayout.ExpandWidth(true)))
-            {
-                if (EditorUtility.DisplayDialog("Clear Scan", 
-                    "Clear all discovered assets and rescan later?", "Clear", "Cancel"))
-                {
-                    profile.ClearScan();
-                    EditorUtility.SetDirty(profile);
-                }
-            }
-            GUI.enabled = true;
-            
-            GUILayout.EndHorizontal();
-            
-            // Show scan required message
-            if (!profile.HasScannedAssets)
-            {
-                EditorGUILayout.HelpBox(
-                    "Click 'Scan Assets' to discover all assets from your export folders.",
-                    MessageType.Warning);
-                return;
-            }
-            
-            // Statistics
-            GUILayout.Space(5);
-            GUILayout.Label("Asset Statistics", EditorStyles.boldLabel);
-            string summary = AssetCollector.GetAssetSummary(profile.discoveredAssets);
-            EditorGUILayout.HelpBox(summary, MessageType.None);
-            
-            // Filter controls
-            GUILayout.Space(5);
-            GUILayout.Label("Filters", EditorStyles.boldLabel);
-            
-            GUILayout.BeginHorizontal();
-            inspectorSearchFilter = EditorGUILayout.TextField("Search:", inspectorSearchFilter);
-            if (GUILayout.Button("Clear", GUILayout.Width(60)))
-            {
-                inspectorSearchFilter = "";
-                GUI.FocusControl(null);
-            }
-            GUILayout.EndHorizontal();
-            
-            GUILayout.BeginHorizontal();
-            showOnlyIncluded = GUILayout.Toggle(showOnlyIncluded, "Show Only Included", GUILayout.Width(150));
-            showOnlyExcluded = GUILayout.Toggle(showOnlyExcluded, "Show Only Excluded", GUILayout.Width(150));
-            GUILayout.EndHorizontal();
-            
-            // Asset list
-            GUILayout.Space(5);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Discovered Assets", EditorStyles.boldLabel);
-            
-            if (GUILayout.Button("Include All", GUILayout.Width(80)))
-            {
-                Undo.RecordObject(profile, "Include All Assets");
-                foreach (var asset in profile.discoveredAssets)
-                    asset.included = true;
-                EditorUtility.SetDirty(profile);
-            }
-            
-            if (GUILayout.Button("Exclude All", GUILayout.Width(80)))
-            {
-                Undo.RecordObject(profile, "Exclude All Assets");
-                foreach (var asset in profile.discoveredAssets)
-                    asset.included = false;
-                EditorUtility.SetDirty(profile);
-            }
-            GUILayout.EndHorizontal();
-            
-            // Filter assets
-            var filteredAssets = profile.discoveredAssets.AsEnumerable();
-            
-            if (!string.IsNullOrWhiteSpace(inspectorSearchFilter))
-            {
-                filteredAssets = filteredAssets.Where(a => 
-                    a.assetPath.IndexOf(inspectorSearchFilter, System.StringComparison.OrdinalIgnoreCase) >= 0);
-            }
-            
-            if (showOnlyIncluded)
-                filteredAssets = filteredAssets.Where(a => a.included);
-            
-            if (showOnlyExcluded)
-                filteredAssets = filteredAssets.Where(a => !a.included);
-            
-            var filteredList = filteredAssets.ToList();
-            
-            // Display asset list
-            exportInspectorScrollPos = GUILayout.BeginScrollView(exportInspectorScrollPos, GUILayout.MaxHeight(400));
-            
-            if (filteredList.Count == 0)
-            {
-                EditorGUILayout.HelpBox("No assets match the current filters.", MessageType.Info);
-            }
-            else
-            {
-                // Group by folder
-                var groupedByFolder = filteredList
-                    .Where(a => !a.isFolder)
-                    .GroupBy(a => a.GetFolderPath())
-                    .OrderBy(g => g.Key);
-                
-                foreach (var group in groupedByFolder)
-                {
-                    // Folder header
-                    GUILayout.BeginVertical(EditorStyles.helpBox);
-                    GUILayout.BeginHorizontal();
-                    
-                    GUILayout.Label(group.Key, EditorStyles.boldLabel);
-                    
-                    // Create/Edit .yucpignore button
-                    string folderFullPath = Path.GetFullPath(group.Key);
-                    bool hasIgnoreFile = YucpIgnoreHandler.HasIgnoreFile(folderFullPath);
-                    
-                    if (hasIgnoreFile)
-                    {
-                        if (GUILayout.Button("Edit .yucpignore", GUILayout.Width(110)))
-                        {
-                            OpenYucpIgnoreFile(folderFullPath);
-                        }
-                    }
-                    else
-                    {
-                        if (GUILayout.Button("Create .yucpignore", GUILayout.Width(120)))
-                        {
-                            CreateYucpIgnoreFile(profile, folderFullPath);
-                        }
-                    }
-                    
-                    // Add folder to ignore list button
-                    if (GUILayout.Button("Add to Ignore List", GUILayout.Width(120)))
-                    {
-                        AddFolderToIgnoreList(profile, group.Key);
-                    }
-                    
-                    GUILayout.EndHorizontal();
-                    
-                    // Files in this folder
-                    foreach (var asset in group)
-                    {
-                        GUILayout.BeginHorizontal();
-                        
-                        // Include checkbox
-                        EditorGUI.BeginChangeCheck();
-                        asset.included = EditorGUILayout.Toggle(asset.included, GUILayout.Width(20));
-                        if (EditorGUI.EndChangeCheck())
-                        {
-                            Undo.RecordObject(profile, "Toggle Asset Inclusion");
-                            EditorUtility.SetDirty(profile);
-                        }
-                        
-                        // Asset icon
-                        Texture2D icon = AssetDatabase.GetCachedIcon(asset.assetPath) as Texture2D;
-                        if (icon != null)
-                            GUILayout.Label(icon, GUILayout.Width(16), GUILayout.Height(16));
-                        
-                        // Asset name
-                        string displayName = asset.GetDisplayName();
-                        string label = $"{displayName}";
-                        if (asset.isDependency)
-                            label += " [Dep]";
-                        
-                        GUILayout.Label(label, GUILayout.MinWidth(150));
-                        
-                        // Asset type badge
-                        GUI.color = GetAssetTypeColor(asset.assetType);
-                        GUILayout.Label(asset.assetType, EditorStyles.miniLabel, GUILayout.Width(60));
-                        GUI.color = Color.white;
-                        
-                        // File size
-                        if (!asset.isFolder && asset.fileSize > 0)
-                        {
-                            GUILayout.Label(FormatBytes(asset.fileSize), EditorStyles.miniLabel, GUILayout.Width(60));
-                        }
-                        
-                        GUILayout.EndHorizontal();
-                    }
-                    
-                    GUILayout.EndVertical();
-                    GUILayout.Space(2);
-                }
-            }
-            
-            GUILayout.EndScrollView();
-            
-            // Permanent ignore list
-            GUILayout.Space(10);
-            GUILayout.Label("Permanent Ignore List", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox(
-                "Folders in this list will be permanently ignored from all exports (like .gitignore).",
-                MessageType.Info);
-            
-            if (profile.permanentIgnoreFolders == null || profile.permanentIgnoreFolders.Count == 0)
-            {
-                EditorGUILayout.HelpBox("No folders in ignore list.", MessageType.None);
-            }
-            else
-            {
-                for (int i = profile.permanentIgnoreFolders.Count - 1; i >= 0; i--)
-                {
-                    GUILayout.BeginHorizontal();
-                    GUILayout.Label(profile.permanentIgnoreFolders[i]);
-                    
-                    if (GUILayout.Button("Remove", GUILayout.Width(60)))
-                    {
-                        profile.permanentIgnoreFolders.RemoveAt(i);
-                        EditorUtility.SetDirty(profile);
-                    }
-                    
-                    GUILayout.EndHorizontal();
-                }
-            }
-            
-            if (GUILayout.Button("+ Add Folder to Ignore List", GUILayout.Height(25)))
-            {
-                string selectedFolder = EditorUtility.OpenFolderPanel("Select Folder to Ignore", Application.dataPath, "");
-                if (!string.IsNullOrEmpty(selectedFolder))
-                {
-                    string relativePath = GetRelativePath(selectedFolder);
-                    AddFolderToIgnoreList(profile, relativePath);
-                }
+                UpdateProfileDetails();
             }
         }
-        
-        /// <summary>
-        /// Scan assets for the inspector
-        /// </summary>
-        private void ScanAssetsForInspector(ExportProfile profile)
-        {
-            EditorUtility.DisplayProgressBar("Scanning Assets", "Discovering assets from export folders...", 0f);
-            
-            try
-            {
-                profile.discoveredAssets = AssetCollector.ScanExportFolders(profile, profile.includeDependencies);
-                profile.MarkScanned();
-                EditorUtility.SetDirty(profile);
-                
-                EditorUtility.DisplayDialog(
-                    "Scan Complete",
-                    $"Discovered {profile.discoveredAssets.Count} assets.\n\n" +
-                    AssetCollector.GetAssetSummary(profile.discoveredAssets),
-                    "OK");
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"[YUCPPackageExporterWindow] Asset scan failed: {ex.Message}");
-                EditorUtility.DisplayDialog("Scan Failed", $"Failed to scan assets:\n{ex.Message}", "OK");
-            }
-            finally
-            {
-                EditorUtility.ClearProgressBar();
-            }
-        }
-        
-        /// <summary>
-        /// Add a folder to the permanent ignore list
-        /// </summary>
+
         private void AddFolderToIgnoreList(ExportProfile profile, string folderPath)
         {
             if (profile.permanentIgnoreFolders == null)
@@ -1880,52 +2694,65 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     ScanAssetsForInspector(profile);
                 }
+                else
+                {
+                    UpdateProfileDetails();
+                }
             }
             else
             {
                 EditorUtility.DisplayDialog("Already Ignored", $"'{folderPath}' is already in the ignore list.", "OK");
             }
         }
-        
-        /// <summary>
-        /// Get color for asset type badge
-        /// </summary>
-        private Color GetAssetTypeColor(string assetType)
+
+        private void RemoveFromIgnoreList(ExportProfile profile, string folderPath)
         {
-            return assetType switch
+            if (profile.permanentIgnoreFolders != null && profile.permanentIgnoreFolders.Contains(folderPath))
             {
-                "Script" => new Color(0.3f, 0.7f, 0.3f),
-                "Prefab" => new Color(0.3f, 0.5f, 0.9f),
-                "Material" => new Color(0.9f, 0.5f, 0.3f),
-                "Texture" => new Color(0.8f, 0.3f, 0.8f),
-                "Scene" => new Color(0.9f, 0.9f, 0.3f),
-                "Shader" => new Color(0.5f, 0.9f, 0.9f),
-                "Assembly" => new Color(0.9f, 0.3f, 0.3f),
-                _ => Color.gray
-            };
+                profile.permanentIgnoreFolders.Remove(folderPath);
+                EditorUtility.SetDirty(profile);
+                UpdateProfileDetails();
+            }
         }
-        
-        /// <summary>
-        /// Format bytes to human-readable size
-        /// </summary>
-        private string FormatBytes(long bytes)
+
+        private void AutoDetectUsedDependencies(ExportProfile profile)
         {
-            string[] sizes = { "B", "KB", "MB", "GB" };
-            double len = bytes;
-            int order = 0;
-            
-            while (len >= 1024 && order < sizes.Length - 1)
+            if (profile.dependencies.Count == 0)
             {
-                order++;
-                len = len / 1024;
+                EditorUtility.DisplayDialog("No Dependencies", 
+                    "Scan for installed packages first before auto-detecting.", 
+                    "OK");
+                return;
             }
             
-            return $"{len:0.##} {sizes[order]}";
+            EditorUtility.DisplayProgressBar("Auto-Detecting Dependencies", "Scanning assets...", 0.5f);
+            
+            try
+            {
+                DependencyScanner.AutoDetectUsedDependencies(profile);
+                
+                EditorUtility.ClearProgressBar();
+                
+                int enabledCount = profile.dependencies.Count(d => d.enabled);
+                int disabledCount = profile.dependencies.Count - enabledCount;
+                
+                string message = $"Auto-detection complete!\n\n" +
+                               $"• {enabledCount} dependencies enabled (used in export)\n" +
+                               $"• {disabledCount} dependencies disabled (not used)\n\n" +
+                               "Review the dependency list and adjust as needed.";
+                
+                EditorUtility.DisplayDialog("Auto-Detection Complete", message, "OK");
+                
+                EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
+                UpdateProfileDetails();
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
         }
-        
-        /// <summary>
-        /// Create a .yucpignore file in a folder
-        /// </summary>
+
         private void CreateYucpIgnoreFile(ExportProfile profile, string folderPath)
         {
             if (YucpIgnoreHandler.CreateIgnoreFile(folderPath))
@@ -1941,7 +2768,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     OpenYucpIgnoreFile(folderPath);
                 }
                 
-                // Optionally rescan
                 if (EditorUtility.DisplayDialog(
                     "Rescan Assets",
                     "Rescan assets now to apply the new ignore file?",
@@ -1950,19 +2776,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     ScanAssetsForInspector(profile);
                 }
+                else
+                {
+                    UpdateProfileDetails();
+                }
             }
         }
-        
-        /// <summary>
-        /// Open a .yucpignore file in the default editor
-        /// </summary>
+
         private void OpenYucpIgnoreFile(string folderPath)
         {
             string ignoreFilePath = YucpIgnoreHandler.GetIgnoreFilePath(folderPath);
             
             if (File.Exists(ignoreFilePath))
             {
-                // Open in default text editor
                 System.Diagnostics.Process.Start(ignoreFilePath);
             }
             else
