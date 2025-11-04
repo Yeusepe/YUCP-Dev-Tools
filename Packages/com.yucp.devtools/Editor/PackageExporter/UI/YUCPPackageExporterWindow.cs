@@ -116,11 +116,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _overlayBackdrop = new VisualElement();
             _overlayBackdrop.AddToClassList("pe-overlay-backdrop");
             _overlayBackdrop.RegisterCallback<ClickEvent>(evt => CloseOverlay());
+            _overlayBackdrop.style.display = DisplayStyle.None;
+            _overlayBackdrop.style.visibility = Visibility.Hidden;
             _contentContainer.Add(_overlayBackdrop);
             
             // Create left pane overlay (for mobile)
             _leftPaneOverlay = CreateLeftPane(isOverlay: true);
             _leftPaneOverlay.AddToClassList("pe-left-pane-overlay");
+            _leftPaneOverlay.style.display = DisplayStyle.None;
+            _leftPaneOverlay.style.visibility = Visibility.Hidden;
             _contentContainer.Add(_leftPaneOverlay);
             
             // Create normal left pane
@@ -428,9 +432,102 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     HandleProfileSelection(index, evt);
                     evt.StopPropagation();
                 }
+                else if (evt.button == 1) // Right click
+                {
+                    ShowProfileContextMenu(profile, index, evt);
+                    evt.StopPropagation();
+                }
             });
             
             return item;
+        }
+        
+        private void ShowProfileContextMenu(ExportProfile profile, int index, MouseDownEvent evt)
+        {
+            // Select the profile if not already selected
+            if (!selectedProfileIndices.Contains(index))
+            {
+                selectedProfileIndices.Clear();
+                selectedProfileIndices.Add(index);
+                selectedProfile = profile;
+                lastClickedProfileIndex = index;
+                UpdateProfileList();
+                UpdateProfileDetails();
+                UpdateBottomBar();
+            }
+            
+            var menu = new GenericMenu();
+            
+            // Export option
+            menu.AddItem(new GUIContent("Export"), false, () => 
+            {
+                ExportSingleProfile(profile);
+            });
+            
+            menu.AddSeparator("");
+            
+            // Clone option
+            menu.AddItem(new GUIContent("Clone"), false, () => 
+            {
+                CloneProfile(profile);
+            });
+            
+            // Duplicate option (same as clone)
+            menu.AddItem(new GUIContent("Duplicate"), false, () => 
+            {
+                CloneProfile(profile);
+            });
+            
+            menu.AddSeparator("");
+            
+            // Rename option
+            menu.AddItem(new GUIContent("Rename"), false, () => 
+            {
+                StartRenameProfile(profile);
+            });
+            
+            // Delete option
+            menu.AddItem(new GUIContent("Delete"), false, () => 
+            {
+                DeleteProfile(profile);
+            });
+            
+            menu.AddSeparator("");
+            
+            // Select in Project option
+            menu.AddItem(new GUIContent("Select in Project"), false, () => 
+            {
+                Selection.activeObject = profile;
+                EditorGUIUtility.PingObject(profile);
+            });
+            
+            // Show Open Folder option if profile has a save location
+            if (!string.IsNullOrEmpty(profile.profileSaveLocation) && System.IO.Directory.Exists(profile.profileSaveLocation))
+            {
+                menu.AddItem(new GUIContent("Show in Explorer"), false, () => 
+                {
+                    EditorUtility.RevealInFinder(profile.profileSaveLocation);
+                });
+            }
+            
+            menu.ShowAsContext();
+        }
+        
+        private void StartRenameProfile(ExportProfile profile)
+        {
+            // Focus on the package name field in the details panel if visible
+            if (selectedProfile == profile && _profileDetailsContainer.style.display == DisplayStyle.Flex)
+            {
+                // The package name field should get focus
+                EditorUtility.DisplayDialog("Rename Profile", 
+                    $"Edit the 'Package Name' field in the details panel to rename this profile.\n\nCurrent name: {profile.packageName}", 
+                    "OK");
+            }
+        }
+        
+        private void ExportSingleProfile(ExportProfile profile)
+        {
+            ExportProfile(profile);
         }
 
         private void HandleProfileSelection(int index, MouseDownEvent evt)
@@ -503,45 +600,60 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _profileDetailsContainer.style.display = DisplayStyle.Flex;
             _profileDetailsContainer.Clear();
             
-            // Package Metadata Section
-            var metadataSection = CreateMetadataSection(selectedProfile);
-            _profileDetailsContainer.Add(metadataSection);
-            
-            // Quick Summary Section
-            var summarySection = CreateSummarySection(selectedProfile);
-            _profileDetailsContainer.Add(summarySection);
-            
-            // Validation Section
-            var validationSection = CreateValidationSection(selectedProfile);
-            _profileDetailsContainer.Add(validationSection);
-            
-            // Export Options Section
-            var optionsSection = CreateExportOptionsSection(selectedProfile);
-            _profileDetailsContainer.Add(optionsSection);
-            
-            // Export Folders Section
-            var foldersSection = CreateFoldersSection(selectedProfile);
-            _profileDetailsContainer.Add(foldersSection);
-            
-            // Exclusion Filters Section
-            var exclusionSection = CreateExclusionFiltersSection(selectedProfile);
-            _profileDetailsContainer.Add(exclusionSection);
-            
-            // Export Inspector Section
-            var inspectorSection = CreateExportInspectorSection(selectedProfile);
-            _profileDetailsContainer.Add(inspectorSection);
-            
-            // Dependencies Section
-            var dependenciesSection = CreateDependenciesSection(selectedProfile);
-            _profileDetailsContainer.Add(dependenciesSection);
-            
-            // Obfuscation Section
-            var obfuscationSection = CreateObfuscationSection(selectedProfile);
-            _profileDetailsContainer.Add(obfuscationSection);
-            
-            // Quick Actions
-            var actionsSection = CreateQuickActionsSection(selectedProfile);
-            _profileDetailsContainer.Add(actionsSection);
+            // Check if multiple profiles are selected
+            if (selectedProfileIndices.Count > 1)
+            {
+                // Show bulk editor for multiple profiles
+                var bulkEditorSection = CreateBulkEditorSection();
+                _profileDetailsContainer.Add(bulkEditorSection);
+                
+                // Show summary for selected profiles
+                var summarySection = CreateMultiProfileSummarySection();
+                _profileDetailsContainer.Add(summarySection);
+            }
+            else
+            {
+                // Single profile editor
+                // Package Metadata Section
+                var metadataSection = CreateMetadataSection(selectedProfile);
+                _profileDetailsContainer.Add(metadataSection);
+                
+                // Quick Summary Section
+                var summarySection = CreateSummarySection(selectedProfile);
+                _profileDetailsContainer.Add(summarySection);
+                
+                // Validation Section
+                var validationSection = CreateValidationSection(selectedProfile);
+                _profileDetailsContainer.Add(validationSection);
+                
+                // Export Options Section
+                var optionsSection = CreateExportOptionsSection(selectedProfile);
+                _profileDetailsContainer.Add(optionsSection);
+                
+                // Export Folders Section
+                var foldersSection = CreateFoldersSection(selectedProfile);
+                _profileDetailsContainer.Add(foldersSection);
+                
+                // Exclusion Filters Section
+                var exclusionSection = CreateExclusionFiltersSection(selectedProfile);
+                _profileDetailsContainer.Add(exclusionSection);
+                
+                // Export Inspector Section
+                var inspectorSection = CreateExportInspectorSection(selectedProfile);
+                _profileDetailsContainer.Add(inspectorSection);
+                
+                // Dependencies Section
+                var dependenciesSection = CreateDependenciesSection(selectedProfile);
+                _profileDetailsContainer.Add(dependenciesSection);
+                
+                // Obfuscation Section
+                var obfuscationSection = CreateObfuscationSection(selectedProfile);
+                _profileDetailsContainer.Add(obfuscationSection);
+                
+                // Quick Actions
+                var actionsSection = CreateQuickActionsSection(selectedProfile);
+                _profileDetailsContainer.Add(actionsSection);
+            }
         }
 
         private VisualElement CreateMetadataSection(ExportProfile profile)
@@ -3465,6 +3577,1334 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }).StartingIn(10);
             }
+        }
+        
+        // ============================================================================
+        // BULK EDIT METHODS
+        // ============================================================================
+        
+        private VisualElement CreateBulkEditorSection()
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            
+            var title = new Label($"Bulk Edit ({selectedProfileIndices.Count} profiles selected)");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            var helpBox = new VisualElement();
+            helpBox.AddToClassList("pe-help-box");
+            var helpText = new Label("Changes made here will be applied to all selected profiles. Package names remain unique to each profile.");
+            helpText.AddToClassList("pe-help-box-text");
+            helpBox.Add(helpText);
+            section.Add(helpBox);
+            
+            // Get selected profiles
+            var selectedProfiles = selectedProfileIndices
+                .Select(i => allProfiles[i])
+                .Where(p => p != null)
+                .ToList();
+            
+            // Version field
+            var versionRow = CreateFormRow("Version", tooltip: "Set version for all selected profiles");
+            var versionField = new TextField();
+            versionField.AddToClassList("pe-input");
+            versionField.AddToClassList("pe-form-field");
+            
+            // Show current version if all are the same, otherwise show placeholder
+            var versions = selectedProfiles.Select(p => p.version).Distinct().ToList();
+            Label versionPlaceholder = null;
+            if (versions.Count == 1)
+            {
+                versionField.value = versions[0];
+            }
+            else
+            {
+                versionField.value = "";
+                versionField.style.opacity = 0.7f;
+                // Add placeholder label
+                versionPlaceholder = new Label("Mixed values - enter new version");
+                versionPlaceholder.AddToClassList("pe-label-secondary");
+                versionPlaceholder.style.position = Position.Absolute;
+                versionPlaceholder.style.left = 8;
+                versionPlaceholder.style.top = 4;
+                versionPlaceholder.pickingMode = PickingMode.Ignore;
+                versionRow.style.position = Position.Relative;
+                versionRow.Add(versionPlaceholder);
+            }
+            
+            versionField.RegisterValueChangedCallback(evt =>
+            {
+                // Handle placeholder visibility
+                if (versionPlaceholder != null)
+                {
+                    if (string.IsNullOrEmpty(evt.newValue))
+                    {
+                        versionPlaceholder.style.display = DisplayStyle.Flex;
+                        versionField.style.opacity = 0.7f;
+                    }
+                    else
+                    {
+                        versionPlaceholder.style.display = DisplayStyle.None;
+                        versionField.style.opacity = 1f;
+                    }
+                }
+                
+                // Apply changes to all selected profiles
+                if (!string.IsNullOrEmpty(evt.newValue))
+                {
+                    ApplyToAllSelected(profile => 
+                    {
+                        Undo.RecordObject(profile, "Bulk Change Version");
+                        profile.version = evt.newValue;
+                        EditorUtility.SetDirty(profile);
+                    });
+                    // Refresh to show updated value
+                    UpdateProfileDetails();
+                }
+            });
+            versionRow.Add(versionField);
+            section.Add(versionRow);
+            
+            // Author field
+            var authorRow = CreateFormRow("Author", tooltip: "Set author for all selected profiles");
+            var authorField = new TextField();
+            authorField.AddToClassList("pe-input");
+            authorField.AddToClassList("pe-form-field");
+            
+            var authors = selectedProfiles.Select(p => p.author ?? "").Distinct().ToList();
+            Label authorPlaceholder = null;
+            if (authors.Count == 1)
+            {
+                authorField.value = authors[0];
+            }
+            else
+            {
+                authorField.value = "";
+                authorField.style.opacity = 0.7f;
+                authorPlaceholder = new Label("Mixed values - enter new author");
+                authorPlaceholder.AddToClassList("pe-label-secondary");
+                authorPlaceholder.style.position = Position.Absolute;
+                authorPlaceholder.style.left = 8;
+                authorPlaceholder.style.top = 4;
+                authorPlaceholder.pickingMode = PickingMode.Ignore;
+                authorRow.style.position = Position.Relative;
+                authorRow.Add(authorPlaceholder);
+            }
+            
+            authorField.RegisterValueChangedCallback(evt =>
+            {
+                if (authorPlaceholder != null)
+                {
+                    if (string.IsNullOrEmpty(evt.newValue))
+                    {
+                        authorPlaceholder.style.display = DisplayStyle.Flex;
+                        authorField.style.opacity = 0.7f;
+                    }
+                    else
+                    {
+                        authorPlaceholder.style.display = DisplayStyle.None;
+                        authorField.style.opacity = 1f;
+                    }
+                }
+                
+                if (!string.IsNullOrEmpty(evt.newValue))
+                {
+                    ApplyToAllSelected(profile => 
+                    {
+                        Undo.RecordObject(profile, "Bulk Change Author");
+                        profile.author = evt.newValue;
+                        EditorUtility.SetDirty(profile);
+                    });
+                    UpdateProfileDetails();
+                }
+            });
+            authorRow.Add(authorField);
+            section.Add(authorRow);
+            
+            // Description field
+            var descriptionRow = CreateFormRow("Description", tooltip: "Set description for all selected profiles");
+            var descriptionField = new TextField();
+            descriptionField.AddToClassList("pe-input");
+            descriptionField.AddToClassList("pe-form-field");
+            descriptionField.multiline = true;
+            descriptionField.style.height = 60;
+            
+            var descriptions = selectedProfiles.Select(p => p.description ?? "").Distinct().ToList();
+            Label descriptionPlaceholder = null;
+            if (descriptions.Count == 1)
+            {
+                descriptionField.value = descriptions[0];
+            }
+            else
+            {
+                descriptionField.value = "";
+                descriptionField.style.opacity = 0.7f;
+                descriptionPlaceholder = new Label("Mixed values - enter new description");
+                descriptionPlaceholder.AddToClassList("pe-label-secondary");
+                descriptionPlaceholder.style.position = Position.Absolute;
+                descriptionPlaceholder.style.left = 8;
+                descriptionPlaceholder.style.top = 4;
+                descriptionPlaceholder.pickingMode = PickingMode.Ignore;
+                descriptionRow.style.position = Position.Relative;
+                descriptionRow.Add(descriptionPlaceholder);
+            }
+            
+            descriptionField.RegisterValueChangedCallback(evt =>
+            {
+                if (descriptionPlaceholder != null)
+                {
+                    if (string.IsNullOrEmpty(evt.newValue))
+                    {
+                        descriptionPlaceholder.style.display = DisplayStyle.Flex;
+                        descriptionField.style.opacity = 0.7f;
+                    }
+                    else
+                    {
+                        descriptionPlaceholder.style.display = DisplayStyle.None;
+                        descriptionField.style.opacity = 1f;
+                    }
+                }
+                
+                if (!string.IsNullOrEmpty(evt.newValue))
+                {
+                    ApplyToAllSelected(profile => 
+                    {
+                        Undo.RecordObject(profile, "Bulk Change Description");
+                        profile.description = evt.newValue;
+                        EditorUtility.SetDirty(profile);
+                    });
+                    UpdateProfileDetails();
+                }
+            });
+            descriptionRow.Add(descriptionField);
+            section.Add(descriptionRow);
+            
+            // Icon field
+            var iconRow = CreateFormRow("Icon", tooltip: "Set icon for all selected profiles");
+            var icons = selectedProfiles.Select(p => p.icon).Distinct().ToList();
+            var iconField = new ObjectField();
+            iconField.objectType = typeof(Texture2D);
+            iconField.AddToClassList("pe-form-field");
+            if (icons.Count == 1)
+            {
+                iconField.value = icons[0];
+            }
+            else
+            {
+                iconField.value = null;
+            }
+            iconField.RegisterValueChangedCallback(evt =>
+            {
+                ApplyToAllSelected(profile =>
+                {
+                    Undo.RecordObject(profile, "Bulk Change Icon");
+                    profile.icon = evt.newValue as Texture2D;
+                    EditorUtility.SetDirty(profile);
+                });
+                UpdateProfileDetails();
+            });
+            iconRow.Add(iconField);
+            section.Add(iconRow);
+            
+            // Export Path
+            var pathRow = CreateFormRow("Export Path", tooltip: "Set export path for all selected profiles");
+            var pathField = new TextField();
+            pathField.AddToClassList("pe-input");
+            pathField.AddToClassList("pe-form-field");
+            
+            var paths = selectedProfiles.Select(p => p.exportPath ?? "").Distinct().ToList();
+            Label pathPlaceholder = null;
+            if (paths.Count == 1)
+            {
+                pathField.value = paths[0];
+            }
+            else
+            {
+                pathField.value = "";
+                pathField.style.opacity = 0.7f;
+                // Add placeholder label
+                pathPlaceholder = new Label("Mixed values - use Browse to set");
+                pathPlaceholder.AddToClassList("pe-label-secondary");
+                pathPlaceholder.style.position = Position.Absolute;
+                pathPlaceholder.style.left = 8;
+                pathPlaceholder.style.top = 4;
+                pathPlaceholder.pickingMode = PickingMode.Ignore;
+                pathField.RegisterValueChangedCallback(evt => 
+                {
+                    if (string.IsNullOrEmpty(evt.newValue) && pathPlaceholder != null)
+                    {
+                        pathPlaceholder.style.display = DisplayStyle.Flex;
+                        pathField.style.opacity = 0.7f;
+                    }
+                    else
+                    {
+                        if (pathPlaceholder != null)
+                            pathPlaceholder.style.display = DisplayStyle.None;
+                        pathField.style.opacity = 1f;
+                    }
+                });
+                pathRow.style.position = Position.Relative;
+                pathRow.Add(pathPlaceholder);
+            }
+            
+            var browseButton = new Button(() => 
+            {
+                string currentPath = pathField.value;
+                if (string.IsNullOrEmpty(currentPath))
+                {
+                    currentPath = "";
+                }
+                string newPath = EditorUtility.OpenFolderPanel("Select Export Path", currentPath, "");
+                if (!string.IsNullOrEmpty(newPath))
+                {
+                    pathField.value = newPath;
+                    // Hide placeholder if it exists
+                    if (pathPlaceholder != null)
+                    {
+                        pathPlaceholder.style.display = DisplayStyle.None;
+                        pathField.style.opacity = 1f;
+                    }
+                    ApplyToAllSelected(profile => 
+                    {
+                        Undo.RecordObject(profile, "Bulk Change Export Path");
+                        profile.exportPath = newPath;
+                        EditorUtility.SetDirty(profile);
+                    });
+                    // Refresh to show updated value
+                    UpdateProfileDetails();
+                }
+            }) { text = "Browse" };
+            browseButton.AddToClassList("pe-button");
+            browseButton.AddToClassList("pe-button-action");
+            pathRow.Add(pathField);
+            pathRow.Add(browseButton);
+            section.Add(pathRow);
+            
+            // Profile Save Location
+            var profileSaveRow = CreateFormRow("Profile Save Location", tooltip: "Custom location to save profiles");
+            var profileSaveField = new TextField();
+            profileSaveField.AddToClassList("pe-input");
+            profileSaveField.AddToClassList("pe-form-field");
+            
+            var saveLocs = selectedProfiles.Select(p => p.profileSaveLocation ?? "").Distinct().ToList();
+            Label savePlaceholder = null;
+            if (saveLocs.Count == 1)
+            {
+                profileSaveField.value = saveLocs[0];
+            }
+            else
+            {
+                profileSaveField.value = "";
+                profileSaveField.style.opacity = 0.7f;
+                savePlaceholder = new Label("Mixed values - use Browse to set");
+                savePlaceholder.AddToClassList("pe-label-secondary");
+                savePlaceholder.style.position = Position.Absolute;
+                savePlaceholder.style.left = 8;
+                savePlaceholder.style.top = 4;
+                savePlaceholder.pickingMode = PickingMode.Ignore;
+                profileSaveField.RegisterValueChangedCallback(evt => 
+                {
+                    if (string.IsNullOrEmpty(evt.newValue) && savePlaceholder != null)
+                    {
+                        savePlaceholder.style.display = DisplayStyle.Flex;
+                        profileSaveField.style.opacity = 0.7f;
+                    }
+                    else
+                    {
+                        if (savePlaceholder != null)
+                            savePlaceholder.style.display = DisplayStyle.None;
+                        profileSaveField.style.opacity = 1f;
+                    }
+                });
+                profileSaveRow.style.position = Position.Relative;
+                profileSaveRow.Add(savePlaceholder);
+            }
+            
+            var browseSaveButton = new Button(() => 
+            {
+                string currentPath = profileSaveField.value;
+                if (string.IsNullOrEmpty(currentPath))
+                {
+                    currentPath = "";
+                }
+                string newPath = EditorUtility.OpenFolderPanel("Select Profile Save Location", currentPath, "");
+                if (!string.IsNullOrEmpty(newPath))
+                {
+                    profileSaveField.value = newPath;
+                    if (savePlaceholder != null)
+                    {
+                        savePlaceholder.style.display = DisplayStyle.None;
+                        profileSaveField.style.opacity = 1f;
+                    }
+                    ApplyToAllSelected(profile => 
+                    {
+                        Undo.RecordObject(profile, "Bulk Change Profile Save Location");
+                        profile.profileSaveLocation = newPath;
+                        EditorUtility.SetDirty(profile);
+                    });
+                    UpdateProfileDetails();
+                }
+            }) { text = "Browse" };
+            browseSaveButton.AddToClassList("pe-button");
+            browseSaveButton.AddToClassList("pe-button-action");
+            profileSaveRow.Add(profileSaveField);
+            profileSaveRow.Add(browseSaveButton);
+            section.Add(profileSaveRow);
+            
+            // Export Options Toggles
+            var optionsTitle = new Label("Export Options");
+            optionsTitle.AddToClassList("pe-section-title");
+            optionsTitle.style.marginTop = 16;
+            optionsTitle.style.marginBottom = 8;
+            section.Add(optionsTitle);
+            
+            // Get common values for toggles
+            bool allIncludeDeps = selectedProfiles.All(p => p.includeDependencies);
+            bool allRecurse = selectedProfiles.All(p => p.recurseFolders);
+            bool allGenerateJson = selectedProfiles.All(p => p.generatePackageJson);
+            
+            // Include Dependencies
+            var includeDepsToggle = CreateBulkToggle("Include Dependencies", allIncludeDeps, 
+                profile => profile.includeDependencies,
+                (profile, value) => profile.includeDependencies = value);
+            section.Add(includeDepsToggle);
+            
+            // Recurse Folders
+            var recurseToggle = CreateBulkToggle("Recurse Folders", allRecurse,
+                profile => profile.recurseFolders,
+                (profile, value) => profile.recurseFolders = value);
+            section.Add(recurseToggle);
+            
+            // Generate Package JSON
+            var generateJsonToggle = CreateBulkToggle("Generate package.json", allGenerateJson,
+                profile => profile.generatePackageJson,
+                (profile, value) => profile.generatePackageJson = value);
+            section.Add(generateJsonToggle);
+            
+            // Version Management Section
+            var versionMgmtTitle = new Label("Version Management");
+            versionMgmtTitle.AddToClassList("pe-section-title");
+            versionMgmtTitle.style.marginTop = 16;
+            versionMgmtTitle.style.marginBottom = 8;
+            section.Add(versionMgmtTitle);
+            
+            bool allAutoIncrement = selectedProfiles.All(p => p.autoIncrementVersion);
+            bool allBumpDirectives = selectedProfiles.All(p => p.bumpDirectivesInFiles);
+            
+            var autoIncrementToggle = CreateBulkToggle("Auto-Increment Version", allAutoIncrement,
+                profile => profile.autoIncrementVersion,
+                (profile, value) => profile.autoIncrementVersion = value);
+            section.Add(autoIncrementToggle);
+            
+            // Increment Strategy (only if all have same value)
+            var strategies = selectedProfiles.Select(p => p.incrementStrategy).Distinct().ToList();
+            if (strategies.Count == 1)
+            {
+                var strategyRow = CreateFormRow("Increment Strategy");
+                var strategyField = new EnumField(strategies[0]);
+                strategyField.AddToClassList("pe-form-field");
+                strategyField.RegisterValueChangedCallback(evt =>
+                {
+                    ApplyToAllSelected(profile =>
+                    {
+                        Undo.RecordObject(profile, "Bulk Change Increment Strategy");
+                        profile.incrementStrategy = (VersionIncrementStrategy)evt.newValue;
+                        EditorUtility.SetDirty(profile);
+                    });
+                    UpdateProfileDetails();
+                });
+                strategyRow.Add(strategyField);
+                section.Add(strategyRow);
+            }
+            
+            var bumpDirectivesToggle = CreateBulkToggle("Bump @bump Directives in Files", allBumpDirectives,
+                profile => profile.bumpDirectivesInFiles,
+                (profile, value) => profile.bumpDirectivesInFiles = value);
+            section.Add(bumpDirectivesToggle);
+            
+            // Custom Version Rule
+            var customRules = selectedProfiles.Select(p => p.customVersionRule).Distinct().ToList();
+            var ruleRow = CreateFormRow("Custom Version Rule");
+            var ruleField = new ObjectField();
+            ruleField.objectType = typeof(CustomVersionRule);
+            ruleField.AddToClassList("pe-form-field");
+            if (customRules.Count == 1)
+            {
+                ruleField.value = customRules[0];
+            }
+            else
+            {
+                ruleField.value = null;
+                // Add mixed label
+                var mixedLabel = new Label(" (Mixed values)");
+                mixedLabel.AddToClassList("pe-label-secondary");
+                mixedLabel.style.marginLeft = 4;
+                ruleRow.Add(mixedLabel);
+            }
+            ruleField.RegisterValueChangedCallback(evt =>
+            {
+                ApplyToAllSelected(profile =>
+                {
+                    Undo.RecordObject(profile, "Bulk Change Custom Version Rule");
+                    profile.customVersionRule = evt.newValue as CustomVersionRule;
+                    EditorUtility.SetDirty(profile);
+                });
+                UpdateProfileDetails();
+            });
+            ruleRow.Add(ruleField);
+            section.Add(ruleRow);
+            
+            // Add Folders Section
+            var foldersSection = CreateBulkFoldersSection(selectedProfiles);
+            section.Add(foldersSection);
+            
+            // Add Dependencies Section
+            var dependenciesSection = CreateBulkDependenciesSection(selectedProfiles);
+            section.Add(dependenciesSection);
+            
+            // Add Exclusion Filters Section
+            var exclusionSection = CreateBulkExclusionFiltersSection(selectedProfiles);
+            section.Add(exclusionSection);
+            
+            // Add Permanent Ignore Folders Section
+            var ignoreSection = CreateBulkPermanentIgnoreFoldersSection(selectedProfiles);
+            section.Add(ignoreSection);
+            
+            // Add Obfuscation Section
+            var obfuscationSection = CreateBulkObfuscationSection(selectedProfiles);
+            section.Add(obfuscationSection);
+            
+            // Add Assembly Obfuscation Section
+            var assemblySection = CreateBulkAssemblyObfuscationSection(selectedProfiles);
+            section.Add(assemblySection);
+            
+            return section;
+        }
+        
+        private VisualElement CreateBulkPermanentIgnoreFoldersSection(List<ExportProfile> selectedProfiles)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            section.style.marginTop = 16;
+            
+            var title = new Label("Permanent Ignore Folders");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            var helpText = new Label("Folders permanently excluded from all exports");
+            helpText.AddToClassList("pe-label-secondary");
+            helpText.style.marginBottom = 8;
+            section.Add(helpText);
+            
+            var allIgnoreFolders = selectedProfiles
+                .SelectMany(p => p.permanentIgnoreFolders ?? new List<string>())
+                .Distinct()
+                .OrderBy(f => f)
+                .ToList();
+            
+            var folderList = new VisualElement();
+            folderList.style.maxHeight = 150;
+            var scrollView = new ScrollView();
+            
+            foreach (var folder in allIgnoreFolders)
+            {
+                bool allHaveFolder = selectedProfiles.All(p => p.permanentIgnoreFolders != null && p.permanentIgnoreFolders.Contains(folder));
+                bool someHaveFolder = selectedProfiles.Any(p => p.permanentIgnoreFolders != null && p.permanentIgnoreFolders.Contains(folder));
+                
+                var folderItem = CreateBulkStringListItem(folder, allHaveFolder, someHaveFolder,
+                    (profile, value) =>
+                    {
+                        if (profile.permanentIgnoreFolders == null)
+                            profile.permanentIgnoreFolders = new List<string>();
+                        
+                        if (value)
+                        {
+                            if (!profile.permanentIgnoreFolders.Contains(folder))
+                                profile.permanentIgnoreFolders.Add(folder);
+                        }
+                        else
+                        {
+                            profile.permanentIgnoreFolders.Remove(folder);
+                        }
+                    });
+                scrollView.Add(folderItem);
+            }
+            
+            folderList.Add(scrollView);
+            section.Add(folderList);
+            
+            var addButton = new Button(() =>
+            {
+                string folderPath = EditorUtility.OpenFolderPanel("Select Folder to Ignore", Application.dataPath, "");
+                if (!string.IsNullOrEmpty(folderPath))
+                {
+                    string relativePath = GetRelativePath(folderPath);
+                    if (string.IsNullOrEmpty(relativePath))
+                    {
+                        EditorUtility.DisplayDialog("Invalid Path", "Please select a folder within the Unity project.", "OK");
+                        return;
+                    }
+                    
+                    ApplyToAllSelected(profile =>
+                    {
+                        Undo.RecordObject(profile, "Bulk Add Ignore Folder");
+                        if (profile.permanentIgnoreFolders == null)
+                            profile.permanentIgnoreFolders = new List<string>();
+                        if (!profile.permanentIgnoreFolders.Contains(relativePath))
+                        {
+                            profile.permanentIgnoreFolders.Add(relativePath);
+                        }
+                        EditorUtility.SetDirty(profile);
+                    });
+                    UpdateProfileDetails();
+                }
+            }) { text = "+ Add Ignore Folder to All" };
+            addButton.AddToClassList("pe-button");
+            addButton.AddToClassList("pe-button-action");
+            addButton.style.marginTop = 8;
+            section.Add(addButton);
+            
+            return section;
+        }
+        
+        private VisualElement CreateBulkAssemblyObfuscationSection(List<ExportProfile> selectedProfiles)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            section.style.marginTop = 16;
+            
+            var title = new Label("Assembly Obfuscation Settings");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            var helpText = new Label("Configure which assemblies to obfuscate");
+            helpText.AddToClassList("pe-label-secondary");
+            helpText.style.marginBottom = 8;
+            section.Add(helpText);
+            
+            var allAssemblies = selectedProfiles
+                .SelectMany(p => p.assembliesToObfuscate ?? new List<AssemblyObfuscationSettings>())
+                .GroupBy(a => a.assemblyName)
+                .Select(g => g.First())
+                .OrderBy(a => a.assemblyName)
+                .ToList();
+            
+            var assemblyList = new VisualElement();
+            assemblyList.style.maxHeight = 200;
+            var scrollView = new ScrollView();
+            
+            foreach (var assembly in allAssemblies)
+            {
+                var assemblyItem = new VisualElement();
+                assemblyItem.AddToClassList("pe-folder-item");
+                
+                bool allHaveAssembly = selectedProfiles.All(p => p.assembliesToObfuscate.Any(a => a.assemblyName == assembly.assemblyName));
+                bool someHaveAssembly = selectedProfiles.Any(p => p.assembliesToObfuscate.Any(a => a.assemblyName == assembly.assemblyName));
+                
+                var checkbox = new Toggle();
+                checkbox.value = allHaveAssembly;
+                checkbox.AddToClassList("pe-toggle");
+                checkbox.RegisterValueChangedCallback(evt =>
+                {
+                    ApplyToAllSelected(profile =>
+                    {
+                        Undo.RecordObject(profile, "Bulk Change Assembly Obfuscation");
+                        var existingAssembly = profile.assembliesToObfuscate.FirstOrDefault(a => a.assemblyName == assembly.assemblyName);
+                        if (evt.newValue)
+                        {
+                            if (existingAssembly == null)
+                            {
+                                var newAssembly = new AssemblyObfuscationSettings
+                                {
+                                    assemblyName = assembly.assemblyName,
+                                    enabled = assembly.enabled,
+                                    asmdefPath = assembly.asmdefPath
+                                };
+                                profile.assembliesToObfuscate.Add(newAssembly);
+                            }
+                        }
+                        else
+                        {
+                            if (existingAssembly != null)
+                            {
+                                profile.assembliesToObfuscate.Remove(existingAssembly);
+                            }
+                        }
+                        EditorUtility.SetDirty(profile);
+                    });
+                    UpdateProfileDetails();
+                });
+                assemblyItem.Add(checkbox);
+                
+                var assemblyLabel = new Label($"{assembly.assemblyName} ({(assembly.enabled ? "Enabled" : "Disabled")})");
+                assemblyLabel.AddToClassList("pe-folder-item-path");
+                if (!allHaveAssembly && someHaveAssembly)
+                {
+                    assemblyLabel.style.opacity = 0.7f;
+                    var mixedLabel = new Label(" (Mixed)");
+                    mixedLabel.AddToClassList("pe-label-secondary");
+                    mixedLabel.style.marginLeft = 4;
+                    assemblyItem.Add(mixedLabel);
+                }
+                assemblyItem.Add(assemblyLabel);
+                
+                scrollView.Add(assemblyItem);
+            }
+            
+            assemblyList.Add(scrollView);
+            section.Add(assemblyList);
+            
+            var addButton = new Button(() =>
+            {
+                var newAssembly = new AssemblyObfuscationSettings
+                {
+                    assemblyName = "Assembly-CSharp",
+                    enabled = true,
+                    asmdefPath = ""
+                };
+                
+                ApplyToAllSelected(profile =>
+                {
+                    Undo.RecordObject(profile, "Bulk Add Assembly");
+                    if (!profile.assembliesToObfuscate.Any(a => a.assemblyName == newAssembly.assemblyName))
+                    {
+                        var clonedAssembly = new AssemblyObfuscationSettings
+                        {
+                            assemblyName = newAssembly.assemblyName,
+                            enabled = newAssembly.enabled,
+                            asmdefPath = newAssembly.asmdefPath
+                        };
+                        profile.assembliesToObfuscate.Add(clonedAssembly);
+                    }
+                    EditorUtility.SetDirty(profile);
+                });
+                UpdateProfileDetails();
+            }) { text = "+ Add Assembly to All" };
+            addButton.AddToClassList("pe-button");
+            addButton.AddToClassList("pe-button-action");
+            addButton.style.marginTop = 8;
+            section.Add(addButton);
+            
+            return section;
+        }
+        
+        private VisualElement CreateBulkFoldersSection(List<ExportProfile> selectedProfiles)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            section.style.marginTop = 16;
+            
+            var title = new Label("Export Folders");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            var helpText = new Label("Add or remove folders to/from all selected profiles");
+            helpText.AddToClassList("pe-label-secondary");
+            helpText.style.marginBottom = 8;
+            section.Add(helpText);
+            
+            // Get unique folders across all profiles
+            var allFolders = selectedProfiles
+                .SelectMany(p => p.foldersToExport ?? new List<string>())
+                .Distinct()
+                .OrderBy(f => f)
+                .ToList();
+            
+            var folderList = new VisualElement();
+            folderList.AddToClassList("pe-folder-list");
+            folderList.style.maxHeight = 200;
+            folderList.style.overflow = Overflow.Hidden;
+            
+            var scrollView = new ScrollView();
+            
+            foreach (var folder in allFolders)
+            {
+                var folderItem = new VisualElement();
+                folderItem.AddToClassList("pe-folder-item");
+                
+                // Check if all profiles have this folder
+                bool allHaveFolder = selectedProfiles.All(p => p.foldersToExport.Contains(folder));
+                bool someHaveFolder = selectedProfiles.Any(p => p.foldersToExport.Contains(folder));
+                
+                var checkbox = new Toggle();
+                checkbox.value = allHaveFolder;
+                checkbox.AddToClassList("pe-toggle");
+                checkbox.RegisterValueChangedCallback(evt =>
+                {
+                    ApplyToAllSelected(profile =>
+                    {
+                        Undo.RecordObject(profile, "Bulk Change Folder");
+                        if (evt.newValue)
+                        {
+                            if (!profile.foldersToExport.Contains(folder))
+                            {
+                                profile.foldersToExport.Add(folder);
+                            }
+                        }
+                        else
+                        {
+                            profile.foldersToExport.Remove(folder);
+                        }
+                        EditorUtility.SetDirty(profile);
+                    });
+                    UpdateProfileDetails();
+                });
+                folderItem.Add(checkbox);
+                
+                var pathLabel = new Label(folder);
+                pathLabel.AddToClassList("pe-folder-item-path");
+                if (!allHaveFolder && someHaveFolder)
+                {
+                    pathLabel.style.opacity = 0.7f;
+                    var mixedLabel = new Label(" (Mixed)");
+                    mixedLabel.AddToClassList("pe-label-secondary");
+                    mixedLabel.style.marginLeft = 4;
+                    folderItem.Add(mixedLabel);
+                }
+                folderItem.Add(pathLabel);
+                
+                scrollView.Add(folderItem);
+            }
+            
+            folderList.Add(scrollView);
+            section.Add(folderList);
+            
+            // Add folder button
+            var addButton = new Button(() => 
+            {
+                string folderPath = EditorUtility.OpenFolderPanel("Select Folder to Add", Application.dataPath, "");
+                if (!string.IsNullOrEmpty(folderPath))
+                {
+                    // Convert to relative path
+                    string relativePath = GetRelativePath(folderPath);
+                    if (string.IsNullOrEmpty(relativePath))
+                    {
+                        EditorUtility.DisplayDialog("Invalid Path", "Please select a folder within the Unity project.", "OK");
+                        return;
+                    }
+                    
+                    ApplyToAllSelected(profile =>
+                    {
+                        Undo.RecordObject(profile, "Bulk Add Folder");
+                        if (!profile.foldersToExport.Contains(relativePath))
+                        {
+                            profile.foldersToExport.Add(relativePath);
+                        }
+                        EditorUtility.SetDirty(profile);
+                    });
+                    UpdateProfileDetails();
+                }
+            }) { text = "+ Add Folder to All" };
+            addButton.AddToClassList("pe-button");
+            addButton.AddToClassList("pe-button-action");
+            addButton.style.marginTop = 8;
+            section.Add(addButton);
+            
+            return section;
+        }
+        
+        private VisualElement CreateBulkDependenciesSection(List<ExportProfile> selectedProfiles)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            section.style.marginTop = 16;
+            
+            var title = new Label("Package Dependencies");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            var helpText = new Label("Add or remove dependencies across all selected profiles");
+            helpText.AddToClassList("pe-label-secondary");
+            helpText.style.marginBottom = 8;
+            section.Add(helpText);
+            
+            // Get unique dependencies across all profiles
+            var allDependencies = selectedProfiles
+                .SelectMany(p => p.dependencies ?? new List<PackageDependency>())
+                .GroupBy(d => d.packageName)
+                .Select(g => g.First())
+                .OrderBy(d => d.packageName)
+                .ToList();
+            
+            var depsList = new VisualElement();
+            depsList.AddToClassList("pe-folder-list");
+            depsList.style.maxHeight = 200;
+            
+            var scrollView = new ScrollView();
+            
+            foreach (var dep in allDependencies)
+            {
+                var depItem = new VisualElement();
+                depItem.AddToClassList("pe-folder-item");
+                
+                // Check if all profiles have this dependency and if it's enabled
+                bool allHaveDep = selectedProfiles.All(p => p.dependencies.Any(d => d.packageName == dep.packageName));
+                bool someHaveDep = selectedProfiles.Any(p => p.dependencies.Any(d => d.packageName == dep.packageName));
+                int enabledCount = selectedProfiles.Count(p => p.dependencies.Any(d => d.packageName == dep.packageName && d.enabled));
+                int totalCount = selectedProfiles.Count;
+                
+                var checkbox = new Toggle();
+                checkbox.value = allHaveDep;
+                checkbox.AddToClassList("pe-toggle");
+                checkbox.RegisterValueChangedCallback(evt =>
+                {
+                    ApplyToAllSelected(profile =>
+                    {
+                        Undo.RecordObject(profile, "Bulk Change Dependency");
+                        var existingDep = profile.dependencies.FirstOrDefault(d => d.packageName == dep.packageName);
+                        if (evt.newValue)
+                        {
+                            if (existingDep == null)
+                            {
+                                // Clone the dependency to add to this profile
+                                var newDep = new PackageDependency(dep.packageName, dep.packageVersion, dep.displayName, dep.isVpmDependency);
+                                newDep.enabled = dep.enabled;
+                                newDep.exportMode = dep.exportMode;
+                                profile.dependencies.Add(newDep);
+                            }
+                        }
+                        else
+                        {
+                            if (existingDep != null)
+                            {
+                                profile.dependencies.Remove(existingDep);
+                            }
+                        }
+                        EditorUtility.SetDirty(profile);
+                    });
+                    UpdateProfileDetails();
+                });
+                depItem.Add(checkbox);
+                
+                // Create container for label and status
+                var labelContainer = new VisualElement();
+                labelContainer.style.flexDirection = FlexDirection.Row;
+                labelContainer.style.flexGrow = 1;
+                labelContainer.style.alignItems = Align.Center;
+                
+                var depLabel = new Label($"{dep.displayName} ({dep.packageName}@{dep.packageVersion})");
+                depLabel.AddToClassList("pe-folder-item-path");
+                depLabel.style.flexGrow = 1;
+                if (!allHaveDep && someHaveDep)
+                {
+                    depLabel.style.opacity = 0.7f;
+                }
+                labelContainer.Add(depLabel);
+                
+                // Add status indicator showing how many profiles have this dependency enabled
+                if (someHaveDep)
+                {
+                    var statusLabel = new Label();
+                    statusLabel.AddToClassList("pe-label-secondary");
+                    statusLabel.style.marginLeft = 8;
+                    statusLabel.style.fontSize = 10;
+                    
+                    if (allHaveDep)
+                    {
+                        if (enabledCount == totalCount)
+                        {
+                            statusLabel.text = $"✓ All ({enabledCount}/{totalCount} enabled)";
+                            statusLabel.style.color = new Color(0.3f, 0.8f, 0.3f);
+                        }
+                        else if (enabledCount == 0)
+                        {
+                            statusLabel.text = $"All ({enabledCount}/{totalCount} enabled)";
+                            statusLabel.style.color = new Color(0.8f, 0.5f, 0.3f);
+                        }
+                        else
+                        {
+                            statusLabel.text = $"All ({enabledCount}/{totalCount} enabled)";
+                            statusLabel.style.color = new Color(0.8f, 0.8f, 0.3f);
+                        }
+                    }
+                    else
+                    {
+                        int haveCount = selectedProfiles.Count(p => p.dependencies.Any(d => d.packageName == dep.packageName));
+                        statusLabel.text = $"Mixed ({haveCount}/{totalCount} have it, {enabledCount} enabled)";
+                        statusLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
+                    }
+                    labelContainer.Add(statusLabel);
+                }
+                
+                depItem.Add(labelContainer);
+                
+                scrollView.Add(depItem);
+            }
+            
+            depsList.Add(scrollView);
+            section.Add(depsList);
+            
+            // Add dependency button
+            var addButton = new Button(() => 
+            {
+                // Create a default dependency - users can edit it after adding
+                var newDep = new PackageDependency("com.example.package", "1.0.0", "Example Package", false);
+                
+                ApplyToAllSelected(profile =>
+                {
+                    Undo.RecordObject(profile, "Bulk Add Dependency");
+                    // Check if a dependency with this name already exists
+                    if (!profile.dependencies.Any(d => d.packageName == newDep.packageName))
+                    {
+                        // Clone the dependency for each profile
+                        var clonedDep = new PackageDependency(newDep.packageName, newDep.packageVersion, newDep.displayName, newDep.isVpmDependency);
+                        clonedDep.enabled = newDep.enabled;
+                        clonedDep.exportMode = newDep.exportMode;
+                        profile.dependencies.Add(clonedDep);
+                    }
+                    EditorUtility.SetDirty(profile);
+                });
+                UpdateProfileDetails();
+            }) { text = "+ Add Dependency to All" };
+            addButton.AddToClassList("pe-button");
+            addButton.AddToClassList("pe-button-action");
+            addButton.style.marginTop = 8;
+            section.Add(addButton);
+            
+            return section;
+        }
+        
+        private VisualElement CreateBulkExclusionFiltersSection(List<ExportProfile> selectedProfiles)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            section.style.marginTop = 16;
+            
+            var title = new Label("Exclusion Filters");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            var helpText = new Label("Add or remove exclusion patterns across all selected profiles");
+            helpText.AddToClassList("pe-label-secondary");
+            helpText.style.marginBottom = 8;
+            section.Add(helpText);
+            
+            // File Patterns
+            var filePatternsLabel = new Label("File Patterns");
+            filePatternsLabel.AddToClassList("pe-label");
+            filePatternsLabel.style.marginTop = 8;
+            filePatternsLabel.style.marginBottom = 4;
+            filePatternsLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            section.Add(filePatternsLabel);
+            
+            var allFilePatterns = selectedProfiles
+                .SelectMany(p => p.excludeFilePatterns ?? new List<string>())
+                .Distinct()
+                .OrderBy(p => p)
+                .ToList();
+            
+            var filePatternsContainer = new VisualElement();
+            filePatternsContainer.style.maxHeight = 150;
+            var fileScrollView = new ScrollView();
+            
+            foreach (var pattern in allFilePatterns)
+            {
+                bool allHavePattern = selectedProfiles.All(p => p.excludeFilePatterns.Contains(pattern));
+                bool someHavePattern = selectedProfiles.Any(p => p.excludeFilePatterns.Contains(pattern));
+                
+                var patternItem = CreateBulkStringListItem(pattern, allHavePattern, someHavePattern,
+                    (profile, value) =>
+                    {
+                        if (value)
+                        {
+                            if (!profile.excludeFilePatterns.Contains(pattern))
+                                profile.excludeFilePatterns.Add(pattern);
+                        }
+                        else
+                        {
+                            profile.excludeFilePatterns.Remove(pattern);
+                        }
+                    });
+                fileScrollView.Add(patternItem);
+            }
+            
+            filePatternsContainer.Add(fileScrollView);
+            section.Add(filePatternsContainer);
+            
+            var addFilePatternButton = new Button(() =>
+            {
+                // Add a default pattern - users can edit it after adding
+                string pattern = "*.tmp";
+                ApplyToAllSelected(profile =>
+                {
+                    Undo.RecordObject(profile, "Bulk Add File Pattern");
+                    if (!profile.excludeFilePatterns.Contains(pattern))
+                    {
+                        profile.excludeFilePatterns.Add(pattern);
+                    }
+                    EditorUtility.SetDirty(profile);
+                });
+                UpdateProfileDetails();
+            }) { text = "+ Add Pattern to All" };
+            addFilePatternButton.AddToClassList("pe-button");
+            addFilePatternButton.style.marginBottom = 12;
+            section.Add(addFilePatternButton);
+            
+            // Folder Names
+            var folderNamesLabel = new Label("Folder Names");
+            folderNamesLabel.AddToClassList("pe-label");
+            folderNamesLabel.style.marginTop = 8;
+            folderNamesLabel.style.marginBottom = 4;
+            folderNamesLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            section.Add(folderNamesLabel);
+            
+            var allFolderNames = selectedProfiles
+                .SelectMany(p => p.excludeFolderNames ?? new List<string>())
+                .Distinct()
+                .OrderBy(f => f)
+                .ToList();
+            
+            var folderNamesContainer = new VisualElement();
+            folderNamesContainer.style.maxHeight = 150;
+            var folderScrollView = new ScrollView();
+            
+            foreach (var folderName in allFolderNames)
+            {
+                bool allHaveFolder = selectedProfiles.All(p => p.excludeFolderNames.Contains(folderName));
+                bool someHaveFolder = selectedProfiles.Any(p => p.excludeFolderNames.Contains(folderName));
+                
+                var folderItem = CreateBulkStringListItem(folderName, allHaveFolder, someHaveFolder,
+                    (profile, value) =>
+                    {
+                        if (value)
+                        {
+                            if (!profile.excludeFolderNames.Contains(folderName))
+                                profile.excludeFolderNames.Add(folderName);
+                        }
+                        else
+                        {
+                            profile.excludeFolderNames.Remove(folderName);
+                        }
+                    });
+                folderScrollView.Add(folderItem);
+            }
+            
+            folderNamesContainer.Add(folderScrollView);
+            section.Add(folderNamesContainer);
+            
+            var addFolderNameButton = new Button(() =>
+            {
+                // Add a default folder name - users can edit it after adding
+                string folderName = ".git";
+                ApplyToAllSelected(profile =>
+                {
+                    Undo.RecordObject(profile, "Bulk Add Folder Name");
+                    if (!profile.excludeFolderNames.Contains(folderName))
+                    {
+                        profile.excludeFolderNames.Add(folderName);
+                    }
+                    EditorUtility.SetDirty(profile);
+                });
+                UpdateProfileDetails();
+            }) { text = "+ Add Folder Name to All" };
+            addFolderNameButton.AddToClassList("pe-button");
+            section.Add(addFolderNameButton);
+            
+            return section;
+        }
+        
+        private VisualElement CreateBulkStringListItem(string value, bool allHave, bool someHave, 
+            System.Action<ExportProfile, bool> toggleAction)
+        {
+            var item = new VisualElement();
+            item.AddToClassList("pe-folder-item");
+            
+            var checkbox = new Toggle();
+            checkbox.value = allHave;
+            checkbox.AddToClassList("pe-toggle");
+            checkbox.RegisterValueChangedCallback(evt =>
+            {
+                ApplyToAllSelected(profile =>
+                {
+                    Undo.RecordObject(profile, "Bulk Change Exclusion");
+                    toggleAction(profile, evt.newValue);
+                    EditorUtility.SetDirty(profile);
+                });
+                UpdateProfileDetails();
+            });
+            item.Add(checkbox);
+            
+            var textField = new TextField { value = value };
+            textField.AddToClassList("pe-input");
+            textField.style.flexGrow = 1;
+            textField.isReadOnly = true;
+            if (!allHave && someHave)
+            {
+                textField.style.opacity = 0.7f;
+                var mixedLabel = new Label(" (Mixed)");
+                mixedLabel.AddToClassList("pe-label-secondary");
+                mixedLabel.style.marginLeft = 4;
+                item.Add(mixedLabel);
+            }
+            item.Add(textField);
+            
+            var removeButton = new Button(() =>
+            {
+                ApplyToAllSelected(profile =>
+                {
+                    Undo.RecordObject(profile, "Bulk Remove Exclusion");
+                    toggleAction(profile, false);
+                    EditorUtility.SetDirty(profile);
+                });
+                UpdateProfileDetails();
+            }) { text = "×" };
+            removeButton.AddToClassList("pe-button");
+            removeButton.AddToClassList("pe-folder-item-remove");
+            item.Add(removeButton);
+            
+            return item;
+        }
+        
+        private VisualElement CreateBulkObfuscationSection(List<ExportProfile> selectedProfiles)
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            section.style.marginTop = 16;
+            
+            var title = new Label("Obfuscation Settings");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            bool allObfuscation = selectedProfiles.All(p => p.enableObfuscation);
+            bool allStripDebug = selectedProfiles.All(p => p.stripDebugSymbols);
+            
+            var obfuscationToggle = CreateBulkToggle("Enable Obfuscation", allObfuscation,
+                profile => profile.enableObfuscation,
+                (profile, value) => profile.enableObfuscation = value);
+            section.Add(obfuscationToggle);
+            
+            var stripDebugToggle = CreateBulkToggle("Strip Debug Symbols", allStripDebug,
+                profile => profile.stripDebugSymbols,
+                (profile, value) => profile.stripDebugSymbols = value);
+            section.Add(stripDebugToggle);
+            
+            // Obfuscation Preset (only if all have same value)
+            var presets = selectedProfiles.Select(p => p.obfuscationPreset).Distinct().ToList();
+            if (presets.Count == 1)
+            {
+                var presetRow = CreateFormRow("Obfuscation Preset");
+                var presetField = new EnumField(presets[0]);
+                presetField.AddToClassList("pe-form-field");
+                presetField.RegisterValueChangedCallback(evt =>
+                {
+                    ApplyToAllSelected(profile =>
+                    {
+                        Undo.RecordObject(profile, "Bulk Change Obfuscation Preset");
+                        profile.obfuscationPreset = (ConfuserExPreset)evt.newValue;
+                        EditorUtility.SetDirty(profile);
+                    });
+                    UpdateProfileDetails();
+                });
+                presetRow.Add(presetField);
+                section.Add(presetRow);
+            }
+            
+            return section;
+        }
+        
+        private VisualElement CreateBulkToggle(string label, bool allSame, 
+            System.Func<ExportProfile, bool> getValue, 
+            System.Action<ExportProfile, bool> setValue)
+        {
+            var container = new VisualElement();
+            container.style.flexDirection = FlexDirection.Row;
+            container.style.alignItems = Align.Center;
+            container.style.marginBottom = 4;
+            
+            var toggle = new Toggle(label);
+            toggle.AddToClassList("pe-toggle");
+            toggle.value = allSame;
+            
+            if (!allSame)
+            {
+                // When mixed, show indeterminate state but allow toggling
+                var mixedLabel = new Label(" (Mixed - click to set all)");
+                mixedLabel.AddToClassList("pe-label-secondary");
+                mixedLabel.style.marginLeft = 4;
+                container.Add(mixedLabel);
+            }
+            
+            toggle.RegisterValueChangedCallback(evt =>
+            {
+                // Apply the new value to all selected profiles
+                bool newValue = evt.newValue;
+                ApplyToAllSelected(profile => 
+                {
+                    Undo.RecordObject(profile, $"Bulk Toggle {label}");
+                    setValue(profile, newValue);
+                    EditorUtility.SetDirty(profile);
+                });
+                // Refresh to update UI
+                UpdateProfileDetails();
+            });
+            
+            container.Add(toggle);
+            return container;
+        }
+        
+        private void ApplyToAllSelected(System.Action<ExportProfile> action)
+        {
+            foreach (int index in selectedProfileIndices)
+            {
+                if (index >= 0 && index < allProfiles.Count)
+                {
+                    var profile = allProfiles[index];
+                    if (profile != null)
+                    {
+                        action(profile);
+                    }
+                }
+            }
+            UpdateProfileDetails(); // Refresh to show changes
+        }
+        
+        private VisualElement CreateMultiProfileSummarySection()
+        {
+            var section = new VisualElement();
+            section.AddToClassList("pe-section");
+            
+            var title = new Label("Selected Profiles");
+            title.AddToClassList("pe-section-title");
+            section.Add(title);
+            
+            var list = new ScrollView();
+            list.style.maxHeight = 300;
+            
+            foreach (int index in selectedProfileIndices.OrderBy(i => i))
+            {
+                if (index >= 0 && index < allProfiles.Count)
+                {
+                    var profile = allProfiles[index];
+                    if (profile != null)
+                    {
+                        var item = new VisualElement();
+                        item.style.flexDirection = FlexDirection.Row;
+                        item.style.alignItems = Align.Center;
+                        item.style.paddingTop = 4;
+                        item.style.paddingBottom = 4;
+                        item.style.paddingLeft = 8;
+                        item.style.paddingRight = 8;
+                        item.style.marginBottom = 2;
+                        item.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f);
+                        
+                        var nameLabel = new Label(GetProfileDisplayName(profile));
+                        nameLabel.AddToClassList("pe-label");
+                        nameLabel.style.flexGrow = 1;
+                        item.Add(nameLabel);
+                        
+                        var versionLabel = new Label($"v{profile.version}");
+                        versionLabel.AddToClassList("pe-label-secondary");
+                        versionLabel.style.marginLeft = 8;
+                        item.Add(versionLabel);
+                        
+                        list.Add(item);
+                    }
+                }
+            }
+            
+            section.Add(list);
+            return section;
         }
         
         private void CloseOverlay()

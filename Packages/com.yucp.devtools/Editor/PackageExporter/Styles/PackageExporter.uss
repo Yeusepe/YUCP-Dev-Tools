@@ -60,6 +60,9 @@
     align-items: center;
     flex-wrap: wrap;
     overflow: hidden;
+    transition-property: flex-wrap, min-height, padding;
+    transition-duration: 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
 }
 
 .pe-logo {
@@ -67,6 +70,9 @@
     height: 50px;
     margin-right: 20px;
     flex-shrink: 0;
+    transition-property: margin, width, height, opacity;
+    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
 }
 
 .pe-title {
@@ -95,9 +101,9 @@
     border-right-color: #2a2a2a;
     padding: 20px;
     overflow: hidden;
-    transition-property: width, opacity;
-    transition-duration: 0.3s, 0.3s;
-    transition-timing-function: ease-out, ease-out;
+    transition-property: width, opacity, min-width, padding;
+    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
 }
 
 .pe-right-pane {
@@ -106,9 +112,9 @@
     min-width: 0;
     background-color: #090909;
     overflow: hidden;
-    transition-property: opacity;
-    transition-duration: 0.3s;
-    transition-timing-function: ease-out;
+    transition-property: opacity, width;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
 }
 
 .pe-right-pane .pe-panel {
@@ -273,6 +279,9 @@
 .pe-profile-list-container {
     flex-grow: 1;
     flex-direction: column;
+    transition-property: width, padding;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
 }
 
 .pe-profile-list-scroll {
@@ -291,9 +300,9 @@
     padding-right: 12px;
     margin-bottom: 4px;
     flex-direction: column;
-    transition-duration: 0.1s;
-    transition-property: background-color, border-left-color;
-    transition-timing-function: ease-out;
+    transition-duration: 0.5s, 0.5s, 0.15s, 0.15s;
+    transition-property: width, padding, background-color, border-left-color;
+    transition-timing-function: ease-in-out, ease-in-out, ease-out, ease-out;
 }
 
 .pe-profile-item:hover {
@@ -320,11 +329,25 @@
 .pe-profile-buttons {
     flex-direction: row;
     margin-bottom: 8px;
+    transition-property: flex-direction, height;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
 }
 
 .pe-profile-buttons Button {
     flex-grow: 1;
     margin: 2px;
+    transition-property: width, margin, flex-grow, height;
+    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
+}
+
+.pe-profile-list-container > Button {
+    margin-left: 4px;
+    margin-right: 4px;
+    transition-property: width, margin, height;
+    transition-duration: 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
 }
 
 /* ============================================================================
@@ -335,9 +358,9 @@
     align-items: center;
     margin-bottom: 8px;
     overflow: hidden;
-    transition-property: flex-direction;
-    transition-duration: 0.3s;
-    transition-timing-function: ease-out;
+    transition-property: flex-direction, height;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
 }
 
 .pe-form-label {
@@ -345,6 +368,9 @@
     font-size: 12px;
     color: #b0b0b0;
     flex-shrink: 0;
+    transition-property: width, margin, opacity;
+    transition-duration: 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
 }
 
 .pe-form-field {
@@ -352,6 +378,9 @@
     flex-shrink: 1;
     min-width: 0;
     overflow: hidden;
+    transition-property: width, opacity;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
 }
 
 .pe-input {
@@ -543,15 +572,18 @@
     flex-direction: row;
     justify-content: flex-end;
     align-items: center;
-    transition-property: flex-direction;
-    transition-duration: 0.3s;
-    transition-timing-function: ease-out;
+    transition-property: flex-direction, height;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
 }
 
 .pe-export-info {
     flex-grow: 1;
     flex-direction: row;
     align-items: center;
+    transition-property: margin, opacity;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
 }
 
 .pe-multi-select-info {
@@ -914,6 +946,12 @@
     width: 100%;
 }
 
+.pe-window-narrow .pe-profile-list-container > Button {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+}
+
 .pe-window-narrow .pe-top-bar {
     flex-wrap: wrap;
 }
@@ -955,6 +993,21 @@
 
 .pe-window-medium .pe-form-label {
     width: 100px;
+}
+
+.pe-window-medium .pe-profile-buttons {
+    flex-direction: column;
+}
+
+.pe-window-medium .pe-profile-buttons Button {
+    width: 100%;
+    margin: 2px 0;
+}
+
+.pe-window-medium .pe-profile-list-container > Button {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
 }
 
 /* Wide layout (> 900px) - Default behavior */
