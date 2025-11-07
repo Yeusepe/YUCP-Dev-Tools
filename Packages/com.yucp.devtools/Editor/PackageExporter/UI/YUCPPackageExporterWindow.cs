@@ -77,6 +77,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private VisualElement _leftPane;
         private bool _isOverlayOpen = false;
 
+        // Support banner prefs (devtools scope)
+        private const string SupportUrl = "https://buymeacoffee.com/yeusepe";
+        private const string SupportPrefNeverKey = "com.yucp.devtools.support.never";
+        private const string SupportPrefCounterKey = "com.yucp.devtools.support.counter";
+        private const string SupportPrefCadenceKey = "com.yucp.devtools.support.cadence"; // optional override
+        private const string SupportSessionDismissKey = "com.yucp.devtools.support.dismissed.session";
+
         private void OnEnable()
         {
             LoadProfiles();
@@ -107,7 +114,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             // Top Bar
             mainContainer.Add(CreateTopBar());
-            
+
             // Content Container (Left + Right Panes)
             _contentContainer = new VisualElement();
             _contentContainer.AddToClassList("pe-content-container");
@@ -139,6 +146,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             mainContainer.Add(_bottomBar);
             
             root.Add(mainContainer);
+            
+            // Optional non-intrusive support toast (appears rarely)
+            var supportToast = CreateSupportToast();
+            if (supportToast != null)
+            {
+                root.Add(supportToast);
+            }
             
             // Schedule delayed rename checks
             root.schedule.Execute(CheckDelayedRename).Every(100);
@@ -194,6 +208,117 @@ namespace YUCP.DevTools.Editor.PackageExporter
             topBar.Add(title);
             
             return topBar;
+        }
+
+        private VisualElement CreateSupportToast()
+        {
+            if (EditorPrefs.GetBool(SupportPrefNeverKey, false)) return null;
+            if (SessionState.GetBool(SupportSessionDismissKey, false)) return null;
+
+            int count = EditorPrefs.GetInt(SupportPrefCounterKey, 0) + 1;
+            EditorPrefs.SetInt(SupportPrefCounterKey, count);
+
+            int cadence = Math.Max(1, EditorPrefs.GetInt(SupportPrefCadenceKey, 1000));
+            if (count % cadence != 0) return null;
+
+            // Toast container - positioned at top-right
+            var toast = new VisualElement();
+            toast.style.position = Position.Absolute;
+            toast.style.top = 20;
+            toast.style.right = 20;
+            toast.style.width = 380;
+            toast.style.maxWidth = Length.Percent(90);
+            toast.style.backgroundColor = new Color(0.106f, 0.106f, 0.106f, 0.98f); // #1b1b1b with opacity
+            toast.style.borderTopLeftRadius = 6;
+            toast.style.borderTopRightRadius = 6;
+            toast.style.borderBottomLeftRadius = 6;
+            toast.style.borderBottomRightRadius = 6;
+            toast.style.paddingTop = 16;
+            toast.style.paddingBottom = 16;
+            toast.style.paddingLeft = 16;
+            toast.style.paddingRight = 16;
+            toast.style.borderLeftWidth = 3;
+            toast.style.borderLeftColor = new Color(0.212f, 0.749f, 0.694f, 1f); // #36BFB1 YUCP Teal
+            toast.style.borderTopWidth = 1;
+            toast.style.borderRightWidth = 1;
+            toast.style.borderBottomWidth = 1;
+            toast.style.borderTopColor = new Color(0.164f, 0.164f, 0.164f, 1f); // #2a2a2a
+            toast.style.borderRightColor = new Color(0.164f, 0.164f, 0.164f, 1f);
+            toast.style.borderBottomColor = new Color(0.164f, 0.164f, 0.164f, 1f);
+
+            // Header row with title and close button
+            var headerRow = new VisualElement();
+            headerRow.style.flexDirection = FlexDirection.Row;
+            headerRow.style.alignItems = Align.Center;
+            headerRow.style.marginBottom = 10;
+
+            var title = new Label("Support YUCP");
+            title.style.fontSize = 13;
+            title.style.color = new Color(1f, 1f, 1f, 1f);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.flexGrow = 1;
+            headerRow.Add(title);
+
+            var closeButton = new Button(() =>
+            {
+                SessionState.SetBool(SupportSessionDismissKey, true);
+                toast.RemoveFromHierarchy();
+            }) { text = "×" };
+            closeButton.style.width = 24;
+            closeButton.style.height = 24;
+            closeButton.style.fontSize = 16;
+            closeButton.style.backgroundColor = new Color(0.228f, 0.228f, 0.228f, 0f); // Transparent
+            closeButton.style.color = new Color(0.69f, 0.69f, 0.69f, 1f); // #b0b0b0
+            closeButton.style.borderTopWidth = 0;
+            closeButton.style.borderBottomWidth = 0;
+            closeButton.style.borderLeftWidth = 0;
+            closeButton.style.borderRightWidth = 0;
+            closeButton.style.unityTextAlign = TextAnchor.MiddleCenter;
+            closeButton.style.marginLeft = 0;
+            closeButton.style.marginRight = 0;
+            closeButton.style.paddingLeft = 0;
+            closeButton.style.paddingRight = 0;
+            closeButton.style.borderTopLeftRadius = 4;
+            closeButton.style.borderTopRightRadius = 4;
+            closeButton.style.borderBottomLeftRadius = 4;
+            closeButton.style.borderBottomRightRadius = 4;
+            headerRow.Add(closeButton);
+
+            toast.Add(headerRow);
+
+            // Message text
+            var message = new Label("This project stays free because of you. Every tip directly supports maintenance and new releases. If it helped you, please consider supporting my work!");
+            message.style.fontSize = 11;
+            message.style.color = new Color(0.69f, 0.69f, 0.69f, 1f); // #b0b0b0
+            message.style.whiteSpace = WhiteSpace.Normal;
+            message.style.marginBottom = 12;
+            toast.Add(message);
+
+            // Button row
+            var buttonRow = new VisualElement();
+            buttonRow.style.flexDirection = FlexDirection.Row;
+            buttonRow.style.justifyContent = Justify.FlexEnd;
+
+            var neverButton = new Button(() =>
+            {
+                EditorPrefs.SetBool(SupportPrefNeverKey, true);
+                toast.RemoveFromHierarchy();
+            }) { text = "Never show again" };
+            neverButton.AddToClassList("pe-button");
+            neverButton.AddToClassList("pe-button-small");
+            neverButton.style.marginRight = 8;
+            buttonRow.Add(neverButton);
+
+            var supportButton = new Button(() => Application.OpenURL(SupportUrl)) { text = "Support" };
+            supportButton.AddToClassList("pe-button");
+            supportButton.AddToClassList("pe-button-primary");
+            supportButton.AddToClassList("pe-button-small");
+            supportButton.style.marginRight = 0;
+            buttonRow.Add(supportButton);
+
+            toast.Add(buttonRow);
+
+            return toast;
         }
 
         private VisualElement CreateLeftPane(bool isOverlay)

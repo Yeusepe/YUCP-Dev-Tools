@@ -572,18 +572,14 @@
     flex-direction: row;
     justify-content: flex-end;
     align-items: center;
-    transition-property: flex-direction, height;
-    transition-duration: 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out;
+    /* Removed flex-direction and height from transitions to prevent buttons jumping around */
 }
 
 .pe-export-info {
     flex-grow: 1;
     flex-direction: row;
     align-items: center;
-    transition-property: margin, opacity;
-    transition-duration: 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out;
+    /* Removed transitions to prevent layout shifting */
 }
 
 .pe-multi-select-info {

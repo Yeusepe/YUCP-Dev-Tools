@@ -18,7 +18,6 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		[Header("Build Settings")]
 		public bool autoBuildPC = true;
 		public bool autoBuildQuest = true;
-		public ValidationLevel validationLevel = ValidationLevel.Normal;
 
 		[Header("Statistics (Read-only)")]
 		[SerializeField] private string lastBuildTime;
@@ -34,12 +33,6 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		}
 	}
 
-	public enum ValidationLevel
-	{
-		Lenient,
-		Normal,
-		Strict
-	}
 }
 
 

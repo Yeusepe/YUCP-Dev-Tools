@@ -66,6 +66,54 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			if (idProp != null && idProp.CanWrite) idProp.SetValue(pipeline, blueprintId);
 		}
 
+		public static void SetAvatarIcon(GameObject avatarRoot, Texture2D icon)
+		{
+			if (avatarRoot == null || icon == null)
+				return;
+
+			var pipeline = GetOrAddPipelineManager(avatarRoot);
+			if (pipeline == null)
+				return;
+
+			var pmType = pipeline.GetType();
+			const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+			var assigned = false;
+
+			foreach (var field in pmType.GetFields(flags))
+			{
+				if (!typeof(Texture2D).IsAssignableFrom(field.FieldType))
+					continue;
+				var name = field.Name.ToLowerInvariant();
+				if (name.Contains("icon") || name.Contains("thumb") || name.Contains("image"))
+				{
+					field.SetValue(pipeline, icon);
+					assigned = true;
+				}
+			}
+
+			foreach (var prop in pmType.GetProperties(flags))
+			{
+				if (!prop.CanWrite || !typeof(Texture2D).IsAssignableFrom(prop.PropertyType))
+					continue;
+				var name = prop.Name.ToLowerInvariant();
+				if (name.Contains("icon") || name.Contains("thumb") || name.Contains("image"))
+				{
+					prop.SetValue(pipeline, icon);
+					assigned = true;
+				}
+			}
+
+			if (!assigned)
+			{
+				var method = pmType.GetMethods(flags)
+					.FirstOrDefault(m => m.GetParameters().Length == 1 && typeof(Texture2D).IsAssignableFrom(m.GetParameters()[0].ParameterType) &&
+					                (m.Name.IndexOf("icon", StringComparison.OrdinalIgnoreCase) >= 0 ||
+					                 m.Name.IndexOf("thumb", StringComparison.OrdinalIgnoreCase) >= 0 ||
+					                 m.Name.IndexOf("image", StringComparison.OrdinalIgnoreCase) >= 0));
+				method?.Invoke(pipeline, new object[] { icon });
+			}
+		}
+
 		public static string GenerateNewBlueprintId()
 		{
 			// SDK uses GUID-style IDs when creating new blueprints

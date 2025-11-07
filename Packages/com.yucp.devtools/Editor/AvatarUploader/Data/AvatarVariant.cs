@@ -43,6 +43,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		public PerformanceRating performanceRatingPC;
 		public PerformanceRating performanceRatingQuest;
 
+		// Gallery
+		[NonSerialized] public List<AvatarGalleryImage> galleryImages = new List<AvatarGalleryImage>();
+		[NonSerialized] public int activeGalleryIndex;
+
 		// Build Results
 		[Header("Build Status")]
 		public BuildStatus lastBuildStatusPC;

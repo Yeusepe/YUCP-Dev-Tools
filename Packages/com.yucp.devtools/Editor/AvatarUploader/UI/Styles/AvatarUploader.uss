@@ -1,0 +1,1273 @@
+/* ============================================================================
+   COLOR PALETTE - YUCP Brand Colors
+   ============================================================================ */
+.au-window {
+    /* Base colors */
+    --au-bg-primary: #090909;      /* YUCP dark background */
+    --au-bg-secondary: #1a1a1a;    /* Card/panel background */
+    --au-bg-tertiary: #2a2a2a;     /* List items, inputs */
+    --au-bg-hover: #525252;        /* Hover states - YUCP gray */
+    
+    /* Borders */
+    --au-border-primary: #2a2a2a;
+    --au-border-secondary: #3a3a3a;
+    
+    /* Text */
+    --au-text-primary: #ffffff;    /* Main text */
+    --au-text-secondary: #b0b0b0;  /* Secondary text */
+    --au-text-tertiary: #808080;   /* Subtle text */
+    
+    /* Accent colors - YUCP Brand */
+    --au-accent-primary: #36BFB1;  /* YUCP Teal - primary actions */
+    --au-accent-success: #36BFB1;  /* Teal - added/success */
+    --au-accent-warning: #E2A54A;  /* Orange - warnings */
+    --au-accent-danger: #E24A4A;   /* Red - deleted/danger */
+    --au-accent-info: #2CA497;     /* Info accent aligns with teal palette */
+}
+
+/* ============================================================================
+   BASE WINDOW & LAYOUT
+   ============================================================================ */
+.au-window {
+    flex-grow: 1;
+    background-color: #090909;
+}
+
+.au-main-container {
+    flex-grow: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* ============================================================================
+   TOP BAR - Header with Logo & Title
+   ============================================================================ */
+.au-top-bar {
+    flex-direction: row;
+    min-height: 100px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+    padding-left: 20px;
+    padding-right: 20px;
+    background-color: #1a1a1a;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+    align-items: center;
+    flex-wrap: wrap;
+    overflow: hidden;
+    transition-property: flex-wrap, min-height, padding;
+    transition-duration: 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
+}
+
+.au-settings-button {
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    border-width: 0;
+    margin-left: 12px;
+    background-color: #2a2a2a;
+    color: #f0f0f0;
+    font-size: 15px;
+}
+
+.au-settings-button:hover {
+    background-color: #36BFB1;
+    color: #ffffff;
+}
+
+.au-logo {
+    width: 116px;
+    height: 50px;
+    margin-right: 20px;
+    flex-shrink: 0;
+    transition-property: margin, width, height, opacity;
+    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
+}
+
+.au-title {
+    font-size: 20px;
+    color: #ffffff;
+    -unity-font-style: bold;
+}
+
+/* ============================================================================
+   3-PANE LAYOUT
+   ============================================================================ */
+.au-content-container {
+    flex-grow: 1;
+    flex-direction: row;
+    min-width: 0;
+    overflow: hidden;
+    position: relative;
+}
+
+.au-left-pane {
+    width: 270px;
+    min-width: 200px;
+    flex-shrink: 0;
+    background-color: #090909;
+    border-right-width: 1px;
+    border-right-color: #2a2a2a;
+    padding: 20px;
+    overflow: hidden;
+    transition-property: width, opacity, min-width, padding;
+    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
+}
+
+.au-right-pane {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    background-color: #090909;
+    overflow: hidden;
+    transition-property: opacity, width;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
+}
+
+.au-right-pane .au-panel {
+    padding-right: 24px;
+}
+
+/* ============================================================================
+   BUTTONS - Consistent sizing and styling
+   ============================================================================ */
+.au-button {
+    height: 32px;
+    padding-left: 16px;
+    padding-right: 16px;
+    border-radius: 0;
+    background-color: #3a3a3a;
+    border-width: 0;
+    color: #ffffff;
+    font-size: 12px;
+    -unity-font-style: normal;
+    margin-left: 4px;
+    margin-right: 4px;
+    -unity-text-align: middle-center;
+    transition-duration: 0.1s;
+    transition-property: background-color, color;
+    transition-timing-function: ease-out;
+}
+
+.au-button:hover {
+    background-color: #525252;
+    color: #ffffff;
+}
+
+.au-button:active {
+    background-color: #2a2a2a;
+    color: #ffffff;
+}
+
+.au-button-primary {
+    background-color: #36BFB1;
+    color: #ffffff;
+}
+
+.au-button-primary:hover {
+    background-color: #48d1c3;
+}
+
+.au-button-primary:active {
+    background-color: #2da89c;
+}
+
+.au-button-action {
+    background-color: #3a3a3a;
+    color: #ffffff;
+}
+
+.au-button-action:hover {
+    background-color: #36BFB1;
+    color: #ffffff;
+}
+
+.au-button-action:active {
+    background-color: #2da89c;
+    color: #ffffff;
+}
+
+.au-button-danger {
+    background-color: #3a3a3a;
+    color: #ffffff;
+}
+
+.au-button-danger:hover {
+    background-color: #E24A4A;
+    color: #ffffff;
+}
+
+.au-button-danger:active {
+    background-color: #c93a3a;
+    color: #ffffff;
+}
+
+.au-button-build {
+    background-color: #36BFB1;
+    color: #ffffff;
+}
+
+.au-button-build:hover {
+    background-color: #48d1c3;
+}
+
+.au-button-build:active {
+    background-color: #2da89c;
+}
+
+.au-button-small {
+    height: 24px;
+    padding-left: 12px;
+    padding-right: 12px;
+    font-size: 11px;
+}
+
+.au-button-large {
+    height: 50px;
+    font-size: 14px;
+    padding-left: 24px;
+    padding-right: 24px;
+}
+
+/* ============================================================================
+   TYPOGRAPHY
+   ============================================================================ */
+.au-section-header {
+    font-size: 11px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+}
+
+.au-label {
+    font-size: 12px;
+    color: #ffffff;
+}
+
+.au-label-secondary {
+    font-size: 11px;
+    color: #b0b0b0;
+}
+
+.au-label-small {
+    font-size: 10px;
+    color: #808080;
+}
+
+/* ============================================================================
+   PANELS & SECTIONS
+   ============================================================================ */
+.au-panel {
+    flex-direction: column;
+    padding: 20px;
+}
+
+.au-section {
+    margin-bottom: 16px;
+    padding: 12px;
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    overflow: hidden;
+}
+
+.au-section-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    margin-bottom: 12px;
+    color: #ffffff;
+}
+
+/* ============================================================================
+   PROFILE LIST
+   ============================================================================ */
+.au-profile-list-container {
+    flex-grow: 1;
+    flex-direction: column;
+    transition-property: width, padding;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
+}
+
+.au-profile-list-scroll {
+    flex-grow: 1;
+    margin-bottom: 12px;
+}
+
+.au-profile-item {
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-left-width: 3px;
+    border-left-color: transparent;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
+    margin-bottom: 4px;
+    flex-direction: column;
+    transition-duration: 0.5s, 0.5s, 0.15s, 0.15s;
+    transition-property: width, padding, background-color, border-left-color;
+    transition-timing-function: ease-in-out, ease-in-out, ease-out, ease-out;
+}
+
+.au-profile-item:hover {
+    background-color: #2a2a2a;
+}
+
+.au-profile-item-selected {
+    background-color: #2a2a2a;
+    border-left-color: #36BFB1;
+}
+
+.au-profile-item-name {
+    font-size: 12px;
+    color: #ffffff;
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+}
+
+.au-profile-item-info {
+    font-size: 10px;
+    color: #808080;
+}
+
+.au-profile-buttons {
+    flex-direction: row;
+    margin-bottom: 8px;
+    transition-property: flex-direction, height;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
+}
+
+.au-profile-buttons Button {
+    flex-grow: 1;
+    margin: 2px;
+    transition-property: width, margin, flex-grow, height;
+    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
+}
+
+.au-profile-list-container > Button {
+    margin-left: 4px;
+    margin-right: 4px;
+    transition-property: width, margin, height;
+    transition-duration: 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
+}
+
+/* ============================================================================
+   AVATAR GRID
+   ============================================================================ */
+.au-avatar-section {
+    flex-direction: row;
+}
+
+.au-store-grid-scroll {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 360px;
+    background-color: #111111;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 16px;
+}
+
+.au-store-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    padding-bottom: 8px;
+}
+
+.au-avatar-grid-empty {
+    width: 100%;
+    min-height: 180px;
+    justify-content: center;
+    align-items: center;
+    background-color: rgba(54, 191, 177, 0.05);
+    border-width: 1px;
+    border-color: rgba(54, 191, 177, 0.3);
+    padding: 24px;
+    -unity-text-align: middle-center;
+}
+
+.au-avatar-tile {
+    width: 220px;
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 8px;
+    padding-bottom: 8px;
+}
+
+.au-avatar-tile-hover {
+    border-color: #36BFB1;
+    background-color: rgba(54, 191, 177, 0.15);
+}
+
+.au-avatar-tile-selected {
+    border-color: #36BFB1;
+    background-color: rgba(54, 191, 177, 0.25);
+}
+
+.au-avatar-preview {
+    height: 160px;
+    background-color: #0d0d0d;
+    -unity-background-scale-mode: scale-and-crop;
+}
+
+.au-avatar-tile-title {
+    font-size: 14px;
+    color: #ffffff;
+    -unity-font-style: bold;
+    margin-top: 10px;
+    margin-left: 12px;
+    margin-right: 12px;
+}
+
+.au-avatar-tile-tags {
+    font-size: 11px;
+    color: #36BFB1;
+    margin-left: 12px;
+    margin-right: 12px;
+    margin-top: 4px;
+}
+
+.au-avatar-tile-platforms {
+    flex-direction: row;
+    margin: 10px;
+}
+
+.au-avatar-tile-badge {
+    font-size: 10px;
+    color: #36BFB1;
+    border-width: 1px;
+    border-color: rgba(54, 191, 177, 0.4);
+    padding: 2px 6px;
+    border-radius: 3px;
+    background-color: rgba(54, 191, 177, 0.08);
+    margin-right: 6px;
+}
+
+/* ============================================================================
+   AVATAR CARDS
+   ============================================================================ */
+.au-avatar-card {
+    background-color: #1a1a1a;
+    border-radius: 0;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
+    margin-bottom: 12px;
+    flex-direction: column;
+    transition-duration: 0.15s;
+    transition-property: background-color, border-color;
+    transition-timing-function: ease-out;
+}
+
+.au-avatar-card:hover {
+    background-color: #2a2a2a;
+    border-color: #3a3a3a;
+}
+
+.au-avatar-card-header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.au-avatar-card-title {
+    font-size: 13px;
+    color: #ffffff;
+    -unity-font-style: bold;
+    flex-grow: 1;
+}
+
+.au-avatar-card-preview {
+    width: 64px;
+    height: 64px;
+    min-width: 64px;
+    min-height: 64px;
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+.au-avatar-card-actions {
+    flex-direction: row;
+    align-items: center;
+}
+
+.au-avatar-card-info {
+    flex-direction: column;
+    margin-top: 8px;
+}
+
+.au-avatar-card-info-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.au-avatar-card-info-label {
+    font-size: 10px;
+    color: #808080;
+    width: 100px;
+    flex-shrink: 0;
+}
+
+.au-avatar-card-info-value {
+    font-size: 11px;
+    color: #b0b0b0;
+    flex-grow: 1;
+}
+
+/* ============================================================================
+   FORM FIELDS
+   ============================================================================ */
+.au-form-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+    overflow: hidden;
+    transition-property: flex-direction, height;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
+}
+
+.au-form-label {
+    width: 120px;
+    font-size: 12px;
+    color: #b0b0b0;
+    flex-shrink: 0;
+    transition-property: width, margin, opacity;
+    transition-duration: 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
+}
+
+.au-form-field {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    transition-property: width, opacity;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
+}
+
+.au-input {
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    color: #ffffff;
+    padding: 6px 8px;
+    border-radius: 0;
+    min-height: 28px;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.au-input:focus {
+    border-color: #36BFB1;
+}
+
+.au-input .unity-text-field__input {
+    background-color: transparent;
+    border-width: 0;
+    color: #ffffff;
+    padding: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.au-input-multiline {
+    min-height: 80px;
+}
+
+.au-input .unity-base-text-field__input {
+    background-color: transparent;
+    border-width: 0;
+    color: #ffffff;
+    padding: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ============================================================================
+   BOTTOM BAR - Build Actions
+   ============================================================================ */
+.au-bottom-bar {
+    flex-direction: column;
+    background-color: #1a1a1a;
+    border-top-width: 1px;
+    border-top-color: #2a2a2a;
+    padding: 16px 20px;
+    flex-shrink: 0;
+}
+
+.au-build-buttons {
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+.au-build-info {
+    flex-grow: 1;
+    flex-direction: row;
+    align-items: center;
+}
+
+/* ============================================================================
+   PROGRESS BAR
+   ============================================================================ */
+.au-progress-container {
+    margin-top: 12px;
+}
+
+.au-progress-bar {
+    height: 24px;
+    background-color: #2a2a2a;
+    border-radius: 0;
+    overflow: hidden;
+    position: relative;
+}
+
+.au-progress-fill {
+    height: 100%;
+    background-color: #36BFB1;
+    border-radius: 0;
+}
+
+.au-progress-text {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    -unity-text-align: middle-center;
+    font-size: 11px;
+    color: #ffffff;
+}
+
+/* ============================================================================
+   VALIDATION & FEEDBACK
+   ============================================================================ */
+.au-validation-error {
+    background-color: rgba(226, 74, 74, 0.1);
+    border-left-width: 3px;
+    border-left-color: #E24A4A;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.au-validation-error-text {
+    font-size: 12px;
+    color: #E24A4A;
+}
+
+.au-validation-warning {
+    background-color: rgba(226, 165, 74, 0.1);
+    border-left-width: 3px;
+    border-left-color: #E2A54A;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.au-validation-warning-text {
+    font-size: 12px;
+    color: #E2A54A;
+}
+
+.au-validation-success {
+    background-color: rgba(54, 191, 177, 0.1);
+    border-left-width: 3px;
+    border-left-color: #36BFB1;
+    border-radius: 0;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.au-validation-success-text {
+    font-size: 12px;
+    color: #36BFB1;
+}
+
+/* ============================================================================
+   EMPTY STATE
+   ============================================================================ */
+.au-empty-state {
+    flex-grow: 1;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+}
+
+.au-empty-state-title {
+    font-size: 16px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    margin-bottom: 8px;
+    -unity-text-align: middle-center;
+}
+
+.au-empty-state-description {
+    font-size: 12px;
+    color: #808080;
+    -unity-text-align: middle-center;
+    max-width: 300px;
+}
+
+/* ============================================================================
+   SCROLLVIEWS
+   ============================================================================ */
+.au-scrollview {
+    flex-grow: 1;
+}
+
+/* ============================================================================
+   MISC UTILITIES
+   ============================================================================ */
+.au-separator {
+    height: 1px;
+    background-color: #2a2a2a;
+    margin-top: 12px;
+    margin-bottom: 12px;
+}
+
+.au-spacer {
+    flex-grow: 1;
+}
+
+.au-horizontal-line {
+    height: 1px;
+    background-color: #2a2a2a;
+}
+
+/* ============================================================================
+   STATISTICS DISPLAY
+   ============================================================================ */
+.au-stats-container {
+    flex-direction: row;
+    margin-top: 8px;
+}
+
+.au-stat-item {
+    flex-direction: column;
+    margin-right: 20px;
+}
+
+.au-stat-label {
+    font-size: 10px;
+    color: #808080;
+    margin-bottom: 4px;
+}
+
+.au-stat-value {
+    font-size: 12px;
+    color: #ffffff;
+    -unity-font-style: bold;
+}
+
+/* ============================================================================
+   TOGGLE STYLES
+   ============================================================================ */
+.au-toggle {
+    margin-top: 4px;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+
+.au-toggle .unity-toggle__checkmark {
+    background-color: #2a2a2a;
+    border-color: #3a3a3a;
+    border-width: 1px;
+    flex-shrink: 0;
+}
+
+.au-toggle:checked .unity-toggle__checkmark {
+    background-color: #36BFB1;
+    border-color: #36BFB1;
+}
+
+.au-toggle .unity-label {
+    color: #ffffff;
+    font-size: 12px;
+    min-width: 80px;
+    flex-shrink: 0;
+}
+
+/* ============================================================================
+   HELP BOX STYLES
+   ============================================================================ */
+.au-help-box {
+    background-color: rgba(72, 209, 195, 0.12);
+    border-left-width: 3px;
+    border-left-color: #48d1c3;
+    padding: 12px;
+    margin: 8px 0;
+    border-radius: 0;
+}
+
+.au-help-box-text {
+    font-size: 11px;
+    color: #48d1c3;
+    white-space: normal;
+}
+
+/* ============================================================================
+   SEARCH AND FILTER ROWS
+   ============================================================================ */
+.au-search-row {
+    flex-direction: row;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+
+.au-search-row .au-input {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.au-filter-row {
+    flex-direction: row;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.au-filter-row .au-toggle {
+    margin-right: 16px;
+    flex-shrink: 0;
+}
+
+/* ============================================================================
+   RESPONSIVE DESIGN - Mobile Menu Toggle
+   ============================================================================ */
+.au-mobile-toggle {
+    height: 40px;
+    width: 40px;
+    min-width: 40px;
+    background-color: #3a3a3a;
+    border-width: 0;
+    border-radius: 0;
+    margin-right: 12px;
+    padding: 0;
+    -unity-text-align: middle-center;
+    font-size: 16px;
+    color: #ffffff;
+    display: none;
+    opacity: 0;
+    scale: 0.8 0.8;
+    transition-property: background-color, opacity, scale;
+    transition-duration: 0.1s, 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+}
+
+.au-mobile-toggle:hover {
+    background-color: #36BFB1;
+    scale: 1 1;
+}
+
+.au-mobile-toggle:active {
+    background-color: #2da89c;
+    scale: 0.95 0.95;
+}
+
+.au-left-pane-overlay {
+    background-color: #090909;
+    border-right-width: 1px;
+    border-right-color: #2a2a2a;
+    padding: 20px;
+    transition-property: opacity, left;
+    transition-duration: 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-out;
+}
+
+.au-overlay-backdrop {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    transition-property: opacity;
+    transition-duration: 0.3s;
+    transition-timing-function: ease-out;
+}
+
+/* ============================================================================
+   RESPONSIVE BREAKPOINTS
+   ============================================================================ */
+
+/* Narrow layout (< 700px) - Collapse left pane to dropdown/overlay */
+.au-window-narrow .au-left-pane {
+    display: none;
+    opacity: 0;
+}
+
+.au-window-narrow .au-mobile-toggle {
+    display: flex;
+    opacity: 1;
+    scale: 1 1;
+}
+
+.au-window-narrow .au-right-pane {
+    width: 100%;
+}
+
+.au-window-narrow .au-content-container {
+    position: relative;
+}
+
+.au-window-narrow .au-form-row {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.au-window-narrow .au-form-label {
+    width: 100%;
+    margin-bottom: 4px;
+}
+
+.au-window-narrow .au-build-buttons {
+    flex-direction: column;
+}
+
+.au-window-narrow .au-build-buttons Button {
+    width: 100%;
+    margin: 4px 0;
+}
+
+.au-window-narrow .au-build-info {
+    margin-bottom: 8px;
+}
+
+.au-window-narrow .au-profile-buttons {
+    flex-direction: column;
+}
+
+.au-window-narrow .au-profile-buttons Button {
+    width: 100%;
+}
+
+.au-window-narrow .au-profile-list-container > Button {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+.au-window-narrow .au-top-bar {
+    flex-wrap: wrap;
+}
+
+.au-window-narrow .au-logo {
+    margin-bottom: 8px;
+}
+
+.au-window-narrow .au-stats-container {
+    flex-direction: column;
+}
+
+.au-window-narrow .au-stat-item {
+    margin-bottom: 8px;
+}
+
+/* Medium layout (700px - 900px) - Reduce left pane size */
+.au-window-medium .au-left-pane {
+    width: 220px;
+    min-width: 180px;
+}
+
+.au-window-medium .au-form-row {
+    flex-wrap: wrap;
+}
+
+.au-window-medium .au-form-label {
+    width: 100px;
+}
+
+.au-window-medium .au-profile-buttons {
+    flex-direction: column;
+}
+
+.au-window-medium .au-profile-buttons Button {
+    width: 100%;
+    margin: 2px 0;
+}
+
+.au-window-medium .au-profile-list-container > Button {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+/* Wide layout (> 900px) - Default behavior */
+/* Default styles already handle this case */
+
+/* ============================================================================
+   HERO PANEL
+   ============================================================================ */
+.au-hero-panel {
+    flex-direction: column;
+    background-color: #111111;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 10px;
+    padding: 18px;
+    margin-top: 16px;
+}
+
+.au-hero-content {
+    flex-direction: row;
+    align-items: stretch;
+}
+
+.au-hero-preview-container {
+    margin-right: 24px;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 10px;
+    background-color: #0c0c0c;
+    justify-content: center;
+    align-items: center;
+    width: 320px;
+    height: 320px;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.au-hero-preview {
+    width: 320px;
+    height: 320px;
+    -unity-background-scale-mode: scale-and-crop;
+    background-color: #050505;
+    border-radius: 10px;
+}
+
+.au-hero-info {
+    flex-grow: 1;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding-right: 12px;
+}
+
+.au-hero-info-root {
+    flex-direction: column;
+}
+
+.au-hero-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.au-hero-header-left {
+    flex-direction: column;
+    flex-grow: 1;
+    margin-right: 12px;
+}
+
+.au-hero-title-field {
+    flex-grow: 1;
+    margin-right: 12px;
+}
+
+.au-hero-title-field .unity-text-field__input {
+    font-size: 20px;
+    -unity-font-style: bold;
+    color: #ffffff;
+    background-color: #1a1a1a;
+    border-width: 0;
+    padding: 6px 10px;
+}
+
+.au-hero-actions {
+    flex-direction: row;
+}
+
+.au-hero-actions .au-button {
+    margin-left: 6px;
+}
+
+.au-hero-description {
+    min-height: 72px;
+    background-color: #181818;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    padding: 6px 8px;
+}
+
+.au-hero-description .unity-text-field__input {
+    font-size: 12px;
+    color: #dddddd;
+    -unity-text-align: upper-left;
+}
+
+.au-hero-platform-row {
+    flex-direction: row;
+    margin-bottom: 12px;
+}
+
+.au-hero-section {
+    margin-bottom: 12px;
+    background-color: #141414;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.au-hero-foldout {
+    margin-top: 12px;
+    background-color: #141414;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+.au-hero-foldout .unity-foldout__content {
+    padding-left: 16px;
+    padding-bottom: 6px;
+}
+
+.au-store-section {
+    flex-direction: column;
+}
+
+.au-store-header-actions {
+    flex-direction: row;
+    align-items: center;
+}
+
+.au-store-header-actions .au-button {
+    margin-left: 6px;
+}
+
+.au-hero-stat-row {
+    flex-direction: row;
+    margin-bottom: 12px;
+}
+
+.au-hero-stat-card {
+    flex-direction: column;
+    background-color: #161616;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    padding: 8px 14px;
+    margin-right: 10px;
+    min-width: 120px;
+}
+
+.au-hero-quick-actions {
+    flex-direction: row;
+    margin-top: 12px;
+}
+
+.au-hero-quick-actions .au-button {
+    margin-right: 8px;
+}
+
+.au-hero-quick-actions .au-button:last-child {
+    margin-right: 0;
+}
+
+.au-hero-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    justify-content: center;
+    align-items: center;
+}
+
+.au-hero-slide-button {
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    border-width: 0;
+    margin: 0 6px;
+    background-color: rgba(20, 20, 20, 0.88);
+    color: #f3f3f3;
+    font-size: 16px;
+}
+
+.au-hero-slide-button:hover {
+    background-color: rgba(54, 191, 177, 0.9);
+}
+
+.au-hero-slide-prev {
+    position: absolute;
+    left: 8px;
+}
+
+.au-hero-slide-next {
+    position: absolute;
+    right: 8px;
+}
+
+.au-hero-slide-add {
+    position: absolute;
+    bottom: 12px;
+}
+
+.au-hero-slide-seticon {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    width: 84px;
+    height: 30px;
+    border-radius: 6px;
+    font-size: 12px;
+    justify-content: center;
+}
+
+.au-hero-gallery-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    -unity-background-scale-mode: scale-to-fit;
+    display: none;
+}
+
+.au-hero-slide-label {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    background-color: rgba(20, 20, 20, 0.85);
+    color: #ffffff;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    letter-spacing: 0.3px;
+}
+
+.au-store-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+

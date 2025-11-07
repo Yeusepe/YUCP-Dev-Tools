@@ -11,15 +11,6 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		{
 			var result = new UploadResult { platform = platform == PlatformSwitcher.BuildPlatform.PC ? "PC" : "Quest" };
 
-			// Validate
-			var validation = AvatarValidator.ValidateAvatarConfig(profile, config);
-			if (!validation.isValid)
-			{
-				result.success = false;
-				result.errorMessage = validation.errorMessage;
-				return result;
-			}
-
 			// Switch platform
 			if (!PlatformSwitcher.EnsurePlatform(platform))
 			{
