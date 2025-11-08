@@ -40,10 +40,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			DateTime start = DateTime.Now;
 
 			builder.OnBuildProgress += (_, msg) => { onProgress?.Invoke(msg); };
-			builder.OnBuildSuccess += (_, path) =>
+			builder.OnBuildSuccess += (_, buildResult) =>
 			{
 				buildOk = true;
-				builtPath = path;
+				builtPath = buildResult.path;
 			};
 			builder.OnBuildError += (_, err) =>
 			{
