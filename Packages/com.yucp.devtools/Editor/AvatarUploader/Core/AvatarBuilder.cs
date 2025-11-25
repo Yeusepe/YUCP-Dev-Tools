@@ -7,7 +7,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 {
 	public static class AvatarBuilder
 	{
-		public static UploadResult BuildAvatar(AvatarUploadProfile profile, AvatarBuildConfig config, PlatformSwitcher.BuildPlatform platform, Action<string> onProgress = null)
+		public static UploadResult BuildAvatar(AvatarCollection collection, AvatarAsset config, PlatformSwitcher.BuildPlatform platform, Action<string> onProgress = null)
 		{
 			var result = new UploadResult { platform = platform == PlatformSwitcher.BuildPlatform.PC ? "PC" : "Quest" };
 
@@ -21,14 +21,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Ensure PipelineManager + blueprint ID
 			var targetRoot = config.avatarPrefab;
-			var blueprintId = platform == PlatformSwitcher.BuildPlatform.PC ? config.blueprintIdPC : config.blueprintIdQuest;
-			if (config.useSameBlueprintId)
-			{
-				if (string.IsNullOrWhiteSpace(config.blueprintIdPC) && !string.IsNullOrWhiteSpace(config.blueprintIdQuest))
-					blueprintId = config.blueprintIdQuest;
-				else if (!string.IsNullOrWhiteSpace(config.blueprintIdPC) && string.IsNullOrWhiteSpace(config.blueprintIdQuest))
-					blueprintId = config.blueprintIdPC;
-			}
+			var blueprintId = config.GetBlueprintId(platform);
 			if (!string.IsNullOrWhiteSpace(blueprintId))
 			{
 				BlueprintManager.SetBlueprintId(targetRoot, blueprintId);
@@ -40,10 +33,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			DateTime start = DateTime.Now;
 
 			builder.OnBuildProgress += (_, msg) => { onProgress?.Invoke(msg); };
-			builder.OnBuildSuccess += (_, path) =>
+			builder.OnBuildSuccess += (_, buildResult) =>
 			{
 				buildOk = true;
-				builtPath = path;
+				builtPath = buildResult.path;
 			};
 			builder.OnBuildError += (_, err) =>
 			{

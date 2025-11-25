@@ -5,18 +5,24 @@ using UnityEngine;
 namespace YUCP.DevTools.Editor.AvatarUploader
 {
 	/// <summary>
-	/// Profile that groups multiple avatars and global settings for batch building/uploading.
+	/// Collection that groups multiple avatar assets and global settings for batch building/uploading.
+	/// Similar to how PackageExporter uses ExportProfile to group packages.
 	/// </summary>
-	[CreateAssetMenu(fileName = "New Avatar Upload Profile", menuName = "YUCP/Avatar Upload Profile", order = 110)]
-	public class AvatarUploadProfile : ScriptableObject
+	[CreateAssetMenu(fileName = "New Avatar Collection", menuName = "YUCP/Avatar Collection", order = 110)]
+	public class AvatarCollection : ScriptableObject
 	{
-		[Header("Profile Settings")]
-		public string profileName;
+		[Header("Collection Settings")]
+		[Tooltip("Display name for this collection")]
+		public string collectionName;
 
-		[Tooltip("Avatars included in this profile")] public List<AvatarBuildConfig> avatars = new List<AvatarBuildConfig>();
+		[Tooltip("Avatar assets included in this collection")]
+		public List<AvatarAsset> avatars = new List<AvatarAsset>();
 
 		[Header("Build Settings")]
+		[Tooltip("Automatically build for PC when building this collection")]
 		public bool autoBuildPC = true;
+		
+		[Tooltip("Automatically build for Quest when building this collection")]
 		public bool autoBuildQuest = true;
 
 		[Header("Statistics (Read-only)")]
@@ -32,7 +38,6 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			buildCount++;
 		}
 	}
-
 }
 
 

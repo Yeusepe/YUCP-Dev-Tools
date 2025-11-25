@@ -26,12 +26,12 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		public bool IsProcessing => _isProcessing;
 		public UploadQueueItem CurrentItem => _currentItem;
 
-		public void Enqueue(AvatarUploadProfile profile, AvatarBuildConfig config, string platform, string buildPath)
+		public void Enqueue(AvatarCollection collection, AvatarAsset config, string platform, string buildPath)
 		{
 			var item = new UploadQueueItem
 			{
 				id = Guid.NewGuid().ToString(),
-				profile = profile,
+				collection = collection,
 				config = config,
 				platform = platform,
 				buildPath = buildPath,
@@ -126,8 +126,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 	public class UploadQueueItem
 	{
 		public string id;
-		public AvatarUploadProfile profile;
-		public AvatarBuildConfig config;
+		public AvatarCollection collection;
+		public AvatarAsset config;
 		public string platform;
 		public string buildPath;
 		public UploadStatus status;

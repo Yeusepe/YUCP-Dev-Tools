@@ -12,3 +12,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		[NonSerialized] public Texture2D thumbnail;
 	}
 }
+
+
+
+
+

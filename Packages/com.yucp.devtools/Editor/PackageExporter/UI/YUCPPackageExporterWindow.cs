@@ -60,6 +60,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private bool showOnlyIncluded = false;
         private bool showOnlyExcluded = false;
         private bool showExportInspector = false;
+		private bool showOnlyDerived = false;
         
         // Exclusion Filters state
         private bool showExclusionFilters = false;
@@ -1489,12 +1490,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     statsLabel.style.marginBottom = 4;
                     section.Add(statsLabel);
                     
-                    var summaryBox = new VisualElement();
+					var summaryBox = new VisualElement();
                     summaryBox.AddToClassList("pe-help-box");
                     var summaryText = new Label(AssetCollector.GetAssetSummary(profile.discoveredAssets));
                     summaryText.AddToClassList("pe-help-box-text");
                     summaryBox.Add(summaryText);
                     section.Add(summaryBox);
+					
+					// Derived patch summary
+					int derivedCount = profile.discoveredAssets.Count(a => IsDerivedFbx(a.assetPath, out _, out _));
+					if (derivedCount > 0)
+					{
+						var derivedBox = new VisualElement();
+						derivedBox.AddToClassList("pe-help-box");
+						var derivedText = new Label($"{derivedCount} FBX asset(s) are marked to export as Derived Patch packages.");
+						derivedText.AddToClassList("pe-help-box-text");
+						derivedBox.Add(derivedText);
+						section.Add(derivedBox);
+					}
                     
                     // Filter controls
                     var filtersLabel = new Label("Filters");
@@ -1581,7 +1594,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     });
                     filterToggles.Add(excludedToggle);
                     
-                    section.Add(filterToggles);
+					// Show Only Derived toggle
+					var derivedToggle = new Toggle("Show Only Derived") { value = showOnlyDerived };
+					derivedToggle.AddToClassList("pe-toggle");
+					derivedToggle.RegisterValueChangedCallback(evt =>
+					{
+						showOnlyDerived = evt.newValue;
+						var assetListContainer = section.Q<VisualElement>("asset-list-container");
+						if (assetListContainer != null)
+						{
+							assetListContainer.Clear();
+							RebuildAssetList(profile, assetListContainer);
+						}
+					});
+					filterToggles.Add(derivedToggle);
+					
+					section.Add(filterToggles);
                     
                     // Asset list header with actions
                     var listHeader = new VisualElement();
@@ -1727,6 +1755,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             if (showOnlyExcluded)
                 filteredAssets = filteredAssets.Where(a => !a.included);
+			
+			if (showOnlyDerived)
+				filteredAssets = filteredAssets.Where(a => IsDerivedFbx(a.assetPath, out _, out _));
             
             var filteredList = filteredAssets.ToList();
             
@@ -1824,16 +1855,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                 assetItem.Add(icon);
                                 
                                 // Name
-                                var nameLabel = new Label(asset.GetDisplayName());
+								var nameLabel = new Label(asset.GetDisplayName());
                                 nameLabel.AddToClassList("pe-asset-item-name");
-                                if (asset.isDependency)
+								// Compute derived flag once for this row
+								DerivedSettings derivedSettings;
+								string derivedBasePath;
+								bool isDerivedFbx = IsDerivedFbx(asset.assetPath, out derivedSettings, out derivedBasePath);
+								if (asset.isDependency)
                                 {
                                     nameLabel.text += " [Dep]";
                                 }
+								if (isDerivedFbx)
+								{
+									nameLabel.text += string.IsNullOrEmpty(derivedBasePath) ? " [Derived: Base Missing]" : " [Derived]";
+								}
                                 assetItem.Add(nameLabel);
                                 
                                 // Type
-                                var typeLabel = new Label(asset.assetType);
+								string typeText = asset.assetType;
+								if (isDerivedFbx && typeText.Equals("Model", StringComparison.OrdinalIgnoreCase))
+								{
+									typeText = "Model (Derived)";
+								}
+								var typeLabel = new Label(typeText);
                                 typeLabel.AddToClassList("pe-asset-item-type");
                                 assetItem.Add(typeLabel);
                                 
@@ -1844,6 +1888,74 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                     sizeLabel.AddToClassList("pe-asset-item-size");
                                     assetItem.Add(sizeLabel);
                                 }
+								
+								// Derived patch badge and quick actions for FBX
+								if (isDerivedFbx)
+								{
+									var badge = new Label(string.IsNullOrEmpty(derivedBasePath) ? "[Derived Patch: Base Missing]" : "[Derived Patch]");
+									badge.AddToClassList("pe-label-secondary");
+									badge.style.marginLeft = 6;
+									badge.style.color = string.IsNullOrEmpty(derivedBasePath) ? new Color(0.95f, 0.75f, 0.2f) : new Color(0.2f, 0.8f, 0.8f);
+									assetItem.Add(badge);
+									
+									var actionsRow = new VisualElement();
+									actionsRow.style.flexDirection = FlexDirection.Row;
+									actionsRow.style.marginLeft = 6;
+									
+									var optionsButton = new Button(() =>
+									{
+										// Convert to relative path if needed
+										string relativePath = asset.assetPath;
+										if (Path.IsPathRooted(relativePath))
+										{
+											string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+											if (relativePath.StartsWith(projectPath, StringComparison.OrdinalIgnoreCase))
+											{
+												relativePath = relativePath.Substring(projectPath.Length).Replace('\\', '/').TrimStart('/');
+											}
+										}
+										var obj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(relativePath);
+										Selection.activeObject = obj;
+										EditorGUIUtility.PingObject(obj);
+									}) { text = "Options" };
+									optionsButton.AddToClassList("pe-button");
+									optionsButton.AddToClassList("pe-button-small");
+									actionsRow.Add(optionsButton);
+									
+									var clearButton = new Button(() =>
+									{
+										// Convert to relative path if needed
+										string relativePath = asset.assetPath;
+										if (Path.IsPathRooted(relativePath))
+										{
+											string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+											if (relativePath.StartsWith(projectPath, StringComparison.OrdinalIgnoreCase))
+											{
+												relativePath = relativePath.Substring(projectPath.Length).Replace('\\', '/').TrimStart('/');
+											}
+										}
+										var importer = AssetImporter.GetAtPath(relativePath) as ModelImporter;
+										if (importer != null)
+										{
+											try
+											{
+												var s = string.IsNullOrEmpty(importer.userData) ? new DerivedSettings() : JsonUtility.FromJson<DerivedSettings>(importer.userData) ?? new DerivedSettings();
+												s.isDerived = false;
+												importer.userData = JsonUtility.ToJson(s);
+												importer.SaveAndReimport();
+												// Refresh list after change
+												container.Clear();
+												RebuildAssetList(profile, container);
+											}
+											catch { /* ignore */ }
+										}
+									}) { text = "Clear" };
+									clearButton.AddToClassList("pe-button");
+									clearButton.AddToClassList("pe-button-small");
+									actionsRow.Add(clearButton);
+									
+									assetItem.Add(actionsRow);
+								}
                                 
                                 assetListScroll.Add(assetItem);
                             }
@@ -1852,6 +1964,131 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             container.Add(assetListScroll);
         }
+		
+		[System.Serializable]
+		private class DerivedSettings
+		{
+			public bool isDerived;
+			public string baseGuid;
+			public float autoApplyThreshold = 0.8f;
+			public float reviewThreshold = 0.4f;
+			public bool strictTopology = false;
+			public string friendlyName;
+			public string category;
+		}
+		
+		private bool IsDerivedFbx(string assetPath, out DerivedSettings settings, out string basePath)
+		{
+			settings = null;
+			basePath = null;
+			if (string.IsNullOrEmpty(assetPath)) return false;
+			if (!assetPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase)) return false;
+			
+			// Convert to relative path if needed (for AssetDatabase/AssetImporter APIs)
+			string relativePath = assetPath;
+			if (Path.IsPathRooted(relativePath))
+			{
+				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+				if (relativePath.StartsWith(projectPath, StringComparison.OrdinalIgnoreCase))
+				{
+					relativePath = relativePath.Substring(projectPath.Length).Replace('\\', '/').TrimStart('/');
+				}
+			}
+			
+			// Try reading from importer first
+			var importer = AssetImporter.GetAtPath(relativePath) as ModelImporter;
+			if (importer != null)
+			{
+				try
+				{
+					string userDataJson = importer.userData;
+					if (!string.IsNullOrEmpty(userDataJson))
+					{
+						settings = JsonUtility.FromJson<DerivedSettings>(userDataJson);
+						if (settings != null && settings.isDerived)
+						{
+							basePath = string.IsNullOrEmpty(settings.baseGuid) ? null : AssetDatabase.GUIDToAssetPath(settings.baseGuid);
+							return true;
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					Debug.LogWarning($"[YUCP PackageExporter] Failed to parse importer userData for {assetPath}: {ex.Message}\nuserData was: '{importer.userData}'");
+				}
+			}
+			
+			// Fallback: read directly from .meta file
+			try
+			{
+				// Use original assetPath for file system operations (can be absolute or relative)
+				string metaPath = assetPath + ".meta";
+				// If relative path, convert to absolute for File operations
+				if (!Path.IsPathRooted(metaPath))
+				{
+					string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+					metaPath = Path.GetFullPath(Path.Combine(projectPath, metaPath));
+				}
+				if (File.Exists(metaPath))
+				{
+					string metaContent = File.ReadAllText(metaPath);
+					// Look for userData in the meta file
+					// Unity stores it as: userData: <json string>
+					// But it might be on multiple lines or have special formatting
+					
+					// Try regex to find userData line
+					// Match: userData: <value> where value can be quoted JSON or empty
+					var userDataMatch = System.Text.RegularExpressions.Regex.Match(metaContent, @"userData:\s*([^\r\n]*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Multiline);
+					if (userDataMatch.Success)
+					{
+						string userDataJson = userDataMatch.Groups[1].Value.Trim();
+						// Skip if empty or matches Unity's default format
+						if (string.IsNullOrEmpty(userDataJson) || userDataJson == "assetBundleName:")
+						{
+							// Not our custom userData, skip
+						}
+						else
+						{
+							// Unity stores userData as a quoted string in YAML, so strip surrounding quotes first
+							if ((userDataJson.StartsWith("'") && userDataJson.EndsWith("'")) || 
+							    (userDataJson.StartsWith("\"") && userDataJson.EndsWith("\"")))
+							{
+								userDataJson = userDataJson.Substring(1, userDataJson.Length - 2);
+							}
+							
+							// Now check if it's our JSON format
+							if (!string.IsNullOrEmpty(userDataJson) && userDataJson.StartsWith("{"))
+							{
+								try
+								{
+									settings = JsonUtility.FromJson<DerivedSettings>(userDataJson);
+									if (settings != null && settings.isDerived)
+									{
+										basePath = string.IsNullOrEmpty(settings.baseGuid) ? null : AssetDatabase.GUIDToAssetPath(settings.baseGuid);
+										return true;
+									}
+								}
+								catch (Exception jsonEx)
+								{
+									Debug.LogWarning($"[YUCP PackageExporter] Failed to parse userData JSON from .meta for {Path.GetFileName(assetPath)}: {jsonEx.Message}\nExtracted value: '{userDataJson}'");
+								}
+							}
+						}
+					}
+					else
+					{
+						// No userData found - check if the CustomEditor is even saving
+						// This is normal if the FBX hasn't been marked as derived
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Debug.LogWarning($"[YUCP PackageExporter] Failed to read .meta file for {assetPath}: {ex.Message}\n{ex.StackTrace}");
+			}
+			
+			return false;
+		}
 
         private void RebuildDependencyList(ExportProfile profile, VisualElement section, VisualElement container)
         {

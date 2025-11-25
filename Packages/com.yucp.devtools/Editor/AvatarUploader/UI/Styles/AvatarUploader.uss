@@ -69,11 +69,19 @@
     background-color: #2a2a2a;
     color: #f0f0f0;
     font-size: 15px;
+    transition-duration: 0.15s, 0.15s, 0.2s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+    justify-content: center;
+    align-items: center;
+    padding: 0;
 }
 
 .au-settings-button:hover {
     background-color: #36BFB1;
     color: #ffffff;
+    scale: 1.1 1.1;
 }
 
 .au-logo {
@@ -139,7 +147,7 @@
     height: 32px;
     padding-left: 16px;
     padding-right: 16px;
-    border-radius: 0;
+    border-radius: 6px;
     background-color: #3a3a3a;
     border-width: 0;
     color: #ffffff;
@@ -148,75 +156,102 @@
     margin-left: 4px;
     margin-right: 4px;
     -unity-text-align: middle-center;
-    transition-duration: 0.1s;
-    transition-property: background-color, color;
-    transition-timing-function: ease-out;
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .au-button:hover {
     background-color: #525252;
     color: #ffffff;
+    scale: 1.02 1.02;
 }
 
 .au-button:active {
     background-color: #2a2a2a;
     color: #ffffff;
+    scale: 0.98 0.98;
 }
 
 .au-button-primary {
     background-color: #36BFB1;
     color: #ffffff;
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .au-button-primary:hover {
     background-color: #48d1c3;
+    scale: 1.02 1.02;
 }
 
 .au-button-primary:active {
     background-color: #2da89c;
+    scale: 0.98 0.98;
 }
 
 .au-button-action {
     background-color: #3a3a3a;
     color: #ffffff;
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .au-button-action:hover {
     background-color: #36BFB1;
     color: #ffffff;
+    scale: 1.02 1.02;
 }
 
 .au-button-action:active {
     background-color: #2da89c;
     color: #ffffff;
+    scale: 0.98 0.98;
 }
 
 .au-button-danger {
     background-color: #3a3a3a;
     color: #ffffff;
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .au-button-danger:hover {
     background-color: #E24A4A;
     color: #ffffff;
+    scale: 1.02 1.02;
 }
 
 .au-button-danger:active {
     background-color: #c93a3a;
     color: #ffffff;
+    scale: 0.98 0.98;
 }
 
 .au-button-build {
     background-color: #36BFB1;
     color: #ffffff;
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .au-button-build:hover {
     background-color: #48d1c3;
+    scale: 1.02 1.02;
 }
 
 .au-button-build:active {
     background-color: #2da89c;
+    scale: 0.98 0.98;
 }
 
 .au-button-small {
@@ -237,11 +272,12 @@
    TYPOGRAPHY
    ============================================================================ */
 .au-section-header {
-    font-size: 11px;
+    font-size: 13px;
     color: #b0b0b0;
     -unity-font-style: bold;
     letter-spacing: 0.5px;
     margin-bottom: 12px;
+    text-transform: uppercase;
 }
 
 .au-label {
@@ -271,17 +307,40 @@
     margin-bottom: 16px;
     padding: 12px;
     background-color: #1a1a1a;
-    border-radius: 0;
+    border-radius: 8px;
     border-width: 1px;
     border-color: #2a2a2a;
     overflow: hidden;
+    transition-duration: 0.3s, 0.2s;
+    transition-property: opacity, border-color;
+    transition-timing-function: ease-out, ease-out;
+    opacity: 1;
+}
+
+/* Remove borders from sections inside avatar details panel (cards handle borders) */
+.au-avatar-details-panel .au-section {
+    background-color: transparent;
+    border-width: 0;
+    border-color: transparent;
+    padding: 0;
+    margin-bottom: 0;
+}
+
+/* Remove border from avatar grid section (scroll view already has border) */
+.au-avatar-grid-section {
+    border-width: 0;
+    border-color: transparent;
+    background-color: transparent;
+    padding: 0;
 }
 
 .au-section-title {
-    font-size: 13px;
+    font-size: 16px;
     -unity-font-style: bold;
     margin-bottom: 12px;
     color: #ffffff;
+    letter-spacing: 0.3px;
+    padding-bottom: 2px;
 }
 
 /* ============================================================================
@@ -302,7 +361,7 @@
 
 .au-profile-item {
     background-color: #1a1a1a;
-    border-radius: 0;
+    border-radius: 6px;
     border-left-width: 3px;
     border-left-color: transparent;
     padding-top: 8px;
@@ -375,7 +434,7 @@
     background-color: #111111;
     border-width: 1px;
     border-color: #2a2a2a;
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 16px;
     margin-top: 16px;
 }
@@ -408,16 +467,23 @@
     overflow: hidden;
     margin: 8px;
     padding-bottom: 8px;
+    cursor: pointer;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-property: border-color, background-color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .au-avatar-tile-hover {
     border-color: #36BFB1;
-    background-color: rgba(54, 191, 177, 0.15);
+    background-color: rgba(54, 191, 177, 0.1);
+    scale: 1.02 1.02;
 }
 
 .au-avatar-tile-selected {
     border-color: #36BFB1;
-    background-color: rgba(54, 191, 177, 0.25);
+    background-color: rgba(54, 191, 177, 0.2);
+    scale: 1.01 1.01;
 }
 
 .au-avatar-preview {
@@ -464,15 +530,15 @@
    ============================================================================ */
 .au-avatar-card {
     background-color: #1a1a1a;
-    border-radius: 0;
+    border-radius: 8px;
     border-width: 1px;
     border-color: #2a2a2a;
     padding: 12px;
     margin-bottom: 12px;
     flex-direction: column;
-    transition-duration: 0.15s;
+    transition-duration: 0.15s, 0.15s;
     transition-property: background-color, border-color;
-    transition-timing-function: ease-out;
+    transition-timing-function: ease-out, ease-out;
 }
 
 .au-avatar-card:hover {
@@ -573,14 +639,20 @@
     border-color: #3a3a3a;
     color: #ffffff;
     padding: 6px 8px;
-    border-radius: 0;
+    border-radius: 6px;
     min-height: 28px;
     max-width: 100%;
     overflow: hidden;
+    transition-duration: 0.2s, 0.2s, 0.15s;
+    transition-property: border-color, background-color, box-shadow;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    box-shadow: 0 0 0 rgba(54, 191, 177, 0);
 }
 
 .au-input:focus {
     border-color: #36BFB1;
+    background-color: #2f2f2f;
+    box-shadow: 0 0 0 2px rgba(54, 191, 177, 0.2);
 }
 
 .au-input .unity-text-field__input {
@@ -605,8 +677,14 @@
     text-overflow: ellipsis;
 }
 
+.au-input-placeholder {
+    font-size: 12px;
+    color: #808080;
+    pointer-events: none;
+}
+
 /* ============================================================================
-   BOTTOM BAR - Build Actions
+   BOTTOM BAR - Progress Only (Hidden by default, shown during builds)
    ============================================================================ */
 .au-bottom-bar {
     flex-direction: column;
@@ -615,18 +693,699 @@
     border-top-color: #2a2a2a;
     padding: 16px 20px;
     flex-shrink: 0;
+    display: none; /* Hidden by default, shown during builds */
 }
 
-.au-build-buttons {
+.au-build-actions-container {
     flex-direction: row;
-    justify-content: flex-end;
+    justify-content: flex-start;
     align-items: center;
 }
 
-.au-build-info {
+.au-section-build-actions {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.au-section-advanced {
+    margin-top: 8px;
+}
+
+/* ============================================================================
+   COLLECTION HEADER - Batch Operations
+   ============================================================================ */
+/* ============================================================================
+   COLLECTION HEADER - Redesigned Card-Based Layout
+   ============================================================================ */
+.au-collection-header-card {
+    flex-direction: column;
+    margin-bottom: 16px;
+}
+
+.au-collection-header-section {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    padding: 16px;
+    flex-direction: column;
+    margin-bottom: 28px;
+}
+
+.au-collection-header-left {
+    flex-direction: column;
+    width: 100%;
+}
+
+.au-collection-name-container {
+    margin-bottom: 16px;
+}
+
+.au-collection-name-field {
+    background-color: transparent;
+    border-width: 0;
+    border-bottom-width: 2px;
+    border-bottom-color: rgba(54, 191, 177, 0.3);
+    border-radius: 6px;
+    color: #ffffff;
+    padding: 4px 0;
+    font-size: 20px;
+    -unity-font-style: bold;
+    transition-property: border-bottom-color;
+    transition-duration: 0.2s;
+    transition-timing-function: ease-out;
+    width: 100%;
+}
+
+.au-collection-name-field:focus {
+    border-bottom-color: #36BFB1;
+}
+
+.au-collection-stats {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 16px;
+}
+
+.au-collection-stats .au-collection-stat-badge {
+    margin-right: 12px;
+    margin-bottom: 8px;
+}
+
+.au-collection-stat-badge {
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    border-radius: 6px;
+    padding: 10px 14px;
+    flex-direction: column;
+    align-items: center;
+    min-width: 70px;
+    transition-property: background-color, border-color;
+    transition-duration: 0.2s, 0.2s;
+    transition-timing-function: ease-out, ease-out;
+}
+
+.au-collection-stat-badge-selected {
+    background-color: rgba(54, 191, 177, 0.15);
+    border-color: #36BFB1;
+}
+
+.au-collection-stat-badge-inactive {
+    opacity: 0.5;
+}
+
+.au-collection-stat-value {
+    font-size: 15px;
+    -unity-font-style: bold;
+    color: #ffffff;
+    margin-bottom: 3px;
+}
+
+.au-collection-stat-badge-selected .au-collection-stat-value {
+    color: #36BFB1;
+}
+
+.au-collection-stat-label {
+    font-size: 10px;
+    color: #b0b0b0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.au-collection-actions-card {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    padding: 16px;
+    flex-direction: column;
+}
+
+.au-collection-actions-header {
+    margin-bottom: 12px;
+}
+
+.au-collection-actions-title {
+    font-size: 14px;
+    -unity-font-style: bold;
+    color: #ffffff;
+    margin-bottom: 4px;
+    letter-spacing: 0.2px;
+}
+
+.au-collection-actions-description {
+    font-size: 11px;
+    color: #808080;
+    line-height: 1.4;
+    white-space: normal;
+}
+
+.au-collection-action-buttons {
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.au-collection-action-buttons .au-button {
+    margin-right: 8px;
+    margin-bottom: 8px;
+}
+
+/* ============================================================================
+   AVATAR DETAILS PANEL - Expandable Individual Avatar Details
+   ============================================================================ */
+.au-avatar-details-panel {
+    background-color: transparent;
+    border-width: 0;
+    border-color: transparent;
+    padding: 0;
+    margin-top: 16px;
+    margin-bottom: 16px;
+    flex-direction: row;
+    align-items: flex-start;
+}
+
+/* ============================================================================
+   ICON SIDEBAR
+   ============================================================================ */
+.au-icon-sidebar {
+    width: 220px;
+    min-width: 220px;
+    flex-shrink: 0;
+    margin-right: 20px;
+    flex-direction: column;
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    padding: 16px;
+    align-items: stretch;
+}
+
+.au-icon-display {
+    width: 180px;
+    height: 180px;
+    min-width: 180px;
+    min-height: 180px;
+    background-color: #0f0f0f;
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.5);
+    border-radius: 6px;
+    -unity-background-scale-mode: scale-to-fit;
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+
+.au-icon-preview {
+    width: 180px;
+    height: 180px;
+    min-width: 180px;
+    min-height: 180px;
+    max-width: 180px;
+    align-self: center;
+    background-color: #0f0f0f;
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.5);
+    border-radius: 6px;
+    -unity-background-scale-mode: scale-to-fit;
+    margin-top: 0;
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+
+.au-icon-buttons {
+    flex-direction: column;
+    width: 100%;
+}
+
+.au-icon-buttons .au-button {
+    margin: 0;
+    margin-bottom: 8px;
+    width: 100%;
+}
+
+
+/* ============================================================================
+   MAIN CONTENT AREA
+   ============================================================================ */
+.au-main-content {
     flex-grow: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* ============================================================================
+   CARDS
+   ============================================================================ */
+.au-card {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+    flex-direction: column;
+}
+
+.au-card-title {
+    font-size: 17px;
+    -unity-font-style: bold;
+    color: #ffffff;
+    margin-bottom: 8px;
+    letter-spacing: 0.2px;
+    padding-bottom: 4px;
+}
+
+.au-card-subtitle {
+    font-size: 12px;
+    color: #b0b0b0;
+    margin-bottom: 16px;
+    line-height: 1.5;
+    white-space: normal;
+    padding-left: 2px;
+}
+
+.au-card-content {
+    flex-direction: column;
+}
+
+/* ============================================================================
+   GALLERY CARD
+   ============================================================================ */
+.au-gallery-carousel-container {
+    flex-direction: column;
+    margin-bottom: 16px;
+}
+
+.au-gallery-carousel-preview {
+    width: 100%;
+    height: 400px;
+    min-height: 400px;
+    background-color: #0d0d0d;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    position: relative;
+    justify-content: center;
+    align-items: center;
+}
+
+.au-gallery-carousel-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.au-gallery-carousel-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    justify-content: center;
+    align-items: center;
+}
+
+.au-gallery-carousel-button {
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    border-width: 0;
+    margin: 0 6px;
+    background-color: rgba(20, 20, 20, 0.88);
+    color: #f3f3f3;
+    font-size: 16px;
+}
+
+.au-gallery-carousel-button:hover {
+    background-color: rgba(54, 191, 177, 0.9);
+}
+
+.au-gallery-carousel-prev {
+    position: absolute;
+    left: 8px;
+}
+
+.au-gallery-carousel-next {
+    position: absolute;
+    right: 8px;
+}
+
+.au-gallery-carousel-add {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    margin-left: -16px;
+}
+
+.au-gallery-carousel-seticon {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    width: 84px;
+    height: 30px;
+    border-radius: 6px;
+    font-size: 12px;
+}
+
+.au-gallery-carousel-delete {
+    position: absolute;
+    bottom: 12px;
+    right: 108px;
+    width: 70px;
+    height: 30px;
+    border-radius: 6px;
+    font-size: 12px;
+}
+
+.au-gallery-carousel-label {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    background-color: rgba(20, 20, 20, 0.85);
+    color: #ffffff;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+}
+
+.au-gallery-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+
+.au-gallery-thumbnail {
+    width: 80px;
+    height: 80px;
+    min-width: 80px;
+    min-height: 80px;
+    background-color: #0d0d0d;
+    border-width: 2px;
+    border-color: #2a2a2a;
+    border-radius: 6px;
+    -unity-background-scale-mode: scale-and-crop;
+    cursor: pointer;
+    transition-duration: 0.2s, 0.2s;
+    transition-property: border-color, scale;
+    transition-timing-function: ease-out, ease-out;
+    scale: 1 1;
+    margin-right: 8px;
+    margin-bottom: 8px;
+}
+
+.au-gallery-thumbnail:hover {
+    border-color: #36BFB1;
+    scale: 1.05 1.05;
+}
+
+.au-gallery-thumbnail-active {
+    border-color: #36BFB1;
+    border-width: 3px;
+    scale: 1.08 1.08;
+}
+
+/* ============================================================================
+   BULK EDIT PANEL
+   ============================================================================ */
+.au-bulk-edit-panel {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #36BFB1;
+    border-left-width: 3px;
+    border-left-color: #36BFB1;
+    padding: 20px;
+    margin-bottom: 16px;
+}
+
+/* ============================================================================
+   AVATAR TILE ENHANCEMENTS - Multi-select & Status
+   ============================================================================ */
+.au-avatar-tile {
+    position: relative;
+}
+
+.au-avatar-tile-checkbox {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 10;
+    width: 20px;
+    height: 20px;
+    background-color: rgba(26, 26, 26, 0.9);
+    border-width: 2px;
+    border-color: #36BFB1;
+}
+
+.au-avatar-tile-checkbox:checked {
+    background-color: #36BFB1;
+}
+
+.au-avatar-tile-multi-selected {
+    border-width: 2px;
+    border-color: #36BFB1;
+    background-color: rgba(54, 191, 177, 0.05);
+}
+
+.au-avatar-tile-status {
+    z-index: 5;
+}
+
+.au-avatar-status-badge {
+    width: 20px;
+    height: 20px;
+    font-size: 12px;
+    -unity-text-align: middle-center;
+    border-radius: 6px;
+    margin-left: 4px;
+    background-color: rgba(26, 26, 26, 0.9);
+}
+
+.au-avatar-status-built {
+    color: #36BFB1;
+    border-width: 1px;
+    border-color: #36BFB1;
+}
+
+.au-avatar-status-not-built {
+    color: #b0b0b0;
+    border-width: 1px;
+    border-color: #808080;
+}
+
+.au-avatar-tile-badge-pc {
+    background-color: rgba(54, 191, 177, 0.2);
+    color: #36BFB1;
+    border-width: 1px;
+    border-color: #36BFB1;
+}
+
+.au-avatar-tile-badge-quest {
+    background-color: rgba(226, 165, 74, 0.2);
+    color: #E2A54A;
+    border-width: 1px;
+    border-color: #E2A54A;
+}
+
+/* ============================================================================
+   BULK EDIT PANEL - Card-Based Design
+   ============================================================================ */
+.au-bulk-edit-panel {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.au-bulk-edit-header {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
     flex-direction: row;
     align-items: center;
+    justify-content: space-between;
+}
+
+.au-bulk-edit-title {
+    font-size: 16px;
+    -unity-font-style: bold;
+    color: #ffffff;
+    margin-bottom: 2px;
+    letter-spacing: 0.2px;
+}
+
+.au-bulk-edit-subtitle {
+    font-size: 11px;
+    color: #808080;
+    margin-top: 0;
+}
+
+.au-bulk-edit-close {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0;
+    margin: 0;
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    border-radius: 4px;
+    color: #b0b0b0;
+    font-size: 14px;
+    transition-property: background-color, border-color, color;
+    transition-duration: 0.15s, 0.15s, 0.15s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+}
+
+.au-bulk-edit-close:hover {
+    background-color: #3a3a3a;
+    border-color: #4a4a4a;
+    color: #ffffff;
+}
+
+.au-bulk-edit-close:active {
+    background-color: #2a2a2a;
+}
+
+.au-bulk-edit-section {
+    width: 100%;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom-width: 1px;
+    border-bottom-color: #2a2a2a;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+}
+
+
+.au-bulk-edit-section-title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: #ffffff;
+    margin-bottom: 4px;
+    letter-spacing: 0.2px;
+}
+
+.au-bulk-edit-section-description {
+    font-size: 11px;
+    color: #808080;
+    white-space: normal;
+    margin-bottom: 12px;
+}
+
+.au-bulk-toggle {
+    min-width: 60px;
+    font-size: 13px;
+    color: #ffffff;
+    flex-shrink: 0;
+}
+
+.au-bulk-toggle-mixed {
+    opacity: 0.7;
+}
+
+.au-bulk-status-label {
+    font-size: 11px;
+    color: #b0b0b0;
+    margin-left: 8px;
+}
+
+/* ============================================================================
+   AVATAR TILE - Enhanced Multi-select Styling
+   ============================================================================ */
+.au-avatar-tile-checkbox {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 10;
+    width: 20px;
+    height: 20px;
+    background-color: rgba(26, 26, 26, 0.95);
+    border-width: 2px;
+    border-color: #36BFB1;
+    border-radius: 4px;
+}
+
+.au-avatar-tile-checkbox:checked {
+    background-color: #36BFB1;
+    border-color: #36BFB1;
+}
+
+.au-avatar-tile-checkbox:hover {
+    border-color: #48d1c3;
+    background-color: rgba(54, 191, 177, 0.2);
+}
+
+.au-avatar-tile-checkbox:checked:hover {
+    background-color: #48d1c3;
+}
+
+.au-avatar-tile-multi-selected {
+    border-width: 2px;
+    border-color: #36BFB1;
+    background-color: rgba(54, 191, 177, 0.08);
+}
+
+.au-avatar-tile-status {
+    z-index: 5;
+    flex-direction: row;
+    align-items: center;
+}
+
+.au-avatar-status-badge {
+    width: 22px;
+    height: 22px;
+    font-size: 14px;
+    font-weight: bold;
+    -unity-text-align: middle-center;
+    border-radius: 6px;
+    margin-left: 4px;
+    background-color: rgba(26, 26, 26, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.au-avatar-status-built {
+    color: #36BFB1;
+    border-width: 2px;
+    border-color: #36BFB1;
+}
+
+.au-avatar-status-not-built {
+    color: #808080;
+    border-width: 2px;
+    border-color: #808080;
+}
+
+.au-avatar-tile-badge-pc {
+    background-color: rgba(54, 191, 177, 0.15);
+    color: #36BFB1;
+    border-width: 1px;
+    border-color: #36BFB1;
+    font-weight: bold;
+}
+
+.au-avatar-tile-badge-quest {
+    background-color: rgba(226, 165, 74, 0.15);
+    color: #E2A54A;
+    border-width: 1px;
+    border-color: #E2A54A;
+    font-weight: bold;
 }
 
 /* ============================================================================
@@ -662,13 +1421,120 @@
 }
 
 /* ============================================================================
+   TOAST NOTIFICATIONS
+   ============================================================================ */
+.au-toast {
+    background-color: rgba(27, 27, 27, 0.98);
+    border-left-width: 3px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-top-color: #2a2a2a;
+    border-right-color: #2a2a2a;
+    border-bottom-color: #2a2a2a;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    padding: 16px;
+    min-width: 300px;
+    max-width: 500px;
+    transition-property: opacity;
+    transition-duration: 0.2s;
+    transition-timing-function: ease-in-out;
+}
+
+.au-toast-info {
+    border-left-color: #36BFB1;
+}
+
+.au-toast-success {
+    border-left-color: #36BFB1;
+}
+
+.au-toast-warning {
+    border-left-color: #E2A54A;
+}
+
+.au-toast-error {
+    border-left-color: #E24A4A;
+}
+
+.au-toast-header {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.au-toast-title {
+    font-size: 13px;
+    color: #ffffff;
+    -unity-font-style: bold;
+    flex-grow: 1;
+}
+
+.au-toast-close {
+    width: 24px;
+    height: 24px;
+    font-size: 16px;
+    background-color: transparent;
+    color: #b0b0b0;
+    border-width: 0;
+    padding: 0;
+    margin: 0;
+    -unity-text-align: middle-center;
+}
+
+.au-toast-close:hover {
+    background-color: #2a2a2a;
+    color: #ffffff;
+}
+
+.au-toast-message {
+    font-size: 11px;
+    color: #b0b0b0;
+    white-space: normal;
+}
+
+/* ============================================================================
+   FOLDOUT (Collapsible Sections)
+   ============================================================================ */
+.au-foldout {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 12px;
+    margin-bottom: 8px;
+}
+
+.au-foldout > .unity-foldout__toggle {
+    color: #ffffff;
+    font-size: 12px;
+    -unity-font-style: bold;
+}
+
+.au-foldout > .unity-foldout__content {
+    padding-top: 12px;
+}
+
+/* ============================================================================
+   HELP TEXT
+   ============================================================================ */
+.au-help-text {
+    font-size: 11px;
+    color: #b0b0b0;
+    white-space: normal;
+    line-height: 1.4;
+}
+
+/* ============================================================================
    VALIDATION & FEEDBACK
    ============================================================================ */
 .au-validation-error {
     background-color: rgba(226, 74, 74, 0.1);
     border-left-width: 3px;
     border-left-color: #E24A4A;
-    border-radius: 0;
+    border-radius: 6px;
     padding: 12px;
     margin: 8px 0;
 }
@@ -682,7 +1548,7 @@
     background-color: rgba(226, 165, 74, 0.1);
     border-left-width: 3px;
     border-left-color: #E2A54A;
-    border-radius: 0;
+    border-radius: 6px;
     padding: 12px;
     margin: 8px 0;
 }
@@ -696,7 +1562,7 @@
     background-color: rgba(54, 191, 177, 0.1);
     border-left-width: 3px;
     border-left-color: #36BFB1;
-    border-radius: 0;
+    border-radius: 6px;
     padding: 12px;
     margin: 8px 0;
 }
@@ -819,7 +1685,7 @@
     border-left-color: #48d1c3;
     padding: 12px;
     margin: 8px 0;
-    border-radius: 0;
+    border-radius: 6px;
 }
 
 .au-help-box-text {
@@ -873,10 +1739,10 @@
     color: #ffffff;
     display: none;
     opacity: 0;
-    scale: 0.8 0.8;
     transition-property: background-color, opacity, scale;
     transition-duration: 0.1s, 0.3s, 0.3s;
     transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 0.8 0.8;
 }
 
 .au-mobile-toggle:hover {
@@ -988,6 +1854,40 @@
     margin-bottom: 8px;
 }
 
+.au-window-narrow .au-hero-quick-actions {
+    flex-direction: column;
+}
+
+.au-window-narrow .au-hero-quick-actions .au-button {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 8px;
+}
+
+
+.au-window-narrow .au-hero-header {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.au-window-narrow .au-hero-header-left {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 12px;
+}
+
+.au-window-narrow .au-hero-actions {
+    width: 100%;
+    justify-content: flex-start;
+}
+
+.au-window-narrow .au-hero-actions .au-button {
+    flex: 1 1 auto;
+    margin-left: 0;
+    margin-right: 8px;
+}
+
+
 /* Medium layout (700px - 900px) - Reduce left pane size */
 .au-window-medium .au-left-pane {
     width: 220px;
@@ -1021,6 +1921,200 @@
 /* Default styles already handle this case */
 
 /* ============================================================================
+   RESPONSIVE: AVATAR GRID
+   ============================================================================ */
+.au-window-narrow .au-store-grid-scroll {
+    min-width: 0;
+    padding: 12px;
+    margin-top: 12px;
+}
+
+.au-window-medium .au-store-grid-scroll {
+    min-width: 0;
+    padding: 14px;
+}
+
+.au-window-narrow .au-avatar-tile {
+    width: calc(50% - 16px);
+    min-width: 0;
+    flex: 1 1 calc(50% - 16px);
+    margin: 6px;
+}
+
+.au-window-medium .au-avatar-tile {
+    width: calc(33.333% - 16px);
+    min-width: 0;
+    flex: 1 1 calc(33.333% - 16px);
+}
+
+.au-window-narrow .au-store-grid {
+    padding-bottom: 4px;
+}
+
+/* ============================================================================
+   RESPONSIVE: HERO PANEL
+   ============================================================================ */
+.au-window-narrow .au-hero-content {
+    flex-direction: column;
+}
+
+.au-window-narrow .au-hero-preview-container {
+    width: 100%;
+    height: auto;
+    min-height: 200px;
+    max-height: 300px;
+    margin-right: 0;
+    margin-bottom: 16px;
+}
+
+.au-window-narrow .au-hero-info {
+    width: 100%;
+    padding-right: 0;
+}
+
+.au-window-narrow .au-hero-metadata-container {
+    flex-direction: column;
+}
+
+.au-window-narrow .au-hero-stat-row {
+    flex-direction: column;
+}
+
+.au-window-narrow .au-hero-stat-card {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 8px;
+}
+
+.au-window-medium .au-hero-preview-container {
+    width: 280px;
+    height: 280px;
+    margin-right: 16px;
+}
+
+/* ============================================================================
+   RESPONSIVE: AVATAR DETAILS PANEL
+   ============================================================================ */
+.au-window-narrow .au-avatar-details-panel {
+    flex-direction: column;
+}
+
+.au-window-narrow .au-icon-sidebar {
+    width: 100%;
+    min-width: 0;
+    margin-right: 0;
+    margin-bottom: 16px;
+}
+
+.au-window-narrow .au-main-content {
+    width: 100%;
+}
+
+.au-window-medium .au-icon-sidebar {
+    width: 180px;
+    min-width: 180px;
+    margin-right: 16px;
+}
+
+/* ============================================================================
+   RESPONSIVE: COLLECTION HEADER
+   ============================================================================ */
+.au-window-narrow .au-collection-header-card {
+    margin-bottom: 12px;
+}
+
+.au-window-narrow .au-collection-header-section {
+    margin-bottom: 16px;
+}
+
+.au-window-narrow .au-collection-header-section {
+    padding: 12px;
+}
+
+.au-window-narrow .au-collection-name-container {
+    margin-bottom: 10px;
+}
+
+.au-window-narrow .au-collection-name-field {
+    font-size: 18px;
+}
+
+.au-window-narrow .au-collection-stats .au-collection-stat-badge {
+    margin-right: 6px;
+    margin-bottom: 6px;
+}
+
+.au-window-narrow .au-collection-stat-badge {
+    flex: 1 1 calc(50% - 3px);
+    min-width: 0;
+    padding: 5px 8px;
+}
+
+.au-window-narrow .au-collection-stat-value {
+    font-size: 12px;
+}
+
+.au-window-narrow .au-collection-stat-label {
+    font-size: 8px;
+}
+
+.au-window-narrow .au-collection-actions-card {
+    padding: 12px;
+}
+
+.au-window-narrow .au-collection-actions-header {
+    margin-bottom: 10px;
+}
+
+.au-window-narrow .au-collection-action-buttons {
+    flex-direction: column;
+}
+
+.au-window-narrow .au-collection-action-buttons .au-button {
+    margin-right: 0;
+    margin-bottom: 6px;
+}
+
+.au-window-narrow .au-collection-action-buttons .au-button {
+    width: 100%;
+}
+
+.au-window-medium .au-collection-header-section {
+    padding: 14px;
+}
+
+.au-window-medium .au-collection-actions-card {
+    padding: 14px;
+}
+
+/* ============================================================================
+   RESPONSIVE: GALLERY
+   ============================================================================ */
+.au-window-narrow .au-gallery-thumbnail {
+    width: 60px;
+    height: 60px;
+    min-width: 60px;
+    min-height: 60px;
+}
+
+.au-window-medium .au-gallery-thumbnail {
+    width: 70px;
+    height: 70px;
+    min-width: 70px;
+    min-height: 70px;
+}
+
+.au-window-narrow .au-gallery-carousel-preview {
+    height: 300px;
+    min-height: 300px;
+}
+
+.au-window-medium .au-gallery-carousel-preview {
+    height: 350px;
+    min-height: 350px;
+}
+
+/* ============================================================================
    HERO PANEL
    ============================================================================ */
 .au-hero-panel {
@@ -1028,7 +2122,7 @@
     background-color: #111111;
     border-width: 1px;
     border-color: #2a2a2a;
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 18px;
     margin-top: 16px;
 }
@@ -1042,7 +2136,7 @@
     margin-right: 24px;
     border-width: 1px;
     border-color: #2a2a2a;
-    border-radius: 10px;
+    border-radius: 8px;
     background-color: #0c0c0c;
     justify-content: center;
     align-items: center;
@@ -1052,12 +2146,23 @@
     position: relative;
 }
 
+.au-hero-placeholder {
+    color: #f5f5f5;
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    opacity: 0.65;
+    text-align: center;
+    padding: 0 12px;
+}
+
 .au-hero-preview {
     width: 320px;
     height: 320px;
     -unity-background-scale-mode: scale-and-crop;
     background-color: #050505;
-    border-radius: 10px;
+    border-radius: 8px;
 }
 
 .au-hero-info {
@@ -1065,6 +2170,49 @@
     flex-direction: column;
     justify-content: flex-start;
     padding-right: 12px;
+}
+
+.au-hero-metadata-container {
+    flex-direction: column;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top-width: 1px;
+    border-top-color: #2a2a2a;
+}
+
+.au-performance-card {
+    flex-direction: column;
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 4px;
+    padding: 12px;
+    min-width: 120px;
+}
+
+.au-performance-label {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 4px;
+}
+
+.au-performance-value {
+    font-size: 18px;
+    font-weight: bold;
+    color: #fff;
+    margin-bottom: 4px;
+}
+
+.au-performance-rating {
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-top: 4px;
+}
+
+.au-hero-thumbnail-host {
+    margin-top: 16px;
+    width: 100%;
 }
 
 .au-hero-info-root {
@@ -1087,6 +2235,9 @@
 .au-hero-title-field {
     flex-grow: 1;
     margin-right: 12px;
+    font-size: 20px;
+    -unity-font-style: bold;
+    color: #ffffff;
 }
 
 .au-hero-title-field .unity-text-field__input {
@@ -1120,6 +2271,36 @@
     font-size: 12px;
     color: #dddddd;
     -unity-text-align: upper-left;
+}
+
+.au-hero-description-label {
+    min-height: 60px;
+    padding: 8px 10px;
+    background-color: #181818;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    color: #dddddd;
+    font-size: 12px;
+    white-space: normal;
+}
+
+.au-hero-prefab-row {
+    align-items: center;
+}
+
+.au-hero-prefab-row .unity-object-field {
+    flex-grow: 1;
+}
+
+.au-hero-prefab-actions {
+    flex-direction: row;
+    margin-left: 8px;
+}
+
+.au-hero-prefab-actions .au-button {
+    margin-left: 6px;
 }
 
 .au-hero-platform-row {
@@ -1186,10 +2367,6 @@
 
 .au-hero-quick-actions .au-button {
     margin-right: 8px;
-}
-
-.au-hero-quick-actions .au-button:last-child {
-    margin-right: 0;
 }
 
 .au-hero-overlay {
@@ -1260,7 +2437,7 @@
     background-color: rgba(20, 20, 20, 0.85);
     color: #ffffff;
     padding: 4px 10px;
-    border-radius: 12px;
+    border-radius: 6px;
     font-size: 11px;
     letter-spacing: 0.3px;
 }

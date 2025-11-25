@@ -1,12 +1,11 @@
 using UnityEditor;
 using UnityEngine;
+using VRC.Core;
 
 namespace YUCP.DevTools.Editor.AvatarUploader
 {
 	public class AvatarToolsSettingsProvider : SettingsProvider
 	{
-		private static string _apiKeyBuffer = string.Empty;
-
 		public AvatarToolsSettingsProvider(string path, SettingsScope scope = SettingsScope.Project)
 			: base(path, scope) { }
 
@@ -43,43 +42,15 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			EditorGUILayout.Space();
 			EditorGUILayout.LabelField("Gallery Integration", EditorStyles.boldLabel);
-			settings.EnableGalleryIntegration = EditorGUILayout.ToggleLeft("Enable gallery API requests (requires VRChat API key)", settings.EnableGalleryIntegration);
+			settings.EnableGalleryIntegration = EditorGUILayout.ToggleLeft("Enable gallery API requests (uses Control Panel session)", settings.EnableGalleryIntegration);
 
 			using (new EditorGUI.DisabledScope(!settings.EnableGalleryIntegration))
 			{
-				EditorGUILayout.HelpBox("Avatar gallery uploads call VRChat's REST API. Provide an API key obtained from the SDK's Control Panel. The key is stored using Windows DPAPI under your user account.", MessageType.Info);
-
-				_apiKeyBuffer = EditorGUILayout.PasswordField("API Key", _apiKeyBuffer);
-				using (new EditorGUILayout.HorizontalScope())
-				{
-					if (GUILayout.Button("Save Key", GUILayout.Width(120)))
-					{
-						settings.SetApiKey(_apiKeyBuffer.Trim());
-						_apiKeyBuffer = string.Empty;
-					}
-
-					if (GUILayout.Button("Import From Control Panel", GUILayout.Width(210)))
-					{
-						if (AvatarGalleryClient.TryGetSdkApiKey(out var importedKey) && !string.IsNullOrEmpty(importedKey))
-						{
-							settings.SetApiKey(importedKey);
-							EditorUtility.DisplayDialog("Avatar Tools", "Imported the VRChat API key from the current SDK session.", "OK");
-						}
-						else
-						{
-							EditorUtility.DisplayDialog("Avatar Tools", "The VRChat SDK did not expose an API key. Open the Control Panel at least once and log in.", "OK");
-						}
-					}
-
-					GUI.enabled = settings.HasStoredApiKey;
-					if (GUILayout.Button("Clear Stored Key", GUILayout.Width(150)))
-					{
-						settings.ClearApiKey();
-					}
-					GUI.enabled = true;
-				}
-
-				EditorGUILayout.LabelField(settings.HasStoredApiKey ? "Status: API key stored securely." : "Status: No API key stored.", EditorStyles.wordWrappedMiniLabel);
+				EditorGUILayout.HelpBox("Avatar gallery uploads reuse the official VRChat Control Panel login. Stay signed into the Control Panel before adding or editing gallery items.", MessageType.Info);
+				var status = APIUser.IsLoggedIn
+					? "Status: Control Panel session detected."
+					: "Status: Please log into the VRChat Control Panel.";
+				EditorGUILayout.LabelField(status, EditorStyles.wordWrappedMiniLabel);
 			}
 
 			if (EditorGUI.EndChangeCheck())

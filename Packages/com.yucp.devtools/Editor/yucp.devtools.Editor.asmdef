@@ -2,7 +2,10 @@
     "name": "com.yucp.devtools.Editor",
     "rootNamespace": "YUCP.DevTools.Editor",
     "references": [
+        "VRC.SDKBase",
+        "VRC.SDKBase.Editor",
         "VRC.SDKBase.Editor.BuildPipeline",
+        "VRC.SDK3A.Editor",
         "com.yucp.devtools.Runtime",
         "com.yucp.components.Runtime",
         "com.yucp.components.Editor",
@@ -15,15 +18,8 @@
     ],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
-    "overrideReferences": true,
-    "precompiledReferences": [
-        "VRCSDKBase.dll",
-        "VRCSDKBase-Editor.dll",
-        "VRCSDK3A.dll",
-        "VRCSDK3A-Editor.dll",
-        "Newtonsoft.Json.dll",
-        "ICSharpCode.SharpZipLib.dll"
-    ],
+    "overrideReferences": false,
+    "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
     "versionDefines": [

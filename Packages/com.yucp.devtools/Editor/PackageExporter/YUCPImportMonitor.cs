@@ -59,17 +59,255 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// </summary>
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
-            // Check if any .yucp_disabled files were imported
-            var disabledFiles = importedAssets.Where(a => a.EndsWith(".yucp_disabled")).ToArray();
-            
-            if (disabledFiles.Length == 0)
-                return;
-            
-            Debug.Log($"[YUCP ImportMonitor] Detected {disabledFiles.Length} .yucp_disabled files being imported");
-            
-            // Check for conflicts with existing enabled files
-            HandleImportConflicts(disabledFiles);
+			// Skip if we're in the middle of an export (prevents reserialization loops)
+			if (PackageBuilder.s_isExporting)
+			{
+				return; // Skip patch application during export
+			}
+			
+			// Handle .yucp_disabled conflicts (existing behavior)
+			var disabledFiles = importedAssets.Where(a => a.EndsWith(".yucp_disabled")).ToArray();
+			if (disabledFiles.Length > 0)
+			{
+				Debug.Log($"[YUCP ImportMonitor] Detected {disabledFiles.Length} .yucp_disabled files being imported");
+				HandleImportConflicts(disabledFiles);
+			}
+
+			// Detect PatchPackage assets and orchestrate application
+			// CRITICAL: Only process patches that are ACTUALLY being imported right now
+			// Do NOT scan folders - that causes infinite loops when derived assets trigger this callback
+			var importedPatches = new System.Collections.Generic.List<PatchPackage>();
+			
+			// Track which patches we've already processed to prevent re-processing
+			if (processedImports == null)
+				processedImports = new HashSet<string>();
+			
+			// Check ONLY the imported assets array - don't scan folders
+			foreach (var path in importedAssets)
+			{
+				// Skip derived assets - they're outputs from patch application, not patch packages
+				if (path.Contains("/Derived/") || path.Contains("\\Derived\\"))
+					continue;
+					
+				// Skip anything not in Patches folder - patches should only be in Patches folder
+				if (!path.Contains("/Patches/") && !path.Contains("\\Patches\\"))
+					continue;
+					
+				// Skip if we've already processed this patch
+				if (processedImports.Contains(path))
+					continue;
+				
+				// Only process PatchPackage assets
+				if (path.Contains("PatchPackage") && path.EndsWith(".asset"))
+				{
+					var patch = AssetDatabase.LoadAssetAtPath<PatchPackage>(path);
+					if (patch != null)
+					{
+						importedPatches.Add(patch);
+						processedImports.Add(path); // Mark as processed
+					}
+				}
+			}
+
+			if (importedPatches.Count > 0)
+			{
+				try
+				{
+					ApplyImportedPatches(importedPatches);
+				}
+				catch (System.Exception ex)
+				{
+					Debug.LogError($"[YUCP ImportMonitor] Error applying imported PatchPackages: {ex.Message}");
+				}
+			}
         }
+		
+		private static void ApplyImportedPatches(System.Collections.Generic.List<PatchPackage> patches)
+		{
+			// Check if patches have already been applied to avoid re-applying
+			var appliedPatches = new HashSet<string>();
+			string derivedDir = "Packages/com.yucp.temp/Derived";
+			if (AssetDatabase.IsValidFolder(derivedDir))
+			{
+				string[] stateGuids = AssetDatabase.FindAssets("t:AppliedPatchState", new[] { derivedDir });
+				foreach (var guid in stateGuids)
+				{
+					var state = AssetDatabase.LoadAssetAtPath<AppliedPatchState>(AssetDatabase.GUIDToAssetPath(guid));
+					if (state != null && state.patch != null)
+					{
+						string patchPath = AssetDatabase.GetAssetPath(state.patch);
+						if (!string.IsNullOrEmpty(patchPath))
+							appliedPatches.Add(patchPath);
+					}
+				}
+			}
+			
+			// Find candidate FBX models in the project
+			var modelGuids = AssetDatabase.FindAssets("t:Model");
+			var modelPaths = modelGuids.Select(AssetDatabase.GUIDToAssetPath).ToList();
+
+			foreach (var patch in patches)
+			{
+				string patchPath = AssetDatabase.GetAssetPath(patch);
+				// Skip if this patch has already been applied
+				if (appliedPatches.Contains(patchPath))
+				{
+					Debug.Log($"[YUCP ImportMonitor] Patch '{patch.uiHints.friendlyName}' already applied, skipping");
+					continue;
+				}
+				
+				foreach (var modelPath in modelPaths)
+				{
+					// CRITICAL: Check if this patch+target combination is already being processed
+					// Use the same key format as Applicator uses
+					string patchTargetKey = $"{patchPath}|{modelPath}";
+					
+					// Check Applicator's processed set via reflection
+					bool alreadyProcessing = false;
+					try
+					{
+						var applicatorType = typeof(Applicator);
+						var processedField = applicatorType.GetField("processedPatches", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+						if (processedField != null)
+						{
+							var processedSet = processedField.GetValue(null) as HashSet<string>;
+							if (processedSet != null && processedSet.Contains(patchTargetKey))
+							{
+								alreadyProcessing = true;
+							}
+						}
+					}
+					catch { }
+					
+					if (alreadyProcessing)
+					{
+						Debug.Log($"[YUCP ImportMonitor] Patch '{patch.uiHints.friendlyName}' already being processed for {modelPath}, skipping");
+						continue;
+					}
+					
+					// Also check if patch has already been applied to this specific target
+					string targetManifestId = ManifestBuilder.BuildForFbx(modelPath).manifestId;
+					bool alreadyApplied = false;
+					if (AssetDatabase.IsValidFolder(derivedDir))
+					{
+						string[] stateGuids = AssetDatabase.FindAssets("t:AppliedPatchState", new[] { derivedDir });
+						foreach (var guid in stateGuids)
+						{
+							var existingState = AssetDatabase.LoadAssetAtPath<AppliedPatchState>(AssetDatabase.GUIDToAssetPath(guid));
+							if (existingState != null && existingState.patch == patch && existingState.targetManifestId == targetManifestId)
+							{
+								alreadyApplied = true;
+								break;
+							}
+						}
+					}
+					
+					if (alreadyApplied)
+					{
+						Debug.Log($"[YUCP ImportMonitor] Patch '{patch.uiHints.friendlyName}' already applied to {modelPath}, skipping");
+						continue;
+					}
+					
+					// Build manifest for target and compute a naive score
+					var targetManifest = ManifestBuilder.BuildForFbx(modelPath);
+					// Basic compatibility check: at least one mesh name overlap
+					var baseManifestJsonId = patch.sourceManifestId;
+					// We do not have v1 manifest content here; heuristic: proceed to mapping based on names using target manifest only
+					var v1 = new ManifestBuilder.Manifest { manifestId = baseManifestJsonId, meshes = new System.Collections.Generic.List<ManifestBuilder.MeshInfo>() };
+					var v2 = targetManifest;
+					var map = MapBuilder.Build(v1, v2, patch.seedMaps);
+
+					// Name overlap score: compare patch mesh ops targets vs target meshes
+					int targets = 0;
+					int hits = 0;
+					foreach (var op in patch.ops)
+					{
+						if (op is PatchPackage.MeshDeltaOp m)
+						{
+							targets++;
+							if (v2.meshes.Any(mm => mm.name == m.targetMeshName)) hits++;
+						}
+						else if (op is PatchPackage.UVLayerOp u)
+						{
+							targets++;
+							if (v2.meshes.Any(mm => mm.name == u.targetMeshName)) hits++;
+						}
+						else if (op is PatchPackage.BlendshapeOp b)
+						{
+							targets++;
+							if (v2.meshes.Any(mm => mm.name == b.targetMeshName)) hits++;
+						}
+					}
+					float score = targets > 0 ? (float)hits / targets : 0f;
+
+					bool auto = score >= patch.policy.autoApplyThreshold;
+					bool ask = score >= patch.policy.reviewThreshold && score < patch.policy.autoApplyThreshold;
+
+					if (auto)
+					{
+						Debug.Log($"[YUCP ImportMonitor] Auto-applying patch '{patch.uiHints.friendlyName}' to {modelPath} (score {score:0.##})");
+						BackupManager.BackupPrefabsReferencing(modelPath, out var _);
+						var state = Applicator.ApplyToTarget(modelPath, patch, score, mapId: "name-map", out var derived);
+						
+						// Check if application was skipped (returns null if already processed)
+						if (state == null)
+						{
+							Debug.Log($"[YUCP ImportMonitor] Patch application was skipped (already processed)");
+							continue;
+						}
+						
+						// Optionally create patched prefab copies
+						BackupManager.CreatePatchedPrefabCopies(modelPath, derived);
+						
+						// Record applied patch for cleanup/revert functionality
+						RecordAppliedPatch(patch, modelPath, state, derived);
+					}
+					else if (ask)
+					{
+						Debug.Log($"[YUCP ImportMonitor] Patch '{patch.uiHints.friendlyName}' candidate for {modelPath} (score {score:0.##}). Review recommended.");
+					}
+					else
+					{
+						// skip silently
+					}
+				}
+			}
+		}
+		
+		private static void RecordAppliedPatch(PatchPackage patch, string targetFbxPath, AppliedPatchState state, List<UnityEngine.Object> derivedAssets)
+		{
+			try
+			{
+				string patchPackagePath = AssetDatabase.GetAssetPath(patch);
+				string statePath = AssetDatabase.GetAssetPath(state);
+				var derivedPaths = derivedAssets
+					.Select(a => AssetDatabase.GetAssetPath(a))
+					.Where(p => !string.IsNullOrEmpty(p))
+					.ToList();
+				
+				// Use reflection to call the cleanup script's RecordAppliedPatch method
+				// This avoids direct dependency since cleanup script is in temp package
+				var cleanupType = System.Type.GetType("YUCP.PatchCleanup.YUCPPatchCleanup, Assembly-CSharp");
+				if (cleanupType != null)
+				{
+					var recordMethod = cleanupType.GetMethod("RecordAppliedPatch", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+					if (recordMethod != null)
+					{
+						recordMethod.Invoke(null, new object[] { 
+							patch.uiHints.friendlyName ?? patch.name,
+							patchPackagePath,
+							targetFbxPath,
+							statePath,
+							derivedPaths
+						});
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Debug.LogWarning($"[YUCP ImportMonitor] Failed to record applied patch: {ex.Message}");
+			}
+		}
         
         private static void HandleImportConflicts(string[] disabledFiles)
         {

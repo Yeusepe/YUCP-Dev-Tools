@@ -19,7 +19,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			public List<string> warnings;
 		}
 
-		public static ValidationResult ValidateAvatarConfig(AvatarUploadProfile profile, AvatarBuildConfig config)
+		public static ValidationResult ValidateAvatarConfig(AvatarCollection collection, AvatarAsset config)
 		{
 			var result = new ValidationResult { isValid = true, warnings = new List<string>() };
 

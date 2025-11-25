@@ -23,7 +23,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			}
 		}
 
-		public static bool UploadAvatar(AvatarUploadProfile profile, AvatarBuildConfig config, string platform, string buildPath, Action<float, string> onProgress = null)
+		public static bool UploadAvatar(AvatarCollection collection, AvatarAsset config, string platform, string buildPath, Action<float, string> onProgress = null)
 		{
 			try
 			{
@@ -58,9 +58,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			}
 		}
 
-		public static void QueueUpload(AvatarUploadProfile profile, AvatarBuildConfig config, string platform, string buildPath)
+		public static void QueueUpload(AvatarCollection collection, AvatarAsset config, string platform, string buildPath)
 		{
-			Queue.Enqueue(profile, config, platform, buildPath);
+			Queue.Enqueue(collection, config, platform, buildPath);
 		}
 
 		public static void StartUploadQueue()

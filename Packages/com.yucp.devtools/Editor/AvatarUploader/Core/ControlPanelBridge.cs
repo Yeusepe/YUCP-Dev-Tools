@@ -1,186 +1,190 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
+using VRC.SDK3A.Editor;
+using VRC.SDKBase.Editor;
 
 namespace YUCP.DevTools.Editor.AvatarUploader
 {
-	/// <summary>
-	/// Lightweight bridge that keeps the official VRChat Control Panel alive (off-screen) and allows
-	/// us to invoke its logic through reflection while presenting our own UI.
-	/// </summary>
 	internal static class ControlPanelBridge
 	{
-		private const string DefaultPanelMenu = "VRChat SDK/Control Panel";
-		private static EditorWindow _panelInstance;
-		private static Type _panelType;
-		private static MethodInfo _onSelectionChange;
-		private static MethodInfo _uploadMethod;
-		private static MethodInfo _validateMethod;
+		private const string ControlPanelMenu = "VRChat SDK/Show Control Panel";
 
-		public static bool Initialize()
+		private static VRCSdkControlPanel _panel;
+		private static IVRCSdkAvatarBuilderApi _builder;
+		private static bool _isAcquiring;
+
+		private static readonly List<Action<BridgeState>> PendingCallbacks = new();
+		private static readonly List<TaskCompletionSource<BridgeState>> Awaiters = new();
+		private static readonly FieldInfo SdkBuildersField = typeof(VRCSdkControlPanel).GetField("_sdkBuilders", BindingFlags.Instance | BindingFlags.NonPublic);
+		private static readonly FieldInfo SelectedBuilderField = typeof(VRCSdkControlPanel).GetField("_selectedBuilder", BindingFlags.Instance | BindingFlags.NonPublic);
+		private static readonly MethodInfo PopulateBuildersMethod = typeof(VRCSdkControlPanel).GetMethod("PopulateSdkBuilders", BindingFlags.Instance | BindingFlags.NonPublic);
+
+		internal static bool IsReady => _builder != null;
+
+		internal static void EnsureBuilder(Action<BridgeState> onReady = null, bool focusPanel = false)
 		{
+			if (IsReady)
+			{
+				onReady?.Invoke(new BridgeState(_panel, _builder));
+				if (focusPanel)
+					_panel?.Focus();
+				return;
+			}
+
+			if (onReady != null)
+				PendingCallbacks.Add(onReady);
+
+			if (_isAcquiring)
+				return;
+
+			_isAcquiring = true;
+			EditorApplication.delayCall += () => AcquireBuilder(focusPanel);
+		}
+
+		internal static Task<BridgeState> GetStateAsync(bool focusPanel = false)
+		{
+			if (IsReady)
+				return Task.FromResult(new BridgeState(_panel, _builder));
+
+			var tcs = new TaskCompletionSource<BridgeState>();
+			Awaiters.Add(tcs);
+			EnsureBuilder(null, focusPanel);
+			return tcs.Task;
+		}
+
+		internal static bool TryGetBuilder(out IVRCSdkAvatarBuilderApi builder)
+		{
+			builder = _builder;
+			return builder != null;
+		}
+
+		internal static bool TryGetControlPanelBuilder(out IVRCSdkControlPanelBuilder builder)
+		{
+			builder = null;
+			if (_panel == null)
+				return false;
+
 			try
 			{
-				EnsurePanel();
-				return _panelInstance != null;
+				PopulateBuildersMethod?.Invoke(_panel, null);
 			}
 			catch (Exception ex)
 			{
-				Debug.LogWarning($"[AvatarUploader] Failed to initialise Control Panel bridge: {ex.Message}");
+				Debug.LogException(ex);
 				return false;
-			}
 		}
 
-		public static bool TryUploadAvatar(AvatarUploadProfile profile, AvatarBuildConfig config, PlatformSwitcher.BuildPlatform platform)
-		{
-			if (config == null || config.avatarPrefab == null)
+			var builderArray = SdkBuildersField?.GetValue(_panel) as Array;
+			if (builderArray == null || builderArray.Length == 0)
 				return false;
 
-			var panel = EnsurePanel();
-			if (panel == null)
-				return false;
-
-			try
+			var selected = SelectedBuilderField?.GetValue(_panel) as IVRCSdkControlPanelBuilder;
+			if (selected != null && selected.IsValidBuilder(out _))
 			{
-				HidePanel(panel);
-				Selection.activeObject = config.avatarPrefab;
-				InvokeIfAvailable(panel, _onSelectionChange);
+				builder = selected;
+				return true;
+			}
 
-				// Let the Control Panel use whichever platform is active.
-				switch (platform)
+			foreach (var candidateObj in builderArray)
+			{
+				if (candidateObj is IVRCSdkControlPanelBuilder candidate && candidate.IsValidBuilder(out _))
 				{
-					case PlatformSwitcher.BuildPlatform.PC:
-						PlatformSwitcher.SwitchToPC();
-						break;
-					case PlatformSwitcher.BuildPlatform.Quest:
-						PlatformSwitcher.SwitchToQuest();
+					builder = candidate;
+					SelectedBuilderField?.SetValue(_panel, builder);
 						break;
 				}
+			}
 
-				// Apply blueprint information via PipelineManager to match Control Panel behaviour.
-				if (!string.IsNullOrEmpty(config.blueprintIdPC) || !string.IsNullOrEmpty(config.blueprintIdQuest))
-				{
-					var blueprintId = platform == PlatformSwitcher.BuildPlatform.PC ? config.blueprintIdPC : config.blueprintIdQuest;
-					if (!string.IsNullOrEmpty(blueprintId))
-					{
-						BlueprintManager.SetBlueprintId(config.avatarPrefab, blueprintId);
+			return builder != null;
 					}
-				}
 
-				if (config.avatarIcon != null)
-				{
-					BlueprintManager.SetAvatarIcon(config.avatarPrefab, config.avatarIcon);
-				}
-
-				// The Control Panel typically performs validation before upload; trigger when available.
-				InvokeIfAvailable(panel, _validateMethod);
-
-				// Finally trigger the upload routine.
-				if (_uploadMethod != null)
-				{
-					_uploadMethod.Invoke(panel, null);
-					return true;
-				}
-			}
-			catch (Exception ex)
-			{
-				Debug.LogWarning($"[AvatarUploader] Control Panel upload invocation failed: {ex.Message}");
-			}
-
-			return false;
-		}
-
-		private static EditorWindow EnsurePanel()
+		private static void AcquireBuilder(bool focusPanel)
 		{
-			if (_panelInstance != null)
-				return _panelInstance;
-
-			_panelType = LocateControlPanelType();
-			if (_panelType == null)
-				return null;
-
-			_panelInstance = Resources.FindObjectsOfTypeAll(_panelType).Cast<EditorWindow>().FirstOrDefault();
-			if (_panelInstance == null)
-			{
-				if (!EditorApplication.ExecuteMenuItem(DefaultPanelMenu))
-				{
-					_panelInstance = ScriptableObject.CreateInstance(_panelType) as EditorWindow;
-					_panelInstance?.ShowUtility();
-				}
-				_panelInstance = Resources.FindObjectsOfTypeAll(_panelType).Cast<EditorWindow>().FirstOrDefault();
-			}
-
-			if (_panelInstance != null)
-			{
-				HidePanel(_panelInstance);
-				CacheMethods();
-			}
-
-			return _panelInstance;
-		}
-
-		private static Type LocateControlPanelType()
-		{
-			const string preferredName = "VRC.SDKBase.Editor.VRCControlPanel";
-			var type = Type.GetType(preferredName);
-			if (type != null)
-				return type;
-
-			return AppDomain.CurrentDomain.GetAssemblies()
-				.SelectMany(a =>
-				{
-					try { return a.GetTypes(); }
-					catch (ReflectionTypeLoadException rtl) { return rtl.Types.Where(t => t != null); }
-				})
-				.FirstOrDefault(t => typeof(EditorWindow).IsAssignableFrom(t) &&
-				                     t.FullName != null &&
-				                     t.FullName.IndexOf("ControlPanel", StringComparison.OrdinalIgnoreCase) >= 0);
-		}
-
-		private static void HidePanel(EditorWindow panel)
-		{
-			if (panel == null) return;
-			panel.minSize = Vector2.one;
-			panel.maxSize = Vector2.one;
-			panel.position = new Rect(-10000, -10000, 10, 10);
-			panel.titleContent = new GUIContent("VUCP-ControlPanel");
-		}
-
-		private static void CacheMethods()
-		{
-			if (_panelType == null)
-				return;
-
-			const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-
-			_onSelectionChange = _panelType.GetMethod("OnSelectionChange", flags);
-			_validateMethod = FindMethodContaining("Validate", flags);
-			_uploadMethod = FindMethodContaining("Upload", flags);
-		}
-
-		private static MethodInfo FindMethodContaining(string token, BindingFlags flags)
-		{
-			return _panelType?
-				.GetMethods(flags)
-				.FirstOrDefault(m =>
-					m.Name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0 &&
-					m.GetParameters().Length == 0);
-		}
-
-		private static void InvokeIfAvailable(object target, MethodInfo method)
-		{
-			if (target == null || method == null)
-				return;
-
 			try
 			{
-				method.Invoke(target, null);
-			}
-			catch (Exception ex)
+				if (_panel == null)
+				{
+					_panel = Resources.FindObjectsOfTypeAll<VRCSdkControlPanel>().FirstOrDefault();
+					if (_panel == null)
 			{
-				Debug.LogWarning($"[AvatarUploader] Control Panel method '{method.Name}' invocation failed: {ex.Message}");
+						if (!EditorApplication.ExecuteMenuItem(ControlPanelMenu))
+				{
+							Debug.LogWarning("[AvatarUploader] Unable to open VRChat Control Panel.");
+							return;
+						}
+
+						_panel = Resources.FindObjectsOfTypeAll<VRCSdkControlPanel>().FirstOrDefault();
+			}
+
+					if (_panel != null)
+			{
+						VRCSdkControlPanel.OnSdkPanelDisable += HandlePanelClosed;
+			}
+				}
+
+				if (_panel == null)
+					return;
+
+				if (!VRCSdkControlPanel.TryGetBuilder(out IVRCSdkAvatarBuilderApi builder))
+				{
+					Debug.LogWarning("[AvatarUploader] Control Panel did not expose IVRCSdkAvatarBuilderApi yet.");
+					return;
+				}
+
+				_builder = builder;
+
+				if (focusPanel)
+					_panel.Focus();
+
+				var state = new BridgeState(_panel, _builder);
+
+				foreach (var callback in PendingCallbacks.ToArray())
+				{
+					try { callback?.Invoke(state); }
+					catch (Exception ex) { Debug.LogException(ex); }
+				}
+				PendingCallbacks.Clear();
+
+				foreach (var waiter in Awaiters.ToArray())
+				{
+					waiter.TrySetResult(state);
+				}
+				Awaiters.Clear();
+			}
+			finally
+			{
+				_isAcquiring = false;
+			}
+		}
+
+		private static void HandlePanelClosed(object sender, EventArgs e)
+		{
+			_builder = null;
+			_panel = null;
+			_isAcquiring = false;
+
+			foreach (var waiter in Awaiters.ToArray())
+			{
+				waiter.TrySetCanceled();
+			}
+			Awaiters.Clear();
+			PendingCallbacks.Clear();
+		}
+
+		internal readonly struct BridgeState
+		{
+			public readonly VRCSdkControlPanel Panel;
+			public readonly IVRCSdkAvatarBuilderApi Builder;
+
+			public BridgeState(VRCSdkControlPanel panel, IVRCSdkAvatarBuilderApi builder)
+			{
+				Panel = panel;
+				Builder = builder;
 			}
 		}
 	}

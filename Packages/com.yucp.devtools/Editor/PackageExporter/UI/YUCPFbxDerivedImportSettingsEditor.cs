@@ -1,0 +1,89 @@
+using System;
+using UnityEditor;
+using UnityEngine;
+
+namespace YUCP.DevTools.Editor.PackageExporter
+{
+	/// <summary>
+	/// Extends the FBX (ModelImporter) inspector with a lightweight "Export As Patch" section.
+	/// Stores settings in AssetImporter.userData as JSON.
+	/// </summary>
+	[CustomEditor(typeof(ModelImporter))]
+	public class YUCPFbxDerivedImportSettingsEditor : UnityEditor.Editor
+	{
+		[Serializable]
+		private class DerivedSettings
+		{
+			public bool isDerived;
+			public string baseGuid;
+			public float autoApplyThreshold = 0.8f;
+			public float reviewThreshold = 0.4f;
+			public bool strictTopology = false;
+			public string friendlyName;
+			public string category;
+		}
+
+		public override void OnInspectorGUI()
+		{
+			base.OnInspectorGUI();
+
+			var importer = target as ModelImporter;
+			if (importer == null) return;
+
+			EditorGUILayout.Space(6);
+			EditorGUILayout.LabelField("YUCP Patch Export", EditorStyles.boldLabel);
+
+			DerivedSettings settings = null;
+			try
+			{
+				settings = string.IsNullOrEmpty(importer.userData) ? new DerivedSettings() : JsonUtility.FromJson<DerivedSettings>(importer.userData);
+				if (settings == null) settings = new DerivedSettings();
+			}
+			catch
+			{
+				settings = new DerivedSettings();
+			}
+
+			EditorGUI.BeginChangeCheck();
+			settings.isDerived = EditorGUILayout.Toggle(new GUIContent("Export As Patch (Derived)"), settings.isDerived);
+
+			using (new EditorGUI.DisabledScope(!settings.isDerived))
+			{
+				UnityEngine.Object currentBase = null;
+				if (!string.IsNullOrEmpty(settings.baseGuid))
+				{
+					string path = AssetDatabase.GUIDToAssetPath(settings.baseGuid);
+					if (!string.IsNullOrEmpty(path))
+						currentBase = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+				}
+
+				var newBase = EditorGUILayout.ObjectField(new GUIContent("Base FBX (original)"), currentBase, typeof(UnityEngine.Object), false);
+				if (newBase != currentBase)
+				{
+					string path = AssetDatabase.GetAssetPath(newBase);
+					settings.baseGuid = string.IsNullOrEmpty(path) ? null : AssetDatabase.AssetPathToGUID(path);
+				}
+
+				EditorGUILayout.Space(4);
+				EditorGUILayout.LabelField("Policy", EditorStyles.boldLabel);
+				settings.autoApplyThreshold = EditorGUILayout.Slider("Auto-Apply Threshold", settings.autoApplyThreshold, 0f, 1f);
+				settings.reviewThreshold = EditorGUILayout.Slider("Review Threshold", settings.reviewThreshold, 0f, 1f);
+				settings.strictTopology = EditorGUILayout.Toggle("Strict Topology Gate", settings.strictTopology);
+
+				EditorGUILayout.Space(4);
+				EditorGUILayout.LabelField("UI Hints", EditorStyles.boldLabel);
+				settings.friendlyName = EditorGUILayout.TextField("Friendly Name", string.IsNullOrEmpty(settings.friendlyName) ? System.IO.Path.GetFileNameWithoutExtension(importer.assetPath) : settings.friendlyName);
+				settings.category = EditorGUILayout.TextField("Category", settings.category);
+			}
+
+			if (EditorGUI.EndChangeCheck())
+			{
+				importer.userData = JsonUtility.ToJson(settings);
+				EditorUtility.SetDirty(importer);
+				AssetDatabase.SaveAssets();
+			}
+		}
+	}
+}
+
+

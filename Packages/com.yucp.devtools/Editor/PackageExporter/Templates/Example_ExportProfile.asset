@@ -242,10 +242,88 @@ MonoBehaviour:
   - .git
   - Temp
   dependencies:
-  - enabled: 1
+  - enabled: 0
+    packageName: com.vrcfury.temp
+    packageVersion: 0.0.0
+    displayName: VRCFury Temp Files
+    exportMode: 1
+    isVpmDependency: 0
+  - enabled: 0
     packageName: com.vrcfury.vrcfury
     packageVersion: 1.1262.0
     displayName: VRCFury
+    exportMode: 1
+    isVpmDependency: 1
+  - enabled: 0
+    packageName: com.vrchat.avatars
+    packageVersion: 3.9.0
+    displayName: VRChat SDK - Avatars
+    exportMode: 1
+    isVpmDependency: 1
+  - enabled: 0
+    packageName: com.vrchat.base
+    packageVersion: 3.9.0
+    displayName: VRChat SDK - Base
+    exportMode: 1
+    isVpmDependency: 1
+  - enabled: 0
+    packageName: com.vrchat.core.bootstrap
+    packageVersion: 0.1.15
+    displayName: VRChat Package Bootstrapper
+    exportMode: 1
+    isVpmDependency: 0
+  - enabled: 0
+    packageName: com.vrchat.core.vpm-resolver
+    packageVersion: 0.1.29
+    displayName: VRChat Package Resolver Tool
+    exportMode: 1
+    isVpmDependency: 0
+  - enabled: 0
+    packageName: com.vrchat.demo-template
+    packageVersion: 0.0.7
+    displayName: VRChat Example Package
+    exportMode: 1
+    isVpmDependency: 0
+  - enabled: 0
+    packageName: com.yucp.components
+    packageVersion: 0.3.5
+    displayName: YUCP Components
+    exportMode: 1
+    isVpmDependency: 0
+  - enabled: 0
+    packageName: com.yucp.devtools
+    packageVersion: 0.2.8
+    displayName: YUCP DevTools
+    exportMode: 1
+    isVpmDependency: 0
+  - enabled: 0
+    packageName: d4rkpl4y3r.d4rkavataroptimizer
+    packageVersion: 3.12.5
+    displayName: d4rkAvatarOptimizer
+    exportMode: 1
+    isVpmDependency: 1
+  - enabled: 0
+    packageName: lyuma.av3emulator
+    packageVersion: 3.4.9
+    displayName: Av3Emulator
+    exportMode: 1
+    isVpmDependency: 1
+  - enabled: 0
+    packageName: nadena.dev.modular-avatar
+    packageVersion: 1.14.3
+    displayName: Modular Avatar
+    exportMode: 1
+    isVpmDependency: 1
+  - enabled: 0
+    packageName: nadena.dev.ndmf
+    packageVersion: 1.9.4
+    displayName: Non-Destructive Modular Framework
+    exportMode: 1
+    isVpmDependency: 1
+  - enabled: 0
+    packageName: vrchat.blackstartx.gesture-manager
+    packageVersion: 3.9.6
+    displayName: Gesture Manager
     exportMode: 1
     isVpmDependency: 1
   generatePackageJson: 1

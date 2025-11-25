@@ -14,7 +14,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 		private Vector2 _dragStart;
 		private bool _isDragging;
 		private bool _disposed;
-		private readonly Color _backgroundColor = new Color(0.07f, 0.1f, 0.13f, 1f);
+		private readonly Color _backgroundColor = Color.black;
 
 		public AvatarPreviewRenderer()
 		{
@@ -86,13 +86,15 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 		{
 			if (_previewUtility == null || _previewInstance == null)
 			{
-				EditorGUI.DrawRect(new Rect(0, 0, resolvedStyle.width, resolvedStyle.height), _backgroundColor * 0.9f);
-				GUI.Label(new Rect(0, 0, resolvedStyle.width, resolvedStyle.height), "Assign an avatar prefab to see a preview", EditorStyles.centeredGreyMiniLabel);
+				var width = resolvedStyle.width > 0 ? resolvedStyle.width : 100;
+				var height = resolvedStyle.height > 0 ? resolvedStyle.height : 100;
+				EditorGUI.DrawRect(new Rect(0, 0, width, height), _backgroundColor * 0.9f);
+				GUI.Label(new Rect(0, 0, width, height), "Assign an avatar prefab to see a preview", EditorStyles.centeredGreyMiniLabel);
 				return;
 			}
 
 			var rect = _imguiContainer.contentRect;
-			if (rect.width <= 4f || rect.height <= 4f)
+			if (rect.width <= 4f || rect.height <= 4f || rect.width <= 0 || rect.height <= 0)
 			{
 				return;
 			}
@@ -116,7 +118,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 
 			if (!_isDragging)
 			{
-				_rotation += Time.deltaTime * 20f;
+				_rotation += Time.deltaTime * 5f;
 				_imguiContainer.MarkDirtyRepaint();
 			}
 		}
