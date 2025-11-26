@@ -36,52 +36,90 @@
 .yucp-window {
     flex-grow: 1;
     background-color: #090909;
+    min-width: 0;
 }
 
 .yucp-main-container {
     flex-grow: 1;
     flex-direction: column;
+    min-width: 0;
 }
 
 /* ============================================================================
-   TOP BAR - Global Controls & Status (3-Section Layout)
+   TOP BAR - Header with Logo & Title
    ============================================================================ */
 .yucp-top-bar {
     flex-direction: row;
-    min-height: 60px;
-    padding-top: 12px;
-    padding-bottom: 12px;
-    padding-left: 16px;
-    padding-right: 16px;
+    min-height: 100px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+    padding-left: 20px;
+    padding-right: 20px;
     background-color: #1a1a1a;
     border-bottom-width: 1px;
     border-bottom-color: #2a2a2a;
     align-items: center;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    overflow: hidden;
+    transition-property: flex-wrap, min-height, padding;
+    transition-duration: 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
 }
 
-/* Left section: Title and primary actions */
-.yucp-top-bar-left {
-    flex-direction: row;
-    align-items: center;
+.yucp-logo {
+    width: 116px;
+    height: 50px;
+    margin-right: 20px;
     flex-shrink: 0;
-    margin-right: 24px;
+    transition-property: margin, width, height, opacity;
+    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
 }
 
-/* Center section: Status badges and info */
-.yucp-top-bar-center {
-    flex-direction: row;
-    align-items: center;
-    flex-shrink: 0;
-    flex-grow: 0;
+.yucp-title {
+    font-size: 20px;
+    color: #ffffff;
+    -unity-font-style: bold;
 }
 
-/* Right section: Secondary controls (auto-pushes to right) */
-.yucp-top-bar-right {
+/* ============================================================================
+   3-PANE LAYOUT
+   ============================================================================ */
+.yucp-content-container {
+    flex-grow: 1;
     flex-direction: row;
-    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+    position: relative;
+}
+
+.yucp-left-pane {
+    width: 270px;
+    min-width: 200px;
     flex-shrink: 0;
-    margin-left: auto;
+    background-color: #090909;
+    border-right-width: 1px;
+    border-right-color: #2a2a2a;
+    padding: 20px;
+    overflow: hidden;
+    transition-property: width, opacity, min-width, padding;
+    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
+}
+
+.yucp-right-pane {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    background-color: #090909;
+    overflow: hidden;
+    transition-property: opacity, width;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
+}
+
+.yucp-right-pane .yucp-panel {
+    padding-right: 24px;
 }
 
 /* ============================================================================
@@ -91,8 +129,8 @@
     height: 32px;
     padding-left: 16px;
     padding-right: 16px;
-    border-radius: 0;
-    background-color: #525252;
+    border-radius: 6px;
+    background-color: #3a3a3a;
     border-width: 0;
     color: #ffffff;
     font-size: 12px;
@@ -100,40 +138,115 @@
     margin-left: 4px;
     margin-right: 4px;
     -unity-text-align: middle-center;
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .yucp-button:hover {
-    background-color: #666666;
+    background-color: #525252;
+    color: #ffffff;
+    scale: 1.02 1.02;
 }
 
 .yucp-button:active {
-    background-color: #3a3a3a;
+    background-color: #2a2a2a;
+    color: #ffffff;
+    scale: 0.98 0.98;
 }
 
 .yucp-button-primary {
     background-color: #36BFB1;
     color: #ffffff;
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .yucp-button-primary:hover {
     background-color: #48d1c3;
+    scale: 1.02 1.02;
 }
 
 .yucp-button-primary:active {
     background-color: #2da89c;
+    scale: 0.98 0.98;
+}
+
+.yucp-button-action {
+    background-color: #3a3a3a;
+    color: #ffffff;
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-button-action:hover {
+    background-color: #36BFB1;
+    color: #ffffff;
+    scale: 1.02 1.02;
+}
+
+.yucp-button-action:active {
+    background-color: #2da89c;
+    color: #ffffff;
+    scale: 0.98 0.98;
 }
 
 .yucp-button-danger {
-    background-color: #E24A4A;
+    background-color: #3a3a3a;
     color: #ffffff;
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .yucp-button-danger:hover {
-    background-color: #e66666;
+    background-color: #E24A4A;
+    color: #ffffff;
+    scale: 1.02 1.02;
 }
 
 .yucp-button-danger:active {
     background-color: #c93a3a;
+    color: #ffffff;
+    scale: 0.98 0.98;
+}
+
+.yucp-button-export {
+    background-color: #5BA3FF;
+    color: #ffffff;
+}
+
+.yucp-button-export:hover {
+    background-color: #7ab5ff;
+}
+
+.yucp-button-export:active {
+    background-color: #4a92ee;
+}
+
+.yucp-button-build {
+    background-color: #36BFB1;
+    color: #ffffff;
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-button-build:hover {
+    background-color: #48d1c3;
+    scale: 1.02 1.02;
+}
+
+.yucp-button-build:active {
+    background-color: #2da89c;
+    scale: 0.98 0.98;
 }
 
 .yucp-button-small {
@@ -141,6 +254,13 @@
     padding-left: 12px;
     padding-right: 12px;
     font-size: 11px;
+}
+
+.yucp-button-large {
+    height: 50px;
+    font-size: 14px;
+    padding-left: 24px;
+    padding-right: 24px;
 }
 
 .yucp-button-icon {
@@ -157,16 +277,12 @@
 /* ============================================================================
    TYPOGRAPHY
    ============================================================================ */
-.yucp-title {
-    font-size: 18px;
-    color: #ffffff;
-    -unity-font-style: bold;
-}
-
-.yucp-subtitle {
-    font-size: 14px;
+.yucp-section-header {
+    font-size: 13px;
     color: #b0b0b0;
-    -unity-font-style: normal;
+    -unity-font-style: bold;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
 }
 
 .yucp-label {
@@ -184,9 +300,13 @@
     color: #808080;
 }
 
-.yucp-text-mono {
-    font-size: 11px;
-    color: #b0b0b0;
+.yucp-section-title {
+    font-size: 16px;
+    -unity-font-style: bold;
+    margin-bottom: 12px;
+    color: #ffffff;
+    letter-spacing: 0.3px;
+    padding-bottom: 2px;
 }
 
 /* ============================================================================
@@ -194,194 +314,436 @@
    ============================================================================ */
 .yucp-panel {
     flex-direction: column;
-    padding: 16px;
-}
-
-.yucp-panel-header {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom-width: 1px;
-    border-bottom-color: #2a2a2a;
+    padding: 20px;
 }
 
 .yucp-section {
     margin-bottom: 16px;
-    margin-top: 8px;
-    padding: 16px;
+    padding: 12px;
     background-color: #1a1a1a;
-    border-radius: 0;
+    border-radius: 8px;
     border-width: 1px;
     border-color: #2a2a2a;
-}
-
-.yucp-section-title {
-    font-size: 11px;
-    -unity-font-style: bold;
-    margin-top: 16px;
-    margin-bottom: 8px;
-    color: #b0b0b0;
-    letter-spacing: 0.5px;
+    overflow: hidden;
+    transition-duration: 0.3s, 0.2s;
+    transition-property: opacity, border-color;
+    transition-timing-function: ease-out, ease-out;
+    opacity: 1;
 }
 
 /* ============================================================================
-   LIST ITEMS - Solid backgrounds with left border accent (NO transparency)
+   PROFILE/ITEM LIST
    ============================================================================ */
-.yucp-list-container {
+.yucp-profile-list-container {
     flex-grow: 1;
-    background-color: #1a1a1a;
-    border-radius: 0;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    padding: 16px;
-    margin-top: 8px;
+    flex-shrink: 1;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    align-self: stretch;
+    transition-property: width, padding;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
 }
 
-.yucp-list-item {
+.yucp-profile-list-header {
+    font-size: 13px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    width: 100%;
+    min-width: 0;
+    align-self: stretch;
+}
+
+.yucp-profile-search-container {
+    width: 100%;
+    margin-bottom: 12px;
+    min-width: 0;
+}
+
+.yucp-profile-search-field {
+    width: 100%;
+    min-width: 0;
+}
+
+.yucp-profile-list-scroll {
+    flex-grow: 1;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    margin-bottom: 12px;
+    padding: 0;
+    align-self: stretch;
+}
+
+.yucp-profile-actions-section {
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    align-self: stretch;
+    flex-shrink: 0;
+}
+
+.yucp-profile-actions-section > Button.yucp-button,
+.yucp-profile-actions-section > Button.yucp-button-primary,
+.yucp-profile-actions-section > Button.yucp-button-secondary {
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+    margin-right: 0;
+    margin-top: 0;
+    margin-bottom: 4px;
+    align-self: stretch;
+    flex-shrink: 0;
+}
+
+.yucp-profile-action-last {
+    margin-bottom: 0;
+}
+
+.yucp-profile-actions-section > .yucp-profile-secondary-actions {
+    width: 100%;
+    min-width: 0;
     flex-direction: row;
-    align-items: center;
-    padding-top: 8px;
-    padding-bottom: 8px;
-    padding-left: 12px;
-    padding-right: 12px;
-    margin-bottom: 2px;
-    background-color: transparent;
-    border-radius: 0;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 0;
+    align-self: stretch;
+    flex-shrink: 0;
+}
+
+.yucp-profile-secondary-actions {
+    width: 100%;
+    min-width: 0;
+    flex-direction: row;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 0;
+    align-self: stretch;
+    flex-shrink: 0;
+}
+
+.yucp-profile-secondary-actions > Button,
+.yucp-profile-secondary-actions > Button.yucp-button,
+.yucp-profile-secondary-actions > Button.yucp-button-action,
+.yucp-profile-secondary-actions > Button.yucp-button-danger {
+    flex: 1 1 auto;
+    margin-top: 0;
+    margin-bottom: 0;
+    margin-left: 0;
+    margin-right: 4px;
+    min-width: 0;
+    width: 0;
+    align-self: stretch;
+}
+
+.yucp-profile-action-last-in-row {
+    margin-right: 0;
+}
+
+.yucp-profile-item {
+    background-color: rgba(26, 26, 26, 0.6);
+    border-radius: 6px;
     border-left-width: 3px;
     border-left-color: transparent;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    flex-direction: row;
+    align-items: center;
+    transition-duration: 0.2s, 0.2s;
+    transition-property: background-color, border-left-color;
+    transition-timing-function: ease-out, ease-out;
 }
 
-.yucp-list-item:hover {
-    background-color: #2a2a2a;  /* Solid, no alpha */
+.yucp-profile-item:hover {
+    background-color: rgba(42, 42, 42, 0.7);
 }
 
-.yucp-list-item-selected {
-    border-left-color: #36BFB1;  /* Teal accent border only */
-    background-color: #2a2a2a;   /* Solid #2a2a2a, no transparency */
+.yucp-profile-item-selected {
+    background-color: rgba(42, 42, 42, 0.8);
+    border-left-color: #36BFB1;
 }
 
-/* ============================================================================
-   STATUS INDICATORS - Rounded badges for status display
-   ============================================================================ */
-.yucp-status-badge {
-    padding-top: 4px;
-    padding-bottom: 4px;
-    padding-left: 12px;
-    padding-right: 12px;
-    border-radius: 4px;
-    background-color: #2a2a2a;
-    margin-right: 8px;
-    font-size: 11px;
-    color: #b0b0b0;
+.yucp-profile-item-icon-container {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    margin-right: 12px;
+    background-color: rgba(42, 42, 42, 0.4);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.6);
+    border-radius: 6px;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+.yucp-profile-item-icon {
+    width: 40px;
+    height: 40px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+.yucp-profile-item-icon-placeholder {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    background-color: rgba(42, 42, 42, 0.4);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.6);
+    border-radius: 6px;
+}
+
+.yucp-profile-item-content {
+    flex-direction: column;
+    min-width: 0;
+    flex-grow: 1;
+}
+
+.yucp-profile-item-name {
+    font-size: 13px;
+    color: #ffffff;
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.yucp-status-badge-active {
-    background-color: rgba(54, 191, 177, 0.2);
-    color: #36BFB1;
+.yucp-profile-item-info {
+    font-size: 11px;
+    color: #808080;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.yucp-status-badge-success {
-    background-color: rgba(54, 191, 177, 0.2);
-    color: #36BFB1;
+.yucp-profile-buttons {
+    flex-direction: row;
+    margin-bottom: 8px;
+    transition-property: flex-direction, height;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
 }
 
-.yucp-status-badge-warning {
-    background-color: rgba(226, 165, 74, 0.2);
-    color: #E2A54A;
+.yucp-profile-buttons Button {
+    flex-grow: 1;
+    margin: 2px;
+    transition-property: width, margin, flex-grow, height;
+    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
 }
 
-.yucp-status-badge-error {
-    background-color: rgba(226, 74, 74, 0.2);
+.yucp-profile-list-container > Button {
+    margin-left: 4px;
+    margin-right: 4px;
+    transition-property: width, margin, height;
+    transition-duration: 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
+}
+
+/* ============================================================================
+   FORM FIELDS
+   ============================================================================ */
+.yucp-form-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+    overflow: hidden;
+    transition-property: flex-direction, height;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
+}
+
+.yucp-form-label {
+    width: 120px;
+    font-size: 12px;
+    color: #b0b0b0;
+    flex-shrink: 0;
+    transition-property: width, margin, opacity;
+    transition-duration: 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
+}
+
+.yucp-form-field {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    transition-property: width, opacity;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
+}
+
+.yucp-input {
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    color: #ffffff;
+    padding: 6px 8px;
+    border-radius: 6px;
+    min-height: 28px;
+    max-width: 100%;
+    overflow: hidden;
+    transition-duration: 0.2s, 0.2s;
+    transition-property: border-color, background-color;
+    transition-timing-function: ease-out, ease-out;
+}
+
+.yucp-input:focus {
+    border-color: #36BFB1;
+    background-color: #2f2f2f;
+}
+
+.yucp-input .unity-text-field__input {
+    background-color: transparent;
+    border-width: 0;
+    color: #ffffff;
+    padding: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.yucp-input-multiline {
+    min-height: 80px;
+}
+
+.yucp-input .unity-base-text-field__input {
+    background-color: transparent;
+    border-width: 0;
+    color: #ffffff;
+    padding: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ============================================================================
+   BOTTOM BAR
+   ============================================================================ */
+.yucp-bottom-bar {
+    flex-direction: column;
+    background-color: #1a1a1a;
+    border-top-width: 1px;
+    border-top-color: #2a2a2a;
+    padding: 16px 20px;
+    flex-shrink: 0;
+}
+
+/* ============================================================================
+   PROGRESS BAR
+   ============================================================================ */
+.yucp-progress-container {
+    margin-top: 12px;
+}
+
+.yucp-progress-bar {
+    height: 24px;
+    background-color: #2a2a2a;
+    border-radius: 0;
+    overflow: hidden;
+    position: relative;
+}
+
+.yucp-progress-fill {
+    height: 100%;
+    background-color: #36BFB1;
+    border-radius: 0;
+}
+
+.yucp-progress-text {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    -unity-text-align: middle-center;
+    font-size: 11px;
+    color: #ffffff;
+}
+
+/* ============================================================================
+   VALIDATION & FEEDBACK
+   ============================================================================ */
+.yucp-validation-error {
+    background-color: rgba(226, 74, 74, 0.1);
+    border-left-width: 3px;
+    border-left-color: #E24A4A;
+    border-radius: 6px;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.yucp-validation-error-text {
+    font-size: 12px;
     color: #E24A4A;
 }
 
-/* ============================================================================
-   TAB SYSTEM
-   ============================================================================ */
-.yucp-tab-container {
-    flex-direction: row;
-    background-color: #1a1a1a;
-    border-bottom-width: 1px;
-    border-bottom-color: #2a2a2a;
-    padding: 0;
-    margin: 0;
+.yucp-validation-warning {
+    background-color: rgba(226, 165, 74, 0.1);
+    border-left-width: 3px;
+    border-left-color: #E2A54A;
+    border-radius: 6px;
+    padding: 12px;
+    margin: 8px 0;
 }
 
-.yucp-tab-button {
-    -unity-font-style: normal;
-    background-color: transparent;
-    color: #888888;
-    border-width: 0;
-    padding: 12px 20px;
-    margin: 0;
-    flex-shrink: 0;
-    min-width: 120px;
-    height: 44px;
-}
-
-.yucp-tab-button:hover {
-    background-color: #2a2a2a;
-    color: #ffffff;
-}
-
-.yucp-tab-button:active {
-    background-color: #0f0f0f;
-}
-
-.yucp-tab-button.active {
-    background-color: #36BFB1;
-    color: #ffffff;
-    border-bottom-width: 0;
-}
-
-.yucp-tab-content {
-    flex-grow: 1;
-    background-color: #090909;
-    padding: 20px;
-}
-
-.yucp-tab-page {
-    display: none;
-    flex-grow: 1;
-    flex-direction: column;
-}
-
-.yucp-tab-page.active {
-    display: flex;
-}
-
-/* ============================================================================
-   FORM ELEMENTS
-   ============================================================================ */
-.yucp-field-row {
-    flex-direction: row;
-    align-items: center;
-    margin-bottom: 10px;
-}
-
-.yucp-field-label {
-    width: 120px;
-    -unity-text-align: middle-left;
-    color: #ffffff;
-    margin-right: 10px;
+.yucp-validation-warning-text {
     font-size: 12px;
+    color: #E2A54A;
 }
 
-.yucp-text-field {
+.yucp-validation-success {
+    background-color: rgba(54, 191, 177, 0.1);
+    border-left-width: 3px;
+    border-left-color: #36BFB1;
+    border-radius: 6px;
+    padding: 12px;
+    margin: 8px 0;
+}
+
+.yucp-validation-success-text {
+    font-size: 12px;
+    color: #36BFB1;
+}
+
+/* ============================================================================
+   EMPTY STATE
+   ============================================================================ */
+.yucp-empty-state {
     flex-grow: 1;
-    background-color: #2a2a2a;
-    color: #ffffff;
-    border-width: 1px;
-    border-color: #3a3a3a;
-    border-radius: 0;
-    padding: 4px 8px;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
 }
 
-.yucp-text-field:focus {
-    border-color: #36BFB1;
+.yucp-empty-state-title {
+    font-size: 16px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    margin-bottom: 8px;
+    -unity-text-align: middle-center;
+}
+
+.yucp-empty-state-description {
+    font-size: 12px;
+    color: #808080;
+    -unity-text-align: middle-center;
+    max-width: 300px;
 }
 
 /* ============================================================================
@@ -392,7 +754,7 @@
 }
 
 /* ============================================================================
-   SEPARATORS & SPACING
+   MISC UTILITIES
    ============================================================================ */
 .yucp-separator {
     height: 1px;
@@ -405,112 +767,266 @@
     flex-grow: 1;
 }
 
-/* ============================================================================
-   EMPTY STATES
-   ============================================================================ */
-.yucp-empty-state {
-    flex-grow: 1;
-    justify-content: center;
-    align-items: center;
-    padding: 40px;
-}
-
-.yucp-empty-state-icon {
-    font-size: 48px;
-    color: #808080;
-    margin-bottom: 12px;
-}
-
-.yucp-empty-state-title {
-    font-size: 16px;
-    color: #b0b0b0;
-    -unity-font-style: bold;
-    margin-bottom: 6px;
-}
-
-.yucp-empty-state-description {
-    font-size: 12px;
-    color: #808080;
-    -unity-text-align: middle-center;
-    max-width: 300px;
+.yucp-horizontal-line {
+    height: 1px;
+    background-color: #2a2a2a;
 }
 
 /* ============================================================================
-   INFO BOXES
+   STATISTICS DISPLAY
    ============================================================================ */
-.yucp-info-box {
-    background-color: rgba(54, 191, 177, 0.1);
-    border-left-width: 3px;
-    border-left-color: #36BFB1;
-    border-radius: 0;
-    padding: 12px;
-    margin: 8px 0;
-}
-
-.yucp-warning-box {
-    background-color: rgba(226, 165, 74, 0.1);
-    border-left-width: 3px;
-    border-left-color: #E2A54A;
-    border-radius: 0;
-    padding: 12px;
-    margin: 8px 0;
-}
-
-.yucp-error-box {
-    background-color: rgba(226, 74, 74, 0.1);
-    border-left-width: 3px;
-    border-left-color: #E24A4A;
-    border-radius: 0;
-    padding: 12px;
-    margin: 8px 0;
-}
-
-/* ============================================================================
-   MODAL/OVERLAY STYLES
-   ============================================================================ */
-.yucp-modal-overlay {
-    position: absolute;
-    left: 0;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.8);
-    justify-content: center;
-    align-items: center;
-}
-
-.yucp-modal-container {
-    background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    padding: 20px;
-    min-width: 400px;
-    max-width: 800px;
-}
-
-.yucp-modal-header {
+.yucp-stats-container {
     flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom-width: 1px;
-    border-bottom-color: #2a2a2a;
+    margin-top: 8px;
 }
 
-.yucp-modal-title {
-    font-size: 16px;
+.yucp-stat-item {
+    flex-direction: column;
+    margin-right: 20px;
+}
+
+.yucp-stat-label {
+    font-size: 10px;
+    color: #808080;
+    margin-bottom: 4px;
+}
+
+.yucp-stat-value {
+    font-size: 12px;
     color: #ffffff;
     -unity-font-style: bold;
 }
 
-.yucp-modal-body {
-    flex-grow: 1;
-    margin-bottom: 16px;
+/* ============================================================================
+   TOGGLE STYLES
+   ============================================================================ */
+.yucp-toggle {
+    margin-top: 4px;
+    margin-bottom: 4px;
+    flex-shrink: 0;
 }
 
-.yucp-modal-footer {
+.yucp-toggle .unity-toggle__checkmark {
+    background-color: #2a2a2a;
+    border-color: #3a3a3a;
+    border-width: 1px;
+    flex-shrink: 0;
+}
+
+.yucp-toggle:checked .unity-toggle__checkmark {
+    background-color: #36BFB1;
+    border-color: #36BFB1;
+}
+
+.yucp-toggle .unity-label {
+    color: #ffffff;
+    font-size: 12px;
+    min-width: 80px;
+    flex-shrink: 0;
+}
+
+/* ============================================================================
+   HELP BOX STYLES
+   ============================================================================ */
+.yucp-help-box {
+    background-color: rgba(91, 163, 255, 0.1);
+    border-left-width: 3px;
+    border-left-color: #5BA3FF;
+    padding: 12px;
+    margin: 8px 0;
+    border-radius: 6px;
+}
+
+.yucp-help-box-text {
+    font-size: 11px;
+    color: #5BA3FF;
+    white-space: normal;
+}
+
+/* ============================================================================
+   SEARCH AND FILTER ROWS
+   ============================================================================ */
+.yucp-search-row {
     flex-direction: row;
-    justify-content: flex-end;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
 }
 
+.yucp-search-row .yucp-input {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.yucp-filter-row {
+    flex-direction: row;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.yucp-filter-row .yucp-toggle {
+    margin-right: 16px;
+    flex-shrink: 0;
+}
+
+/* ============================================================================
+   RESPONSIVE DESIGN - Mobile Menu Toggle
+   ============================================================================ */
+.yucp-mobile-toggle {
+    height: 40px;
+    width: 40px;
+    min-width: 40px;
+    background-color: #3a3a3a;
+    border-width: 0;
+    border-radius: 0;
+    margin-right: 12px;
+    padding: 0;
+    -unity-text-align: middle-center;
+    font-size: 16px;
+    color: #ffffff;
+    display: none;
+    opacity: 0;
+    scale: 0.8 0.8;
+    transition-property: background-color, opacity, scale;
+    transition-duration: 0.1s, 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+}
+
+.yucp-mobile-toggle:hover {
+    background-color: #36BFB1;
+    scale: 1 1;
+}
+
+.yucp-mobile-toggle:active {
+    background-color: #2da89c;
+    scale: 0.95 0.95;
+}
+
+.yucp-left-pane-overlay {
+    background-color: #090909;
+    border-right-width: 1px;
+    border-right-color: #2a2a2a;
+    padding: 20px;
+    transition-property: opacity, left;
+    transition-duration: 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-out;
+}
+
+.yucp-overlay-backdrop {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    transition-property: opacity;
+    transition-duration: 0.3s;
+    transition-timing-function: ease-out;
+}
+
+/* ============================================================================
+   RESPONSIVE BREAKPOINTS
+   ============================================================================ */
+
+/* Narrow layout (< 700px) - Collapse left pane to dropdown/overlay */
+.yucp-window-narrow .yucp-left-pane {
+    display: none;
+    opacity: 0;
+}
+
+.yucp-window-narrow .yucp-mobile-toggle {
+    display: flex;
+    opacity: 1;
+    scale: 1 1;
+}
+
+.yucp-window-narrow .yucp-right-pane {
+    width: 100%;
+}
+
+.yucp-window-narrow .yucp-content-container {
+    position: relative;
+}
+
+.yucp-window-narrow .yucp-form-row {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.yucp-window-narrow .yucp-form-label {
+    width: 100%;
+    margin-bottom: 4px;
+}
+
+.yucp-window-narrow .yucp-profile-buttons {
+    flex-direction: column;
+}
+
+.yucp-window-narrow .yucp-profile-buttons Button {
+    width: 100%;
+}
+
+.yucp-window-narrow .yucp-profile-list-container > Button {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+.yucp-window-narrow .yucp-top-bar {
+    flex-wrap: wrap;
+}
+
+.yucp-window-narrow .yucp-logo {
+    margin-bottom: 8px;
+}
+
+.yucp-window-narrow .yucp-stats-container {
+    flex-direction: column;
+}
+
+.yucp-window-narrow .yucp-stat-item {
+    margin-bottom: 8px;
+}
+
+.yucp-window-narrow .yucp-filter-row {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.yucp-window-narrow .yucp-filter-row .yucp-toggle {
+    margin-bottom: 8px;
+}
+
+/* Medium layout (700px - 900px) - Reduce left pane size */
+.yucp-window-medium .yucp-left-pane {
+    width: 220px;
+    min-width: 180px;
+}
+
+.yucp-window-medium .yucp-form-row {
+    flex-wrap: wrap;
+}
+
+.yucp-window-medium .yucp-form-label {
+    width: 100px;
+}
+
+.yucp-window-medium .yucp-profile-buttons {
+    flex-direction: column;
+}
+
+.yucp-window-medium .yucp-profile-buttons Button {
+    width: 100%;
+    margin: 2px 0;
+}
+
+.yucp-window-medium .yucp-profile-list-container > Button {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+/* Wide layout (> 900px) - Default behavior */
+/* Default styles already handle this case */

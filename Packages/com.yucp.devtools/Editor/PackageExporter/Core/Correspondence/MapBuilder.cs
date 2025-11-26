@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -16,7 +17,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			public Dictionary<string, string> blendshapeMap = new Dictionary<string, string>();
 		}
 
-		public static Map Build(ManifestBuilder.Manifest v1, ManifestBuilder.Manifest v2, PatchPackage.SeedMaps seeds)
+		public static Map Build(ManifestBuilder.Manifest v1, ManifestBuilder.Manifest v2, object seeds)
 		{
 			var map = new Map();
 
@@ -29,9 +30,28 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			}
 
 			// Material map: alias seeds first, then exact name
-			foreach (var alias in seeds.materialAliases)
+			if (seeds != null)
 			{
-				map.materialMap[alias.from] = alias.to;
+				var materialAliasesField = seeds.GetType().GetField("materialAliases");
+				if (materialAliasesField != null)
+				{
+					var materialAliases = materialAliasesField.GetValue(seeds) as System.Collections.IEnumerable;
+					if (materialAliases != null)
+					{
+						foreach (var alias in materialAliases)
+						{
+							var fromField = alias.GetType().GetField("from");
+							var toField = alias.GetType().GetField("to");
+							if (fromField != null && toField != null)
+							{
+								var from = fromField.GetValue(alias)?.ToString();
+								var to = toField.GetValue(alias)?.ToString();
+								if (!string.IsNullOrEmpty(from) && !string.IsNullOrEmpty(to))
+									map.materialMap[from] = to;
+							}
+						}
+					}
+				}
 			}
 			foreach (var mat in v1.materials)
 			{
@@ -44,9 +64,28 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			}
 
 			// Blendshape map: alias seeds first, then exact name
-			foreach (var alias in seeds.blendshapeAliases)
+			if (seeds != null)
 			{
-				map.blendshapeMap[alias.from] = alias.to;
+				var blendshapeAliasesField = seeds.GetType().GetField("blendshapeAliases");
+				if (blendshapeAliasesField != null)
+				{
+					var blendshapeAliases = blendshapeAliasesField.GetValue(seeds) as System.Collections.IEnumerable;
+					if (blendshapeAliases != null)
+					{
+						foreach (var alias in blendshapeAliases)
+						{
+							var fromField = alias.GetType().GetField("from");
+							var toField = alias.GetType().GetField("to");
+							if (fromField != null && toField != null)
+							{
+								var from = fromField.GetValue(alias)?.ToString();
+								var to = toField.GetValue(alias)?.ToString();
+								if (!string.IsNullOrEmpty(from) && !string.IsNullOrEmpty(to))
+									map.blendshapeMap[from] = to;
+							}
+						}
+					}
+				}
 			}
 			foreach (var bs in v1.blendshapeNames)
 			{

@@ -11,6 +11,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 	public class PatchPackage : ScriptableObject
 	{
 		[SerializeField] public string sourceManifestId;
+		[SerializeField] public string baseFbxGuid; // GUID of the base FBX this patch targets (for direct targeting)
 		[SerializeField] public Policy policy = new Policy();
 		[SerializeField] public UIHints uiHints = new UIHints();
 		[SerializeField] public SeedMaps seedMaps = new SeedMaps();

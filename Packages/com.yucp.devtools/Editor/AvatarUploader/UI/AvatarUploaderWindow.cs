@@ -223,7 +223,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		{
 			var root = rootVisualElement;
 			root.Clear();
-			root.AddToClassList("au-window");
+			root.AddToClassList("yucp-window");
 			ShowStartupDisclaimerIfNeeded();
 
 			var visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(WindowUxmlPath);
@@ -241,6 +241,15 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				root.styleSheets.Add(builderStyles);
 			}
 
+			// Load shared design system stylesheet first
+			var sharedStyleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(
+				"Packages/com.yucp.devtools/Editor/Styles/YucpDesignSystem.uss");
+			if (sharedStyleSheet != null && !root.styleSheets.Contains(sharedStyleSheet))
+			{
+				root.styleSheets.Add(sharedStyleSheet);
+			}
+
+			// Load component-specific stylesheet
 			var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(WindowUssPath);
 			if (styleSheet != null && !root.styleSheets.Contains(styleSheet))
 			{
@@ -287,12 +296,12 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			_toast = new ToastNotification(root);
 
 			// Get content container and left pane for responsive layout
-			_contentContainer = root.Q<VisualElement>(className: "au-content-container");
-			_leftPane = root.Q<VisualElement>(className: "au-left-pane");
+			_contentContainer = root.Q<VisualElement>(className: "yucp-content-container");
+			_leftPane = root.Q<VisualElement>(className: "yucp-left-pane");
 			
 			// Create overlay backdrop (for mobile menu)
 			_overlayBackdrop = new VisualElement();
-			_overlayBackdrop.AddToClassList("au-overlay-backdrop");
+			_overlayBackdrop.AddToClassList("yucp-overlay-backdrop");
 			_overlayBackdrop.RegisterCallback<ClickEvent>(evt => CloseOverlay());
 			_overlayBackdrop.style.display = DisplayStyle.None;
 			_overlayBackdrop.style.visibility = Visibility.Hidden;
@@ -346,11 +355,11 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			_heroSectionHost?.Clear();
 			_emptyState = CreateEmptyState();
 			_heroContentContainer = new VisualElement();
-			_heroContentContainer.AddToClassList("au-hero-section");
+			_heroContentContainer.AddToClassList("yucp-hero-section");
 			_heroSectionHost?.Add(_emptyState);
 			_heroSectionHost?.Add(_heroContentContainer);
 			_thumbnailHost = new VisualElement();
-			_thumbnailHost.AddToClassList("au-hero-thumbnail-host");
+			_thumbnailHost.AddToClassList("yucp-hero-thumbnail-host");
 			_heroContentContainer?.Add(_thumbnailHost);
 
 			// Build Actions Section (for individual avatar)
@@ -360,7 +369,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			_metadataSectionHost = root.Q<VisualElement>("metadata-section-host");
 			_metadataSectionHost?.Clear();
 			_profileDetailsContainer = new VisualElement();
-			_profileDetailsContainer.AddToClassList("au-profile-details");
+			_profileDetailsContainer.AddToClassList("yucp-profile-details");
 			_metadataSectionHost?.Add(_profileDetailsContainer);
 
 			_performanceSectionHost = root.Q<VisualElement>("performance-section-host");
@@ -745,7 +754,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			_profileToolbarHost.Clear();
 
 			var searchRow = new VisualElement();
-			searchRow.AddToClassList("au-search-row");
+			searchRow.AddToClassList("yucp-search-row");
 			_profileSearchField = new ToolbarSearchField();
 			_profileSearchField.RegisterValueChangedCallback(evt =>
 			{
@@ -758,9 +767,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			_profileToolbarHost.Add(searchRow);
 
 			var filterRow = new VisualElement();
-			filterRow.AddToClassList("au-filter-row");
+			filterRow.AddToClassList("yucp-filter-row");
 			_filterHasAvatars = new Toggle("Has Avatars") { value = _filterHasAvatarsValue };
-			_filterHasAvatars.AddToClassList("au-toggle");
+			_filterHasAvatars.AddToClassList("yucp-toggle");
 			_filterHasAvatars.RegisterValueChangedCallback(evt =>
 			{
 				_filterHasAvatarsValue = evt.newValue;
@@ -769,7 +778,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			filterRow.Add(_filterHasAvatars);
 
 			_filterHasBuilds = new Toggle("Has Builds") { value = _filterHasBuildsValue };
-			_filterHasBuilds.AddToClassList("au-toggle");
+			_filterHasBuilds.AddToClassList("yucp-toggle");
 			_filterHasBuilds.RegisterValueChangedCallback(evt =>
 			{
 				_filterHasBuildsValue = evt.newValue;
@@ -779,20 +788,20 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			_profileToolbarHost.Add(filterRow);
 
 			var buttonRow = new VisualElement();
-			buttonRow.AddToClassList("au-profile-buttons");
+			buttonRow.AddToClassList("yucp-profile-buttons");
 
 			var newButton = new Button(CreateNewProfile) { text = "+ New" };
-			newButton.AddToClassList("au-button");
-			newButton.AddToClassList("au-button-action");
+			newButton.AddToClassList("yucp-button");
+			newButton.AddToClassList("yucp-button-action");
 			buttonRow.Add(newButton);
 
 			var cloneButton = new Button(CloneSelectedProfile) { text = "Clone" };
-			cloneButton.AddToClassList("au-button");
+			cloneButton.AddToClassList("yucp-button");
 			buttonRow.Add(cloneButton);
 
 			var deleteButton = new Button(DeleteSelectedProfile) { text = "Delete" };
-			deleteButton.AddToClassList("au-button");
-			deleteButton.AddToClassList("au-button-danger");
+			deleteButton.AddToClassList("yucp-button");
+			deleteButton.AddToClassList("yucp-button-danger");
 			buttonRow.Add(deleteButton);
 
 			_profileToolbarHost.Add(buttonRow);
@@ -838,13 +847,13 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateTopBar()
 		{
 			var topBar = new VisualElement();
-			topBar.AddToClassList("au-top-bar");
-			topBar.AddToClassList("pe-top-bar");
+			topBar.AddToClassList("yucp-top-bar");
+			topBar.AddToClassList("yucp-top-bar");
 
 			// Mobile toggle button (hamburger menu)
 			_mobileToggleButton = new Button(ToggleOverlay);
 			_mobileToggleButton.text = "☰";
-			_mobileToggleButton.AddToClassList("au-mobile-toggle");
+			_mobileToggleButton.AddToClassList("yucp-mobile-toggle");
 			topBar.Add(_mobileToggleButton);
 
 			// Logo
@@ -855,8 +864,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					scaleMode = ScaleMode.ScaleToFit,
 					image = _logoTexture
 				};
-				logo.AddToClassList("au-logo");
-				logo.AddToClassList("pe-logo");
+				logo.AddToClassList("yucp-logo");
+				logo.AddToClassList("yucp-logo");
 
 				float textureAspect = (float)_logoTexture.width / _logoTexture.height;
 				float maxHeight = 50f;
@@ -870,15 +879,15 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Title
 			var title = new Label("Avatar Tools");
-			title.AddToClassList("au-title");
-			title.AddToClassList("pe-title");
+			title.AddToClassList("yucp-title");
+			title.AddToClassList("yucp-title");
 			topBar.Add(title);
 
 			_settingsButton = new Button(OpenSettings)
 			{
 				tooltip = "Open Avatar Tools settings"
 			};
-			_settingsButton.AddToClassList("au-settings-button");
+			_settingsButton.AddToClassList("yucp-settings-button");
 			
 			// Use Unity's built-in settings icon
 			var settingsIcon = EditorGUIUtility.IconContent("Settings").image as Texture2D;
@@ -908,14 +917,14 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateEmptyState()
 		{
 			var emptyState = new VisualElement();
-			emptyState.AddToClassList("au-empty-state");
+			emptyState.AddToClassList("yucp-empty-state");
 
 			var title = new Label("No Profile Selected");
-			title.AddToClassList("au-empty-state-title");
+			title.AddToClassList("yucp-empty-state-title");
 			emptyState.Add(title);
 
 			var description = new Label("Select a profile from the list or create a new one");
-			description.AddToClassList("au-empty-state-description");
+			description.AddToClassList("yucp-empty-state-description");
 			emptyState.Add(description);
 
 			return emptyState;
@@ -966,14 +975,14 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			if (filteredProfiles.Count == 0)
 			{
 				var emptyLabel = new Label(_profiles.Count == 0 ? "No profiles found" : "No profiles match filters");
-				emptyLabel.AddToClassList("au-label-secondary");
+				emptyLabel.AddToClassList("yucp-label-secondary");
 				emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
 				emptyLabel.style.paddingTop = 20;
 				emptyLabel.style.paddingBottom = 10;
 				container.Add(emptyLabel);
 
 				var hintLabel = new Label(_profiles.Count == 0 ? "Create one using the button below" : "Try adjusting your search or filters");
-				hintLabel.AddToClassList("au-label-small");
+				hintLabel.AddToClassList("yucp-label-small");
 				hintLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
 				container.Add(hintLabel);
 				return;
@@ -996,12 +1005,12 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateProfileItem(AvatarCollection profile, int index)
 		{
 			var item = new VisualElement();
-			item.AddToClassList("au-profile-item");
+			item.AddToClassList("yucp-profile-item");
 
 			bool isSelected = index == _selectedIndex;
 			if (isSelected)
 			{
-				item.AddToClassList("au-profile-item-selected");
+				item.AddToClassList("yucp-profile-item-selected");
 			}
 
 			// Profile name with status indicator
@@ -1010,7 +1019,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			nameRow.style.alignItems = Align.Center;
 
 			var nameLabel = new Label(GetProfileDisplayName(profile));
-			nameLabel.AddToClassList("au-profile-item-name");
+			nameLabel.AddToClassList("yucp-profile-item-name");
 			nameLabel.style.flexGrow = 1;
 			nameRow.Add(nameLabel);
 
@@ -1045,7 +1054,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				infoText += $" • Built {profile.LastBuildTime}";
 			}
 			var infoLabel = new Label(infoText);
-			infoLabel.AddToClassList("au-profile-item-info");
+			infoLabel.AddToClassList("yucp-profile-item-info");
 			item.Add(infoLabel);
 
 			// Click handler
@@ -1118,22 +1127,22 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Main card container
 			var headerCard = new VisualElement();
-			headerCard.AddToClassList("au-collection-header-card");
+			headerCard.AddToClassList("yucp-collection-header-card");
 
 			// Header section with name and quick actions
 			var headerSection = new VisualElement();
-			headerSection.AddToClassList("au-collection-header-section");
+			headerSection.AddToClassList("yucp-collection-header-section");
 
 			// Left: Collection name and info
 			var headerLeft = new VisualElement();
-			headerLeft.AddToClassList("au-collection-header-left");
+			headerLeft.AddToClassList("yucp-collection-header-left");
 
 			// Collection name with edit capability
 			var nameContainer = new VisualElement();
-			nameContainer.AddToClassList("au-collection-name-container");
+			nameContainer.AddToClassList("yucp-collection-name-container");
 
 			var nameField = new TextField { value = profile.collectionName ?? profile.name };
-			nameField.AddToClassList("au-collection-name-field");
+			nameField.AddToClassList("yucp-collection-name-field");
 			nameField.RegisterValueChangedCallback(evt =>
 			{
 				if (profile != null)
@@ -1170,7 +1179,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			}
 
 			var statsContainer = new VisualElement();
-			statsContainer.AddToClassList("au-collection-stats");
+			statsContainer.AddToClassList("yucp-collection-stats");
 
 			CreateStatBadge(statsContainer, totalAvatars.ToString(), "Avatars", totalAvatars > 0);
 			if (selectedCount > 0)
@@ -1185,10 +1194,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Build actions section
 			var actionsCard = new VisualElement();
-			actionsCard.AddToClassList("au-collection-actions-card");
+			actionsCard.AddToClassList("yucp-collection-actions-card");
 
 			var actionsHeader = new VisualElement();
-			actionsHeader.AddToClassList("au-collection-actions-header");
+			actionsHeader.AddToClassList("yucp-collection-actions-header");
 
 			bool hasSelection = selectedCount > 0;
 			bool hasAvatars = totalAvatars > 0;
@@ -1198,7 +1207,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				: hasAvatars 
 					? $"Build Actions ({totalAvatars} total)"
 					: "Build Actions");
-			actionsTitle.AddToClassList("au-collection-actions-title");
+			actionsTitle.AddToClassList("yucp-collection-actions-title");
 			actionsHeader.Add(actionsTitle);
 
 			var actionsDescription = new Label(hasSelection
@@ -1206,14 +1215,14 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				: hasAvatars
 					? "Build, test, or publish all avatars in this collection"
 					: "Add avatars to this collection to enable build actions");
-			actionsDescription.AddToClassList("au-collection-actions-description");
+			actionsDescription.AddToClassList("yucp-collection-actions-description");
 			actionsHeader.Add(actionsDescription);
 
 			actionsCard.Add(actionsHeader);
 
 			// Action buttons
 			var actionButtons = new VisualElement();
-			actionButtons.AddToClassList("au-collection-action-buttons");
+			actionButtons.AddToClassList("yucp-collection-action-buttons");
 
 			var buildButton = new Button(() =>
 			{
@@ -1225,8 +1234,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				text = "Build"
 			};
-			buildButton.AddToClassList("au-button");
-			buildButton.AddToClassList("au-button-large");
+			buildButton.AddToClassList("yucp-button");
+			buildButton.AddToClassList("yucp-button-large");
 			buildButton.tooltip = "Build avatars without uploading to VRChat";
 			buildButton.SetEnabled(!_isBuilding && (hasSelection || hasAvatars));
 			actionButtons.Add(buildButton);
@@ -1241,8 +1250,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				text = "Test"
 			};
-			testButton.AddToClassList("au-button");
-			testButton.AddToClassList("au-button-large");
+			testButton.AddToClassList("yucp-button");
+			testButton.AddToClassList("yucp-button-large");
 			testButton.tooltip = "Build and upload as test (visible only to you)";
 			testButton.SetEnabled(!_isBuilding && (hasSelection || hasAvatars));
 			actionButtons.Add(testButton);
@@ -1257,9 +1266,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				text = "Publish"
 			};
-			publishButton.AddToClassList("au-button");
-			publishButton.AddToClassList("au-button-primary");
-			publishButton.AddToClassList("au-button-large");
+			publishButton.AddToClassList("yucp-button");
+			publishButton.AddToClassList("yucp-button-primary");
+			publishButton.AddToClassList("yucp-button-large");
 			publishButton.tooltip = "Build and publish to VRChat (public)";
 			publishButton.SetEnabled(!_isBuilding && (hasSelection || hasAvatars));
 			actionButtons.Add(publishButton);
@@ -1273,18 +1282,18 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private void CreateStatBadge(VisualElement container, string value, string label, bool isActive, bool isSelected = false)
 		{
 			var badge = new VisualElement();
-			badge.AddToClassList("au-collection-stat-badge");
+			badge.AddToClassList("yucp-collection-stat-badge");
 			if (isSelected)
-				badge.AddToClassList("au-collection-stat-badge-selected");
+				badge.AddToClassList("yucp-collection-stat-badge-selected");
 			else if (!isActive)
-				badge.AddToClassList("au-collection-stat-badge-inactive");
+				badge.AddToClassList("yucp-collection-stat-badge-inactive");
 
 			var valueLabel = new Label(value);
-			valueLabel.AddToClassList("au-collection-stat-value");
+			valueLabel.AddToClassList("yucp-collection-stat-value");
 			badge.Add(valueLabel);
 
 			var labelLabel = new Label(label);
-			labelLabel.AddToClassList("au-collection-stat-label");
+			labelLabel.AddToClassList("yucp-collection-stat-label");
 			badge.Add(labelLabel);
 
 			container.Add(badge);
@@ -1308,12 +1317,12 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			_bulkEditPanel.style.opacity = 1;
 
 			var panel = new VisualElement();
-			panel.AddToClassList("au-bulk-edit-panel");
+			panel.AddToClassList("yucp-bulk-edit-panel");
 			panel.style.opacity = 1;
 
 			// Header with icon and count badge
 			var header = new VisualElement();
-			header.AddToClassList("au-bulk-edit-header");
+			header.AddToClassList("yucp-bulk-edit-header");
 			header.style.flexDirection = FlexDirection.Row;
 			header.style.alignItems = Align.Center;
 			header.style.justifyContent = Justify.SpaceBetween;
@@ -1323,11 +1332,11 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			headerLeft.style.flexDirection = FlexDirection.Column;
 
 			var title = new Label("Bulk Edit");
-			title.AddToClassList("au-bulk-edit-title");
+			title.AddToClassList("yucp-bulk-edit-title");
 			headerLeft.Add(title);
 
 			var subtitle = new Label($"Editing {_selectedAvatarIndices.Count} avatar{(_selectedAvatarIndices.Count > 1 ? "s" : "")}");
-			subtitle.AddToClassList("au-bulk-edit-subtitle");
+			subtitle.AddToClassList("yucp-bulk-edit-subtitle");
 			headerLeft.Add(subtitle);
 
 			header.Add(headerLeft);
@@ -1345,7 +1354,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				}).StartingIn(200);
 			})
 			{ text = "×" };
-			closeButton.AddToClassList("au-bulk-edit-close");
+			closeButton.AddToClassList("yucp-bulk-edit-close");
 			header.Add(closeButton);
 
 			panel.Add(header);
@@ -1397,10 +1406,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			
 			var pcToggle = new Toggle("PC");
 			pcToggle.value = allPCEnabled;
-			pcToggle.AddToClassList("au-bulk-toggle");
+			pcToggle.AddToClassList("yucp-bulk-toggle");
 			if (!allPCEnabled && !allPCDisabled)
 			{
-				pcToggle.AddToClassList("au-bulk-toggle-mixed");
+				pcToggle.AddToClassList("yucp-bulk-toggle-mixed");
 			}
 			pcToggle.RegisterValueChangedCallback(evt =>
 			{
@@ -1410,7 +1419,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			});
 			
 			var pcStatusLabel = new Label(allPCEnabled ? "All enabled" : allPCDisabled ? "All disabled" : $"{pcEnabledCount}/{selectedAvatars.Count} enabled");
-			pcStatusLabel.AddToClassList("au-bulk-status-label");
+			pcStatusLabel.AddToClassList("yucp-bulk-status-label");
 			pcStatusLabel.style.marginLeft = 8;
 			
 			var pcRow = new VisualElement();
@@ -1428,10 +1437,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			var questToggle = new Toggle("Quest");
 			questToggle.value = allQuestEnabled;
-			questToggle.AddToClassList("au-bulk-toggle");
+			questToggle.AddToClassList("yucp-bulk-toggle");
 			if (!allQuestEnabled && !allQuestDisabled)
 			{
-				questToggle.AddToClassList("au-bulk-toggle-mixed");
+				questToggle.AddToClassList("yucp-bulk-toggle-mixed");
 			}
 			questToggle.RegisterValueChangedCallback(evt =>
 			{
@@ -1441,7 +1450,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			});
 			
 			var questStatusLabel = new Label(allQuestEnabled ? "All enabled" : allQuestDisabled ? "All disabled" : $"{questEnabledCount}/{selectedAvatars.Count} enabled");
-			questStatusLabel.AddToClassList("au-bulk-status-label");
+			questStatusLabel.AddToClassList("yucp-bulk-status-label");
 			questStatusLabel.style.marginLeft = 8;
 			
 			var questRow = new VisualElement();
@@ -1463,10 +1472,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			
 			var publicToggle = new Toggle("Public");
 			publicToggle.value = allPublic;
-			publicToggle.AddToClassList("au-bulk-toggle");
+			publicToggle.AddToClassList("yucp-bulk-toggle");
 			if (!allPublic && !allPrivate)
 			{
-				publicToggle.AddToClassList("au-bulk-toggle-mixed");
+				publicToggle.AddToClassList("yucp-bulk-toggle-mixed");
 			}
 			publicToggle.RegisterValueChangedCallback(evt =>
 			{
@@ -1483,7 +1492,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			});
 			
 			var visibilityStatusLabel = new Label(allPublic ? "All public" : allPrivate ? "All private" : $"{publicCount} public, {privateCount} private");
-			visibilityStatusLabel.AddToClassList("au-bulk-status-label");
+			visibilityStatusLabel.AddToClassList("yucp-bulk-status-label");
 			visibilityStatusLabel.style.marginLeft = 8;
 			
 			var visibilityRow = new VisualElement();
@@ -1512,7 +1521,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			tagsInputRow.style.overflow = Overflow.Hidden;
 
 			var tagInput = new TextField();
-			tagInput.AddToClassList("au-input");
+			tagInput.AddToClassList("yucp-input");
 			tagInput.style.flexGrow = 1;
 			tagInput.style.flexShrink = 1;
 			tagInput.style.marginRight = 8;
@@ -1521,7 +1530,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			
 			// Add placeholder
 			var placeholderLabel = new Label("Enter tag name...");
-			placeholderLabel.AddToClassList("au-input-placeholder");
+			placeholderLabel.AddToClassList("yucp-input-placeholder");
 			placeholderLabel.style.position = Position.Absolute;
 			placeholderLabel.style.left = 8;
 			placeholderLabel.style.top = 4;
@@ -1565,9 +1574,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					UpdateBulkEditPanel(profile);
 				}
 			}) { text = "Add" };
-			addTagButton.AddToClassList("au-button");
-			addTagButton.AddToClassList("au-button-action");
-			addTagButton.AddToClassList("au-button-small");
+			addTagButton.AddToClassList("yucp-button");
+			addTagButton.AddToClassList("yucp-button-action");
+			addTagButton.AddToClassList("yucp-button-small");
 			addTagButton.style.marginRight = 8;
 			addTagButton.style.flexShrink = 0;
 			addTagButton.style.minWidth = 60;
@@ -1584,8 +1593,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					UpdateBulkEditPanel(profile);
 				}
 			}) { text = "Remove" };
-			removeTagButton.AddToClassList("au-button");
-			removeTagButton.AddToClassList("au-button-small");
+			removeTagButton.AddToClassList("yucp-button");
+			removeTagButton.AddToClassList("yucp-button-small");
 			removeTagButton.style.flexShrink = 0;
 			removeTagButton.style.minWidth = 60;
 			tagsInputRow.Add(removeTagButton);
@@ -1600,7 +1609,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateBulkEditSection(string title, string description)
 		{
 			var section = new VisualElement();
-			section.AddToClassList("au-bulk-edit-section");
+			section.AddToClassList("yucp-bulk-edit-section");
 			section.style.marginBottom = 20;
 			section.style.width = Length.Percent(100);
 
@@ -1608,11 +1617,11 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			sectionHeader.style.marginBottom = 12;
 
 			var sectionTitle = new Label(title);
-			sectionTitle.AddToClassList("au-bulk-edit-section-title");
+			sectionTitle.AddToClassList("yucp-bulk-edit-section-title");
 			sectionHeader.Add(sectionTitle);
 
 			var sectionDescription = new Label(description);
-			sectionDescription.AddToClassList("au-bulk-edit-section-description");
+			sectionDescription.AddToClassList("yucp-bulk-edit-section-description");
 			sectionHeader.Add(sectionDescription);
 
 			section.Add(sectionHeader);
@@ -1771,8 +1780,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			_avatarGridHost.Clear();
 
 			var section = new VisualElement();
-			section.AddToClassList("au-section");
-			section.AddToClassList("au-avatar-grid-section");
+			section.AddToClassList("yucp-section");
+			section.AddToClassList("yucp-avatar-grid-section");
 
 			var headerRow = new VisualElement();
 			headerRow.style.flexDirection = FlexDirection.Row;
@@ -1785,7 +1794,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			titleContainer.style.alignItems = Align.Center;
 
 			var title = new Label("Avatars");
-			title.AddToClassList("au-section-title");
+			title.AddToClassList("yucp-section-title");
 			title.style.marginBottom = 0;
 			titleContainer.Add(title);
 
@@ -1793,7 +1802,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			if (_selectedAvatarIndices.Count > 0)
 			{
 				var selectionInfo = new Label($"{_selectedAvatarIndices.Count} selected");
-				selectionInfo.AddToClassList("au-label-secondary");
+				selectionInfo.AddToClassList("yucp-label-secondary");
 				selectionInfo.style.marginLeft = 12;
 				titleContainer.Add(selectionInfo);
 			}
@@ -1818,8 +1827,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					UpdateBulkEditPanel(profile);
 				})
 				{ text = "Select All" };
-				selectAllButton.AddToClassList("au-button");
-				selectAllButton.AddToClassList("au-button-small");
+				selectAllButton.AddToClassList("yucp-button");
+				selectAllButton.AddToClassList("yucp-button-small");
 				selectAllButton.style.marginRight = 8;
 				headerActions.Add(selectAllButton);
 
@@ -1830,22 +1839,22 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					UpdateBulkEditPanel(profile);
 				})
 				{ text = "Deselect All" };
-				deselectAllButton.AddToClassList("au-button");
-				deselectAllButton.AddToClassList("au-button-small");
+				deselectAllButton.AddToClassList("yucp-button");
+				deselectAllButton.AddToClassList("yucp-button-small");
 				deselectAllButton.style.marginRight = 8;
 				headerActions.Add(deselectAllButton);
 			}
 
 			var addButton = new Button(() => AddAvatarToProfile(profile)) { text = "+ Add Avatar" };
-			addButton.AddToClassList("au-button");
-			addButton.AddToClassList("au-button-action");
-			addButton.AddToClassList("au-button-small");
+			addButton.AddToClassList("yucp-button");
+			addButton.AddToClassList("yucp-button-action");
+			addButton.AddToClassList("yucp-button-small");
 			addButton.style.marginRight = 8;
 			headerActions.Add(addButton);
 
 			var refreshButton = new Button(() => BuildAvatarGridView(profile)) { text = "Refresh" };
-			refreshButton.AddToClassList("au-button");
-			refreshButton.AddToClassList("au-button-small");
+			refreshButton.AddToClassList("yucp-button");
+			refreshButton.AddToClassList("yucp-button-small");
 			headerActions.Add(refreshButton);
 
 			headerRow.Add(headerActions);
@@ -1853,20 +1862,20 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Avatar grid
 			_avatarGridScroll = new ScrollView(ScrollViewMode.Vertical);
-			_avatarGridScroll.AddToClassList("au-store-grid-scroll");
+			_avatarGridScroll.AddToClassList("yucp-store-grid-scroll");
 			_avatarGridContent = new VisualElement();
-			_avatarGridContent.AddToClassList("au-store-grid");
+			_avatarGridContent.AddToClassList("yucp-store-grid");
 			_avatarGridScroll.Add(_avatarGridContent);
 
 			if (profile.avatars == null || profile.avatars.Count == 0)
 			{
 				var emptyState = new VisualElement();
-				emptyState.AddToClassList("au-avatar-grid-empty");
+				emptyState.AddToClassList("yucp-avatar-grid-empty");
 				var emptyTitle = new Label("No avatars yet");
-				emptyTitle.AddToClassList("au-empty-state-title");
+				emptyTitle.AddToClassList("yucp-empty-state-title");
 				emptyState.Add(emptyTitle);
 				var emptyDesc = new Label("Use + Add Avatar to include prefabs in this collection.");
-				emptyDesc.AddToClassList("au-empty-state-description");
+				emptyDesc.AddToClassList("yucp-empty-state-description");
 				emptyState.Add(emptyDesc);
 				_avatarGridContent.Add(emptyState);
 			}
@@ -1904,7 +1913,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					var tile = CreateAvatarTile(profile, avatarConfig, i);
 					if (i == _selectedAvatarIndex)
 					{
-						tile.AddToClassList("au-avatar-tile-selected");
+						tile.AddToClassList("yucp-avatar-tile-selected");
 					}
 					_avatarGridContent.Add(tile);
 				}
@@ -1917,12 +1926,12 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateProfileSettingsSection(AvatarCollection profile)
 		{
 			var section = new VisualElement();
-			section.AddToClassList("au-section");
-			section.AddToClassList("pe-section");
+			section.AddToClassList("yucp-section");
+			section.AddToClassList("yucp-section");
 
 			var title = new Label("Profile Settings");
-			title.AddToClassList("au-section-title");
-			title.AddToClassList("pe-section-title");
+			title.AddToClassList("yucp-section-title");
+			title.AddToClassList("yucp-section-title");
 			section.Add(title);
 
 			// Profile Name
@@ -1931,8 +1940,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			nameField.focusable = true;
 			nameField.isReadOnly = false;
 			nameField.SetEnabled(true);
-			nameField.AddToClassList("au-input");
-			nameField.AddToClassList("au-form-field");
+			nameField.AddToClassList("yucp-input");
+			nameField.AddToClassList("yucp-form-field");
 			nameField.RegisterValueChangedCallback(evt =>
 			{
 				if (profile != null)
@@ -1952,19 +1961,19 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateBuildSettingsSection(AvatarCollection profile)
 		{
 			var section = new VisualElement();
-			section.AddToClassList("au-section");
-			section.AddToClassList("pe-section");
+			section.AddToClassList("yucp-section");
+			section.AddToClassList("yucp-section");
 
 			var title = new Label("Build Settings");
-			title.AddToClassList("au-section-title");
-			title.AddToClassList("pe-section-title");
+			title.AddToClassList("yucp-section-title");
+			title.AddToClassList("yucp-section-title");
 			section.Add(title);
 
 			// Auto Build PC
 			var pcRow = CreateFormRow("Auto Build PC");
 			var pcToggle = new Toggle { value = profile.autoBuildPC };
-			pcToggle.AddToClassList("au-toggle");
-			pcToggle.AddToClassList("au-form-field");
+			pcToggle.AddToClassList("yucp-toggle");
+			pcToggle.AddToClassList("yucp-form-field");
 			pcToggle.RegisterValueChangedCallback(evt =>
 			{
 				if (profile != null)
@@ -1980,8 +1989,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			// Auto Build Quest
 			var questRow = CreateFormRow("Auto Build Quest");
 			var questToggle = new Toggle { value = profile.autoBuildQuest };
-			questToggle.AddToClassList("au-toggle");
-			questToggle.AddToClassList("au-form-field");
+			questToggle.AddToClassList("yucp-toggle");
+			questToggle.AddToClassList("yucp-form-field");
 			questToggle.RegisterValueChangedCallback(evt =>
 			{
 				if (profile != null)
@@ -2000,67 +2009,67 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateAvatarGridSection(AvatarCollection profile)
 		{
 			var section = new VisualElement();
-			section.AddToClassList("au-section");
-			section.AddToClassList("au-store-section");
-			section.AddToClassList("pe-section");
+			section.AddToClassList("yucp-section");
+			section.AddToClassList("yucp-store-section");
+			section.AddToClassList("yucp-section");
 
 			var headerRow = new VisualElement();
-			headerRow.AddToClassList("au-store-header");
-			headerRow.AddToClassList("pe-section-header");
+			headerRow.AddToClassList("yucp-store-header");
+			headerRow.AddToClassList("yucp-section-header");
 			headerRow.style.flexDirection = FlexDirection.Row;
 			headerRow.style.justifyContent = Justify.SpaceBetween;
 			headerRow.style.alignItems = Align.Center;
 			headerRow.style.marginBottom = 12;
 
 			var title = new Label("Avatars");
-			title.AddToClassList("au-section-title");
+			title.AddToClassList("yucp-section-title");
 			title.style.marginBottom = 0;
 			headerRow.Add(title);
 
 			var headerActions = new VisualElement();
-			headerActions.AddToClassList("au-store-header-actions");
+			headerActions.AddToClassList("yucp-store-header-actions");
 
 			var addButton = new Button(() => AddAvatarToProfile(profile)) { text = "+ Add Avatar" };
-			addButton.AddToClassList("au-button");
-			addButton.AddToClassList("au-button-action");
-			addButton.AddToClassList("au-button-small");
+			addButton.AddToClassList("yucp-button");
+			addButton.AddToClassList("yucp-button-action");
+			addButton.AddToClassList("yucp-button-small");
 			headerActions.Add(addButton);
 
 			var refreshButton = new Button(() => BuildAvatarGridView(profile)) { text = "Refresh" };
-			refreshButton.AddToClassList("au-button");
-			refreshButton.AddToClassList("au-button-small");
+			refreshButton.AddToClassList("yucp-button");
+			refreshButton.AddToClassList("yucp-button-small");
 			headerActions.Add(refreshButton);
 
 			headerRow.Add(headerActions);
 			section.Add(headerRow);
 
 			_heroPanel = new VisualElement();
-			_heroPanel.AddToClassList("au-hero-panel");
+			_heroPanel.AddToClassList("yucp-hero-panel");
 
 			var heroContent = new VisualElement();
-			heroContent.AddToClassList("au-hero-content");
+			heroContent.AddToClassList("yucp-hero-content");
 
 			var heroPreviewContainer = new VisualElement();
-			heroPreviewContainer.AddToClassList("au-hero-preview-container");
+			heroPreviewContainer.AddToClassList("yucp-hero-preview-container");
 
 			_heroImageDisplay = new Image();
-			_heroImageDisplay.AddToClassList("au-hero-gallery-image");
+			_heroImageDisplay.AddToClassList("yucp-hero-gallery-image");
 			heroPreviewContainer.Add(_heroImageDisplay);
 
 			_heroOverlay = new VisualElement();
-			_heroOverlay.AddToClassList("au-hero-overlay");
+			_heroOverlay.AddToClassList("yucp-hero-overlay");
 			_heroSlideLabel = new Label();
-			_heroSlideLabel.AddToClassList("au-hero-slide-label");
+			_heroSlideLabel.AddToClassList("yucp-hero-slide-label");
 			_heroOverlay.Add(_heroSlideLabel);
 
 			_heroPrevButton = new Button(() => CycleHeroSlide(-1)) { text = "‹" };
-			_heroPrevButton.AddToClassList("au-hero-slide-button");
-			_heroPrevButton.AddToClassList("au-hero-slide-prev");
+			_heroPrevButton.AddToClassList("yucp-hero-slide-button");
+			_heroPrevButton.AddToClassList("yucp-hero-slide-prev");
 			_heroOverlay.Add(_heroPrevButton);
 
 			var captureButton = new Button(() => CaptureThumbnailFromScene()) { text = "Capture" };
 			captureButton.tooltip = "Capture thumbnail from scene view";
-			captureButton.AddToClassList("au-hero-slide-button");
+			captureButton.AddToClassList("yucp-hero-slide-button");
 			captureButton.style.position = Position.Absolute;
 			captureButton.style.bottom = 12;
 			captureButton.style.left = 12;
@@ -2068,7 +2077,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			var uploadButton = new Button(() => UploadThumbnailImage()) { text = "Upload" };
 			uploadButton.tooltip = "Upload thumbnail image file";
-			uploadButton.AddToClassList("au-hero-slide-button");
+			uploadButton.AddToClassList("yucp-hero-slide-button");
 			uploadButton.style.position = Position.Absolute;
 			uploadButton.style.bottom = 12;
 			uploadButton.style.left = 60;
@@ -2076,48 +2085,48 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			_heroAddButton = new Button(() => AddGalleryImage(profile, _currentHeroConfig)) { text = "+" };
 			_heroAddButton.tooltip = "Enable gallery integration and store a VRChat API key in Avatar Tools settings to add gallery images.";
-			_heroAddButton.AddToClassList("au-hero-slide-button");
-			_heroAddButton.AddToClassList("au-hero-slide-add");
+			_heroAddButton.AddToClassList("yucp-hero-slide-button");
+			_heroAddButton.AddToClassList("yucp-hero-slide-add");
 			_heroOverlay.Add(_heroAddButton);
 
 			_heroSetIconButton = new Button(() => SetActiveGalleryImageAsIcon(profile, _currentHeroConfig)) { text = "Set Icon" };
 			_heroSetIconButton.tooltip = "Make the selected gallery image the avatar icon via the VRChat API.";
-			_heroSetIconButton.AddToClassList("au-hero-slide-button");
-			_heroSetIconButton.AddToClassList("au-hero-slide-seticon");
+			_heroSetIconButton.AddToClassList("yucp-hero-slide-button");
+			_heroSetIconButton.AddToClassList("yucp-hero-slide-seticon");
 			_heroSetIconButton.style.display = DisplayStyle.None;
 			_heroOverlay.Add(_heroSetIconButton);
 
 			_heroDeleteButton = new Button(() => DeleteActiveGalleryImage(profile, _currentHeroConfig)) { text = "Delete" };
 			_heroDeleteButton.tooltip = "Delete the selected gallery image from VRChat.";
-			_heroDeleteButton.AddToClassList("au-hero-slide-button");
-			_heroDeleteButton.AddToClassList("au-hero-slide-delete");
+			_heroDeleteButton.AddToClassList("yucp-hero-slide-button");
+			_heroDeleteButton.AddToClassList("yucp-hero-slide-delete");
 			_heroDeleteButton.style.display = DisplayStyle.None;
 			_heroOverlay.Add(_heroDeleteButton);
 
 			_heroNextButton = new Button(() => CycleHeroSlide(1)) { text = "›" };
-			_heroNextButton.AddToClassList("au-hero-slide-button");
-			_heroNextButton.AddToClassList("au-hero-slide-next");
+			_heroNextButton.AddToClassList("yucp-hero-slide-button");
+			_heroNextButton.AddToClassList("yucp-hero-slide-next");
 			_heroOverlay.Add(_heroNextButton);
 
 			heroPreviewContainer.Add(_heroOverlay);
 			heroContent.Add(heroPreviewContainer);
 
 			_heroInfoContainer = new VisualElement();
-			_heroInfoContainer.AddToClassList("au-hero-info");
+			_heroInfoContainer.AddToClassList("yucp-hero-info");
 			heroContent.Add(_heroInfoContainer);
 
 			_heroPanel.Add(heroContent);
 			section.Add(_heroPanel);
 
 			var metadataContainer = new VisualElement();
-			metadataContainer.AddToClassList("au-hero-metadata-container");
+			metadataContainer.AddToClassList("yucp-hero-metadata-container");
 			metadataContainer.style.marginTop = 16;
 			section.Add(metadataContainer);
 
 			_avatarGridScroll = new ScrollView(ScrollViewMode.Vertical);
-			_avatarGridScroll.AddToClassList("au-store-grid-scroll");
+			_avatarGridScroll.AddToClassList("yucp-store-grid-scroll");
 			_avatarGridContent = new VisualElement();
-			_avatarGridContent.AddToClassList("au-store-grid");
+			_avatarGridContent.AddToClassList("yucp-store-grid");
 			_avatarGridScroll.Add(_avatarGridContent);
 
 			section.Add(_avatarGridScroll);
@@ -2139,12 +2148,12 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				_heroPanel.style.display = DisplayStyle.None;
 
 				var emptyState = new VisualElement();
-				emptyState.AddToClassList("au-avatar-grid-empty");
+				emptyState.AddToClassList("yucp-avatar-grid-empty");
 				var emptyTitle = new Label("No avatars yet");
-				emptyTitle.AddToClassList("au-empty-state-title");
+				emptyTitle.AddToClassList("yucp-empty-state-title");
 				emptyState.Add(emptyTitle);
 				var emptyDesc = new Label("Use + Add Avatar to include prefabs in this profile.");
-				emptyDesc.AddToClassList("au-empty-state-description");
+				emptyDesc.AddToClassList("yucp-empty-state-description");
 				emptyState.Add(emptyDesc);
 				_avatarGridContent.Add(emptyState);
 				return;
@@ -2177,7 +2186,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				var tile = CreateAvatarTile(profile, avatarConfig, i);
 				if (i == _selectedAvatarIndex)
 				{
-					tile.AddToClassList("au-avatar-tile-selected");
+					tile.AddToClassList("yucp-avatar-tile-selected");
 				}
 				_avatarGridContent.Add(tile);
 			}
@@ -2186,12 +2195,12 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateAvatarTile(AvatarCollection profile, AvatarAsset config, int index)
 		{
 			var tile = new VisualElement();
-			tile.AddToClassList("au-avatar-tile");
+			tile.AddToClassList("yucp-avatar-tile");
 
 			// Multi-select checkbox (top-left corner)
 			var checkbox = new Toggle();
 			checkbox.value = _selectedAvatarIndices.Contains(index);
-			checkbox.AddToClassList("au-avatar-tile-checkbox");
+			checkbox.AddToClassList("yucp-avatar-tile-checkbox");
 			checkbox.RegisterValueChangedCallback(evt =>
 			{
 				if (evt.newValue)
@@ -2218,7 +2227,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Status indicators (top-right corner)
 			var statusContainer = new VisualElement();
-			statusContainer.AddToClassList("au-avatar-tile-status");
+			statusContainer.AddToClassList("yucp-avatar-tile-status");
 			statusContainer.style.position = Position.Absolute;
 			statusContainer.style.top = 4;
 			statusContainer.style.right = 4;
@@ -2228,16 +2237,16 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			if (!string.IsNullOrEmpty(config.blueprintIdPC) || !string.IsNullOrEmpty(config.blueprintIdQuest))
 			{
 				var builtBadge = new Label("✓");
-				builtBadge.AddToClassList("au-avatar-status-badge");
-				builtBadge.AddToClassList("au-avatar-status-built");
+				builtBadge.AddToClassList("yucp-avatar-status-badge");
+				builtBadge.AddToClassList("yucp-avatar-status-built");
 				builtBadge.tooltip = "Has blueprint ID";
 				statusContainer.Add(builtBadge);
 			}
 			else
 			{
 				var notBuiltBadge = new Label("○");
-				notBuiltBadge.AddToClassList("au-avatar-status-badge");
-				notBuiltBadge.AddToClassList("au-avatar-status-not-built");
+				notBuiltBadge.AddToClassList("yucp-avatar-status-badge");
+				notBuiltBadge.AddToClassList("yucp-avatar-status-not-built");
 				notBuiltBadge.tooltip = "Not built yet";
 				statusContainer.Add(notBuiltBadge);
 			}
@@ -2249,7 +2258,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				// Use 3D preview renderer with head bone tracking mouse
 				var previewRenderer = new AvatarTilePreviewRenderer();
-				previewRenderer.AddToClassList("au-avatar-preview");
+				previewRenderer.AddToClassList("yucp-avatar-preview");
 				previewRenderer.SetTarget(config.avatarPrefab);
 				tile.Add(previewRenderer);
 			}
@@ -2257,35 +2266,35 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				// Fallback placeholder when no prefab
 				var previewImage = new Image();
-				previewImage.AddToClassList("au-avatar-preview");
+				previewImage.AddToClassList("yucp-avatar-preview");
 				tile.Add(previewImage);
 			}
 
 			// Name label
 			var nameLabel = new Label(string.IsNullOrEmpty(config.avatarName) ? $"Avatar {index + 1}" : config.avatarName);
-			nameLabel.AddToClassList("au-avatar-tile-title");
+			nameLabel.AddToClassList("yucp-avatar-tile-title");
 			tile.Add(nameLabel);
 
 			// Tags label
 			var tagsLabel = new Label(config.tags != null && config.tags.Count > 0 ? string.Join(", ", config.tags) : "No tags");
-			tagsLabel.AddToClassList("au-avatar-tile-tags");
+			tagsLabel.AddToClassList("yucp-avatar-tile-tags");
 			tile.Add(tagsLabel);
 
 			// Platform badges
 			var platformRow = new VisualElement();
-			platformRow.AddToClassList("au-avatar-tile-platforms");
+			platformRow.AddToClassList("yucp-avatar-tile-platforms");
 			if (config.buildPC)
 			{
 				var pcBadge = new Label("PC");
-				pcBadge.AddToClassList("au-avatar-tile-badge");
-				pcBadge.AddToClassList("au-avatar-tile-badge-pc");
+				pcBadge.AddToClassList("yucp-avatar-tile-badge");
+				pcBadge.AddToClassList("yucp-avatar-tile-badge-pc");
 				platformRow.Add(pcBadge);
 			}
 			if (config.buildQuest)
 			{
 				var questBadge = new Label("Quest");
-				questBadge.AddToClassList("au-avatar-tile-badge");
-				questBadge.AddToClassList("au-avatar-tile-badge-quest");
+				questBadge.AddToClassList("yucp-avatar-tile-badge");
+				questBadge.AddToClassList("yucp-avatar-tile-badge-quest");
 				platformRow.Add(questBadge);
 			}
 			tile.Add(platformRow);
@@ -2293,17 +2302,17 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			// Selection state
 			if (_selectedAvatarIndices.Contains(index))
 			{
-				tile.AddToClassList("au-avatar-tile-multi-selected");
+				tile.AddToClassList("yucp-avatar-tile-multi-selected");
 			}
 
 			// Hover effects
 			tile.RegisterCallback<MouseEnterEvent>(_ =>
 			{
-				tile.AddToClassList("au-avatar-tile-hover");
+				tile.AddToClassList("yucp-avatar-tile-hover");
 			});
 			tile.RegisterCallback<MouseLeaveEvent>(_ =>
 			{
-				tile.RemoveFromClassList("au-avatar-tile-hover");
+				tile.RemoveFromClassList("yucp-avatar-tile-hover");
 			});
 
 			// Right-click context menu
@@ -2577,39 +2586,39 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Create hero content container
 			_heroContentContainer = new VisualElement();
-			_heroContentContainer.AddToClassList("au-hero-section");
+			_heroContentContainer.AddToClassList("yucp-hero-section");
 
 			// Create hero panel (preview + info)
 			_heroPanel = new VisualElement();
-			_heroPanel.AddToClassList("au-hero-panel");
+			_heroPanel.AddToClassList("yucp-hero-panel");
 
 			var heroContent = new VisualElement();
-			heroContent.AddToClassList("au-hero-content");
+			heroContent.AddToClassList("yucp-hero-content");
 
 			// Preview container (icon and gallery only, no 3D preview)
 			var heroPreviewContainer = new VisualElement();
-			heroPreviewContainer.AddToClassList("au-hero-preview-container");
+			heroPreviewContainer.AddToClassList("yucp-hero-preview-container");
 
 			_heroImageDisplay = new Image();
-			_heroImageDisplay.AddToClassList("au-hero-gallery-image");
+			_heroImageDisplay.AddToClassList("yucp-hero-gallery-image");
 			heroPreviewContainer.Add(_heroImageDisplay);
 
 			// Overlay with controls
 			_heroOverlay = new VisualElement();
-			_heroOverlay.AddToClassList("au-hero-overlay");
+			_heroOverlay.AddToClassList("yucp-hero-overlay");
 			
 			_heroSlideLabel = new Label();
-			_heroSlideLabel.AddToClassList("au-hero-slide-label");
+			_heroSlideLabel.AddToClassList("yucp-hero-slide-label");
 			_heroOverlay.Add(_heroSlideLabel);
 
 			_heroPrevButton = new Button(() => CycleHeroSlide(-1)) { text = "‹" };
-			_heroPrevButton.AddToClassList("au-hero-slide-button");
-			_heroPrevButton.AddToClassList("au-hero-slide-prev");
+			_heroPrevButton.AddToClassList("yucp-hero-slide-button");
+			_heroPrevButton.AddToClassList("yucp-hero-slide-prev");
 			_heroOverlay.Add(_heroPrevButton);
 
 			var captureButton = new Button(() => CaptureThumbnailFromScene()) { text = "Capture" };
 			captureButton.tooltip = "Capture thumbnail from scene view";
-			captureButton.AddToClassList("au-hero-slide-button");
+			captureButton.AddToClassList("yucp-hero-slide-button");
 			captureButton.style.position = Position.Absolute;
 			captureButton.style.bottom = 12;
 			captureButton.style.left = 12;
@@ -2617,7 +2626,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			var uploadButton = new Button(() => UploadThumbnailImage()) { text = "Upload" };
 			uploadButton.tooltip = "Upload thumbnail image file";
-			uploadButton.AddToClassList("au-hero-slide-button");
+			uploadButton.AddToClassList("yucp-hero-slide-button");
 			uploadButton.style.position = Position.Absolute;
 			uploadButton.style.bottom = 12;
 			uploadButton.style.left = 60;
@@ -2625,27 +2634,27 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			_heroAddButton = new Button(() => AddGalleryImage(profile, config)) { text = "+" };
 			_heroAddButton.tooltip = "Enable gallery integration and store a VRChat API key in Avatar Tools settings to add gallery images.";
-			_heroAddButton.AddToClassList("au-hero-slide-button");
-			_heroAddButton.AddToClassList("au-hero-slide-add");
+			_heroAddButton.AddToClassList("yucp-hero-slide-button");
+			_heroAddButton.AddToClassList("yucp-hero-slide-add");
 			_heroOverlay.Add(_heroAddButton);
 
 			_heroSetIconButton = new Button(() => SetActiveGalleryImageAsIcon(profile, config)) { text = "Set Icon" };
 			_heroSetIconButton.tooltip = "Make the selected gallery image the avatar icon via the VRChat API.";
-			_heroSetIconButton.AddToClassList("au-hero-slide-button");
-			_heroSetIconButton.AddToClassList("au-hero-slide-seticon");
+			_heroSetIconButton.AddToClassList("yucp-hero-slide-button");
+			_heroSetIconButton.AddToClassList("yucp-hero-slide-seticon");
 			_heroSetIconButton.style.display = DisplayStyle.None;
 			_heroOverlay.Add(_heroSetIconButton);
 
 			_heroDeleteButton = new Button(() => DeleteActiveGalleryImage(profile, config)) { text = "Delete" };
 			_heroDeleteButton.tooltip = "Delete the selected gallery image from VRChat.";
-			_heroDeleteButton.AddToClassList("au-hero-slide-button");
-			_heroDeleteButton.AddToClassList("au-hero-slide-delete");
+			_heroDeleteButton.AddToClassList("yucp-hero-slide-button");
+			_heroDeleteButton.AddToClassList("yucp-hero-slide-delete");
 			_heroDeleteButton.style.display = DisplayStyle.None;
 			_heroOverlay.Add(_heroDeleteButton);
 
 			_heroNextButton = new Button(() => CycleHeroSlide(1)) { text = "›" };
-			_heroNextButton.AddToClassList("au-hero-slide-button");
-			_heroNextButton.AddToClassList("au-hero-slide-next");
+			_heroNextButton.AddToClassList("yucp-hero-slide-button");
+			_heroNextButton.AddToClassList("yucp-hero-slide-next");
 			_heroOverlay.Add(_heroNextButton);
 
 			heroPreviewContainer.Add(_heroOverlay);
@@ -2653,7 +2662,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Info container
 			_heroInfoContainer = new VisualElement();
-			_heroInfoContainer.AddToClassList("au-hero-info");
+			_heroInfoContainer.AddToClassList("yucp-hero-info");
 			heroContent.Add(_heroInfoContainer);
 
 			_heroPanel.Add(heroContent);
@@ -2661,7 +2670,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Thumbnail host
 			_thumbnailHost = new VisualElement();
-			_thumbnailHost.AddToClassList("au-hero-thumbnail-host");
+			_thumbnailHost.AddToClassList("yucp-hero-thumbnail-host");
 			_heroContentContainer.Add(_thumbnailHost);
 
 			_heroSectionHost.Add(_heroContentContainer);
@@ -2677,7 +2686,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			if (config == null)
 			{
 				var emptyLabel = new Label("Select an avatar to manage icon");
-				emptyLabel.AddToClassList("au-label-secondary");
+				emptyLabel.AddToClassList("yucp-label-secondary");
 				emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
 				emptyLabel.style.paddingTop = 20;
 				emptyLabel.style.paddingBottom = 20;
@@ -2686,17 +2695,17 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			}
 
 			var title = new Label("Avatar Icon");
-			title.AddToClassList("au-card-title");
+			title.AddToClassList("yucp-card-title");
 			title.style.marginBottom = 4;
 			_iconSidebarHost.Add(title);
 
 			var subtitle = new Label("The icon shown in VRChat's avatar selection menu. Required for new avatars.");
-			subtitle.AddToClassList("au-card-subtitle");
+			subtitle.AddToClassList("yucp-card-subtitle");
 			subtitle.style.marginBottom = 12;
 			_iconSidebarHost.Add(subtitle);
 
 			var iconPreview = new Image();
-			iconPreview.AddToClassList("au-icon-preview");
+			iconPreview.AddToClassList("yucp-icon-preview");
 			if (config.avatarIcon != null)
 			{
 				iconPreview.image = config.avatarIcon;
@@ -2708,7 +2717,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			_iconSidebarHost.Add(iconPreview);
 
 			var statusLabel = new Label(config.avatarIcon != null ? "Icon Set" : "No Icon");
-			statusLabel.AddToClassList("au-label-small");
+			statusLabel.AddToClassList("yucp-label-small");
 			statusLabel.style.marginTop = 0;
 			statusLabel.style.marginBottom = 12;
 			statusLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
@@ -2728,15 +2737,15 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			var captureButton = new Button(() => CaptureThumbnailFromScene()) { text = "Capture" };
 			captureButton.tooltip = "Capture thumbnail from scene view";
-			captureButton.AddToClassList("au-button");
-			captureButton.AddToClassList("au-button-action");
+			captureButton.AddToClassList("yucp-button");
+			captureButton.AddToClassList("yucp-button-action");
 			captureButton.style.marginBottom = 8;
 			buttonContainer.Add(captureButton);
 
 			var uploadButton = new Button(() => UploadThumbnailImage()) { text = "Upload" };
 			uploadButton.tooltip = "Upload thumbnail image file";
-			uploadButton.AddToClassList("au-button");
-			uploadButton.AddToClassList("au-button-action");
+			uploadButton.AddToClassList("yucp-button");
+			uploadButton.AddToClassList("yucp-button-action");
 			uploadButton.style.marginBottom = 8;
 			buttonContainer.Add(uploadButton);
 
@@ -2753,8 +2762,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					}
 				}) { text = "Clear" };
 				clearButton.tooltip = "Remove the avatar icon";
-				clearButton.AddToClassList("au-button");
-				clearButton.AddToClassList("au-button-danger");
+				clearButton.AddToClassList("yucp-button");
+				clearButton.AddToClassList("yucp-button-danger");
 				buttonContainer.Add(clearButton);
 			}
 
@@ -2772,11 +2781,11 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				var emptyCard = CreateCard("Gallery", null, "Manage gallery images for your avatar. These images appear in the VRChat avatar selection menu.");
 				var emptyLabel = new Label("Select an avatar to view gallery");
-				emptyLabel.AddToClassList("au-label-secondary");
+				emptyLabel.AddToClassList("yucp-label-secondary");
 				emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
 				emptyLabel.style.paddingTop = 20;
 				emptyLabel.style.paddingBottom = 20;
-				emptyCard.Q(className: "au-card-content").Add(emptyLabel);
+				emptyCard.Q(className: "yucp-card-content").Add(emptyLabel);
 				_gallerySectionHost.Add(emptyCard);
 				return;
 			}
@@ -2785,51 +2794,51 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Gallery carousel (full-size image viewer)
 			var carouselContainer = new VisualElement();
-			carouselContainer.AddToClassList("au-gallery-carousel-container");
+			carouselContainer.AddToClassList("yucp-gallery-carousel-container");
 
 			var carouselPreview = new VisualElement();
-			carouselPreview.AddToClassList("au-gallery-carousel-preview");
+			carouselPreview.AddToClassList("yucp-gallery-carousel-preview");
 
 			_heroImageDisplay = new Image();
-			_heroImageDisplay.AddToClassList("au-gallery-carousel-image");
+			_heroImageDisplay.AddToClassList("yucp-gallery-carousel-image");
 			carouselPreview.Add(_heroImageDisplay);
 
 			// Overlay with controls
 			_heroOverlay = new VisualElement();
-			_heroOverlay.AddToClassList("au-gallery-carousel-overlay");
+			_heroOverlay.AddToClassList("yucp-gallery-carousel-overlay");
 			
 			_heroSlideLabel = new Label();
-			_heroSlideLabel.AddToClassList("au-gallery-carousel-label");
+			_heroSlideLabel.AddToClassList("yucp-gallery-carousel-label");
 			_heroOverlay.Add(_heroSlideLabel);
 
 			_heroPrevButton = new Button(() => CycleHeroSlide(-1)) { text = "‹" };
-			_heroPrevButton.AddToClassList("au-gallery-carousel-button");
-			_heroPrevButton.AddToClassList("au-gallery-carousel-prev");
+			_heroPrevButton.AddToClassList("yucp-gallery-carousel-button");
+			_heroPrevButton.AddToClassList("yucp-gallery-carousel-prev");
 			_heroOverlay.Add(_heroPrevButton);
 
 			_heroAddButton = new Button(() => AddGalleryImage(profile, config)) { text = "+" };
 			_heroAddButton.tooltip = "Add gallery image";
-			_heroAddButton.AddToClassList("au-gallery-carousel-button");
-			_heroAddButton.AddToClassList("au-gallery-carousel-add");
+			_heroAddButton.AddToClassList("yucp-gallery-carousel-button");
+			_heroAddButton.AddToClassList("yucp-gallery-carousel-add");
 			_heroOverlay.Add(_heroAddButton);
 
 			_heroSetIconButton = new Button(() => SetActiveGalleryImageAsIcon(profile, config)) { text = "Set Icon" };
 			_heroSetIconButton.tooltip = "Make the selected gallery image the avatar icon via the VRChat API.";
-			_heroSetIconButton.AddToClassList("au-gallery-carousel-button");
-			_heroSetIconButton.AddToClassList("au-gallery-carousel-seticon");
+			_heroSetIconButton.AddToClassList("yucp-gallery-carousel-button");
+			_heroSetIconButton.AddToClassList("yucp-gallery-carousel-seticon");
 			_heroSetIconButton.style.display = DisplayStyle.None;
 			_heroOverlay.Add(_heroSetIconButton);
 
 			_heroDeleteButton = new Button(() => DeleteActiveGalleryImage(profile, config)) { text = "Delete" };
 			_heroDeleteButton.tooltip = "Delete the selected gallery image from VRChat.";
-			_heroDeleteButton.AddToClassList("au-gallery-carousel-button");
-			_heroDeleteButton.AddToClassList("au-gallery-carousel-delete");
+			_heroDeleteButton.AddToClassList("yucp-gallery-carousel-button");
+			_heroDeleteButton.AddToClassList("yucp-gallery-carousel-delete");
 			_heroDeleteButton.style.display = DisplayStyle.None;
 			_heroOverlay.Add(_heroDeleteButton);
 
 			_heroNextButton = new Button(() => CycleHeroSlide(1)) { text = "›" };
-			_heroNextButton.AddToClassList("au-gallery-carousel-button");
-			_heroNextButton.AddToClassList("au-gallery-carousel-next");
+			_heroNextButton.AddToClassList("yucp-gallery-carousel-button");
+			_heroNextButton.AddToClassList("yucp-gallery-carousel-next");
 			_heroOverlay.Add(_heroNextButton);
 
 			carouselPreview.Add(_heroOverlay);
@@ -2837,7 +2846,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Thumbnail grid
 			var thumbnailGrid = new VisualElement();
-			thumbnailGrid.AddToClassList("au-gallery-grid");
+			thumbnailGrid.AddToClassList("yucp-gallery-grid");
 
 			EnsureGalleryList(config);
 			Debug.Log($"[AvatarUploader] BuildGalleryCard: Building thumbnail grid, galleryImages: {config.galleryImages?.Count ?? 0}");
@@ -2851,7 +2860,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					Debug.Log($"[AvatarUploader] BuildGalleryCard: Creating thumbnail {i+1}/{config.galleryImages.Count} - URL: {galleryImage?.url ?? "null"}, thumbnail: {(galleryImage?.thumbnail != null ? "exists" : "null")}");
 					
 					var thumbnail = new Image();
-					thumbnail.AddToClassList("au-gallery-thumbnail");
+					thumbnail.AddToClassList("yucp-gallery-thumbnail");
 					
 					// Load thumbnail lazily
 					if (galleryImage?.thumbnail != null)
@@ -2879,12 +2888,12 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 						{
 							if (child is Image thumb)
 							{
-								thumb.RemoveFromClassList("au-gallery-thumbnail-active");
+								thumb.RemoveFromClassList("yucp-gallery-thumbnail-active");
 							}
 						}
 						
 						// Add active class to clicked thumbnail
-						thumbnail.AddToClassList("au-gallery-thumbnail-active");
+						thumbnail.AddToClassList("yucp-gallery-thumbnail-active");
 						
 						_activeHeroSlideIndex = index;
 						ShowHeroSlide();
@@ -2893,7 +2902,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					// Highlight active thumbnail
 					if (i == _activeHeroSlideIndex)
 					{
-						thumbnail.AddToClassList("au-gallery-thumbnail-active");
+						thumbnail.AddToClassList("yucp-gallery-thumbnail-active");
 					}
 
 					thumbnailGrid.Add(thumbnail);
@@ -2902,7 +2911,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			else
 			{
 				var emptyLabel = new Label("No gallery images. Click + to add.");
-				emptyLabel.AddToClassList("au-label-secondary");
+				emptyLabel.AddToClassList("yucp-label-secondary");
 				emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
 				emptyLabel.style.paddingTop = 20;
 				emptyLabel.style.paddingBottom = 20;
@@ -3125,17 +3134,17 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateHeroInfoCard(AvatarCollection profile, AvatarAsset config, int index)
 		{
 			var info = new VisualElement();
-			info.AddToClassList("au-hero-info-root");
+			info.AddToClassList("yucp-hero-info-root");
 
 			var nameLabel = new Label(string.IsNullOrEmpty(config.avatarName) ? $"Avatar {index + 1}" : config.avatarName);
-			nameLabel.AddToClassList("au-hero-title-field");
+			nameLabel.AddToClassList("yucp-hero-title-field");
 			nameLabel.style.marginBottom = 8;
 			info.Add(nameLabel);
 
 			var descriptionPreview = new Label(string.IsNullOrWhiteSpace(config.description)
 				? "No description"
 				: (config.description.Length > 150 ? config.description.Substring(0, 150) + "..." : config.description));
-			descriptionPreview.AddToClassList("au-hero-description-label");
+			descriptionPreview.AddToClassList("yucp-hero-description-label");
 			descriptionPreview.style.whiteSpace = WhiteSpace.Normal;
 			descriptionPreview.style.marginBottom = 12;
 			info.Add(descriptionPreview);
@@ -3148,21 +3157,21 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			if (config.buildPC)
 			{
 				var pcBadge = new Label("PC");
-				pcBadge.AddToClassList("au-avatar-tile-badge");
+				pcBadge.AddToClassList("yucp-avatar-tile-badge");
 				quickInfo.Add(pcBadge);
 			}
 
 			if (config.buildQuest)
 			{
 				var questBadge = new Label("Quest");
-				questBadge.AddToClassList("au-avatar-tile-badge");
+				questBadge.AddToClassList("yucp-avatar-tile-badge");
 				quickInfo.Add(questBadge);
 			}
 
 			if (config.tags != null && config.tags.Count > 0)
 			{
 				var tagsLabel = new Label($"Tags: {string.Join(", ", config.tags)}");
-				tagsLabel.AddToClassList("au-label-small");
+				tagsLabel.AddToClassList("yucp-label-small");
 				tagsLabel.style.color = new Color(0.7f, 0.7f, 0.7f);
 				tagsLabel.style.marginLeft = 8;
 				quickInfo.Add(tagsLabel);
@@ -3182,14 +3191,14 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					EditorGUIUtility.PingObject(config.avatarPrefab);
 				}
 			}) { text = "Ping Prefab" };
-			pingButton.AddToClassList("au-button");
-			pingButton.AddToClassList("au-button-small");
+			pingButton.AddToClassList("yucp-button");
+			pingButton.AddToClassList("yucp-button-small");
 			actionsRow.Add(pingButton);
 
 			var removeButton = new Button(() => RemoveAvatarFromProfile(profile, index)) { text = "Remove" };
-			removeButton.AddToClassList("au-button");
-			removeButton.AddToClassList("au-button-danger");
-			removeButton.AddToClassList("au-button-small");
+			removeButton.AddToClassList("yucp-button");
+			removeButton.AddToClassList("yucp-button-danger");
+			removeButton.AddToClassList("yucp-button-small");
 			removeButton.style.marginLeft = 8;
 			actionsRow.Add(removeButton);
 
@@ -3201,7 +3210,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateHeroStats(AvatarCollection profile, AvatarAsset config)
 		{
 			var row = new VisualElement();
-			row.AddToClassList("au-hero-stat-row");
+			row.AddToClassList("yucp-hero-stat-row");
 
 			row.Add(CreateHeroStatCard("Avatars", (profile.avatars?.Count ?? 0).ToString()));
 			row.Add(CreateHeroStatCard("Last Build", string.IsNullOrEmpty(profile.LastBuildTime) ? "Never" : profile.LastBuildTime));
@@ -3213,14 +3222,14 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateHeroStatCard(string label, string value)
 		{
 			var card = new VisualElement();
-			card.AddToClassList("au-hero-stat-card");
+			card.AddToClassList("yucp-hero-stat-card");
 
 			var labelEl = new Label(label);
-			labelEl.AddToClassList("au-hero-stat-label");
+			labelEl.AddToClassList("yucp-hero-stat-label");
 			card.Add(labelEl);
 
 			var valueEl = new Label(value);
-			valueEl.AddToClassList("au-hero-stat-value");
+			valueEl.AddToClassList("yucp-hero-stat-value");
 			card.Add(valueEl);
 
 			return card;
@@ -3229,15 +3238,15 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateHeroQuickActions(AvatarCollection profile, AvatarAsset config, int index)
 		{
 			var container = new VisualElement();
-			container.AddToClassList("au-hero-quick-actions");
+			container.AddToClassList("yucp-hero-quick-actions");
 
 			var buildButton = new Button(() => BuildSingleAvatar(profile, config, PlatformSwitcher.BuildPlatform.PC))
 			{
 				text = "Build PC"
 			};
-			buildButton.AddToClassList("au-button");
-			buildButton.AddToClassList("au-button-build");
-			buildButton.AddToClassList("au-button-small");
+			buildButton.AddToClassList("yucp-button");
+			buildButton.AddToClassList("yucp-button-build");
+			buildButton.AddToClassList("yucp-button-small");
 			buildButton.SetEnabled(config.avatarPrefab != null);
 			container.Add(buildButton);
 
@@ -3245,9 +3254,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				text = "Build Quest"
 			};
-			questButton.AddToClassList("au-button");
-			questButton.AddToClassList("au-button-build");
-			questButton.AddToClassList("au-button-small");
+			questButton.AddToClassList("yucp-button");
+			questButton.AddToClassList("yucp-button-build");
+			questButton.AddToClassList("yucp-button-small");
 			questButton.SetEnabled(config.avatarPrefab != null);
 			container.Add(questButton);
 
@@ -3262,9 +3271,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				text = "Select Prefab"
 			};
-			openButton.AddToClassList("au-button");
-			openButton.AddToClassList("au-button-action");
-			openButton.AddToClassList("au-button-small");
+			openButton.AddToClassList("yucp-button");
+			openButton.AddToClassList("yucp-button-action");
+			openButton.AddToClassList("yucp-button-small");
 			container.Add(openButton);
 
 			return container;
@@ -3294,10 +3303,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateFormRow(string labelText, string tooltip = null)
 		{
 			var row = new VisualElement();
-			row.AddToClassList("au-form-row");
+			row.AddToClassList("yucp-form-row");
 
 			var label = new Label(labelText);
-			label.AddToClassList("au-form-label");
+			label.AddToClassList("yucp-form-label");
 			if (!string.IsNullOrEmpty(tooltip))
 			{
 				label.tooltip = tooltip;
@@ -3318,11 +3327,11 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				var emptyCard = CreateCard("Build Actions", null);
 				var emptyLabel = new Label("Select an avatar to build");
-				emptyLabel.AddToClassList("au-label-secondary");
+				emptyLabel.AddToClassList("yucp-label-secondary");
 				emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
 				emptyLabel.style.paddingTop = 20;
 				emptyLabel.style.paddingBottom = 20;
-				emptyCard.Q(className: "au-card-content").Add(emptyLabel);
+				emptyCard.Q(className: "yucp-card-content").Add(emptyLabel);
 				_buildActionsHost.Add(emptyCard);
 				return;
 			}
@@ -3330,7 +3339,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			var section = new VisualElement();
 
 			var helpText = new Label("Build and upload your avatar to VRChat. Test builds allow you to preview before publishing.");
-			helpText.AddToClassList("au-help-text");
+			helpText.AddToClassList("yucp-help-text");
 			helpText.style.marginBottom = 16;
 			section.Add(helpText);
 
@@ -3342,7 +3351,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			if (hasErrors)
 			{
 				var errorBox = new VisualElement();
-				errorBox.AddToClassList("au-validation-error");
+				errorBox.AddToClassList("yucp-validation-error");
 				errorBox.style.marginBottom = 16;
 				errorBox.style.paddingTop = 16;
 				errorBox.style.paddingBottom = 16;
@@ -3350,7 +3359,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				errorBox.style.paddingRight = 16;
 
 				var errorTitle = new Label("Cannot Publish - Fix Issues Below");
-				errorTitle.AddToClassList("au-validation-error-text");
+				errorTitle.AddToClassList("yucp-validation-error-text");
 				errorTitle.style.fontSize = 14;
 				errorTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
 				errorTitle.style.marginBottom = 8;
@@ -3361,7 +3370,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				foreach (var error in validationErrors)
 				{
 					var errorItem = new Label($"• {error}");
-					errorItem.AddToClassList("au-validation-error-text");
+					errorItem.AddToClassList("yucp-validation-error-text");
 					errorItem.style.marginBottom = 4;
 					errorItem.style.whiteSpace = WhiteSpace.Normal;
 					errorList.Add(errorItem);
@@ -3369,7 +3378,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				errorBox.Add(errorList);
 
 				var helpNote = new Label("Please fix the issues shown in the Validation section above before publishing.");
-				helpNote.AddToClassList("au-help-text");
+				helpNote.AddToClassList("yucp-help-text");
 				helpNote.style.marginTop = 12;
 				helpNote.style.fontSize = 11;
 				errorBox.Add(helpNote);
@@ -3378,7 +3387,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			}
 
 			var buttonContainer = new VisualElement();
-			buttonContainer.AddToClassList("au-build-actions-container");
+			buttonContainer.AddToClassList("yucp-build-actions-container");
 			buttonContainer.style.flexDirection = FlexDirection.Row;
 			buttonContainer.style.justifyContent = Justify.FlexStart;
 			buttonContainer.style.flexWrap = Wrap.Wrap;
@@ -3390,8 +3399,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				text = "Build & Test"
 			};
-			_testButton.AddToClassList("au-button");
-			_testButton.AddToClassList("au-button-large");
+			_testButton.AddToClassList("yucp-button");
+			_testButton.AddToClassList("yucp-button-large");
 			_testButton.style.marginRight = 12;
 			_testButton.SetEnabled(canStart);
 			buttonContainer.Add(_testButton);
@@ -3400,9 +3409,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				text = "Build & Publish"
 			};
-			_buildButton.AddToClassList("au-button");
-			_buildButton.AddToClassList("au-button-primary");
-			_buildButton.AddToClassList("au-button-large");
+			_buildButton.AddToClassList("yucp-button");
+			_buildButton.AddToClassList("yucp-button-primary");
+			_buildButton.AddToClassList("yucp-button-large");
 			_buildButton.SetEnabled(canPublish);
 			
 			// Add tooltip if disabled due to validation errors
@@ -3417,7 +3426,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Note: Platform selection is available in Advanced Settings section
 			var platformNote = new Label("Platform selection is available in Advanced Settings below.");
-			platformNote.AddToClassList("au-help-text");
+			platformNote.AddToClassList("yucp-help-text");
 			platformNote.style.marginTop = 12;
 			platformNote.style.fontSize = 11;
 			section.Add(platformNote);
@@ -5032,16 +5041,16 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				var tile = tiles[i];
 				if (i == _selectedAvatarIndex)
 				{
-					tile.AddToClassList("au-avatar-tile-selected");
-					tile.RemoveFromClassList("au-avatar-tile-multi-selected");
+					tile.AddToClassList("yucp-avatar-tile-selected");
+					tile.RemoveFromClassList("yucp-avatar-tile-multi-selected");
 				}
 				else
 				{
-					tile.RemoveFromClassList("au-avatar-tile-selected");
+					tile.RemoveFromClassList("yucp-avatar-tile-selected");
 					// Keep multi-select class if this tile is in multi-select
 					if (!_selectedAvatarIndices.Contains(i))
 					{
-						tile.RemoveFromClassList("au-avatar-tile-multi-selected");
+						tile.RemoveFromClassList("yucp-avatar-tile-multi-selected");
 					}
 				}
 			}
@@ -5093,7 +5102,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					var newTile = CreateAvatarTile(profile, config, avatarIndex);
 					if (avatarIndex == _selectedAvatarIndex)
 					{
-						newTile.AddToClassList("au-avatar-tile-selected");
+						newTile.AddToClassList("yucp-avatar-tile-selected");
 					}
 
 					// Insert at the same position
@@ -5257,24 +5266,24 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreateCard(string title, VisualElement content, string description = null)
 		{
 			var card = new VisualElement();
-			card.AddToClassList("au-card");
+			card.AddToClassList("yucp-card");
 
 			if (!string.IsNullOrEmpty(title))
 			{
 				var titleLabel = new Label(title);
-				titleLabel.AddToClassList("au-card-title");
+				titleLabel.AddToClassList("yucp-card-title");
 				card.Add(titleLabel);
 			}
 
 			if (!string.IsNullOrEmpty(description))
 			{
 				var descriptionLabel = new Label(description);
-				descriptionLabel.AddToClassList("au-card-subtitle");
+				descriptionLabel.AddToClassList("yucp-card-subtitle");
 				card.Add(descriptionLabel);
 			}
 
 			var contentContainer = new VisualElement();
-			contentContainer.AddToClassList("au-card-content");
+			contentContainer.AddToClassList("yucp-card-content");
 			if (content != null)
 			{
 				contentContainer.Add(content);
@@ -5299,11 +5308,11 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				var emptyCard = CreateCard("Basic Information", null);
 				var emptyLabel = new Label("Select an avatar to edit metadata");
-				emptyLabel.AddToClassList("au-label-secondary");
+				emptyLabel.AddToClassList("yucp-label-secondary");
 				emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
 				emptyLabel.style.paddingTop = 20;
 				emptyLabel.style.paddingBottom = 20;
-				emptyCard.Q(className: "au-card-content").Add(emptyLabel);
+				emptyCard.Q(className: "yucp-card-content").Add(emptyLabel);
 				_metadataSectionHost.Add(emptyCard);
 				return;
 			}
@@ -5325,10 +5334,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			if (_currentHeroConfig.avatarPrefab == null)
 			{
 				var helpBox = new VisualElement();
-				helpBox.AddToClassList("au-help-box");
+				helpBox.AddToClassList("yucp-help-box");
 				helpBox.style.marginBottom = 16;
 				var helpText = new Label("👋 New here? Start by selecting an Avatar Prefab below. Then fill in the name, description, and other details. When ready, scroll down to the Build section to upload your avatar.");
-				helpText.AddToClassList("au-help-box-text");
+				helpText.AddToClassList("yucp-help-box-text");
 				helpBox.Add(helpText);
 				section.Add(helpBox);
 			}
@@ -5336,13 +5345,13 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			// Avatar Prefab - MOST IMPORTANT, should be first and visible
 			var prefabRow = CreateFormRow("Avatar Prefab");
 			var prefabHelp = new Label("Select the avatar prefab you want to upload. This must have a VRCAvatarDescriptor component.");
-			prefabHelp.AddToClassList("au-label-small");
+			prefabHelp.AddToClassList("yucp-label-small");
 			prefabHelp.style.color = new Color(0.6f, 0.6f, 0.6f);
 			prefabHelp.style.marginBottom = 4;
 			section.Add(prefabHelp);
 
 			var prefabField = new ObjectField { objectType = typeof(GameObject), value = _currentHeroConfig.avatarPrefab };
-			prefabField.AddToClassList("au-form-field");
+			prefabField.AddToClassList("yucp-form-field");
 			prefabField.RegisterValueChangedCallback(evt =>
 			{
 				if (_currentHeroConfig != null)
@@ -5419,8 +5428,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			// Basic Info - Name and Description
 			var nameRow = CreateFormRow("Name");
 			var nameField = new TextField { value = _currentHeroConfig.avatarName ?? string.Empty };
-			nameField.AddToClassList("au-input");
-			nameField.AddToClassList("au-form-field");
+			nameField.AddToClassList("yucp-input");
+			nameField.AddToClassList("yucp-form-field");
 			_nameFieldRef = nameField; // Store reference
 			nameField.RegisterCallback<FocusInEvent>(_ => _isUserTyping = true);
 			nameField.RegisterCallback<FocusOutEvent>(_ => _isUserTyping = false);
@@ -5430,10 +5439,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				UpdateActiveAvatarName(evt.newValue);
 				// Don't sync to Control Panel on every keystroke - defer until focus out
 				// Don't rebuild UI - just update the hero card title if needed
-				var heroCard = _heroInfoContainer.Q(className: "au-hero-info");
+				var heroCard = _heroInfoContainer.Q(className: "yucp-hero-info");
 				if (heroCard != null)
 				{
-					var titleLabel = heroCard.Q<Label>(className: "au-hero-title");
+					var titleLabel = heroCard.Q<Label>(className: "yucp-hero-title");
 					if (titleLabel != null)
 						titleLabel.text = evt.newValue;
 				}
@@ -5450,9 +5459,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			var descRow = CreateFormRow("Description");
 			var descField = new TextField { value = _currentHeroConfig.description ?? string.Empty };
 			descField.multiline = true;
-			descField.AddToClassList("au-input");
-			descField.AddToClassList("au-input-multiline");
-			descField.AddToClassList("au-form-field");
+			descField.AddToClassList("yucp-input");
+			descField.AddToClassList("yucp-input-multiline");
+			descField.AddToClassList("yucp-form-field");
 			descField.style.minHeight = 60;
 			_descFieldRef = descField; // Store reference
 			descField.RegisterCallback<FocusInEvent>(_ => _isUserTyping = true);
@@ -5473,7 +5482,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			section.Add(descRow);
 
 			var tagsLabel = new Label("Tags");
-			tagsLabel.AddToClassList("au-form-label");
+			tagsLabel.AddToClassList("yucp-form-label");
 			tagsLabel.style.marginBottom = 8;
 			section.Add(tagsLabel);
 
@@ -5532,7 +5541,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			tagsInputRow.style.alignItems = Align.Center;
 
 			var tagsInput = new TextField();
-			tagsInput.AddToClassList("au-input");
+			tagsInput.AddToClassList("yucp-input");
 			tagsInput.style.flexGrow = 1;
 			tagsInput.style.marginRight = 8;
 			tagsInput.RegisterCallback<KeyDownEvent>(evt =>
@@ -5562,9 +5571,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					BuildMetadataSection();
 				}
 			}) { text = "Add Tag" };
-			addTagButton.AddToClassList("au-button");
-			addTagButton.AddToClassList("au-button-action");
-			addTagButton.AddToClassList("au-button-small");
+			addTagButton.AddToClassList("yucp-button");
+			addTagButton.AddToClassList("yucp-button-action");
+			addTagButton.AddToClassList("yucp-button-small");
 
 			tagsInputRow.Add(tagsInput);
 			tagsInputRow.Add(addTagButton);
@@ -5575,7 +5584,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			// Category
 			var categoryRow = CreateFormRow("Category");
 			var categoryField = new EnumField(_currentHeroConfig.category);
-			categoryField.AddToClassList("au-form-field");
+			categoryField.AddToClassList("yucp-form-field");
 			categoryField.RegisterValueChangedCallback(evt =>
 			{
 				if (_currentHeroConfig != null)
@@ -5596,7 +5605,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					// Use VRChat's StyleField which is a PopupField that loads styles from API (like "Sci Fi", "Anime", etc.)
 					var primaryStyleRow = CreateFormRow("Primary Style");
 					var primaryStyleField = new StyleField();
-					primaryStyleField.AddToClassList("au-form-field");
+					primaryStyleField.AddToClassList("yucp-form-field");
 					
 					if (ControlPanelDataBridge.TryGetAvatarStyle(_controlPanelBuilder, true, out var primaryStyle))
 					{
@@ -5619,7 +5628,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 					var secondaryStyleRow = CreateFormRow("Secondary Style");
 					var secondaryStyleField = new StyleField();
-					secondaryStyleField.AddToClassList("au-form-field");
+					secondaryStyleField.AddToClassList("yucp-form-field");
 					
 					if (ControlPanelDataBridge.TryGetAvatarStyle(_controlPanelBuilder, false, out var secondaryStyle))
 					{
@@ -5646,18 +5655,18 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Advanced Settings Foldout
 			var advancedFoldout = new Foldout { text = "Advanced Settings", value = false };
-			advancedFoldout.AddToClassList("au-hero-foldout");
+			advancedFoldout.AddToClassList("yucp-hero-foldout");
 			advancedFoldout.style.marginTop = 12;
 
 			// Platforms
 			var platformsRow = CreateFormRow("Build For");
 			var platformsContainer = new VisualElement();
-			platformsContainer.AddToClassList("au-form-field");
+			platformsContainer.AddToClassList("yucp-form-field");
 			platformsContainer.style.flexDirection = FlexDirection.Row;
 			platformsContainer.style.alignItems = Align.Center;
 
 			var pcToggle = new Toggle("PC") { value = _currentHeroConfig.buildPC };
-			pcToggle.AddToClassList("au-toggle");
+			pcToggle.AddToClassList("yucp-toggle");
 			pcToggle.style.marginRight = 12;
 			pcToggle.RegisterValueChangedCallback(evt =>
 			{
@@ -5672,7 +5681,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			platformsContainer.Add(pcToggle);
 
 			var questToggle = new Toggle("Quest") { value = _currentHeroConfig.buildQuest };
-			questToggle.AddToClassList("au-toggle");
+			questToggle.AddToClassList("yucp-toggle");
 			questToggle.RegisterValueChangedCallback(evt =>
 			{
 				if (_currentHeroConfig != null)
@@ -5691,8 +5700,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			// Version
 			var versionRow = CreateFormRow("Version");
 			var versionField = new TextField { value = _currentHeroConfig.version ?? string.Empty };
-			versionField.AddToClassList("au-input");
-			versionField.AddToClassList("au-form-field");
+			versionField.AddToClassList("yucp-input");
+			versionField.AddToClassList("yucp-form-field");
 			versionField.RegisterValueChangedCallback(evt =>
 			{
 				if (_currentHeroConfig != null)
@@ -5707,14 +5716,14 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Manual Blueprint ID Editing (Advanced)
 			var blueprintHelp = new Label("Manually set blueprint IDs for existing avatars. Leave empty to let VRChat assign on upload.");
-			blueprintHelp.AddToClassList("au-help-box-text");
+			blueprintHelp.AddToClassList("yucp-help-box-text");
 			blueprintHelp.style.marginBottom = 8;
 			advancedFoldout.Add(blueprintHelp);
 
 			var blueprintPcRow = CreateFormRow("Blueprint ID (PC)");
 			var blueprintPcField = new TextField { value = _currentHeroConfig.blueprintIdPC ?? string.Empty };
-			blueprintPcField.AddToClassList("au-input");
-			blueprintPcField.AddToClassList("au-form-field");
+			blueprintPcField.AddToClassList("yucp-input");
+			blueprintPcField.AddToClassList("yucp-form-field");
 			blueprintPcField.RegisterValueChangedCallback(evt =>
 			{
 				if (_currentHeroConfig != null)
@@ -5729,8 +5738,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			var blueprintQuestRow = CreateFormRow("Blueprint ID (Quest)");
 			var blueprintQuestField = new TextField { value = _currentHeroConfig.blueprintIdQuest ?? string.Empty };
-			blueprintQuestField.AddToClassList("au-input");
-			blueprintQuestField.AddToClassList("au-form-field");
+			blueprintQuestField.AddToClassList("yucp-input");
+			blueprintQuestField.AddToClassList("yucp-form-field");
 			blueprintQuestField.RegisterValueChangedCallback(evt =>
 			{
 				if (_currentHeroConfig != null)
@@ -5753,24 +5762,24 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			blueprintDisplay.style.borderTopColor = new Color(0.2f, 0.2f, 0.2f);
 
 			var blueprintLabel = new Label("Blueprint IDs");
-			blueprintLabel.AddToClassList("au-form-label");
+			blueprintLabel.AddToClassList("yucp-form-label");
 			blueprintLabel.style.marginBottom = 8;
 			blueprintDisplay.Add(blueprintLabel);
 
 			var blueprintInfo = new Label("Assigned by VRChat on upload. Use Advanced Settings to manually set for existing avatars.");
-			blueprintInfo.AddToClassList("au-label-small");
+			blueprintInfo.AddToClassList("yucp-label-small");
 			blueprintInfo.style.color = new Color(0.6f, 0.6f, 0.6f);
 			blueprintInfo.style.marginBottom = 8;
 			blueprintDisplay.Add(blueprintInfo);
 
 			var pcIdLabel = new Label($"PC: {(_currentHeroConfig.blueprintIdPC ?? "Unassigned")}");
-			pcIdLabel.AddToClassList("au-label-small");
+			pcIdLabel.AddToClassList("yucp-label-small");
 			if (string.IsNullOrEmpty(_currentHeroConfig.blueprintIdPC))
 				pcIdLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
 			blueprintDisplay.Add(pcIdLabel);
 
 			var questIdLabel = new Label($"Quest: {(_currentHeroConfig.blueprintIdQuest ?? "Unassigned")}");
-			questIdLabel.AddToClassList("au-label-small");
+			questIdLabel.AddToClassList("yucp-label-small");
 			if (string.IsNullOrEmpty(_currentHeroConfig.blueprintIdQuest))
 				questIdLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
 			blueprintDisplay.Add(questIdLabel);
@@ -5803,8 +5812,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				text = "Remove Avatar"
 			};
-			removeAvatarButton.AddToClassList("au-button");
-			removeAvatarButton.AddToClassList("au-button-danger");
+			removeAvatarButton.AddToClassList("yucp-button");
+			removeAvatarButton.AddToClassList("yucp-button-danger");
 			removeAvatarButton.tooltip = "Remove this avatar from the collection";
 			removeAvatarRow.Add(removeAvatarButton);
 			section.Add(removeAvatarRow);
@@ -5821,11 +5830,11 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				var emptyCard = CreateCard("Performance", null, "View detailed performance metrics for your avatar. VRChat rates avatars based on polygon count and material usage.");
 				var emptyLabel = new Label("Select an avatar prefab to see performance metrics");
-				emptyLabel.AddToClassList("au-label-secondary");
+				emptyLabel.AddToClassList("yucp-label-secondary");
 				emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
 				emptyLabel.style.paddingTop = 20;
 				emptyLabel.style.paddingBottom = 20;
-				emptyCard.Q(className: "au-card-content").Add(emptyLabel);
+				emptyCard.Q(className: "yucp-card-content").Add(emptyLabel);
 				_performanceSectionHost.Add(emptyCard);
 				return;
 			}
@@ -5839,7 +5848,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			var section = new VisualElement();
 
 			var helpText = new Label("VRChat evaluates avatars based on polygon count and material usage. These metrics determine your avatar's performance rank.");
-			helpText.AddToClassList("au-label-small");
+			helpText.AddToClassList("yucp-label-small");
 			helpText.style.color = new Color(0.7f, 0.7f, 0.7f);
 			helpText.style.marginBottom = 12;
 			helpText.style.whiteSpace = WhiteSpace.Normal;
@@ -5866,17 +5875,17 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Material Count (shared)
 			var materialCard = new VisualElement();
-			materialCard.AddToClassList("au-performance-card");
+			materialCard.AddToClassList("yucp-performance-card");
 			materialCard.style.marginRight = 12;
 			materialCard.style.marginBottom = 12;
 			materialCard.style.minWidth = 160;
 
 			var materialLabel = new Label("Materials");
-			materialLabel.AddToClassList("au-performance-label");
+			materialLabel.AddToClassList("yucp-performance-label");
 			materialCard.Add(materialLabel);
 
 			var materialValue = new Label(_currentHeroConfig.materialCount.ToString());
-			materialValue.AddToClassList("au-performance-value");
+			materialValue.AddToClassList("yucp-performance-value");
 			materialCard.Add(materialValue);
 
 			var materialStatus = _currentHeroConfig.materialCount <= 1 ? "Excellent" :
@@ -5885,12 +5894,12 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				_currentHeroConfig.materialCount <= 4 ? "Poor" : "Very Poor";
 			
 			var materialStatusLabel = new Label(materialStatus);
-			materialStatusLabel.AddToClassList("au-performance-rating");
+			materialStatusLabel.AddToClassList("yucp-performance-rating");
 			materialStatusLabel.style.color = GetMaterialStatusColor(_currentHeroConfig.materialCount);
 			materialCard.Add(materialStatusLabel);
 
 			var materialInsight = new Label(GetMaterialInsight(_currentHeroConfig.materialCount));
-			materialInsight.AddToClassList("au-label-small");
+			materialInsight.AddToClassList("yucp-label-small");
 			materialInsight.style.color = _currentHeroConfig.materialCount > 4 
 				? new Color(0.9f, 0.5f, 0.3f) 
 				: new Color(0.7f, 0.7f, 0.7f);
@@ -5926,14 +5935,14 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement CreatePerformanceCard(string platform, int polyCount, PerformanceRating rating, int materialCount)
 		{
 			var card = new VisualElement();
-			card.AddToClassList("au-performance-card");
+			card.AddToClassList("yucp-performance-card");
 			card.style.marginRight = 12;
 			card.style.marginBottom = 12;
 			card.style.minWidth = 180;
 			card.style.flexGrow = 1;
 
 			var platformLabel = new Label($"{platform} Platform");
-			platformLabel.AddToClassList("au-performance-label");
+			platformLabel.AddToClassList("yucp-performance-label");
 			platformLabel.style.fontSize = 12;
 			platformLabel.style.marginBottom = 8;
 			card.Add(platformLabel);
@@ -5945,12 +5954,12 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			trianglesRow.style.marginBottom = 4;
 
 			var polyValue = new Label(polyCount > 0 ? polyCount.ToString("N0") : "—");
-			polyValue.AddToClassList("au-performance-value");
+			polyValue.AddToClassList("yucp-performance-value");
 			polyValue.style.fontSize = 24;
 			trianglesRow.Add(polyValue);
 
 			var polyLabel = new Label(" triangles");
-			polyLabel.AddToClassList("au-performance-label");
+			polyLabel.AddToClassList("yucp-performance-label");
 			polyLabel.style.fontSize = 11;
 			polyLabel.style.marginLeft = 4;
 			trianglesRow.Add(polyLabel);
@@ -5959,7 +5968,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Performance rating badge
 			var ratingLabel = new Label(GetPerformanceRatingText(rating));
-			ratingLabel.AddToClassList("au-performance-rating");
+			ratingLabel.AddToClassList("yucp-performance-rating");
 			ratingLabel.style.color = GetPerformanceRatingColor(rating);
 			ratingLabel.style.marginTop = 4;
 			ratingLabel.style.marginBottom = 8;
@@ -5967,7 +5976,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Detailed insight with actionable information
 			var insightLabel = new Label(GetPerformanceInsight(rating, polyCount, platform == "Quest"));
-			insightLabel.AddToClassList("au-label-small");
+			insightLabel.AddToClassList("yucp-label-small");
 			insightLabel.style.color = rating == PerformanceRating.VeryPoor || rating == PerformanceRating.Poor 
 				? new Color(0.9f, 0.6f, 0.4f) 
 				: new Color(0.7f, 0.7f, 0.7f);
@@ -5977,7 +5986,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Material count for this platform
 			var materialInfo = new Label($"Materials: {materialCount}");
-			materialInfo.AddToClassList("au-label-small");
+			materialInfo.AddToClassList("yucp-label-small");
 			materialInfo.style.color = new Color(0.6f, 0.6f, 0.6f);
 			materialInfo.style.marginTop = 8;
 			card.Add(materialInfo);
@@ -6195,7 +6204,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			var statusOptions = new List<string> { "Private", "Public" };
 			var currentStatus = _currentHeroConfig.releaseStatus == ReleaseStatus.Public ? "Public" : "Private";
 			var statusField = new PopupField<string>(statusOptions, currentStatus);
-			statusField.AddToClassList("au-form-field");
+			statusField.AddToClassList("yucp-form-field");
 			statusField.RegisterValueChangedCallback(evt =>
 			{
 				UpdateActiveAvatarVisibility(evt.newValue.ToLowerInvariant());
@@ -6205,11 +6214,11 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			section.Add(statusRow);
 
 			var helpBox = new VisualElement();
-			helpBox.AddToClassList("au-help-box");
+			helpBox.AddToClassList("yucp-help-box");
 			var helpText = new Label(_currentHeroConfig.releaseStatus == ReleaseStatus.Public
 				? "Public avatars are visible to everyone and can be used by other users."
 				: "Private avatars are only visible to you and cannot be used by other users.");
-			helpText.AddToClassList("au-help-box-text");
+			helpText.AddToClassList("yucp-help-box-text");
 			helpBox.Add(helpText);
 			section.Add(helpBox);
 
@@ -6230,11 +6239,11 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				{
 					var emptyCard = CreateCard("Validation", null, "Check for issues and warnings before uploading. Fix any errors to ensure your avatar uploads successfully.");
 					var warningBox = new VisualElement();
-					warningBox.AddToClassList("au-validation-warning");
+					warningBox.AddToClassList("yucp-validation-warning");
 					var warningText = new Label("Control Panel builder unavailable. Click 'Refresh Builder' to connect.");
-					warningText.AddToClassList("au-validation-warning-text");
+					warningText.AddToClassList("yucp-validation-warning-text");
 					warningBox.Add(warningText);
-					emptyCard.Q(className: "au-card-content").Add(warningBox);
+					emptyCard.Q(className: "yucp-card-content").Add(warningBox);
 					_validationSectionHost.Add(emptyCard);
 				}
 				return;
@@ -6248,9 +6257,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			if (isNewAvatar && _currentHeroConfig.avatarIcon == null)
 			{
 				var iconErrorCard = new VisualElement();
-				iconErrorCard.AddToClassList("au-validation-error");
+				iconErrorCard.AddToClassList("yucp-validation-error");
 				var iconErrorText = new Label("Avatar icon is required before first upload. Use the Capture or Upload button in the hero section to add an icon.");
-				iconErrorText.AddToClassList("au-validation-error-text");
+				iconErrorText.AddToClassList("yucp-validation-error-text");
 				iconErrorText.style.whiteSpace = WhiteSpace.Normal;
 				iconErrorCard.Add(iconErrorText);
 				section.Add(iconErrorCard);
@@ -6258,9 +6267,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			else if (!isNewAvatar && _currentHeroConfig.avatarIcon == null)
 			{
 				var iconWarningCard = new VisualElement();
-				iconWarningCard.AddToClassList("au-validation-warning");
+				iconWarningCard.AddToClassList("yucp-validation-warning");
 				var iconWarningText = new Label("Avatar icon is missing. Consider adding one using the Capture or Upload button in the hero section.");
-				iconWarningText.AddToClassList("au-validation-warning-text");
+				iconWarningText.AddToClassList("yucp-validation-warning-text");
 				iconWarningText.style.whiteSpace = WhiteSpace.Normal;
 				iconWarningCard.Add(iconWarningText);
 				section.Add(iconWarningCard);
@@ -6290,23 +6299,23 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 							var validationCard = new VisualElement();
 							if (severity == ControlPanelDataBridge.ValidationSeverity.Error)
 							{
-								validationCard.AddToClassList("au-validation-error");
+								validationCard.AddToClassList("yucp-validation-error");
 								var errorText = new Label(message);
-								errorText.AddToClassList("au-validation-error-text");
+								errorText.AddToClassList("yucp-validation-error-text");
 								validationCard.Add(errorText);
 							}
 							else if (severity == ControlPanelDataBridge.ValidationSeverity.Warning)
 							{
-								validationCard.AddToClassList("au-validation-warning");
+								validationCard.AddToClassList("yucp-validation-warning");
 								var warningText = new Label(message);
-								warningText.AddToClassList("au-validation-warning-text");
+								warningText.AddToClassList("yucp-validation-warning-text");
 								validationCard.Add(warningText);
 							}
 							else
 							{
-								validationCard.AddToClassList("au-validation-success");
+								validationCard.AddToClassList("yucp-validation-success");
 								var infoText = new Label(message);
-								infoText.AddToClassList("au-validation-success-text");
+								infoText.AddToClassList("yucp-validation-success-text");
 								validationCard.Add(infoText);
 							}
 							section.Add(validationCard);
@@ -6320,9 +6329,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				else
 				{
 					var successCard = new VisualElement();
-					successCard.AddToClassList("au-validation-success");
+					successCard.AddToClassList("yucp-validation-success");
 					var successText = new Label("No validation issues found. Ready to build.");
-					successText.AddToClassList("au-validation-success-text");
+					successText.AddToClassList("yucp-validation-success-text");
 					section.Add(successCard);
 				}
 			}
@@ -6330,9 +6339,9 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				Debug.LogWarning($"[AvatarUploader] Failed to get validation issues: {ex.Message}");
 				var warningBox = new VisualElement();
-				warningBox.AddToClassList("au-validation-warning");
+				warningBox.AddToClassList("yucp-validation-warning");
 				var warningText = new Label("Unable to retrieve validation issues from Control Panel.");
-				warningText.AddToClassList("au-validation-warning-text");
+				warningText.AddToClassList("yucp-validation-warning-text");
 				warningBox.Add(warningText);
 				section.Add(warningBox);
 			}
@@ -6356,7 +6365,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			var foldout = new Foldout();
 			foldout.text = "Advanced Settings";
 			foldout.value = false; // Collapsed by default
-			foldout.AddToClassList("au-foldout");
+			foldout.AddToClassList("yucp-foldout");
 			content.style.paddingTop = 12;
 
 			// Blueprint ID Editor
@@ -6372,7 +6381,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Additional advanced settings can be added here
 			var helpText = new Label("Advanced settings are for manual configuration. Most users don't need to modify these.");
-			helpText.AddToClassList("au-help-text");
+			helpText.AddToClassList("yucp-help-text");
 			helpText.style.marginTop = 12;
 			content.Add(helpText);
 
@@ -6719,7 +6728,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				return;
 
 			// Find the thumbnail grid in the gallery section
-			var thumbnailGrid = _gallerySectionHost.Q(className: "au-gallery-grid");
+			var thumbnailGrid = _gallerySectionHost.Q(className: "yucp-gallery-grid");
 			if (thumbnailGrid == null)
 				return;
 
@@ -6731,11 +6740,11 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				{
 					if (index == _activeHeroSlideIndex)
 					{
-						thumbnail.AddToClassList("au-gallery-thumbnail-active");
+						thumbnail.AddToClassList("yucp-gallery-thumbnail-active");
 					}
 					else
 					{
-						thumbnail.RemoveFromClassList("au-gallery-thumbnail-active");
+						thumbnail.RemoveFromClassList("yucp-gallery-thumbnail-active");
 					}
 					index++;
 				}
@@ -6771,8 +6780,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			// Show capture/upload buttons when on icon slide or when no icon exists
 			if (_heroOverlay != null)
 			{
-				var captureButton = _heroOverlay.Q<Button>(className: "au-hero-slide-button");
-				var uploadButton = _heroOverlay.Q<Button>(className: "au-hero-slide-button");
+				var captureButton = _heroOverlay.Q<Button>(className: "yucp-hero-slide-button");
+				var uploadButton = _heroOverlay.Q<Button>(className: "yucp-hero-slide-button");
 				// These buttons are positioned absolutely, so they're always visible when needed
 				// The logic is handled by their click handlers checking the current state
 			}
@@ -7474,7 +7483,7 @@ Select Continue to confirm you understand and accept these conditions.";
 			{
 				text = "Cancel"
 			};
-			cancelButton.AddToClassList("au-button");
+			cancelButton.AddToClassList("yucp-button");
 			cancelButton.style.marginRight = 12;
 			buttonContainer.Add(cancelButton);
 
@@ -7486,8 +7495,8 @@ Select Continue to confirm you understand and accept these conditions.";
 			{
 				text = "I Agree"
 			};
-			agreeButton.AddToClassList("au-button");
-			agreeButton.AddToClassList("au-button-primary");
+			agreeButton.AddToClassList("yucp-button");
+			agreeButton.AddToClassList("yucp-button-primary");
 			buttonContainer.Add(agreeButton);
 
 			modalContainer.Add(buttonContainer);
@@ -7514,22 +7523,22 @@ Select Continue to confirm you understand and accept these conditions.";
 			var root = rootVisualElement;
 
 			// Remove all responsive classes first
-			root.RemoveFromClassList("au-window-narrow");
-			root.RemoveFromClassList("au-window-medium");
-			root.RemoveFromClassList("au-window-wide");
+			root.RemoveFromClassList("yucp-window-narrow");
+			root.RemoveFromClassList("yucp-window-medium");
+			root.RemoveFromClassList("yucp-window-wide");
 
 			// Apply appropriate class based on width
 			if (width < 700f)
 			{
-				root.AddToClassList("au-window-narrow");
+				root.AddToClassList("yucp-window-narrow");
 			}
 			else if (width < 900f)
 			{
-				root.AddToClassList("au-window-medium");
+				root.AddToClassList("yucp-window-medium");
 			}
 			else
 			{
-				root.AddToClassList("au-window-wide");
+				root.AddToClassList("yucp-window-wide");
 			}
 
 			// Close overlay if window is wide enough
@@ -7643,25 +7652,25 @@ Select Continue to confirm you understand and accept these conditions.";
 		private VisualElement CreateLeftPaneOverlay()
 		{
 			var overlay = new VisualElement();
-			overlay.AddToClassList("au-left-pane-overlay");
+			overlay.AddToClassList("yucp-left-pane-overlay");
 
 			// Create a copy of the left pane structure
 			var container = new VisualElement();
-			container.AddToClassList("au-left-pane");
+			container.AddToClassList("yucp-left-pane");
 
 			var header = new Label("Collections");
-			header.AddToClassList("au-section-header");
+			header.AddToClassList("yucp-section-header");
 			container.Add(header);
 
 			// Add profile toolbar
 			var toolbarContainer = new VisualElement();
-			toolbarContainer.AddToClassList("au-profile-toolbar");
+			toolbarContainer.AddToClassList("yucp-profile-toolbar");
 			ConfigureProfileToolbarForOverlay(toolbarContainer);
 			container.Add(toolbarContainer);
 
 			// Add profile list scroll
 			var scrollView = new ScrollView();
-			scrollView.AddToClassList("au-profile-list-scroll");
+			scrollView.AddToClassList("yucp-profile-list-scroll");
 			var profileListHost = new VisualElement();
 			profileListHost.name = "profile-list-host-overlay";
 			scrollView.Add(profileListHost);
@@ -7682,7 +7691,7 @@ Select Continue to confirm you understand and accept these conditions.";
 			toolbarHost.Clear();
 
 			var searchRow = new VisualElement();
-			searchRow.AddToClassList("au-search-row");
+			searchRow.AddToClassList("yucp-search-row");
 			var searchField = new ToolbarSearchField();
 			searchField.RegisterValueChangedCallback(evt =>
 			{
@@ -7695,9 +7704,9 @@ Select Continue to confirm you understand and accept these conditions.";
 			toolbarHost.Add(searchRow);
 
 			var filterRow = new VisualElement();
-			filterRow.AddToClassList("au-filter-row");
+			filterRow.AddToClassList("yucp-filter-row");
 			var filterAvatars = new Toggle("Has Avatars") { value = _filterHasAvatarsValue };
-			filterAvatars.AddToClassList("au-toggle");
+			filterAvatars.AddToClassList("yucp-toggle");
 			filterAvatars.RegisterValueChangedCallback(evt =>
 			{
 				_filterHasAvatarsValue = evt.newValue;
@@ -7706,7 +7715,7 @@ Select Continue to confirm you understand and accept these conditions.";
 			filterRow.Add(filterAvatars);
 
 			var filterBuilds = new Toggle("Has Builds") { value = _filterHasBuildsValue };
-			filterBuilds.AddToClassList("au-toggle");
+			filterBuilds.AddToClassList("yucp-toggle");
 			filterBuilds.RegisterValueChangedCallback(evt =>
 			{
 				_filterHasBuildsValue = evt.newValue;
@@ -7716,20 +7725,20 @@ Select Continue to confirm you understand and accept these conditions.";
 			toolbarHost.Add(filterRow);
 
 			var buttonRow = new VisualElement();
-			buttonRow.AddToClassList("au-profile-buttons");
+			buttonRow.AddToClassList("yucp-profile-buttons");
 
 			var newButton = new Button(() => { CreateNewProfile(); CloseOverlay(); }) { text = "+ New" };
-			newButton.AddToClassList("au-button");
-			newButton.AddToClassList("au-button-action");
+			newButton.AddToClassList("yucp-button");
+			newButton.AddToClassList("yucp-button-action");
 			buttonRow.Add(newButton);
 
 			var cloneButton = new Button(() => { CloneSelectedProfile(); CloseOverlay(); }) { text = "Clone" };
-			cloneButton.AddToClassList("au-button");
+			cloneButton.AddToClassList("yucp-button");
 			buttonRow.Add(cloneButton);
 
 			var deleteButton = new Button(() => { DeleteSelectedProfile(); CloseOverlay(); }) { text = "Delete" };
-			deleteButton.AddToClassList("au-button");
-			deleteButton.AddToClassList("au-button-danger");
+			deleteButton.AddToClassList("yucp-button");
+			deleteButton.AddToClassList("yucp-button-danger");
 			buttonRow.Add(deleteButton);
 
 			toolbarHost.Add(buttonRow);

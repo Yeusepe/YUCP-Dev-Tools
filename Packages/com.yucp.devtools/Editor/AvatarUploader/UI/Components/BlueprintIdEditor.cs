@@ -13,21 +13,21 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			var container = new VisualElement();
 
 			var helpBox = new VisualElement();
-			helpBox.AddToClassList("au-help-box");
+			helpBox.AddToClassList("yucp-help-box");
 			var helpText = new Label("Blueprint IDs are assigned by VRChat when you upload. They will appear here after your first successful upload.");
-			helpText.AddToClassList("au-help-box-text");
+			helpText.AddToClassList("yucp-help-box-text");
 			helpBox.Add(helpText);
 			container.Add(helpBox);
 
 				var pcRow = new VisualElement();
-				pcRow.AddToClassList("au-form-row");
+				pcRow.AddToClassList("yucp-form-row");
 				var pcLabel = new Label("Blueprint ID (PC)");
-				pcLabel.AddToClassList("au-form-label");
+				pcLabel.AddToClassList("yucp-form-label");
 				pcRow.Add(pcLabel);
 			
 			var pcValue = string.IsNullOrEmpty(config.blueprintIdPC) ? "Unassigned" : config.blueprintIdPC;
 			var pcField = new Label(pcValue);
-				pcField.AddToClassList("au-form-field");
+				pcField.AddToClassList("yucp-form-field");
 			if (string.IsNullOrEmpty(config.blueprintIdPC))
 			{
 				pcField.style.color = new Color(0.6f, 0.6f, 0.6f);
@@ -37,14 +37,14 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				container.Add(pcRow);
 
 				var questRow = new VisualElement();
-				questRow.AddToClassList("au-form-row");
+				questRow.AddToClassList("yucp-form-row");
 				var questLabel = new Label("Blueprint ID (Quest)");
-				questLabel.AddToClassList("au-form-label");
+				questLabel.AddToClassList("yucp-form-label");
 				questRow.Add(questLabel);
 			
 			var questValue = string.IsNullOrEmpty(config.blueprintIdQuest) ? "Unassigned" : config.blueprintIdQuest;
 			var questField = new Label(questValue);
-				questField.AddToClassList("au-form-field");
+				questField.AddToClassList("yucp-form-field");
 			if (string.IsNullOrEmpty(config.blueprintIdQuest))
 			{
 				questField.style.color = new Color(0.6f, 0.6f, 0.6f);

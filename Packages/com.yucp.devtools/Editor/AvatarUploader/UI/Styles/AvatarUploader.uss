@@ -1,66 +1,12 @@
 /* ============================================================================
-   COLOR PALETTE - YUCP Brand Colors
+   Avatar Uploader - Component-Specific Styles
+   Shared design system styles are in YucpDesignSystem.uss
    ============================================================================ */
-.au-window {
-    /* Base colors */
-    --au-bg-primary: #090909;      /* YUCP dark background */
-    --au-bg-secondary: #1a1a1a;    /* Card/panel background */
-    --au-bg-tertiary: #2a2a2a;     /* List items, inputs */
-    --au-bg-hover: #525252;        /* Hover states - YUCP gray */
-    
-    /* Borders */
-    --au-border-primary: #2a2a2a;
-    --au-border-secondary: #3a3a3a;
-    
-    /* Text */
-    --au-text-primary: #ffffff;    /* Main text */
-    --au-text-secondary: #b0b0b0;  /* Secondary text */
-    --au-text-tertiary: #808080;   /* Subtle text */
-    
-    /* Accent colors - YUCP Brand */
-    --au-accent-primary: #36BFB1;  /* YUCP Teal - primary actions */
-    --au-accent-success: #36BFB1;  /* Teal - added/success */
-    --au-accent-warning: #E2A54A;  /* Orange - warnings */
-    --au-accent-danger: #E24A4A;   /* Red - deleted/danger */
-    --au-accent-info: #2CA497;     /* Info accent aligns with teal palette */
-}
 
 /* ============================================================================
-   BASE WINDOW & LAYOUT
+   SETTINGS BUTTON - AvatarUploader specific
    ============================================================================ */
-.au-window {
-    flex-grow: 1;
-    background-color: #090909;
-}
-
-.au-main-container {
-    flex-grow: 1;
-    flex-direction: column;
-    min-width: 0;
-}
-
-/* ============================================================================
-   TOP BAR - Header with Logo & Title
-   ============================================================================ */
-.au-top-bar {
-    flex-direction: row;
-    min-height: 100px;
-    padding-top: 16px;
-    padding-bottom: 16px;
-    padding-left: 20px;
-    padding-right: 20px;
-    background-color: #1a1a1a;
-    border-bottom-width: 1px;
-    border-bottom-color: #2a2a2a;
-    align-items: center;
-    flex-wrap: wrap;
-    overflow: hidden;
-    transition-property: flex-wrap, min-height, padding;
-    transition-duration: 0.5s, 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
-}
-
-.au-settings-button {
+.yucp-settings-button {
     width: 32px;
     height: 32px;
     border-radius: 16px;
@@ -78,356 +24,20 @@
     padding: 0;
 }
 
-.au-settings-button:hover {
+.yucp-settings-button:hover {
     background-color: #36BFB1;
     color: #ffffff;
     scale: 1.1 1.1;
 }
 
-.au-logo {
-    width: 116px;
-    height: 50px;
-    margin-right: 20px;
-    flex-shrink: 0;
-    transition-property: margin, width, height, opacity;
-    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
-}
-
-.au-title {
-    font-size: 20px;
-    color: #ffffff;
-    -unity-font-style: bold;
-}
-
 /* ============================================================================
-   3-PANE LAYOUT
+   AVATAR GRID - AvatarUploader specific
    ============================================================================ */
-.au-content-container {
-    flex-grow: 1;
-    flex-direction: row;
-    min-width: 0;
-    overflow: hidden;
-    position: relative;
-}
-
-.au-left-pane {
-    width: 270px;
-    min-width: 200px;
-    flex-shrink: 0;
-    background-color: #090909;
-    border-right-width: 1px;
-    border-right-color: #2a2a2a;
-    padding: 20px;
-    overflow: hidden;
-    transition-property: width, opacity, min-width, padding;
-    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
-}
-
-.au-right-pane {
-    flex-grow: 1;
-    flex-shrink: 1;
-    min-width: 0;
-    background-color: #090909;
-    overflow: hidden;
-    transition-property: opacity, width;
-    transition-duration: 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out;
-}
-
-.au-right-pane .au-panel {
-    padding-right: 24px;
-}
-
-/* ============================================================================
-   BUTTONS - Consistent sizing and styling
-   ============================================================================ */
-.au-button {
-    height: 32px;
-    padding-left: 16px;
-    padding-right: 16px;
-    border-radius: 6px;
-    background-color: #3a3a3a;
-    border-width: 0;
-    color: #ffffff;
-    font-size: 12px;
-    -unity-font-style: normal;
-    margin-left: 4px;
-    margin-right: 4px;
-    -unity-text-align: middle-center;
-    transition-duration: 0.1s, 0.1s, 0.15s;
-    transition-property: background-color, color, scale;
-    transition-timing-function: ease-out, ease-out, ease-out;
-    scale: 1 1;
-}
-
-.au-button:hover {
-    background-color: #525252;
-    color: #ffffff;
-    scale: 1.02 1.02;
-}
-
-.au-button:active {
-    background-color: #2a2a2a;
-    color: #ffffff;
-    scale: 0.98 0.98;
-}
-
-.au-button-primary {
-    background-color: #36BFB1;
-    color: #ffffff;
-    transition-duration: 0.1s, 0.1s, 0.15s;
-    transition-property: background-color, color, scale;
-    transition-timing-function: ease-out, ease-out, ease-out;
-    scale: 1 1;
-}
-
-.au-button-primary:hover {
-    background-color: #48d1c3;
-    scale: 1.02 1.02;
-}
-
-.au-button-primary:active {
-    background-color: #2da89c;
-    scale: 0.98 0.98;
-}
-
-.au-button-action {
-    background-color: #3a3a3a;
-    color: #ffffff;
-    transition-duration: 0.1s, 0.1s, 0.15s;
-    transition-property: background-color, color, scale;
-    transition-timing-function: ease-out, ease-out, ease-out;
-    scale: 1 1;
-}
-
-.au-button-action:hover {
-    background-color: #36BFB1;
-    color: #ffffff;
-    scale: 1.02 1.02;
-}
-
-.au-button-action:active {
-    background-color: #2da89c;
-    color: #ffffff;
-    scale: 0.98 0.98;
-}
-
-.au-button-danger {
-    background-color: #3a3a3a;
-    color: #ffffff;
-    transition-duration: 0.1s, 0.1s, 0.15s;
-    transition-property: background-color, color, scale;
-    transition-timing-function: ease-out, ease-out, ease-out;
-    scale: 1 1;
-}
-
-.au-button-danger:hover {
-    background-color: #E24A4A;
-    color: #ffffff;
-    scale: 1.02 1.02;
-}
-
-.au-button-danger:active {
-    background-color: #c93a3a;
-    color: #ffffff;
-    scale: 0.98 0.98;
-}
-
-.au-button-build {
-    background-color: #36BFB1;
-    color: #ffffff;
-    transition-duration: 0.1s, 0.1s, 0.15s;
-    transition-property: background-color, color, scale;
-    transition-timing-function: ease-out, ease-out, ease-out;
-    scale: 1 1;
-}
-
-.au-button-build:hover {
-    background-color: #48d1c3;
-    scale: 1.02 1.02;
-}
-
-.au-button-build:active {
-    background-color: #2da89c;
-    scale: 0.98 0.98;
-}
-
-.au-button-small {
-    height: 24px;
-    padding-left: 12px;
-    padding-right: 12px;
-    font-size: 11px;
-}
-
-.au-button-large {
-    height: 50px;
-    font-size: 14px;
-    padding-left: 24px;
-    padding-right: 24px;
-}
-
-/* ============================================================================
-   TYPOGRAPHY
-   ============================================================================ */
-.au-section-header {
-    font-size: 13px;
-    color: #b0b0b0;
-    -unity-font-style: bold;
-    letter-spacing: 0.5px;
-    margin-bottom: 12px;
-    text-transform: uppercase;
-}
-
-.au-label {
-    font-size: 12px;
-    color: #ffffff;
-}
-
-.au-label-secondary {
-    font-size: 11px;
-    color: #b0b0b0;
-}
-
-.au-label-small {
-    font-size: 10px;
-    color: #808080;
-}
-
-/* ============================================================================
-   PANELS & SECTIONS
-   ============================================================================ */
-.au-panel {
-    flex-direction: column;
-    padding: 20px;
-}
-
-.au-section {
-    margin-bottom: 16px;
-    padding: 12px;
-    background-color: #1a1a1a;
-    border-radius: 8px;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    overflow: hidden;
-    transition-duration: 0.3s, 0.2s;
-    transition-property: opacity, border-color;
-    transition-timing-function: ease-out, ease-out;
-    opacity: 1;
-}
-
-/* Remove borders from sections inside avatar details panel (cards handle borders) */
-.au-avatar-details-panel .au-section {
-    background-color: transparent;
-    border-width: 0;
-    border-color: transparent;
-    padding: 0;
-    margin-bottom: 0;
-}
-
-/* Remove border from avatar grid section (scroll view already has border) */
-.au-avatar-grid-section {
-    border-width: 0;
-    border-color: transparent;
-    background-color: transparent;
-    padding: 0;
-}
-
-.au-section-title {
-    font-size: 16px;
-    -unity-font-style: bold;
-    margin-bottom: 12px;
-    color: #ffffff;
-    letter-spacing: 0.3px;
-    padding-bottom: 2px;
-}
-
-/* ============================================================================
-   PROFILE LIST
-   ============================================================================ */
-.au-profile-list-container {
-    flex-grow: 1;
-    flex-direction: column;
-    transition-property: width, padding;
-    transition-duration: 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out;
-}
-
-.au-profile-list-scroll {
-    flex-grow: 1;
-    margin-bottom: 12px;
-}
-
-.au-profile-item {
-    background-color: #1a1a1a;
-    border-radius: 6px;
-    border-left-width: 3px;
-    border-left-color: transparent;
-    padding-top: 8px;
-    padding-bottom: 8px;
-    padding-left: 12px;
-    padding-right: 12px;
-    margin-bottom: 4px;
-    flex-direction: column;
-    transition-duration: 0.5s, 0.5s, 0.15s, 0.15s;
-    transition-property: width, padding, background-color, border-left-color;
-    transition-timing-function: ease-in-out, ease-in-out, ease-out, ease-out;
-}
-
-.au-profile-item:hover {
-    background-color: #2a2a2a;
-}
-
-.au-profile-item-selected {
-    background-color: #2a2a2a;
-    border-left-color: #36BFB1;
-}
-
-.au-profile-item-name {
-    font-size: 12px;
-    color: #ffffff;
-    -unity-font-style: bold;
-    margin-bottom: 4px;
-}
-
-.au-profile-item-info {
-    font-size: 10px;
-    color: #808080;
-}
-
-.au-profile-buttons {
-    flex-direction: row;
-    margin-bottom: 8px;
-    transition-property: flex-direction, height;
-    transition-duration: 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out;
-}
-
-.au-profile-buttons Button {
-    flex-grow: 1;
-    margin: 2px;
-    transition-property: width, margin, flex-grow, height;
-    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
-}
-
-.au-profile-list-container > Button {
-    margin-left: 4px;
-    margin-right: 4px;
-    transition-property: width, margin, height;
-    transition-duration: 0.5s, 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
-}
-
-/* ============================================================================
-   AVATAR GRID
-   ============================================================================ */
-.au-avatar-section {
+.yucp-avatar-section {
     flex-direction: row;
 }
 
-.au-store-grid-scroll {
+.yucp-store-grid-scroll {
     flex-grow: 1;
     flex-shrink: 1;
     min-width: 360px;
@@ -439,14 +49,14 @@
     margin-top: 16px;
 }
 
-.au-store-grid {
+.yucp-store-grid {
     flex-direction: row;
     flex-wrap: wrap;
     align-content: flex-start;
     padding-bottom: 8px;
 }
 
-.au-avatar-grid-empty {
+.yucp-avatar-grid-empty {
     width: 100%;
     min-height: 180px;
     justify-content: center;
@@ -458,7 +68,7 @@
     -unity-text-align: middle-center;
 }
 
-.au-avatar-tile {
+.yucp-avatar-tile {
     width: 220px;
     background-color: #1a1a1a;
     border-width: 1px;
@@ -472,27 +82,28 @@
     transition-property: border-color, background-color, scale;
     transition-timing-function: ease-out, ease-out, ease-out;
     scale: 1 1;
+    position: relative;
 }
 
-.au-avatar-tile-hover {
+.yucp-avatar-tile-hover {
     border-color: #36BFB1;
     background-color: rgba(54, 191, 177, 0.1);
     scale: 1.02 1.02;
 }
 
-.au-avatar-tile-selected {
+.yucp-avatar-tile-selected {
     border-color: #36BFB1;
     background-color: rgba(54, 191, 177, 0.2);
     scale: 1.01 1.01;
 }
 
-.au-avatar-preview {
+.yucp-avatar-preview {
     height: 160px;
     background-color: #0d0d0d;
     -unity-background-scale-mode: scale-and-crop;
 }
 
-.au-avatar-tile-title {
+.yucp-avatar-tile-title {
     font-size: 14px;
     color: #ffffff;
     -unity-font-style: bold;
@@ -501,7 +112,7 @@
     margin-right: 12px;
 }
 
-.au-avatar-tile-tags {
+.yucp-avatar-tile-tags {
     font-size: 11px;
     color: #36BFB1;
     margin-left: 12px;
@@ -509,12 +120,12 @@
     margin-top: 4px;
 }
 
-.au-avatar-tile-platforms {
+.yucp-avatar-tile-platforms {
     flex-direction: row;
     margin: 10px;
 }
 
-.au-avatar-tile-badge {
+.yucp-avatar-tile-badge {
     font-size: 10px;
     color: #36BFB1;
     border-width: 1px;
@@ -525,10 +136,91 @@
     margin-right: 6px;
 }
 
+.yucp-avatar-tile-checkbox {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 10;
+    width: 20px;
+    height: 20px;
+    background-color: rgba(26, 26, 26, 0.95);
+    border-width: 2px;
+    border-color: #36BFB1;
+    border-radius: 4px;
+}
+
+.yucp-avatar-tile-checkbox:checked {
+    background-color: #36BFB1;
+    border-color: #36BFB1;
+}
+
+.yucp-avatar-tile-checkbox:hover {
+    border-color: #48d1c3;
+    background-color: rgba(54, 191, 177, 0.2);
+}
+
+.yucp-avatar-tile-checkbox:checked:hover {
+    background-color: #48d1c3;
+}
+
+.yucp-avatar-tile-multi-selected {
+    border-width: 2px;
+    border-color: #36BFB1;
+    background-color: rgba(54, 191, 177, 0.08);
+}
+
+.yucp-avatar-tile-status {
+    z-index: 5;
+    flex-direction: row;
+    align-items: center;
+}
+
+.yucp-avatar-status-badge {
+    width: 22px;
+    height: 22px;
+    font-size: 14px;
+    font-weight: bold;
+    -unity-text-align: middle-center;
+    border-radius: 6px;
+    margin-left: 4px;
+    background-color: rgba(26, 26, 26, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.yucp-avatar-status-built {
+    color: #36BFB1;
+    border-width: 2px;
+    border-color: #36BFB1;
+}
+
+.yucp-avatar-status-not-built {
+    color: #808080;
+    border-width: 2px;
+    border-color: #808080;
+}
+
+.yucp-avatar-tile-badge-pc {
+    background-color: rgba(54, 191, 177, 0.15);
+    color: #36BFB1;
+    border-width: 1px;
+    border-color: #36BFB1;
+    font-weight: bold;
+}
+
+.yucp-avatar-tile-badge-quest {
+    background-color: rgba(226, 165, 74, 0.15);
+    color: #E2A54A;
+    border-width: 1px;
+    border-color: #E2A54A;
+    font-weight: bold;
+}
+
 /* ============================================================================
-   AVATAR CARDS
+   AVATAR CARDS - AvatarUploader specific
    ============================================================================ */
-.au-avatar-card {
+.yucp-avatar-card {
     background-color: #1a1a1a;
     border-radius: 8px;
     border-width: 1px;
@@ -541,25 +233,25 @@
     transition-timing-function: ease-out, ease-out;
 }
 
-.au-avatar-card:hover {
+.yucp-avatar-card:hover {
     background-color: #2a2a2a;
     border-color: #3a3a3a;
 }
 
-.au-avatar-card-header {
+.yucp-avatar-card-header {
     flex-direction: row;
     align-items: center;
     margin-bottom: 8px;
 }
 
-.au-avatar-card-title {
+.yucp-avatar-card-title {
     font-size: 13px;
     color: #ffffff;
     -unity-font-style: bold;
     flex-grow: 1;
 }
 
-.au-avatar-card-preview {
+.yucp-avatar-card-preview {
     width: 64px;
     height: 64px;
     min-width: 64px;
@@ -571,161 +263,44 @@
     flex-shrink: 0;
 }
 
-.au-avatar-card-actions {
+.yucp-avatar-card-actions {
     flex-direction: row;
     align-items: center;
 }
 
-.au-avatar-card-info {
+.yucp-avatar-card-info {
     flex-direction: column;
     margin-top: 8px;
 }
 
-.au-avatar-card-info-row {
+.yucp-avatar-card-info-row {
     flex-direction: row;
     align-items: center;
     margin-bottom: 4px;
 }
 
-.au-avatar-card-info-label {
+.yucp-avatar-card-info-label {
     font-size: 10px;
     color: #808080;
     width: 100px;
     flex-shrink: 0;
 }
 
-.au-avatar-card-info-value {
+.yucp-avatar-card-info-value {
     font-size: 11px;
     color: #b0b0b0;
     flex-grow: 1;
 }
 
 /* ============================================================================
-   FORM FIELDS
+   COLLECTION HEADER - AvatarUploader specific
    ============================================================================ */
-.au-form-row {
-    flex-direction: row;
-    align-items: center;
-    margin-bottom: 8px;
-    overflow: hidden;
-    transition-property: flex-direction, height;
-    transition-duration: 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out;
-}
-
-.au-form-label {
-    width: 120px;
-    font-size: 12px;
-    color: #b0b0b0;
-    flex-shrink: 0;
-    transition-property: width, margin, opacity;
-    transition-duration: 0.5s, 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
-}
-
-.au-form-field {
-    flex-grow: 1;
-    flex-shrink: 1;
-    min-width: 0;
-    overflow: hidden;
-    transition-property: width, opacity;
-    transition-duration: 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out;
-}
-
-.au-input {
-    background-color: #2a2a2a;
-    border-width: 1px;
-    border-color: #3a3a3a;
-    color: #ffffff;
-    padding: 6px 8px;
-    border-radius: 6px;
-    min-height: 28px;
-    max-width: 100%;
-    overflow: hidden;
-    transition-duration: 0.2s, 0.2s, 0.15s;
-    transition-property: border-color, background-color, box-shadow;
-    transition-timing-function: ease-out, ease-out, ease-out;
-    box-shadow: 0 0 0 rgba(54, 191, 177, 0);
-}
-
-.au-input:focus {
-    border-color: #36BFB1;
-    background-color: #2f2f2f;
-    box-shadow: 0 0 0 2px rgba(54, 191, 177, 0.2);
-}
-
-.au-input .unity-text-field__input {
-    background-color: transparent;
-    border-width: 0;
-    color: #ffffff;
-    padding: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.au-input-multiline {
-    min-height: 80px;
-}
-
-.au-input .unity-base-text-field__input {
-    background-color: transparent;
-    border-width: 0;
-    color: #ffffff;
-    padding: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.au-input-placeholder {
-    font-size: 12px;
-    color: #808080;
-    pointer-events: none;
-}
-
-/* ============================================================================
-   BOTTOM BAR - Progress Only (Hidden by default, shown during builds)
-   ============================================================================ */
-.au-bottom-bar {
-    flex-direction: column;
-    background-color: #1a1a1a;
-    border-top-width: 1px;
-    border-top-color: #2a2a2a;
-    padding: 16px 20px;
-    flex-shrink: 0;
-    display: none; /* Hidden by default, shown during builds */
-}
-
-.au-build-actions-container {
-    flex-direction: row;
-    justify-content: flex-start;
-    align-items: center;
-}
-
-.au-section-build-actions {
-    background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    padding: 16px;
-    margin-bottom: 16px;
-}
-
-.au-section-advanced {
-    margin-top: 8px;
-}
-
-/* ============================================================================
-   COLLECTION HEADER - Batch Operations
-   ============================================================================ */
-/* ============================================================================
-   COLLECTION HEADER - Redesigned Card-Based Layout
-   ============================================================================ */
-.au-collection-header-card {
+.yucp-collection-header-card {
     flex-direction: column;
     margin-bottom: 16px;
 }
 
-.au-collection-header-section {
+.yucp-collection-header-section {
     background-color: #1a1a1a;
     border-width: 1px;
     border-color: #2a2a2a;
@@ -735,16 +310,16 @@
     margin-bottom: 28px;
 }
 
-.au-collection-header-left {
+.yucp-collection-header-left {
     flex-direction: column;
     width: 100%;
 }
 
-.au-collection-name-container {
+.yucp-collection-name-container {
     margin-bottom: 16px;
 }
 
-.au-collection-name-field {
+.yucp-collection-name-field {
     background-color: transparent;
     border-width: 0;
     border-bottom-width: 2px;
@@ -760,22 +335,22 @@
     width: 100%;
 }
 
-.au-collection-name-field:focus {
+.yucp-collection-name-field:focus {
     border-bottom-color: #36BFB1;
 }
 
-.au-collection-stats {
+.yucp-collection-stats {
     flex-direction: row;
     flex-wrap: wrap;
     margin-top: 16px;
 }
 
-.au-collection-stats .au-collection-stat-badge {
+.yucp-collection-stats .yucp-collection-stat-badge {
     margin-right: 12px;
     margin-bottom: 8px;
 }
 
-.au-collection-stat-badge {
+.yucp-collection-stat-badge {
     background-color: #2a2a2a;
     border-width: 1px;
     border-color: #3a3a3a;
@@ -789,34 +364,34 @@
     transition-timing-function: ease-out, ease-out;
 }
 
-.au-collection-stat-badge-selected {
+.yucp-collection-stat-badge-selected {
     background-color: rgba(54, 191, 177, 0.15);
     border-color: #36BFB1;
 }
 
-.au-collection-stat-badge-inactive {
+.yucp-collection-stat-badge-inactive {
     opacity: 0.5;
 }
 
-.au-collection-stat-value {
+.yucp-collection-stat-value {
     font-size: 15px;
     -unity-font-style: bold;
     color: #ffffff;
     margin-bottom: 3px;
 }
 
-.au-collection-stat-badge-selected .au-collection-stat-value {
+.yucp-collection-stat-badge-selected .yucp-collection-stat-value {
     color: #36BFB1;
 }
 
-.au-collection-stat-label {
+.yucp-collection-stat-label {
     font-size: 10px;
     color: #b0b0b0;
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
-.au-collection-actions-card {
+.yucp-collection-actions-card {
     background-color: #1a1a1a;
     border-width: 1px;
     border-color: #2a2a2a;
@@ -825,11 +400,11 @@
     flex-direction: column;
 }
 
-.au-collection-actions-header {
+.yucp-collection-actions-header {
     margin-bottom: 12px;
 }
 
-.au-collection-actions-title {
+.yucp-collection-actions-title {
     font-size: 14px;
     -unity-font-style: bold;
     color: #ffffff;
@@ -837,27 +412,27 @@
     letter-spacing: 0.2px;
 }
 
-.au-collection-actions-description {
+.yucp-collection-actions-description {
     font-size: 11px;
     color: #808080;
     line-height: 1.4;
     white-space: normal;
 }
 
-.au-collection-action-buttons {
+.yucp-collection-action-buttons {
     flex-direction: row;
     flex-wrap: wrap;
 }
 
-.au-collection-action-buttons .au-button {
+.yucp-collection-action-buttons .yucp-button {
     margin-right: 8px;
     margin-bottom: 8px;
 }
 
 /* ============================================================================
-   AVATAR DETAILS PANEL - Expandable Individual Avatar Details
+   AVATAR DETAILS PANEL - AvatarUploader specific
    ============================================================================ */
-.au-avatar-details-panel {
+.yucp-avatar-details-panel {
     background-color: transparent;
     border-width: 0;
     border-color: transparent;
@@ -868,10 +443,25 @@
     align-items: flex-start;
 }
 
+.yucp-avatar-details-panel .yucp-section {
+    background-color: transparent;
+    border-width: 0;
+    border-color: transparent;
+    padding: 0;
+    margin-bottom: 0;
+}
+
+.yucp-avatar-grid-section {
+    border-width: 0;
+    border-color: transparent;
+    background-color: transparent;
+    padding: 0;
+}
+
 /* ============================================================================
-   ICON SIDEBAR
+   ICON SIDEBAR - AvatarUploader specific
    ============================================================================ */
-.au-icon-sidebar {
+.yucp-icon-sidebar {
     width: 220px;
     min-width: 220px;
     flex-shrink: 0;
@@ -885,7 +475,7 @@
     align-items: stretch;
 }
 
-.au-icon-display {
+.yucp-icon-display {
     width: 180px;
     height: 180px;
     min-width: 180px;
@@ -899,7 +489,7 @@
     overflow: hidden;
 }
 
-.au-icon-preview {
+.yucp-icon-preview {
     width: 180px;
     height: 180px;
     min-width: 180px;
@@ -916,31 +506,30 @@
     overflow: hidden;
 }
 
-.au-icon-buttons {
+.yucp-icon-buttons {
     flex-direction: column;
     width: 100%;
 }
 
-.au-icon-buttons .au-button {
+.yucp-icon-buttons .yucp-button {
     margin: 0;
     margin-bottom: 8px;
     width: 100%;
 }
 
-
 /* ============================================================================
-   MAIN CONTENT AREA
+   MAIN CONTENT AREA - AvatarUploader specific
    ============================================================================ */
-.au-main-content {
+.yucp-main-content {
     flex-grow: 1;
     flex-direction: column;
     min-width: 0;
 }
 
 /* ============================================================================
-   CARDS
+   CARDS - AvatarUploader specific
    ============================================================================ */
-.au-card {
+.yucp-card {
     background-color: #1a1a1a;
     border-width: 1px;
     border-color: #2a2a2a;
@@ -950,7 +539,7 @@
     flex-direction: column;
 }
 
-.au-card-title {
+.yucp-card-title {
     font-size: 17px;
     -unity-font-style: bold;
     color: #ffffff;
@@ -959,7 +548,7 @@
     padding-bottom: 4px;
 }
 
-.au-card-subtitle {
+.yucp-card-subtitle {
     font-size: 12px;
     color: #b0b0b0;
     margin-bottom: 16px;
@@ -968,19 +557,19 @@
     padding-left: 2px;
 }
 
-.au-card-content {
+.yucp-card-content {
     flex-direction: column;
 }
 
 /* ============================================================================
-   GALLERY CARD
+   GALLERY CARD - AvatarUploader specific
    ============================================================================ */
-.au-gallery-carousel-container {
+.yucp-gallery-carousel-container {
     flex-direction: column;
     margin-bottom: 16px;
 }
 
-.au-gallery-carousel-preview {
+.yucp-gallery-carousel-preview {
     width: 100%;
     height: 400px;
     min-height: 400px;
@@ -993,7 +582,7 @@
     align-items: center;
 }
 
-.au-gallery-carousel-image {
+.yucp-gallery-carousel-image {
     position: absolute;
     top: 0;
     left: 0;
@@ -1002,7 +591,7 @@
     -unity-background-scale-mode: scale-to-fit;
 }
 
-.au-gallery-carousel-overlay {
+.yucp-gallery-carousel-overlay {
     position: absolute;
     top: 0;
     left: 0;
@@ -1012,7 +601,7 @@
     align-items: center;
 }
 
-.au-gallery-carousel-button {
+.yucp-gallery-carousel-button {
     width: 32px;
     height: 32px;
     border-radius: 16px;
@@ -1023,28 +612,28 @@
     font-size: 16px;
 }
 
-.au-gallery-carousel-button:hover {
+.yucp-gallery-carousel-button:hover {
     background-color: rgba(54, 191, 177, 0.9);
 }
 
-.au-gallery-carousel-prev {
+.yucp-gallery-carousel-prev {
     position: absolute;
     left: 8px;
 }
 
-.au-gallery-carousel-next {
+.yucp-gallery-carousel-next {
     position: absolute;
     right: 8px;
 }
 
-.au-gallery-carousel-add {
+.yucp-gallery-carousel-add {
     position: absolute;
     bottom: 12px;
     left: 50%;
     margin-left: -16px;
 }
 
-.au-gallery-carousel-seticon {
+.yucp-gallery-carousel-seticon {
     position: absolute;
     bottom: 12px;
     right: 12px;
@@ -1054,7 +643,7 @@
     font-size: 12px;
 }
 
-.au-gallery-carousel-delete {
+.yucp-gallery-carousel-delete {
     position: absolute;
     bottom: 12px;
     right: 108px;
@@ -1064,7 +653,7 @@
     font-size: 12px;
 }
 
-.au-gallery-carousel-label {
+.yucp-gallery-carousel-label {
     position: absolute;
     left: 12px;
     top: 12px;
@@ -1075,13 +664,13 @@
     font-size: 11px;
 }
 
-.au-gallery-grid {
+.yucp-gallery-grid {
     flex-direction: row;
     flex-wrap: wrap;
     margin-top: 12px;
 }
 
-.au-gallery-thumbnail {
+.yucp-gallery-thumbnail {
     width: 80px;
     height: 80px;
     min-width: 80px;
@@ -1100,103 +689,21 @@
     margin-bottom: 8px;
 }
 
-.au-gallery-thumbnail:hover {
+.yucp-gallery-thumbnail:hover {
     border-color: #36BFB1;
     scale: 1.05 1.05;
 }
 
-.au-gallery-thumbnail-active {
+.yucp-gallery-thumbnail-active {
     border-color: #36BFB1;
     border-width: 3px;
     scale: 1.08 1.08;
 }
 
 /* ============================================================================
-   BULK EDIT PANEL
+   BULK EDIT PANEL - AvatarUploader specific
    ============================================================================ */
-.au-bulk-edit-panel {
-    background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #36BFB1;
-    border-left-width: 3px;
-    border-left-color: #36BFB1;
-    padding: 20px;
-    margin-bottom: 16px;
-}
-
-/* ============================================================================
-   AVATAR TILE ENHANCEMENTS - Multi-select & Status
-   ============================================================================ */
-.au-avatar-tile {
-    position: relative;
-}
-
-.au-avatar-tile-checkbox {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    z-index: 10;
-    width: 20px;
-    height: 20px;
-    background-color: rgba(26, 26, 26, 0.9);
-    border-width: 2px;
-    border-color: #36BFB1;
-}
-
-.au-avatar-tile-checkbox:checked {
-    background-color: #36BFB1;
-}
-
-.au-avatar-tile-multi-selected {
-    border-width: 2px;
-    border-color: #36BFB1;
-    background-color: rgba(54, 191, 177, 0.05);
-}
-
-.au-avatar-tile-status {
-    z-index: 5;
-}
-
-.au-avatar-status-badge {
-    width: 20px;
-    height: 20px;
-    font-size: 12px;
-    -unity-text-align: middle-center;
-    border-radius: 6px;
-    margin-left: 4px;
-    background-color: rgba(26, 26, 26, 0.9);
-}
-
-.au-avatar-status-built {
-    color: #36BFB1;
-    border-width: 1px;
-    border-color: #36BFB1;
-}
-
-.au-avatar-status-not-built {
-    color: #b0b0b0;
-    border-width: 1px;
-    border-color: #808080;
-}
-
-.au-avatar-tile-badge-pc {
-    background-color: rgba(54, 191, 177, 0.2);
-    color: #36BFB1;
-    border-width: 1px;
-    border-color: #36BFB1;
-}
-
-.au-avatar-tile-badge-quest {
-    background-color: rgba(226, 165, 74, 0.2);
-    color: #E2A54A;
-    border-width: 1px;
-    border-color: #E2A54A;
-}
-
-/* ============================================================================
-   BULK EDIT PANEL - Card-Based Design
-   ============================================================================ */
-.au-bulk-edit-panel {
+.yucp-bulk-edit-panel {
     background-color: #1a1a1a;
     border-width: 1px;
     border-color: #2a2a2a;
@@ -1208,7 +715,7 @@
     min-width: 0;
 }
 
-.au-bulk-edit-header {
+.yucp-bulk-edit-header {
     margin-bottom: 16px;
     padding-bottom: 12px;
     border-bottom-width: 1px;
@@ -1218,7 +725,7 @@
     justify-content: space-between;
 }
 
-.au-bulk-edit-title {
+.yucp-bulk-edit-title {
     font-size: 16px;
     -unity-font-style: bold;
     color: #ffffff;
@@ -1226,13 +733,13 @@
     letter-spacing: 0.2px;
 }
 
-.au-bulk-edit-subtitle {
+.yucp-bulk-edit-subtitle {
     font-size: 11px;
     color: #808080;
     margin-top: 0;
 }
 
-.au-bulk-edit-close {
+.yucp-bulk-edit-close {
     width: 24px;
     height: 24px;
     min-width: 24px;
@@ -1250,17 +757,17 @@
     transition-timing-function: ease-out, ease-out, ease-out;
 }
 
-.au-bulk-edit-close:hover {
+.yucp-bulk-edit-close:hover {
     background-color: #3a3a3a;
     border-color: #4a4a4a;
     color: #ffffff;
 }
 
-.au-bulk-edit-close:active {
+.yucp-bulk-edit-close:active {
     background-color: #2a2a2a;
 }
 
-.au-bulk-edit-section {
+.yucp-bulk-edit-section {
     width: 100%;
     margin-bottom: 16px;
     padding-bottom: 12px;
@@ -1271,8 +778,7 @@
     overflow: hidden;
 }
 
-
-.au-bulk-edit-section-title {
+.yucp-bulk-edit-section-title {
     font-size: 13px;
     -unity-font-style: bold;
     color: #ffffff;
@@ -1280,150 +786,487 @@
     letter-spacing: 0.2px;
 }
 
-.au-bulk-edit-section-description {
+.yucp-bulk-edit-section-description {
     font-size: 11px;
     color: #808080;
     white-space: normal;
     margin-bottom: 12px;
 }
 
-.au-bulk-toggle {
+.yucp-bulk-toggle {
     min-width: 60px;
     font-size: 13px;
     color: #ffffff;
     flex-shrink: 0;
 }
 
-.au-bulk-toggle-mixed {
+.yucp-bulk-toggle-mixed {
     opacity: 0.7;
 }
 
-.au-bulk-status-label {
+.yucp-bulk-status-label {
     font-size: 11px;
     color: #b0b0b0;
     margin-left: 8px;
 }
 
 /* ============================================================================
-   AVATAR TILE - Enhanced Multi-select Styling
+   HERO PANEL - AvatarUploader specific
    ============================================================================ */
-.au-avatar-tile-checkbox {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    z-index: 10;
-    width: 20px;
-    height: 20px;
-    background-color: rgba(26, 26, 26, 0.95);
-    border-width: 2px;
-    border-color: #36BFB1;
+.yucp-hero-panel {
+    flex-direction: column;
+    background-color: #111111;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    padding: 18px;
+    margin-top: 16px;
+}
+
+.yucp-hero-content {
+    flex-direction: row;
+    align-items: stretch;
+}
+
+.yucp-hero-preview-container {
+    margin-right: 24px;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    background-color: #0c0c0c;
+    justify-content: center;
+    align-items: center;
+    width: 320px;
+    height: 320px;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.yucp-hero-placeholder {
+    color: #f5f5f5;
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    opacity: 0.65;
+    text-align: center;
+    padding: 0 12px;
+}
+
+.yucp-hero-preview {
+    width: 320px;
+    height: 320px;
+    -unity-background-scale-mode: scale-and-crop;
+    background-color: #050505;
+    border-radius: 8px;
+}
+
+.yucp-hero-info {
+    flex-grow: 1;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding-right: 12px;
+}
+
+.yucp-hero-metadata-container {
+    flex-direction: column;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top-width: 1px;
+    border-top-color: #2a2a2a;
+}
+
+.yucp-performance-card {
+    flex-direction: column;
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
     border-radius: 4px;
+    padding: 12px;
+    min-width: 120px;
 }
 
-.au-avatar-tile-checkbox:checked {
-    background-color: #36BFB1;
-    border-color: #36BFB1;
+.yucp-performance-label {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 4px;
 }
 
-.au-avatar-tile-checkbox:hover {
-    border-color: #48d1c3;
-    background-color: rgba(54, 191, 177, 0.2);
+.yucp-performance-value {
+    font-size: 18px;
+    font-weight: bold;
+    color: #fff;
+    margin-bottom: 4px;
 }
 
-.au-avatar-tile-checkbox:checked:hover {
-    background-color: #48d1c3;
+.yucp-performance-rating {
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-top: 4px;
 }
 
-.au-avatar-tile-multi-selected {
-    border-width: 2px;
-    border-color: #36BFB1;
-    background-color: rgba(54, 191, 177, 0.08);
+.yucp-hero-thumbnail-host {
+    margin-top: 16px;
+    width: 100%;
 }
 
-.au-avatar-tile-status {
-    z-index: 5;
+.yucp-hero-info-root {
+    flex-direction: column;
+}
+
+.yucp-hero-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.yucp-hero-header-left {
+    flex-direction: column;
+    flex-grow: 1;
+    margin-right: 12px;
+}
+
+.yucp-hero-title-field {
+    flex-grow: 1;
+    margin-right: 12px;
+    font-size: 20px;
+    -unity-font-style: bold;
+    color: #ffffff;
+}
+
+.yucp-hero-title-field .unity-text-field__input {
+    font-size: 20px;
+    -unity-font-style: bold;
+    color: #ffffff;
+    background-color: #1a1a1a;
+    border-width: 0;
+    padding: 6px 10px;
+}
+
+.yucp-hero-actions {
+    flex-direction: row;
+}
+
+.yucp-hero-actions .yucp-button {
+    margin-left: 6px;
+}
+
+.yucp-hero-description {
+    min-height: 72px;
+    background-color: #181818;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    padding: 6px 8px;
+}
+
+.yucp-hero-description .unity-text-field__input {
+    font-size: 12px;
+    color: #dddddd;
+    -unity-text-align: upper-left;
+}
+
+.yucp-hero-description-label {
+    min-height: 60px;
+    padding: 8px 10px;
+    background-color: #181818;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    color: #dddddd;
+    font-size: 12px;
+    white-space: normal;
+}
+
+.yucp-hero-prefab-row {
+    align-items: center;
+}
+
+.yucp-hero-prefab-row .unity-object-field {
+    flex-grow: 1;
+}
+
+.yucp-hero-prefab-actions {
+    flex-direction: row;
+    margin-left: 8px;
+}
+
+.yucp-hero-prefab-actions .yucp-button {
+    margin-left: 6px;
+}
+
+.yucp-hero-platform-row {
+    flex-direction: row;
+    margin-bottom: 12px;
+}
+
+.yucp-hero-section {
+    margin-bottom: 12px;
+    background-color: #141414;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.yucp-hero-foldout {
+    margin-top: 12px;
+    background-color: #141414;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+.yucp-hero-foldout .unity-foldout__content {
+    padding-left: 16px;
+    padding-bottom: 6px;
+}
+
+.yucp-store-section {
+    flex-direction: column;
+}
+
+.yucp-store-header-actions {
     flex-direction: row;
     align-items: center;
 }
 
-.au-avatar-status-badge {
-    width: 22px;
-    height: 22px;
-    font-size: 14px;
-    font-weight: bold;
-    -unity-text-align: middle-center;
-    border-radius: 6px;
-    margin-left: 4px;
-    background-color: rgba(26, 26, 26, 0.95);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.yucp-store-header-actions .yucp-button {
+    margin-left: 6px;
 }
 
-.au-avatar-status-built {
-    color: #36BFB1;
-    border-width: 2px;
-    border-color: #36BFB1;
+.yucp-hero-stat-row {
+    flex-direction: row;
+    margin-bottom: 12px;
 }
 
-.au-avatar-status-not-built {
-    color: #808080;
-    border-width: 2px;
-    border-color: #808080;
-}
-
-.au-avatar-tile-badge-pc {
-    background-color: rgba(54, 191, 177, 0.15);
-    color: #36BFB1;
+.yucp-hero-stat-card {
+    flex-direction: column;
+    background-color: #161616;
     border-width: 1px;
-    border-color: #36BFB1;
-    font-weight: bold;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    padding: 8px 14px;
+    margin-right: 10px;
+    min-width: 120px;
 }
 
-.au-avatar-tile-badge-quest {
-    background-color: rgba(226, 165, 74, 0.15);
-    color: #E2A54A;
-    border-width: 1px;
-    border-color: #E2A54A;
-    font-weight: bold;
-}
-
-/* ============================================================================
-   PROGRESS BAR
-   ============================================================================ */
-.au-progress-container {
+.yucp-hero-quick-actions {
+    flex-direction: row;
     margin-top: 12px;
 }
 
-.au-progress-bar {
-    height: 24px;
-    background-color: #2a2a2a;
-    border-radius: 0;
-    overflow: hidden;
-    position: relative;
+.yucp-hero-quick-actions .yucp-button {
+    margin-right: 8px;
 }
 
-.au-progress-fill {
-    height: 100%;
-    background-color: #36BFB1;
-    border-radius: 0;
-}
-
-.au-progress-text {
+.yucp-hero-overlay {
     position: absolute;
+    top: 0;
     left: 0;
     right: 0;
-    top: 0;
     bottom: 0;
-    -unity-text-align: middle-center;
-    font-size: 11px;
+    justify-content: center;
+    align-items: center;
+}
+
+.yucp-hero-slide-button {
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    border-width: 0;
+    margin: 0 6px;
+    background-color: rgba(20, 20, 20, 0.88);
+    color: #f3f3f3;
+    font-size: 16px;
+}
+
+.yucp-hero-slide-button:hover {
+    background-color: rgba(54, 191, 177, 0.9);
+}
+
+.yucp-hero-slide-prev {
+    position: absolute;
+    left: 8px;
+}
+
+.yucp-hero-slide-next {
+    position: absolute;
+    right: 8px;
+}
+
+.yucp-hero-slide-add {
+    position: absolute;
+    bottom: 12px;
+}
+
+.yucp-hero-slide-seticon {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    width: 84px;
+    height: 30px;
+    border-radius: 6px;
+    font-size: 12px;
+    justify-content: center;
+}
+
+.yucp-hero-gallery-image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    -unity-background-scale-mode: scale-to-fit;
+    display: none;
+}
+
+.yucp-hero-slide-label {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    background-color: rgba(20, 20, 20, 0.85);
     color: #ffffff;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    letter-spacing: 0.3px;
+}
+
+.yucp-store-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
 }
 
 /* ============================================================================
-   TOAST NOTIFICATIONS
+   SECTION OVERRIDES - AvatarUploader specific
    ============================================================================ */
-.au-toast {
+.yucp-section-build-actions {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.yucp-section-advanced {
+    margin-top: 8px;
+}
+
+.yucp-section-title {
+    font-size: 16px;
+    -unity-font-style: bold;
+    margin-bottom: 12px;
+    color: #ffffff;
+    letter-spacing: 0.3px;
+    padding-bottom: 2px;
+}
+
+.yucp-section {
+    border-radius: 8px;
+    transition-duration: 0.3s, 0.2s;
+    transition-property: opacity, border-color;
+    transition-timing-function: ease-out, ease-out;
+    opacity: 1;
+}
+
+/* ============================================================================
+   INPUT OVERRIDES - AvatarUploader specific
+   ============================================================================ */
+.yucp-input {
+    border-radius: 6px;
+    transition-duration: 0.2s, 0.2s, 0.15s;
+    transition-property: border-color, background-color, box-shadow;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    box-shadow: 0 0 0 rgba(54, 191, 177, 0);
+}
+
+.yucp-input:focus {
+    border-color: #36BFB1;
+    background-color: #2f2f2f;
+    box-shadow: 0 0 0 2px rgba(54, 191, 177, 0.2);
+}
+
+.yucp-input-placeholder {
+    font-size: 12px;
+    color: #808080;
+    pointer-events: none;
+}
+
+/* ============================================================================
+   BUTTON OVERRIDES - AvatarUploader specific
+   ============================================================================ */
+.yucp-button {
+    border-radius: 6px;
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-button:hover {
+    scale: 1.02 1.02;
+}
+
+.yucp-button:active {
+    scale: 0.98 0.98;
+}
+
+.yucp-button-primary {
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-button-primary:hover {
+    scale: 1.02 1.02;
+}
+
+.yucp-button-primary:active {
+    scale: 0.98 0.98;
+}
+
+.yucp-button-action {
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-button-action:hover {
+    scale: 1.02 1.02;
+}
+
+.yucp-button-action:active {
+    scale: 0.98 0.98;
+}
+
+.yucp-button-danger {
+    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-button-danger:hover {
+    scale: 1.02 1.02;
+}
+
+.yucp-button-danger:active {
+    scale: 0.98 0.98;
+}
+
+/* ============================================================================
+   TOAST NOTIFICATIONS - AvatarUploader specific
+   ============================================================================ */
+.yucp-toast {
     background-color: rgba(27, 27, 27, 0.98);
     border-left-width: 3px;
     border-top-width: 1px;
@@ -1444,36 +1287,36 @@
     transition-timing-function: ease-in-out;
 }
 
-.au-toast-info {
+.yucp-toast-info {
     border-left-color: #36BFB1;
 }
 
-.au-toast-success {
+.yucp-toast-success {
     border-left-color: #36BFB1;
 }
 
-.au-toast-warning {
+.yucp-toast-warning {
     border-left-color: #E2A54A;
 }
 
-.au-toast-error {
+.yucp-toast-error {
     border-left-color: #E24A4A;
 }
 
-.au-toast-header {
+.yucp-toast-header {
     flex-direction: row;
     align-items: center;
     margin-bottom: 8px;
 }
 
-.au-toast-title {
+.yucp-toast-title {
     font-size: 13px;
     color: #ffffff;
     -unity-font-style: bold;
     flex-grow: 1;
 }
 
-.au-toast-close {
+.yucp-toast-close {
     width: 24px;
     height: 24px;
     font-size: 16px;
@@ -1485,21 +1328,21 @@
     -unity-text-align: middle-center;
 }
 
-.au-toast-close:hover {
+.yucp-toast-close:hover {
     background-color: #2a2a2a;
     color: #ffffff;
 }
 
-.au-toast-message {
+.yucp-toast-message {
     font-size: 11px;
     color: #b0b0b0;
     white-space: normal;
 }
 
 /* ============================================================================
-   FOLDOUT (Collapsible Sections)
+   FOLDOUT - AvatarUploader specific
    ============================================================================ */
-.au-foldout {
+.yucp-foldout {
     background-color: #1a1a1a;
     border-width: 1px;
     border-color: #2a2a2a;
@@ -1507,20 +1350,20 @@
     margin-bottom: 8px;
 }
 
-.au-foldout > .unity-foldout__toggle {
+.yucp-foldout > .unity-foldout__toggle {
     color: #ffffff;
     font-size: 12px;
     -unity-font-style: bold;
 }
 
-.au-foldout > .unity-foldout__content {
+.yucp-foldout > .unity-foldout__content {
     padding-top: 12px;
 }
 
 /* ============================================================================
-   HELP TEXT
+   HELP TEXT - AvatarUploader specific
    ============================================================================ */
-.au-help-text {
+.yucp-help-text {
     font-size: 11px;
     color: #b0b0b0;
     white-space: normal;
@@ -1528,437 +1371,79 @@
 }
 
 /* ============================================================================
-   VALIDATION & FEEDBACK
+   VALIDATION OVERRIDES - AvatarUploader specific
    ============================================================================ */
-.au-validation-error {
-    background-color: rgba(226, 74, 74, 0.1);
-    border-left-width: 3px;
-    border-left-color: #E24A4A;
+.yucp-validation-error {
     border-radius: 6px;
-    padding: 12px;
-    margin: 8px 0;
 }
 
-.au-validation-error-text {
-    font-size: 12px;
-    color: #E24A4A;
-}
-
-.au-validation-warning {
-    background-color: rgba(226, 165, 74, 0.1);
-    border-left-width: 3px;
-    border-left-color: #E2A54A;
+.yucp-validation-warning {
     border-radius: 6px;
-    padding: 12px;
-    margin: 8px 0;
 }
 
-.au-validation-warning-text {
-    font-size: 12px;
-    color: #E2A54A;
-}
-
-.au-validation-success {
-    background-color: rgba(54, 191, 177, 0.1);
-    border-left-width: 3px;
-    border-left-color: #36BFB1;
+.yucp-validation-success {
     border-radius: 6px;
-    padding: 12px;
-    margin: 8px 0;
-}
-
-.au-validation-success-text {
-    font-size: 12px;
-    color: #36BFB1;
 }
 
 /* ============================================================================
-   EMPTY STATE
+   HELP BOX OVERRIDES - AvatarUploader specific
    ============================================================================ */
-.au-empty-state {
-    flex-grow: 1;
-    justify-content: center;
-    align-items: center;
-    padding: 40px;
-}
-
-.au-empty-state-title {
-    font-size: 16px;
-    color: #b0b0b0;
-    -unity-font-style: bold;
-    margin-bottom: 8px;
-    -unity-text-align: middle-center;
-}
-
-.au-empty-state-description {
-    font-size: 12px;
-    color: #808080;
-    -unity-text-align: middle-center;
-    max-width: 300px;
-}
-
-/* ============================================================================
-   SCROLLVIEWS
-   ============================================================================ */
-.au-scrollview {
-    flex-grow: 1;
-}
-
-/* ============================================================================
-   MISC UTILITIES
-   ============================================================================ */
-.au-separator {
-    height: 1px;
-    background-color: #2a2a2a;
-    margin-top: 12px;
-    margin-bottom: 12px;
-}
-
-.au-spacer {
-    flex-grow: 1;
-}
-
-.au-horizontal-line {
-    height: 1px;
-    background-color: #2a2a2a;
-}
-
-/* ============================================================================
-   STATISTICS DISPLAY
-   ============================================================================ */
-.au-stats-container {
-    flex-direction: row;
-    margin-top: 8px;
-}
-
-.au-stat-item {
-    flex-direction: column;
-    margin-right: 20px;
-}
-
-.au-stat-label {
-    font-size: 10px;
-    color: #808080;
-    margin-bottom: 4px;
-}
-
-.au-stat-value {
-    font-size: 12px;
-    color: #ffffff;
-    -unity-font-style: bold;
-}
-
-/* ============================================================================
-   TOGGLE STYLES
-   ============================================================================ */
-.au-toggle {
-    margin-top: 4px;
-    margin-bottom: 4px;
-    flex-shrink: 0;
-}
-
-.au-toggle .unity-toggle__checkmark {
-    background-color: #2a2a2a;
-    border-color: #3a3a3a;
-    border-width: 1px;
-    flex-shrink: 0;
-}
-
-.au-toggle:checked .unity-toggle__checkmark {
-    background-color: #36BFB1;
-    border-color: #36BFB1;
-}
-
-.au-toggle .unity-label {
-    color: #ffffff;
-    font-size: 12px;
-    min-width: 80px;
-    flex-shrink: 0;
-}
-
-/* ============================================================================
-   HELP BOX STYLES
-   ============================================================================ */
-.au-help-box {
+.yucp-help-box {
     background-color: rgba(72, 209, 195, 0.12);
-    border-left-width: 3px;
     border-left-color: #48d1c3;
-    padding: 12px;
-    margin: 8px 0;
     border-radius: 6px;
 }
 
-.au-help-box-text {
-    font-size: 11px;
+.yucp-help-box-text {
     color: #48d1c3;
-    white-space: normal;
 }
 
 /* ============================================================================
-   SEARCH AND FILTER ROWS
+   BOTTOM BAR OVERRIDE - AvatarUploader specific
    ============================================================================ */
-.au-search-row {
-    flex-direction: row;
-    margin-top: 8px;
-    margin-bottom: 8px;
-    overflow: hidden;
-}
-
-.au-search-row .au-input {
-    flex-grow: 1;
-    flex-shrink: 1;
-    min-width: 0;
-}
-
-.au-filter-row {
-    flex-direction: row;
-    margin-bottom: 8px;
-    flex-wrap: wrap;
-    align-items: center;
-}
-
-.au-filter-row .au-toggle {
-    margin-right: 16px;
-    flex-shrink: 0;
-}
-
-/* ============================================================================
-   RESPONSIVE DESIGN - Mobile Menu Toggle
-   ============================================================================ */
-.au-mobile-toggle {
-    height: 40px;
-    width: 40px;
-    min-width: 40px;
-    background-color: #3a3a3a;
-    border-width: 0;
-    border-radius: 0;
-    margin-right: 12px;
-    padding: 0;
-    -unity-text-align: middle-center;
-    font-size: 16px;
-    color: #ffffff;
+.yucp-bottom-bar {
     display: none;
-    opacity: 0;
-    transition-property: background-color, opacity, scale;
-    transition-duration: 0.1s, 0.3s, 0.3s;
-    transition-timing-function: ease-out, ease-out, ease-out;
-    scale: 0.8 0.8;
-}
-
-.au-mobile-toggle:hover {
-    background-color: #36BFB1;
-    scale: 1 1;
-}
-
-.au-mobile-toggle:active {
-    background-color: #2da89c;
-    scale: 0.95 0.95;
-}
-
-.au-left-pane-overlay {
-    background-color: #090909;
-    border-right-width: 1px;
-    border-right-color: #2a2a2a;
-    padding: 20px;
-    transition-property: opacity, left;
-    transition-duration: 0.3s, 0.3s;
-    transition-timing-function: ease-out, ease-out;
-}
-
-.au-overlay-backdrop {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    transition-property: opacity;
-    transition-duration: 0.3s;
-    transition-timing-function: ease-out;
 }
 
 /* ============================================================================
-   RESPONSIVE BREAKPOINTS
+   RESPONSIVE: AVATAR GRID - AvatarUploader specific
    ============================================================================ */
-
-/* Narrow layout (< 700px) - Collapse left pane to dropdown/overlay */
-.au-window-narrow .au-left-pane {
-    display: none;
-    opacity: 0;
-}
-
-.au-window-narrow .au-mobile-toggle {
-    display: flex;
-    opacity: 1;
-    scale: 1 1;
-}
-
-.au-window-narrow .au-right-pane {
-    width: 100%;
-}
-
-.au-window-narrow .au-content-container {
-    position: relative;
-}
-
-.au-window-narrow .au-form-row {
-    flex-direction: column;
-    align-items: flex-start;
-}
-
-.au-window-narrow .au-form-label {
-    width: 100%;
-    margin-bottom: 4px;
-}
-
-.au-window-narrow .au-build-buttons {
-    flex-direction: column;
-}
-
-.au-window-narrow .au-build-buttons Button {
-    width: 100%;
-    margin: 4px 0;
-}
-
-.au-window-narrow .au-build-info {
-    margin-bottom: 8px;
-}
-
-.au-window-narrow .au-profile-buttons {
-    flex-direction: column;
-}
-
-.au-window-narrow .au-profile-buttons Button {
-    width: 100%;
-}
-
-.au-window-narrow .au-profile-list-container > Button {
-    width: 100%;
-    margin-left: 0;
-    margin-right: 0;
-}
-
-.au-window-narrow .au-top-bar {
-    flex-wrap: wrap;
-}
-
-.au-window-narrow .au-logo {
-    margin-bottom: 8px;
-}
-
-.au-window-narrow .au-stats-container {
-    flex-direction: column;
-}
-
-.au-window-narrow .au-stat-item {
-    margin-bottom: 8px;
-}
-
-.au-window-narrow .au-hero-quick-actions {
-    flex-direction: column;
-}
-
-.au-window-narrow .au-hero-quick-actions .au-button {
-    width: 100%;
-    margin-right: 0;
-    margin-bottom: 8px;
-}
-
-
-.au-window-narrow .au-hero-header {
-    flex-direction: column;
-    align-items: flex-start;
-}
-
-.au-window-narrow .au-hero-header-left {
-    width: 100%;
-    margin-right: 0;
-    margin-bottom: 12px;
-}
-
-.au-window-narrow .au-hero-actions {
-    width: 100%;
-    justify-content: flex-start;
-}
-
-.au-window-narrow .au-hero-actions .au-button {
-    flex: 1 1 auto;
-    margin-left: 0;
-    margin-right: 8px;
-}
-
-
-/* Medium layout (700px - 900px) - Reduce left pane size */
-.au-window-medium .au-left-pane {
-    width: 220px;
-    min-width: 180px;
-}
-
-.au-window-medium .au-form-row {
-    flex-wrap: wrap;
-}
-
-.au-window-medium .au-form-label {
-    width: 100px;
-}
-
-.au-window-medium .au-profile-buttons {
-    flex-direction: column;
-}
-
-.au-window-medium .au-profile-buttons Button {
-    width: 100%;
-    margin: 2px 0;
-}
-
-.au-window-medium .au-profile-list-container > Button {
-    width: 100%;
-    margin-left: 0;
-    margin-right: 0;
-}
-
-/* Wide layout (> 900px) - Default behavior */
-/* Default styles already handle this case */
-
-/* ============================================================================
-   RESPONSIVE: AVATAR GRID
-   ============================================================================ */
-.au-window-narrow .au-store-grid-scroll {
+.yucp-window-narrow .yucp-store-grid-scroll {
     min-width: 0;
     padding: 12px;
     margin-top: 12px;
 }
 
-.au-window-medium .au-store-grid-scroll {
+.yucp-window-medium .yucp-store-grid-scroll {
     min-width: 0;
     padding: 14px;
 }
 
-.au-window-narrow .au-avatar-tile {
+.yucp-window-narrow .yucp-avatar-tile {
     width: calc(50% - 16px);
     min-width: 0;
     flex: 1 1 calc(50% - 16px);
     margin: 6px;
 }
 
-.au-window-medium .au-avatar-tile {
+.yucp-window-medium .yucp-avatar-tile {
     width: calc(33.333% - 16px);
     min-width: 0;
     flex: 1 1 calc(33.333% - 16px);
 }
 
-.au-window-narrow .au-store-grid {
+.yucp-window-narrow .yucp-store-grid {
     padding-bottom: 4px;
 }
 
 /* ============================================================================
-   RESPONSIVE: HERO PANEL
+   RESPONSIVE: HERO PANEL - AvatarUploader specific
    ============================================================================ */
-.au-window-narrow .au-hero-content {
+.yucp-window-narrow .yucp-hero-content {
     flex-direction: column;
 }
 
-.au-window-narrow .au-hero-preview-container {
+.yucp-window-narrow .yucp-hero-preview-container {
     width: 100%;
     height: auto;
     min-height: 200px;
@@ -1967,484 +1452,194 @@
     margin-bottom: 16px;
 }
 
-.au-window-narrow .au-hero-info {
+.yucp-window-narrow .yucp-hero-info {
     width: 100%;
     padding-right: 0;
 }
 
-.au-window-narrow .au-hero-metadata-container {
+.yucp-window-narrow .yucp-hero-metadata-container {
     flex-direction: column;
 }
 
-.au-window-narrow .au-hero-stat-row {
+.yucp-window-narrow .yucp-hero-stat-row {
     flex-direction: column;
 }
 
-.au-window-narrow .au-hero-stat-card {
+.yucp-window-narrow .yucp-hero-stat-card {
     width: 100%;
     margin-right: 0;
     margin-bottom: 8px;
 }
 
-.au-window-medium .au-hero-preview-container {
+.yucp-window-medium .yucp-hero-preview-container {
     width: 280px;
     height: 280px;
     margin-right: 16px;
 }
 
 /* ============================================================================
-   RESPONSIVE: AVATAR DETAILS PANEL
+   RESPONSIVE: AVATAR DETAILS PANEL - AvatarUploader specific
    ============================================================================ */
-.au-window-narrow .au-avatar-details-panel {
+.yucp-window-narrow .yucp-avatar-details-panel {
     flex-direction: column;
 }
 
-.au-window-narrow .au-icon-sidebar {
+.yucp-window-narrow .yucp-icon-sidebar {
     width: 100%;
     min-width: 0;
     margin-right: 0;
     margin-bottom: 16px;
 }
 
-.au-window-narrow .au-main-content {
+.yucp-window-narrow .yucp-main-content {
     width: 100%;
 }
 
-.au-window-medium .au-icon-sidebar {
+.yucp-window-medium .yucp-icon-sidebar {
     width: 180px;
     min-width: 180px;
     margin-right: 16px;
 }
 
 /* ============================================================================
-   RESPONSIVE: COLLECTION HEADER
+   RESPONSIVE: COLLECTION HEADER - AvatarUploader specific
    ============================================================================ */
-.au-window-narrow .au-collection-header-card {
+.yucp-window-narrow .yucp-collection-header-card {
     margin-bottom: 12px;
 }
 
-.au-window-narrow .au-collection-header-section {
+.yucp-window-narrow .yucp-collection-header-section {
     margin-bottom: 16px;
-}
-
-.au-window-narrow .au-collection-header-section {
     padding: 12px;
 }
 
-.au-window-narrow .au-collection-name-container {
+.yucp-window-narrow .yucp-collection-name-container {
     margin-bottom: 10px;
 }
 
-.au-window-narrow .au-collection-name-field {
+.yucp-window-narrow .yucp-collection-name-field {
     font-size: 18px;
 }
 
-.au-window-narrow .au-collection-stats .au-collection-stat-badge {
+.yucp-window-narrow .yucp-collection-stats .yucp-collection-stat-badge {
     margin-right: 6px;
     margin-bottom: 6px;
 }
 
-.au-window-narrow .au-collection-stat-badge {
+.yucp-window-narrow .yucp-collection-stat-badge {
     flex: 1 1 calc(50% - 3px);
     min-width: 0;
     padding: 5px 8px;
 }
 
-.au-window-narrow .au-collection-stat-value {
+.yucp-window-narrow .yucp-collection-stat-value {
     font-size: 12px;
 }
 
-.au-window-narrow .au-collection-stat-label {
+.yucp-window-narrow .yucp-collection-stat-label {
     font-size: 8px;
 }
 
-.au-window-narrow .au-collection-actions-card {
+.yucp-window-narrow .yucp-collection-actions-card {
     padding: 12px;
 }
 
-.au-window-narrow .au-collection-actions-header {
+.yucp-window-narrow .yucp-collection-actions-header {
     margin-bottom: 10px;
 }
 
-.au-window-narrow .au-collection-action-buttons {
+.yucp-window-narrow .yucp-collection-action-buttons {
     flex-direction: column;
 }
 
-.au-window-narrow .au-collection-action-buttons .au-button {
+.yucp-window-narrow .yucp-collection-action-buttons .yucp-button {
     margin-right: 0;
     margin-bottom: 6px;
-}
-
-.au-window-narrow .au-collection-action-buttons .au-button {
     width: 100%;
 }
 
-.au-window-medium .au-collection-header-section {
+.yucp-window-medium .yucp-collection-header-section {
     padding: 14px;
 }
 
-.au-window-medium .au-collection-actions-card {
+.yucp-window-medium .yucp-collection-actions-card {
     padding: 14px;
 }
 
 /* ============================================================================
-   RESPONSIVE: GALLERY
+   RESPONSIVE: GALLERY - AvatarUploader specific
    ============================================================================ */
-.au-window-narrow .au-gallery-thumbnail {
+.yucp-window-narrow .yucp-gallery-thumbnail {
     width: 60px;
     height: 60px;
     min-width: 60px;
     min-height: 60px;
 }
 
-.au-window-medium .au-gallery-thumbnail {
+.yucp-window-medium .yucp-gallery-thumbnail {
     width: 70px;
     height: 70px;
     min-width: 70px;
     min-height: 70px;
 }
 
-.au-window-narrow .au-gallery-carousel-preview {
+.yucp-window-narrow .yucp-gallery-carousel-preview {
     height: 300px;
     min-height: 300px;
 }
 
-.au-window-medium .au-gallery-carousel-preview {
+.yucp-window-medium .yucp-gallery-carousel-preview {
     height: 350px;
     min-height: 350px;
 }
 
 /* ============================================================================
-   HERO PANEL
+   RESPONSIVE: HERO QUICK ACTIONS - AvatarUploader specific
    ============================================================================ */
-.au-hero-panel {
+.yucp-window-narrow .yucp-hero-quick-actions {
     flex-direction: column;
-    background-color: #111111;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    border-radius: 8px;
-    padding: 18px;
-    margin-top: 16px;
 }
 
-.au-hero-content {
-    flex-direction: row;
-    align-items: stretch;
-}
-
-.au-hero-preview-container {
-    margin-right: 24px;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    border-radius: 8px;
-    background-color: #0c0c0c;
-    justify-content: center;
-    align-items: center;
-    width: 320px;
-    height: 320px;
-    flex-shrink: 0;
-    position: relative;
-}
-
-.au-hero-placeholder {
-    color: #f5f5f5;
-    font-size: 42px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-    opacity: 0.65;
-    text-align: center;
-    padding: 0 12px;
-}
-
-.au-hero-preview {
-    width: 320px;
-    height: 320px;
-    -unity-background-scale-mode: scale-and-crop;
-    background-color: #050505;
-    border-radius: 8px;
-}
-
-.au-hero-info {
-    flex-grow: 1;
-    flex-direction: column;
-    justify-content: flex-start;
-    padding-right: 12px;
-}
-
-.au-hero-metadata-container {
-    flex-direction: column;
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top-width: 1px;
-    border-top-color: #2a2a2a;
-}
-
-.au-performance-card {
-    flex-direction: column;
-    background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    border-radius: 4px;
-    padding: 12px;
-    min-width: 120px;
-}
-
-.au-performance-label {
-    font-size: 11px;
-    color: #888;
-    margin-bottom: 4px;
-}
-
-.au-performance-value {
-    font-size: 18px;
-    font-weight: bold;
-    color: #fff;
-    margin-bottom: 4px;
-}
-
-.au-performance-rating {
-    font-size: 10px;
-    font-weight: bold;
-    text-transform: uppercase;
-    margin-top: 4px;
-}
-
-.au-hero-thumbnail-host {
-    margin-top: 16px;
+.yucp-window-narrow .yucp-hero-quick-actions .yucp-button {
     width: 100%;
+    margin-right: 0;
+    margin-bottom: 8px;
 }
 
-.au-hero-info-root {
+.yucp-window-narrow .yucp-hero-header {
     flex-direction: column;
+    align-items: flex-start;
 }
 
-.au-hero-header {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
+.yucp-window-narrow .yucp-hero-header-left {
+    width: 100%;
+    margin-right: 0;
     margin-bottom: 12px;
 }
 
-.au-hero-header-left {
-    flex-direction: column;
-    flex-grow: 1;
-    margin-right: 12px;
+.yucp-window-narrow .yucp-hero-actions {
+    width: 100%;
+    justify-content: flex-start;
 }
 
-.au-hero-title-field {
-    flex-grow: 1;
-    margin-right: 12px;
-    font-size: 20px;
-    -unity-font-style: bold;
-    color: #ffffff;
-}
-
-.au-hero-title-field .unity-text-field__input {
-    font-size: 20px;
-    -unity-font-style: bold;
-    color: #ffffff;
-    background-color: #1a1a1a;
-    border-width: 0;
-    padding: 6px 10px;
-}
-
-.au-hero-actions {
-    flex-direction: row;
-}
-
-.au-hero-actions .au-button {
-    margin-left: 6px;
-}
-
-.au-hero-description {
-    min-height: 72px;
-    background-color: #181818;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    border-radius: 6px;
-    margin-bottom: 12px;
-    padding: 6px 8px;
-}
-
-.au-hero-description .unity-text-field__input {
-    font-size: 12px;
-    color: #dddddd;
-    -unity-text-align: upper-left;
-}
-
-.au-hero-description-label {
-    min-height: 60px;
-    padding: 8px 10px;
-    background-color: #181818;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    border-radius: 6px;
-    margin-bottom: 12px;
-    color: #dddddd;
-    font-size: 12px;
-    white-space: normal;
-}
-
-.au-hero-prefab-row {
-    align-items: center;
-}
-
-.au-hero-prefab-row .unity-object-field {
-    flex-grow: 1;
-}
-
-.au-hero-prefab-actions {
-    flex-direction: row;
-    margin-left: 8px;
-}
-
-.au-hero-prefab-actions .au-button {
-    margin-left: 6px;
-}
-
-.au-hero-platform-row {
-    flex-direction: row;
-    margin-bottom: 12px;
-}
-
-.au-hero-section {
-    margin-bottom: 12px;
-    background-color: #141414;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    border-radius: 8px;
-    padding: 10px;
-}
-
-.au-hero-foldout {
-    margin-top: 12px;
-    background-color: #141414;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    border-radius: 6px;
-    padding: 4px;
-}
-
-.au-hero-foldout .unity-foldout__content {
-    padding-left: 16px;
-    padding-bottom: 6px;
-}
-
-.au-store-section {
-    flex-direction: column;
-}
-
-.au-store-header-actions {
-    flex-direction: row;
-    align-items: center;
-}
-
-.au-store-header-actions .au-button {
-    margin-left: 6px;
-}
-
-.au-hero-stat-row {
-    flex-direction: row;
-    margin-bottom: 12px;
-}
-
-.au-hero-stat-card {
-    flex-direction: column;
-    background-color: #161616;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    border-radius: 8px;
-    padding: 8px 14px;
-    margin-right: 10px;
-    min-width: 120px;
-}
-
-.au-hero-quick-actions {
-    flex-direction: row;
-    margin-top: 12px;
-}
-
-.au-hero-quick-actions .au-button {
+.yucp-window-narrow .yucp-hero-actions .yucp-button {
+    flex: 1 1 auto;
+    margin-left: 0;
     margin-right: 8px;
 }
 
-.au-hero-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    justify-content: center;
-    align-items: center;
+/* ============================================================================
+   RESPONSIVE: BUILD BUTTONS - AvatarUploader specific
+   ============================================================================ */
+.yucp-window-narrow .yucp-build-buttons {
+    flex-direction: column;
 }
 
-.au-hero-slide-button {
-    width: 32px;
-    height: 32px;
-    border-radius: 16px;
-    border-width: 0;
-    margin: 0 6px;
-    background-color: rgba(20, 20, 20, 0.88);
-    color: #f3f3f3;
-    font-size: 16px;
+.yucp-window-narrow .yucp-build-buttons Button {
+    width: 100%;
+    margin: 4px 0;
 }
 
-.au-hero-slide-button:hover {
-    background-color: rgba(54, 191, 177, 0.9);
+.yucp-window-narrow .yucp-build-info {
+    margin-bottom: 8px;
 }
-
-.au-hero-slide-prev {
-    position: absolute;
-    left: 8px;
-}
-
-.au-hero-slide-next {
-    position: absolute;
-    right: 8px;
-}
-
-.au-hero-slide-add {
-    position: absolute;
-    bottom: 12px;
-}
-
-.au-hero-slide-seticon {
-    position: absolute;
-    bottom: 12px;
-    right: 12px;
-    width: 84px;
-    height: 30px;
-    border-radius: 6px;
-    font-size: 12px;
-    justify-content: center;
-}
-
-.au-hero-gallery-image {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    -unity-background-scale-mode: scale-to-fit;
-    display: none;
-}
-
-.au-hero-slide-label {
-    position: absolute;
-    left: 12px;
-    top: 12px;
-    background-color: rgba(20, 20, 20, 0.85);
-    color: #ffffff;
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 11px;
-    letter-spacing: 0.3px;
-}
-
-.au-store-header {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-}
-

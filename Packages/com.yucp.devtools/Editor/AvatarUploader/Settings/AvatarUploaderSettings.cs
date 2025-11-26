@@ -22,6 +22,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		[SerializeField] private int maxParallelBuilds = 2;
 		[SerializeField] private bool enableBuildCaching = true;
 		[SerializeField] private bool enableGalleryIntegration = false;
+		[SerializeField] private bool disableCursorTracking = false;
+		[SerializeField] private bool useLowSpecMode = false;
 
 		public bool AutoUploadAfterBuild { get => autoUploadAfterBuild; set => autoUploadAfterBuild = value; }
 		public bool ShowBuildNotifications { get => showBuildNotifications; set => showBuildNotifications = value; }
@@ -35,6 +37,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		public int MaxParallelBuilds { get => maxParallelBuilds; set => maxParallelBuilds = Mathf.Clamp(value, 1, 8); }
 		public bool EnableBuildCaching { get => enableBuildCaching; set => enableBuildCaching = value; }
 		public bool EnableGalleryIntegration { get => enableGalleryIntegration; set => enableGalleryIntegration = value; }
+		public bool DisableCursorTracking { get => disableCursorTracking; set => disableCursorTracking = value; }
+		public bool UseLowSpecMode { get => useLowSpecMode; set => useLowSpecMode = value; }
 
 		public void Save()
 		{

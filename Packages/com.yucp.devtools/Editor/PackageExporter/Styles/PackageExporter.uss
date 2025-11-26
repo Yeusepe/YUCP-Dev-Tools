@@ -1,448 +1,158 @@
 /* ============================================================================
-   Package Exporter Design System - YUCP Brand Style
-   Based on Package Guardian design system
+   Package Exporter - Component-Specific Styles
+   Shared design system styles are in YucpDesignSystem.uss
    ============================================================================ */
 
 /* ============================================================================
-   COLOR PALETTE - YUCP Brand Colors
+   EXPORT INSPECTOR - PackageExporter specific
    ============================================================================ */
-.pe-window {
-    /* Base colors */
-    --pe-bg-primary: #090909;      /* YUCP dark background */
-    --pe-bg-secondary: #1a1a1a;    /* Card/panel background */
-    --pe-bg-tertiary: #2a2a2a;     /* List items, inputs */
-    --pe-bg-hover: #525252;        /* Hover states - YUCP gray */
-    
-    /* Borders */
-    --pe-border-primary: #2a2a2a;
-    --pe-border-secondary: #3a3a3a;
-    
-    /* Text */
-    --pe-text-primary: #ffffff;    /* Main text */
-    --pe-text-secondary: #b0b0b0;  /* Secondary text */
-    --pe-text-tertiary: #808080;   /* Subtle text */
-    
-    /* Accent colors - YUCP Brand */
-    --pe-accent-primary: #36BFB1;  /* YUCP Teal - primary actions */
-    --pe-accent-success: #36BFB1;  /* Teal - added/success */
-    --pe-accent-warning: #E2A54A;  /* Orange - warnings */
-    --pe-accent-danger: #E24A4A;   /* Red - deleted/danger */
-    --pe-accent-info: #5BA3FF;     /* Blue - info */
-}
-
-/* ============================================================================
-   BASE WINDOW & LAYOUT
-   ============================================================================ */
-.pe-window {
-    flex-grow: 1;
-    background-color: #090909;
-}
-
-.pe-main-container {
-    flex-grow: 1;
-    flex-direction: column;
-    min-width: 0;
-}
-
-/* ============================================================================
-   TOP BAR - Header with Logo & Title
-   ============================================================================ */
-.pe-top-bar {
+.yucp-inspector-header {
     flex-direction: row;
-    min-height: 100px;
-    padding-top: 16px;
-    padding-bottom: 16px;
-    padding-left: 20px;
-    padding-right: 20px;
-    background-color: #1a1a1a;
-    border-bottom-width: 1px;
-    border-bottom-color: #2a2a2a;
     align-items: center;
-    flex-wrap: wrap;
-    overflow: hidden;
-    transition-property: flex-wrap, min-height, padding;
-    transition-duration: 0.5s, 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
+    justify-content: space-between;
+    margin-bottom: 8px;
 }
 
-.pe-logo {
-    width: 116px;
-    height: 50px;
-    margin-right: 20px;
-    flex-shrink: 0;
-    transition-property: margin, width, height, opacity;
-    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
-}
-
-.pe-title {
-    font-size: 20px;
-    color: #ffffff;
-    -unity-font-style: bold;
-}
-
-/* ============================================================================
-   3-PANE LAYOUT
-   ============================================================================ */
-.pe-content-container {
+.yucp-inspector-header .yucp-section-title {
+    margin-bottom: 0;
     flex-grow: 1;
-    flex-direction: row;
-    min-width: 0;
-    overflow: hidden;
-    position: relative;
 }
 
-.pe-left-pane {
-    width: 270px;
-    min-width: 200px;
-    flex-shrink: 0;
-    background-color: #090909;
-    border-right-width: 1px;
-    border-right-color: #2a2a2a;
-    padding: 20px;
-    overflow: hidden;
-    transition-property: width, opacity, min-width, padding;
-    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
-}
-
-.pe-right-pane {
+.yucp-inspector-search {
     flex-grow: 1;
     flex-shrink: 1;
     min-width: 0;
-    background-color: #090909;
+    margin-right: 8px;
     overflow: hidden;
-    transition-property: opacity, width;
-    transition-duration: 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out;
 }
 
-.pe-right-pane .pe-panel {
-    padding-right: 24px;
+.yucp-inspector-filters {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
 }
 
-/* ============================================================================
-   BUTTONS - Consistent sizing and styling
-   ============================================================================ */
-.pe-button {
-    height: 32px;
-    padding-left: 16px;
-    padding-right: 16px;
-    border-radius: 0;
-    background-color: #3a3a3a;
-    border-width: 0;
-    color: #ffffff;
-    font-size: 12px;
-    -unity-font-style: normal;
-    margin-left: 4px;
-    margin-right: 4px;
-    -unity-text-align: middle-center;
+.yucp-inspector-list {
+    background-color: #1a1a1a;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 8px;
+    padding: 8px;
+    min-height: 200px;
+    max-height: 400px;
+    overflow: hidden;
+}
+
+.yucp-inspector-list > * {
+    max-width: 100%;
+}
+
+.yucp-asset-item {
+    flex-direction: row;
+    align-items: center;
+    padding: 6px 8px;
+    margin-bottom: 2px;
+    margin-left: 0;
+    background-color: #2a2a2a;
+    border-left-width: 2px;
+    border-left-color: transparent;
+    border-radius: 4px;
     transition-duration: 0.1s;
-    transition-property: background-color, color;
+    transition-property: background-color, border-left-color;
     transition-timing-function: ease-out;
 }
 
-.pe-button:hover {
-    background-color: #525252;
-    color: #ffffff;
-}
-
-.pe-button:active {
-    background-color: #2a2a2a;
-    color: #ffffff;
-}
-
-.pe-button-primary {
-    background-color: #36BFB1;
-    color: #ffffff;
-}
-
-.pe-button-primary:hover {
-    background-color: #48d1c3;
-}
-
-.pe-button-primary:active {
-    background-color: #2da89c;
-}
-
-.pe-button-action {
+.yucp-asset-item:hover {
     background-color: #3a3a3a;
-    color: #ffffff;
+    border-left-color: rgba(54, 191, 177, 0.2);
 }
 
-.pe-button-action:hover {
-    background-color: #36BFB1;
-    color: #ffffff;
+.yucp-asset-item-checkbox {
+    margin-right: 8px;
 }
 
-.pe-button-action:active {
-    background-color: #2da89c;
-    color: #ffffff;
-}
-
-.pe-button-danger {
-    background-color: #3a3a3a;
-    color: #ffffff;
-}
-
-.pe-button-danger:hover {
-    background-color: #E24A4A;
-    color: #ffffff;
-}
-
-.pe-button-danger:active {
-    background-color: #c93a3a;
-    color: #ffffff;
-}
-
-.pe-button-export {
-    background-color: #5BA3FF;
-    color: #ffffff;
-}
-
-.pe-button-export:hover {
-    background-color: #7ab5ff;
-}
-
-.pe-button-export:active {
-    background-color: #4a92ee;
-}
-
-.pe-button-small {
-    height: 24px;
-    padding-left: 12px;
-    padding-right: 12px;
+.yucp-asset-item-icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    -unity-text-align: middle-center;
     font-size: 11px;
+    color: #36BFB1;
 }
 
-.pe-button-large {
-    height: 50px;
-    font-size: 14px;
-    padding-left: 24px;
-    padding-right: 24px;
-}
-
-/* ============================================================================
-   TYPOGRAPHY
-   ============================================================================ */
-.pe-section-header {
+.yucp-asset-item-name {
+    flex-grow: 1;
     font-size: 11px;
-    color: #b0b0b0;
-    -unity-font-style: bold;
-    letter-spacing: 0.5px;
-    margin-bottom: 12px;
-}
-
-.pe-label {
-    font-size: 12px;
     color: #ffffff;
 }
 
-.pe-label-secondary {
-    font-size: 11px;
-    color: #b0b0b0;
+.yucp-asset-item-name:hover {
+    color: #36BFB1;
 }
 
-.pe-label-small {
+.yucp-asset-item-type {
+    font-size: 10px;
+    color: #808080;
+    margin-right: 12px;
+}
+
+.yucp-asset-item-size {
     font-size: 10px;
     color: #808080;
 }
 
 /* ============================================================================
-   PANELS & SECTIONS
+   EXPORT ACTIONS - PackageExporter specific
    ============================================================================ */
-.pe-panel {
-    flex-direction: column;
-    padding: 20px;
-}
-
-.pe-section {
-    margin-bottom: 16px;
-    padding: 12px;
-    background-color: #1a1a1a;
-    border-radius: 0;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    overflow: hidden;
-}
-
-.pe-section-title {
-    font-size: 13px;
-    -unity-font-style: bold;
-    margin-bottom: 12px;
-    color: #ffffff;
-}
-
-/* ============================================================================
-   PROFILE LIST
-   ============================================================================ */
-.pe-profile-list-container {
-    flex-grow: 1;
-    flex-direction: column;
-    transition-property: width, padding;
-    transition-duration: 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out;
-}
-
-.pe-profile-list-scroll {
-    flex-grow: 1;
-    margin-bottom: 12px;
-}
-
-.pe-profile-item {
-    background-color: #1a1a1a;
-    border-radius: 0;
-    border-left-width: 3px;
-    border-left-color: transparent;
-    padding-top: 8px;
-    padding-bottom: 8px;
-    padding-left: 12px;
-    padding-right: 12px;
-    margin-bottom: 4px;
-    flex-direction: column;
-    transition-duration: 0.5s, 0.5s, 0.15s, 0.15s;
-    transition-property: width, padding, background-color, border-left-color;
-    transition-timing-function: ease-in-out, ease-in-out, ease-out, ease-out;
-}
-
-.pe-profile-item:hover {
-    background-color: #2a2a2a;
-}
-
-.pe-profile-item-selected {
-    background-color: #2a2a2a;
-    border-left-color: #36BFB1;
-}
-
-.pe-profile-item-name {
-    font-size: 12px;
-    color: #ffffff;
-    -unity-font-style: bold;
-    margin-bottom: 4px;
-}
-
-.pe-profile-item-info {
-    font-size: 10px;
-    color: #808080;
-}
-
-.pe-profile-buttons {
+.yucp-export-buttons {
     flex-direction: row;
-    margin-bottom: 8px;
-    transition-property: flex-direction, height;
-    transition-duration: 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out;
+    justify-content: flex-end;
+    align-items: center;
 }
 
-.pe-profile-buttons Button {
+.yucp-export-info {
     flex-grow: 1;
-    margin: 2px;
-    transition-property: width, margin, flex-grow, height;
-    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
-}
-
-.pe-profile-list-container > Button {
-    margin-left: 4px;
-    margin-right: 4px;
-    transition-property: width, margin, height;
-    transition-duration: 0.5s, 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
-}
-
-/* ============================================================================
-   FORM FIELDS
-   ============================================================================ */
-.pe-form-row {
     flex-direction: row;
     align-items: center;
-    margin-bottom: 8px;
-    overflow: hidden;
-    transition-property: flex-direction, height;
-    transition-duration: 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out;
 }
 
-.pe-form-label {
-    width: 120px;
+.yucp-multi-select-info {
+    padding: 8px 12px;
+    background-color: rgba(54, 191, 177, 0.15);
+    border-left-width: 3px;
+    border-left-color: #36BFB1;
+    border-radius: 6px;
+    margin-right: 16px;
+}
+
+.yucp-multi-select-text {
     font-size: 12px;
-    color: #b0b0b0;
-    flex-shrink: 0;
-    transition-property: width, margin, opacity;
-    transition-duration: 0.5s, 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
-}
-
-.pe-form-field {
-    flex-grow: 1;
-    flex-shrink: 1;
-    min-width: 0;
-    overflow: hidden;
-    transition-property: width, opacity;
-    transition-duration: 0.5s, 0.5s;
-    transition-timing-function: ease-in-out, ease-in-out;
-}
-
-.pe-input {
-    background-color: #2a2a2a;
-    border-width: 1px;
-    border-color: #3a3a3a;
-    color: #ffffff;
-    padding: 6px 8px;
-    border-radius: 0;
-    min-height: 28px;
-    max-width: 100%;
-    overflow: hidden;
-}
-
-.pe-input:focus {
-    border-color: #36BFB1;
-}
-
-.pe-input .unity-text-field__input {
-    background-color: transparent;
-    border-width: 0;
-    color: #ffffff;
-    padding: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.pe-input-multiline {
-    min-height: 80px;
-}
-
-.pe-input .unity-base-text-field__input {
-    background-color: transparent;
-    border-width: 0;
-    color: #ffffff;
-    padding: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    color: #36BFB1;
 }
 
 /* ============================================================================
-   FOLDER LIST
+   FOLDER LIST - PackageExporter specific
    ============================================================================ */
-.pe-folder-list {
+.yucp-folder-list {
     background-color: #1a1a1a;
     border-width: 1px;
     border-color: #2a2a2a;
+    border-radius: 8px;
     padding: 8px;
     min-height: 100px;
 }
 
-.pe-folder-item {
+.yucp-folder-item {
     flex-direction: row;
     align-items: center;
     padding: 6px 8px;
     background-color: #2a2a2a;
     margin-bottom: 4px;
-    border-radius: 0;
+    border-radius: 4px;
     overflow: hidden;
 }
 
-.pe-folder-item-path {
+.yucp-folder-item-path {
     flex-grow: 1;
     flex-shrink: 1;
     min-width: 0;
@@ -452,7 +162,7 @@
     text-overflow: ellipsis;
 }
 
-.pe-folder-item-remove {
+.yucp-folder-item-remove {
     width: 20px;
     min-width: 20px;
     height: 20px;
@@ -468,544 +178,568 @@
     transition-timing-function: ease-out;
 }
 
-.pe-folder-item-remove:hover {
+.yucp-folder-item-remove:hover {
     background-color: #E24A4A;
 }
 
 /* ============================================================================
-   EXPORT INSPECTOR
+   RESPONSIVE BREAKPOINTS - PackageExporter specific overrides
    ============================================================================ */
-.pe-inspector-header {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-}
-
-.pe-inspector-header .pe-section-title {
-    margin-bottom: 0;
-    flex-grow: 1;
-}
-
-.pe-inspector-search {
-    flex-grow: 1;
-    flex-shrink: 1;
-    min-width: 0;
-    margin-right: 8px;
-    overflow: hidden;
-}
-
-.pe-inspector-filters {
-    flex-direction: row;
-    align-items: center;
-    margin-bottom: 8px;
-}
-
-.pe-inspector-list {
-    background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    padding: 8px;
-    min-height: 200px;
-    max-height: 400px;
-}
-
-.pe-asset-item {
-    flex-direction: row;
-    align-items: center;
-    padding: 6px 8px;
-    margin-bottom: 2px;
-    background-color: #2a2a2a;
-    border-radius: 0;
-    transition-duration: 0.1s;
-    transition-property: background-color;
-    transition-timing-function: ease-out;
-}
-
-.pe-asset-item:hover {
-    background-color: #3a3a3a;
-}
-
-.pe-asset-item-checkbox {
-    margin-right: 8px;
-}
-
-.pe-asset-item-icon {
-    width: 20px;
-    height: 20px;
-    margin-right: 8px;
-    -unity-text-align: middle-center;
-    font-size: 11px;
-    color: #36BFB1;
-}
-
-.pe-asset-item-name {
-    flex-grow: 1;
-    font-size: 11px;
-    color: #ffffff;
-}
-
-.pe-asset-item-type {
-    font-size: 10px;
-    color: #808080;
-    margin-right: 12px;
-}
-
-.pe-asset-item-size {
-    font-size: 10px;
-    color: #808080;
-}
-
-/* ============================================================================
-   BOTTOM BAR - Export Actions
-   ============================================================================ */
-.pe-bottom-bar {
-    flex-direction: column;
-    background-color: #1a1a1a;
-    border-top-width: 1px;
-    border-top-color: #2a2a2a;
-    padding: 16px 20px;
-    flex-shrink: 0;
-}
-
-.pe-export-buttons {
-    flex-direction: row;
-    justify-content: flex-end;
-    align-items: center;
-    /* Removed flex-direction and height from transitions to prevent buttons jumping around */
-}
-
-.pe-export-info {
-    flex-grow: 1;
-    flex-direction: row;
-    align-items: center;
-    /* Removed transitions to prevent layout shifting */
-}
-
-.pe-multi-select-info {
-    padding: 8px 12px;
-    background-color: rgba(54, 191, 177, 0.15);
-    border-left-width: 3px;
-    border-left-color: #36BFB1;
-    border-radius: 0;
-    margin-right: 16px;
-}
-
-.pe-multi-select-text {
-    font-size: 12px;
-    color: #36BFB1;
-}
-
-/* ============================================================================
-   PROGRESS BAR
-   ============================================================================ */
-.pe-progress-container {
-    margin-top: 12px;
-}
-
-.pe-progress-bar {
-    height: 24px;
-    background-color: #2a2a2a;
-    border-radius: 0;
-    overflow: hidden;
-}
-
-.pe-progress-fill {
-    height: 100%;
-    background-color: #36BFB1;
-    border-radius: 0;
-}
-
-.pe-progress-text {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    -unity-text-align: middle-center;
-    font-size: 11px;
-    color: #ffffff;
-}
-
-/* ============================================================================
-   VALIDATION & FEEDBACK
-   ============================================================================ */
-.pe-validation-error {
-    background-color: rgba(226, 74, 74, 0.1);
-    border-left-width: 3px;
-    border-left-color: #E24A4A;
-    border-radius: 0;
-    padding: 12px;
-    margin: 8px 0;
-}
-
-.pe-validation-error-text {
-    font-size: 12px;
-    color: #E24A4A;
-}
-
-.pe-validation-success {
-    background-color: rgba(54, 191, 177, 0.1);
-    border-left-width: 3px;
-    border-left-color: #36BFB1;
-    border-radius: 0;
-    padding: 12px;
-    margin: 8px 0;
-}
-
-.pe-validation-success-text {
-    font-size: 12px;
-    color: #36BFB1;
-}
-
-/* ============================================================================
-   EMPTY STATE
-   ============================================================================ */
-.pe-empty-state {
-    flex-grow: 1;
-    justify-content: center;
-    align-items: center;
-    padding: 40px;
-}
-
-.pe-empty-state-title {
-    font-size: 16px;
-    color: #b0b0b0;
-    -unity-font-style: bold;
-    margin-bottom: 8px;
-    -unity-text-align: middle-center;
-}
-
-.pe-empty-state-description {
-    font-size: 12px;
-    color: #808080;
-    -unity-text-align: middle-center;
-    max-width: 300px;
-}
-
-/* ============================================================================
-   SCROLLVIEWS
-   ============================================================================ */
-.pe-scrollview {
-    flex-grow: 1;
-}
-
-/* ============================================================================
-   MISC UTILITIES
-   ============================================================================ */
-.pe-separator {
-    height: 1px;
-    background-color: #2a2a2a;
-    margin-top: 12px;
-    margin-bottom: 12px;
-}
-
-.pe-spacer {
-    flex-grow: 1;
-}
-
-.pe-horizontal-line {
-    height: 1px;
-    background-color: #2a2a2a;
-}
-
-/* ============================================================================
-   STATISTICS DISPLAY
-   ============================================================================ */
-.pe-stats-container {
-    flex-direction: row;
-    margin-top: 8px;
-}
-
-.pe-stat-item {
-    flex-direction: column;
-    margin-right: 20px;
-}
-
-.pe-stat-label {
-    font-size: 10px;
-    color: #808080;
-    margin-bottom: 4px;
-}
-
-.pe-stat-value {
-    font-size: 12px;
-    color: #ffffff;
-    -unity-font-style: bold;
-}
-
-/* ============================================================================
-   TOGGLE STYLES
-   ============================================================================ */
-.pe-toggle {
-    margin-top: 4px;
-    margin-bottom: 4px;
-    flex-shrink: 0;
-}
-
-.pe-toggle .unity-toggle__checkmark {
-    background-color: #2a2a2a;
-    border-color: #3a3a3a;
-    border-width: 1px;
-    flex-shrink: 0;
-}
-
-.pe-toggle:checked .unity-toggle__checkmark {
-    background-color: #36BFB1;
-    border-color: #36BFB1;
-}
-
-.pe-toggle .unity-label {
-    color: #ffffff;
-    font-size: 12px;
-    min-width: 80px;
-    flex-shrink: 0;
-}
-
-/* ============================================================================
-   HELP BOX STYLES
-   ============================================================================ */
-.pe-help-box {
-    background-color: rgba(91, 163, 255, 0.1);
-    border-left-width: 3px;
-    border-left-color: #5BA3FF;
-    padding: 12px;
-    margin: 8px 0;
-    border-radius: 0;
-}
-
-.pe-help-box-text {
-    font-size: 11px;
-    color: #5BA3FF;
-    white-space: normal;
-}
-
-/* ============================================================================
-   SEARCH AND FILTER ROWS
-   ============================================================================ */
-.pe-search-row {
-    flex-direction: row;
-    margin-top: 8px;
-    margin-bottom: 8px;
-    overflow: hidden;
-}
-
-.pe-search-row .pe-input {
-    flex-grow: 1;
-    flex-shrink: 1;
-    min-width: 0;
-}
-
-.pe-filter-row {
-    flex-direction: row;
-    margin-bottom: 8px;
-    flex-wrap: wrap;
-    align-items: center;
-}
-
-.pe-filter-row .pe-toggle {
-    margin-right: 16px;
-    flex-shrink: 0;
-}
-
-/* ============================================================================
-   RESPONSIVE DESIGN - Mobile Menu Toggle
-   ============================================================================ */
-.pe-mobile-toggle {
-    height: 40px;
-    width: 40px;
-    min-width: 40px;
-    background-color: #3a3a3a;
-    border-width: 0;
-    border-radius: 0;
-    margin-right: 12px;
-    padding: 0;
-    -unity-text-align: middle-center;
-    font-size: 16px;
-    color: #ffffff;
-    display: none;
-    opacity: 0;
-    scale: 0.8 0.8;
-    transition-property: background-color, opacity, scale;
-    transition-duration: 0.1s, 0.3s, 0.3s;
-    transition-timing-function: ease-out, ease-out, ease-out;
-}
-
-.pe-mobile-toggle:hover {
-    background-color: #36BFB1;
-    scale: 1 1;
-}
-
-.pe-mobile-toggle:active {
-    background-color: #2da89c;
-    scale: 0.95 0.95;
-}
-
-.pe-profile-dropdown-container {
-    display: none;
-    flex-direction: column;
-    background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #2a2a2a;
-    margin: 0 20px 12px 20px;
-    padding: 12px;
-}
-
-.pe-profile-dropdown-header {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-}
-
-.pe-profile-dropdown-label {
-    font-size: 11px;
-    color: #b0b0b0;
-    -unity-font-style: bold;
-    letter-spacing: 0.5px;
-}
-
-.pe-left-pane-overlay {
-    background-color: #090909;
-    border-right-width: 1px;
-    border-right-color: #2a2a2a;
-    padding: 20px;
-    transition-property: opacity, left;
-    transition-duration: 0.3s, 0.3s;
-    transition-timing-function: ease-out, ease-out;
-}
-
-.pe-overlay-backdrop {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    transition-property: opacity;
-    transition-duration: 0.3s;
-    transition-timing-function: ease-out;
-}
-
-/* ============================================================================
-   RESPONSIVE BREAKPOINTS
-   ============================================================================ */
-
-/* Narrow layout (< 700px) - Collapse left pane to dropdown/overlay */
-.pe-window-narrow .pe-left-pane {
-    display: none;
-    opacity: 0;
-}
-
-.pe-window-narrow .pe-mobile-toggle {
-    display: flex;
-    opacity: 1;
-    scale: 1 1;
-}
-
-.pe-window-narrow .pe-right-pane {
-    width: 100%;
-}
-
-.pe-window-narrow .pe-content-container {
-    position: relative;
-}
-
-.pe-window-narrow .pe-form-row {
-    flex-direction: column;
-    align-items: flex-start;
-}
-
-.pe-window-narrow .pe-form-label {
-    width: 100%;
-    margin-bottom: 4px;
-}
-
-.pe-window-narrow .pe-export-buttons {
+.yucp-window-narrow .yucp-export-buttons {
     flex-direction: column;
 }
 
-.pe-window-narrow .pe-export-buttons Button {
+.yucp-window-narrow .yucp-export-buttons Button {
     width: 100%;
     margin: 4px 0;
 }
 
-.pe-window-narrow .pe-export-info {
+.yucp-window-narrow .yucp-export-info {
     margin-bottom: 8px;
 }
 
-.pe-window-narrow .pe-profile-buttons {
-    flex-direction: column;
-}
-
-.pe-window-narrow .pe-profile-buttons Button {
-    width: 100%;
-}
-
-.pe-window-narrow .pe-profile-list-container > Button {
-    width: 100%;
-    margin-left: 0;
-    margin-right: 0;
-}
-
-.pe-window-narrow .pe-top-bar {
-    flex-wrap: wrap;
-}
-
-.pe-window-narrow .pe-logo {
-    margin-bottom: 8px;
-}
-
-.pe-window-narrow .pe-stats-container {
-    flex-direction: column;
-}
-
-.pe-window-narrow .pe-stat-item {
-    margin-bottom: 8px;
-}
-
-.pe-window-narrow .pe-inspector-filters {
-    flex-wrap: wrap;
-}
-
-.pe-window-narrow .pe-filter-row {
+/* ============================================================================
+   EXPORT INSPECTOR - Responsive Design
+   ============================================================================ */
+.yucp-window-narrow .yucp-inspector-header {
     flex-direction: column;
     align-items: flex-start;
 }
 
-.pe-window-narrow .pe-filter-row .pe-toggle {
+.yucp-window-narrow .yucp-inspector-header .yucp-section-title {
+    width: 100%;
     margin-bottom: 8px;
 }
 
-/* Medium layout (700px - 900px) - Reduce left pane size */
-.pe-window-medium .pe-left-pane {
-    width: 220px;
-    min-width: 180px;
+.yucp-window-narrow .yucp-inspector-header Button {
+    width: 100%;
+    margin: 0;
 }
 
-.pe-window-medium .pe-form-row {
+.yucp-window-medium .yucp-inspector-header {
     flex-wrap: wrap;
 }
 
-.pe-window-medium .pe-form-label {
-    width: 100px;
+.yucp-window-medium .yucp-inspector-header .yucp-section-title {
+    flex: 1 1 auto;
+    min-width: 200px;
 }
 
-.pe-window-medium .pe-profile-buttons {
+/* Inspector action buttons (Scan Assets, Clear Scan) */
+.yucp-inspector-action-buttons {
+    flex-direction: row;
+}
+
+.yucp-window-narrow .yucp-inspector-action-buttons {
     flex-direction: column;
 }
 
-.pe-window-medium .pe-profile-buttons Button {
+.yucp-window-narrow .yucp-inspector-action-buttons Button {
     width: 100%;
-    margin: 2px 0;
+    margin: 4px 0;
+    flex-grow: 1;
 }
 
-.pe-window-medium .pe-profile-list-container > Button {
+.yucp-window-medium .yucp-inspector-action-buttons Button {
+    flex: 1 1 auto;
+    min-width: 120px;
+}
+
+/* Search row responsive */
+.yucp-inspector-search-row {
+    flex-direction: row;
+}
+
+.yucp-window-narrow .yucp-inspector-search-row {
+    flex-direction: column;
+}
+
+.yucp-window-narrow .yucp-inspector-search-row .yucp-input {
     width: 100%;
+    margin-right: 0;
+    margin-bottom: 8px;
+    flex-grow: 1;
+}
+
+.yucp-window-narrow .yucp-inspector-search-row Button {
+    width: 100%;
+    margin: 0;
+}
+
+.yucp-window-medium .yucp-inspector-search-row .yucp-input {
+    flex: 1 1 auto;
+    min-width: 200px;
+}
+
+/* Filter toggles row */
+.yucp-inspector-filter-toggles {
+    flex-direction: row;
+}
+
+.yucp-window-narrow .yucp-inspector-filter-toggles {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.yucp-window-narrow .yucp-inspector-filter-toggles .yucp-toggle {
+    width: 100%;
+    margin-bottom: 8px;
+    margin-right: 0;
+}
+
+.yucp-window-medium .yucp-inspector-filter-toggles {
+    flex-wrap: wrap;
+}
+
+.yucp-window-medium .yucp-inspector-filter-toggles .yucp-toggle {
+    margin-right: 16px;
+    margin-bottom: 8px;
+}
+
+/* List header with actions (Include All, Exclude All) */
+.yucp-inspector-list-header {
+    flex-direction: row;
+    justify-content: space-between;
+}
+
+.yucp-window-narrow .yucp-inspector-list-header {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.yucp-window-narrow .yucp-inspector-list-header Label {
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+.yucp-inspector-list-actions {
+    flex-direction: row;
+}
+
+.yucp-window-narrow .yucp-inspector-list-actions {
+    width: 100%;
+    flex-direction: column;
+}
+
+.yucp-window-narrow .yucp-inspector-list-actions Button {
+    width: 100%;
+    margin: 4px 0;
+}
+
+/* Folder header actions in asset list - Beautiful card design */
+.yucp-inspector-folder-header {
+    background-color: rgba(26, 26, 26, 0.6);
+    border-width: 1px;
+    border-left-width: 3px;
+    border-color: rgba(42, 42, 42, 0.8);
+    border-left-color: rgba(54, 191, 177, 0.3);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-top: 8px;
+    margin-bottom: 6px;
+    overflow: hidden;
+    min-width: 0;
+    max-width: 100%;
+    transition-duration: 0.2s;
+    transition-property: background-color, border-color, border-left-color;
+    transition-timing-function: ease-out;
+}
+
+.yucp-inspector-folder-header:hover {
+    background-color: rgba(30, 30, 30, 0.8);
+    border-color: rgba(54, 191, 177, 0.4);
+    border-left-color: rgba(54, 191, 177, 0.6);
+}
+
+.yucp-inspector-folder-content {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.yucp-inspector-folder-content > * {
+    margin-left: 6px;
+    margin-right: 6px;
+}
+
+.yucp-inspector-folder-content .yucp-folder-expand-button {
+    margin-left: 0;
+}
+
+.yucp-inspector-folder-label {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: #e0e0e0;
+    -unity-font-style: bold;
+    letter-spacing: 0.2px;
+    padding: 0;
+    margin: 0;
+}
+
+.yucp-inspector-folder-label:hover {
+    color: #36BFB1;
+}
+
+.yucp-inspector-folder-actions {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    min-width: 0;
+    flex-shrink: 0;
+    align-items: center;
+}
+
+.yucp-inspector-folder-actions Button {
+    flex: 0 0 auto;
+    min-width: 0;
+    margin-left: 3px;
+    margin-right: 3px;
+    white-space: nowrap;
+    padding-left: 10px;
+    padding-right: 10px;
+    height: 26px;
+    font-size: 11px;
+}
+
+/* Hierarchical folder tree styling */
+.yucp-folder-expand-button {
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    padding: 0;
+    margin: 0;
+    margin-right: 6px;
+    background-color: transparent;
+    border-width: 0;
+    color: #36BFB1;
+    font-size: 10px;
+    -unity-text-align: middle-center;
+    flex-shrink: 0;
+    transition-duration: 0.15s;
+    transition-property: color, scale;
+    transition-timing-function: ease-out;
+}
+
+.yucp-folder-expand-button:hover {
+    color: #48d1c3;
+    background-color: rgba(54, 191, 177, 0.1);
+    border-radius: 3px;
+}
+
+.yucp-folder-count-badge {
+    font-size: 10px;
+    color: #808080;
+    margin-left: 8px;
+    padding: 2px 6px;
+    background-color: rgba(42, 42, 42, 0.6);
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+
+/* Responsive folder header */
+.yucp-window-narrow .yucp-inspector-folder-content {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.yucp-window-narrow .yucp-inspector-folder-content > * {
+    margin-top: 5px;
+    margin-bottom: 5px;
     margin-left: 0;
     margin-right: 0;
 }
 
-/* Wide layout (> 900px) - Default behavior */
-/* Default styles already handle this case */
+.yucp-window-narrow .yucp-inspector-folder-label {
+    width: 100%;
+    white-space: normal;
+    margin-bottom: 0;
+}
 
+.yucp-window-narrow .yucp-inspector-folder-actions {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+}
+
+.yucp-window-narrow .yucp-inspector-folder-actions Button {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 2px;
+}
+
+.yucp-window-medium .yucp-inspector-folder-content {
+    flex-wrap: wrap;
+}
+
+.yucp-window-medium .yucp-inspector-folder-actions {
+    flex-wrap: wrap;
+}
+
+.yucp-window-medium .yucp-inspector-folder-actions Button {
+    flex: 0 1 auto;
+    min-width: 100px;
+}
+
+/* Asset items - ensure they don't overflow */
+.yucp-window-narrow .yucp-asset-item {
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.yucp-window-narrow .yucp-asset-item-checkbox {
+    margin-bottom: 4px;
+}
+
+.yucp-window-narrow .yucp-asset-item-icon {
+    margin-bottom: 4px;
+}
+
+.yucp-window-narrow .yucp-asset-item-name {
+    min-width: 0;
+    flex-basis: 100%;
+    flex-grow: 1;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.yucp-window-narrow .yucp-asset-item-type {
+    flex-shrink: 0;
+    margin-right: 8px;
+    margin-top: 4px;
+}
+
+.yucp-window-narrow .yucp-asset-item-size {
+    flex-shrink: 0;
+    margin-top: 4px;
+}
+
+/* Medium breakpoint - allow some wrapping */
+.yucp-window-medium .yucp-asset-item {
+    flex-wrap: wrap;
+}
+
+.yucp-window-medium .yucp-asset-item-name {
+    min-width: 150px;
+}
+
+/* Folder items responsive */
+.yucp-window-narrow .yucp-folder-item {
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.yucp-window-narrow .yucp-folder-item-path {
+    flex-basis: auto;
+    width: 100%;
+    margin-bottom: 4px;
+}
+
+.yucp-window-narrow .yucp-folder-item-remove {
+    align-self: flex-end;
+    margin-left: 0;
+    margin-top: 4px;
+}
+
+/* Inspector list responsive adjustments */
+.yucp-window-narrow .yucp-inspector-list {
+    padding: 6px;
+}
+
+.yucp-window-medium .yucp-inspector-list {
+    padding: 7px;
+}
+
+/* ============================================================================
+   PACKAGE METADATA SECTION - Hero-style layout
+   ============================================================================ */
+.yucp-metadata-section {
+    padding: 20px;
+}
+
+.yucp-metadata-header {
+    padding-bottom: 16px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(42, 42, 42, 0.6);
+}
+
+.yucp-metadata-icon-container {
+    width: 80px;
+    height: 80px;
+    min-width: 80px;
+    min-height: 80px;
+    background-color: rgba(42, 42, 42, 0.3);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.5);
+    border-radius: 8px;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    position: relative;
+    transition-duration: 0.2s;
+    transition-property: background-color, border-color;
+    transition-timing-function: ease-out;
+}
+
+.yucp-metadata-icon-container:hover {
+    background-color: rgba(42, 42, 42, 0.5);
+    border-color: rgba(42, 42, 42, 0.7);
+}
+
+.yucp-metadata-icon-image-container {
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    align-items: center;
+}
+
+.yucp-metadata-icon-image {
+    width: 80px;
+    height: 80px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.yucp-metadata-icon-placeholder {
+    width: 80px;
+    height: 80px;
+    background-color: rgba(42, 42, 42, 0.4);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.6);
+    border-radius: 8px;
+}
+
+.yucp-metadata-icon-change-button {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    right: 4px;
+    height: 24px;
+    font-size: 11px;
+    padding: 0;
+    background-color: rgba(26, 26, 26, 0.95);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.8);
+    color: #e0e0e0;
+    border-radius: 4px;
+    justify-content: center;
+    align-items: center;
+}
+
+.yucp-metadata-name-field {
+    font-size: 20px;
+    -unity-font-style: bold;
+    color: #ffffff;
+    background-color: rgba(42, 42, 42, 0.3);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.6);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 0;
+}
+
+.yucp-metadata-name-field:focus {
+    border-color: rgba(42, 42, 42, 0.8);
+    background-color: rgba(42, 42, 42, 0.4);
+}
+
+.yucp-metadata-version-field {
+    background-color: rgba(42, 42, 42, 0.3);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.6);
+    border-radius: 6px;
+    padding: 4px 8px;
+}
+
+.yucp-metadata-version-field:focus {
+    border-color: rgba(42, 42, 42, 0.8);
+    background-color: rgba(42, 42, 42, 0.4);
+}
+
+.yucp-metadata-description-field {
+    min-height: 80px;
+    background-color: rgba(42, 42, 42, 0.3);
+    border-width: 0;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.yucp-metadata-description-field:focus {
+    background-color: rgba(42, 42, 42, 0.4);
+}
+
+.yucp-metadata-author-field {
+    min-height: 80px;
+    background-color: rgba(42, 42, 42, 0.3);
+    border-width: 0;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.yucp-metadata-author-field:focus {
+    background-color: rgba(42, 42, 42, 0.4);
+}
+
+.yucp-metadata-grid {
+}
+
+.yucp-metadata-grid > * {
+    margin-right: 12px;
+}
+
+.yucp-metadata-card {
+    flex: 1 1 auto;
+    min-width: 200px;
+    background-color: rgba(26, 26, 26, 0.4);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.4);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.yucp-metadata-card .yucp-input {
+    width: 100%;
+    background-color: rgba(42, 42, 42, 0.3);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.5);
+    border-radius: 4px;
+    padding: 6px 10px;
+}
+
+.yucp-metadata-card .yucp-input:focus {
+    border-color: rgba(42, 42, 42, 0.8);
+    background-color: rgba(42, 42, 42, 0.4);
+}
+
+/* Responsive metadata layout */
+.yucp-window-narrow .yucp-metadata-header {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.yucp-window-narrow .yucp-metadata-icon-container {
+    margin-bottom: 12px;
+}
+
+.yucp-window-narrow .yucp-metadata-name-field {
+    width: 100%;
+}
+
+.yucp-window-narrow .yucp-metadata-card {
+    flex: 1 1 100%;
+    min-width: 0;
+}
+
+.yucp-window-medium .yucp-metadata-card {
+    flex: 1 1 100%;
+    min-width: 0;
+}

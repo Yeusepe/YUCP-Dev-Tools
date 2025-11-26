@@ -40,8 +40,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			Hide(); // Hide any existing toast
 
 			_toast = new VisualElement();
-			_toast.AddToClassList("au-toast");
-			_toast.AddToClassList($"au-toast-{type.ToString().ToLower()}");
+			_toast.AddToClassList("yucp-toast");
+			_toast.AddToClassList($"yucp-toast-{type.ToString().ToLower()}");
 
 			// Position at top-right
 			_toast.style.position = Position.Absolute;
@@ -54,13 +54,13 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			if (!string.IsNullOrEmpty(title))
 			{
 				var headerRow = new VisualElement();
-				headerRow.AddToClassList("au-toast-header");
+				headerRow.AddToClassList("yucp-toast-header");
 				headerRow.style.flexDirection = FlexDirection.Row;
 				headerRow.style.alignItems = Align.Center;
 				headerRow.style.marginBottom = 8;
 
 				_titleLabel = new Label(title);
-				_titleLabel.AddToClassList("au-toast-title");
+				_titleLabel.AddToClassList("yucp-toast-title");
 				_titleLabel.style.flexGrow = 1;
 				headerRow.Add(_titleLabel);
 
@@ -68,7 +68,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 				{
 					text = "×"
 				};
-				_closeButton.AddToClassList("au-toast-close");
+				_closeButton.AddToClassList("yucp-toast-close");
 				_closeButton.clicked += () => { Hide(); };
 				_closeButton.RegisterCallback<ClickEvent>(evt =>
 				{
@@ -85,7 +85,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 				{
 					text = "×"
 				};
-				_closeButton.AddToClassList("au-toast-close");
+				_closeButton.AddToClassList("yucp-toast-close");
 				_closeButton.style.position = Position.Absolute;
 				_closeButton.style.top = 8;
 				_closeButton.style.right = 8;
@@ -99,7 +99,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 
 			// Message text
 			_messageLabel = new Label(message);
-			_messageLabel.AddToClassList("au-toast-message");
+			_messageLabel.AddToClassList("yucp-toast-message");
 			_messageLabel.style.whiteSpace = WhiteSpace.Normal;
 			_toast.Add(_messageLabel);
 

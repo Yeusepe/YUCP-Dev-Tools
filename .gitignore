@@ -149,3 +149,6 @@ Packages/vpm-manifest.json
 Packages/packages-lock.json
 Packages/com.vrchat.core.vpm-resolver/Editor/com.vrchat.core.vpm-resolver.Editor.asmdef.meta
 Packages/com.vrchat.core.vpm-resolver/Editor/com.vrchat.core.vpm-resolver.Editor.asmdef
+
+# Package Guardian repository
+.pg/

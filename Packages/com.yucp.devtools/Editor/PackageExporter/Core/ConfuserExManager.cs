@@ -44,11 +44,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (IsInstalled())
             {
-                Debug.Log("[ConfuserEx] Already installed at: " + ConfuserExCliPath);
                 return true;
             }
             
-            Debug.Log("[ConfuserEx] Not found. Downloading from GitHub...");
             
             try
             {
@@ -69,14 +67,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     try
                     {
                         File.Delete(tempZipPath);
-                        Debug.Log("[ConfuserEx] Deleted existing temp file from previous download");
                     }
                     catch (Exception ex)
                     {
                         Debug.LogWarning($"[ConfuserEx] Could not delete existing temp file: {ex.Message}");
                         // Generate unique temp filename to avoid sharing violation
                         tempZipPath = Path.Combine(Path.GetTempPath(), $"ConfuserEx-CLI_{Guid.NewGuid().ToString("N").Substring(0, 8)}.zip");
-                        Debug.Log($"[ConfuserEx] Using alternative temp path: {tempZipPath}");
                     }
                 }
                 
@@ -106,7 +102,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Complete
                 progressCallback?.Invoke(1.0f, "ConfuserEx installed successfully!");
-                Debug.Log($"[ConfuserEx] Successfully installed to: {ConfuserExDirectory}");
                 
                 return true;
             }
@@ -198,7 +193,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             sb.AppendLine("</project>");
             
             File.WriteAllText(projectFilePath, sb.ToString());
-            Debug.Log($"[ConfuserEx] Generated project file: {projectFilePath}");
             
             return projectFilePath;
         }
@@ -226,7 +220,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 string workingDir = Path.Combine(Path.GetTempPath(), "YUCP_Obfuscation_" + Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(workingDir);
                 
-                Debug.Log($"[ConfuserEx] Working directory: {workingDir}");
                 
                 // Copy DLLs to working directory with detailed progress
                 progressCallback?.Invoke(0.1f, "Scanning assemblies for obfuscation...");
@@ -255,7 +248,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     File.Copy(assemblyInfo.dllPath, destPath, true);
                     
                     validAssemblies.Add(assembly);
-                    Debug.Log($"[ConfuserEx] Copied DLL: {dllFileName}");
                 }
                 
                 // Copy all dependency DLLs from ScriptAssemblies (ConfuserEx needs them for resolution)
@@ -372,7 +364,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
                 
-                Debug.Log($"[ConfuserEx] Copied {copiedDeps} dependency DLLs for assembly resolution");
                 
                 if (validAssemblies.Count == 0)
                 {
@@ -386,7 +377,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 string projectFilePath = GenerateProjectFile(validAssemblies, preset, workingDir);
                 
                 progressCallback?.Invoke(0.3f, $"Starting ConfuserEx obfuscation ({preset} preset)...");
-                Debug.Log($"[ConfuserEx] Starting obfuscation of {validAssemblies.Count} assemblies with {preset} preset");
                 
                 // Run ConfuserEx with non-blocking progress updates
                 bool success = RunConfuserExNonBlocking(projectFilePath, workingDir, progressCallback);
@@ -425,7 +415,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             // Replace with obfuscated version
                             progressCallback?.Invoke(0.85f + (copyCount * 0.1f / validAssemblies.Count), $"Installing obfuscated {assembly.assemblyName}...");
                             File.Copy(obfuscatedDllPath, assemblyInfo.dllPath, true);
-                            Debug.Log($"[ConfuserEx] Replaced DLL with obfuscated version: {assembly.assemblyName}");
                         }
                     }
                 }
@@ -443,7 +432,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 
                 progressCallback?.Invoke(1.0f, "Obfuscation complete! All assemblies protected.");
-                Debug.Log($"[ConfuserEx] Successfully obfuscated {validAssemblies.Count} assemblies");
                 
                 return true;
             }
@@ -473,7 +461,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     CreateNoWindow = true
                 };
                 
-                Debug.Log($"[ConfuserEx] Executing: {startInfo.FileName} {startInfo.Arguments}");
                 
                 using (Process process = Process.Start(startInfo))
                 {
@@ -518,10 +505,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     output = outputTask.Result;
                     error = errorTask.Result;
                     
-                    if (!string.IsNullOrEmpty(output))
-                    {
-                        Debug.Log($"[ConfuserEx] Output:\n{output}");
-                    }
                     
                     if (!string.IsNullOrEmpty(error))
                     {
@@ -564,7 +547,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     File.Copy(backupPath, assemblyInfo.dllPath, true);
                     File.Delete(backupPath);
-                    Debug.Log($"[ConfuserEx] Restored original DLL: {assembly.assemblyName}");
                 }
             }
         }

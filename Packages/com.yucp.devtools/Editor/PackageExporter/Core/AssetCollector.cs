@@ -21,8 +21,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var discoveredAssets = new List<DiscoveredAsset>();
             var processedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             
-            Debug.Log($"[AssetCollector] Starting scan of {profile.foldersToExport.Count} export folders");
-            
             // First pass: collect all assets from export folders
             foreach (string folder in profile.foldersToExport)
             {
@@ -37,21 +35,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     continue;
                 }
                 
-                Debug.Log($"[AssetCollector] Scanning folder: {folder}");
                 ScanFolder(fullPath, folder, profile, discoveredAssets, processedPaths);
             }
             
             // Second pass: collect dependencies if requested
             if (includeDependencies && profile.includeDependencies)
             {
-                Debug.Log($"[AssetCollector] Collecting dependencies for {discoveredAssets.Count} assets");
                 CollectDependencies(discoveredAssets, profile, processedPaths);
             }
             
             // Sort by path for better UI display
             discoveredAssets.Sort((a, b) => string.Compare(a.assetPath, b.assetPath, StringComparison.OrdinalIgnoreCase));
             
-            Debug.Log($"[AssetCollector] Scan complete. Found {discoveredAssets.Count} total assets");
             
             return discoveredAssets;
         }
@@ -66,7 +61,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             string folderName = Path.GetFileName(folderPath);
             if (ShouldIgnoreFolder(folderPath, folderName, profile))
             {
-                Debug.Log($"[AssetCollector] Ignoring folder: {folderPath}");
                 return;
             }
             
@@ -178,7 +172,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
             
-            Debug.Log($"[AssetCollector] Found {allDependencies.Count} dependencies");
         }
         
         /// <summary>

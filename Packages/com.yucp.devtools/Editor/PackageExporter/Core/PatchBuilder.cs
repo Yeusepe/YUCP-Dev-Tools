@@ -264,6 +264,301 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				name = name.Replace(c, '_');
 			return name;
 		}
+		
+		/// <summary>
+		/// Builds a DerivedFbxAsset with all data embedded (no separate sidecar assets).
+		/// </summary>
+		public static DerivedFbxAsset BuildDerivedFbxAsset(string baseFbxPath, string modifiedFbxPath, DerivedFbxAsset.Policy policy, DerivedFbxAsset.UIHints hints, DerivedFbxAsset.SeedMaps seeds)
+		{
+			var v1 = ManifestBuilder.BuildForFbx(baseFbxPath);
+			var v2 = ManifestBuilder.BuildForFbx(modifiedFbxPath);
+			var map = MapBuilder.Build(v1, v2, ConvertSeedMaps(seeds));
+			
+			var asset = ScriptableObject.CreateInstance<DerivedFbxAsset>();
+			asset.sourceManifestId = v1.manifestId;
+			asset.policy = policy;
+			asset.uiHints = hints;
+			asset.seedMaps = seeds ?? new DerivedFbxAsset.SeedMaps();
+			asset.targetFbxName = hints.friendlyName;
+			
+			// Load meshes for both FBXs
+			var baseMeshes = LoadMeshesByName(baseFbxPath);
+			var modMeshes = LoadMeshesByName(modifiedFbxPath);
+			
+			// Mesh deltas (same name, same vertex count)
+			foreach (var kvp in map.meshMap)
+			{
+				if (!baseMeshes.TryGetValue(kvp.Key, out var baseMesh) || !modMeshes.TryGetValue(kvp.Value, out var modMesh))
+					continue;
+				
+				if (baseMesh.vertexCount != modMesh.vertexCount)
+				{
+					if (policy.strictTopology)
+						continue;
+				}
+				else
+				{
+					// Create embedded mesh delta operation
+					var op = new DerivedFbxAsset.EmbeddedMeshDeltaOp
+					{
+						targetMeshName = kvp.Key,
+						vertexCount = baseMesh.vertexCount,
+						positionDeltas = new Vector3[baseMesh.vertexCount],
+						normalDeltas = new Vector3[baseMesh.vertexCount],
+						tangentDeltas = new Vector3[baseMesh.vertexCount]
+					};
+					
+					var baseVerts = baseMesh.vertices;
+					var baseNormals = baseMesh.normals;
+					var baseTangents = baseMesh.tangents;
+					var modVerts = modMesh.vertices;
+					var modNormals = modMesh.normals;
+					var modTangents = modMesh.tangents;
+					
+					for (int i = 0; i < op.vertexCount; i++)
+					{
+						op.positionDeltas[i] = i < modVerts.Length && i < baseVerts.Length ? (modVerts[i] - baseVerts[i]) : Vector3.zero;
+						op.normalDeltas[i] = (i < modNormals.Length && i < baseNormals.Length) ? (modNormals[i] - baseNormals[i]) : Vector3.zero;
+						var bt = (i < baseTangents.Length) ? baseTangents[i] : Vector4.zero;
+						var mt = (i < modTangents.Length) ? modTangents[i] : Vector4.zero;
+						op.tangentDeltas[i] = new Vector3(mt.x - bt.x, mt.y - bt.y, mt.z - bt.z);
+					}
+					
+					asset.operations.Add(op);
+				}
+				
+				// UV channels: if modified has extra channel, capture it
+				int baseUvChannels = CountUvChannels(baseMesh);
+				int modUvChannels = CountUvChannels(modMesh);
+				for (int ch = 0; ch < 8; ch++)
+				{
+					bool baseHas = baseUvChannels > ch;
+					bool modHas = modUvChannels > ch;
+					if (!baseHas && modHas)
+					{
+						var uvOp = new DerivedFbxAsset.EmbeddedUVLayerOp
+						{
+							targetMeshName = kvp.Key,
+							channel = ch,
+							uvs = GetUvs(modMesh, ch),
+							replaceExisting = false
+						};
+						asset.operations.Add(uvOp);
+					}
+				}
+				
+				// Blendshape operations - extract full frame data for ALL blendshapes in modified FBX
+				// Use sparse storage (only non-zero deltas) like BlendShare for efficiency
+				var baseBs = GetBlendshapeSet(baseMesh);
+				var modBs = GetBlendshapeSet(modMesh);
+				foreach (var name in modBs)
+				{
+					// Always extract full blendshape frame from modified FBX (as user requested)
+						var frame = ExtractBlendshapeFrame(modMesh, name, 0);
+						if (frame != null)
+					{
+						// Validate array sizes to prevent serialization issues
+						if (frame.deltaVertices != null && frame.deltaVertices.Length == modMesh.vertexCount)
+						{
+							var bsOp = new DerivedFbxAsset.EmbeddedBlendshapeOp
+							{
+								targetMeshName = kvp.Key,
+								blendshapeName = name,
+								scale = 1f,
+								frameWeight = frame.frameWeight,
+								vertexIndices = new List<int>(),
+								deltaVertices = new List<Vector3>(),
+								normalIndices = new List<int>(),
+								deltaNormals = new List<Vector3>(),
+								tangentIndices = new List<int>(),
+								deltaTangents = new List<Vector3>()
+							};
+							
+							// Convert full arrays to sparse storage (only non-zero deltas)
+							for (int i = 0; i < modMesh.vertexCount; i++)
+							{
+								if (frame.deltaVertices[i] != Vector3.zero)
+								{
+									bsOp.vertexIndices.Add(i);
+									bsOp.deltaVertices.Add(frame.deltaVertices[i]);
+								}
+								
+								if (frame.deltaNormals != null && frame.deltaNormals.Length == modMesh.vertexCount && frame.deltaNormals[i] != Vector3.zero)
+								{
+									bsOp.normalIndices.Add(i);
+									bsOp.deltaNormals.Add(frame.deltaNormals[i]);
+								}
+								
+								if (frame.deltaTangents != null && frame.deltaTangents.Length == modMesh.vertexCount && frame.deltaTangents[i] != Vector3.zero)
+								{
+									bsOp.tangentIndices.Add(i);
+									bsOp.deltaTangents.Add(frame.deltaTangents[i]);
+								}
+							}
+							
+							asset.operations.Add(bsOp);
+						}
+						else
+						{
+							Debug.LogWarning($"[PatchBuilder] Skipping blendshape {name} for mesh {kvp.Key} - vertex count mismatch (expected {modMesh.vertexCount}, got {frame.deltaVertices?.Length ?? 0})");
+						}
+							
+							// Clean up temporary frame asset
+							UnityEngine.Object.DestroyImmediate(frame);
+						}
+					}
+				}
+			
+			// Capture bone hierarchy changes
+			CaptureBoneHierarchyChanges(v1, v2, asset);
+			
+			// Capture material assignment changes
+			CaptureMaterialAssignmentChanges(v1, v2, asset);
+			
+			// Capture mesh reorganization changes
+			CaptureMeshReorganizationChanges(v1, v2, asset);
+			
+			return asset;
+		}
+		
+		private static void CaptureBoneHierarchyChanges(ManifestBuilder.Manifest v1, ManifestBuilder.Manifest v2, DerivedFbxAsset asset)
+		{
+			var baseBones = v1.bones.ToDictionary(b => b.path);
+			var modBones = v2.bones.ToDictionary(b => b.path);
+			
+			foreach (var modBone in v2.bones)
+			{
+				if (baseBones.TryGetValue(modBone.path, out var baseBone))
+				{
+					// Check if transform changed
+					if (baseBone.localPosition != modBone.localPosition ||
+					    baseBone.localRotation != modBone.localRotation ||
+					    baseBone.localScale != modBone.localScale)
+					{
+						asset.operations.Add(new DerivedFbxAsset.EmbeddedBoneHierarchyOp
+						{
+							bonePath = modBone.path,
+							localPosition = modBone.localPosition,
+							localRotation = modBone.localRotation,
+							localScale = modBone.localScale,
+							parentBonePath = modBone.parentPath
+						});
+					}
+				}
+				else
+				{
+					// New bone
+					asset.operations.Add(new DerivedFbxAsset.EmbeddedBoneHierarchyOp
+					{
+						bonePath = modBone.path,
+						localPosition = modBone.localPosition,
+						localRotation = modBone.localRotation,
+						localScale = modBone.localScale,
+						parentBonePath = modBone.parentPath
+					});
+				}
+			}
+		}
+		
+		private static void CaptureMaterialAssignmentChanges(ManifestBuilder.Manifest v1, ManifestBuilder.Manifest v2, DerivedFbxAsset asset)
+		{
+			var baseRenderers = v1.renderers.ToDictionary(r => r.path);
+			var modRenderers = v2.renderers.ToDictionary(r => r.path);
+			
+			foreach (var modRenderer in v2.renderers)
+			{
+				if (baseRenderers.TryGetValue(modRenderer.path, out var baseRenderer))
+				{
+					// Check if materials changed
+					bool materialsChanged = false;
+					if (baseRenderer.materialNames == null || modRenderer.materialNames == null ||
+					    baseRenderer.materialNames.Length != modRenderer.materialNames.Length)
+					{
+						materialsChanged = true;
+					}
+					else
+					{
+						for (int i = 0; i < baseRenderer.materialNames.Length; i++)
+						{
+							if (baseRenderer.materialNames[i] != modRenderer.materialNames[i])
+							{
+								materialsChanged = true;
+								break;
+							}
+						}
+					}
+					
+					if (materialsChanged)
+					{
+						asset.operations.Add(new DerivedFbxAsset.EmbeddedMaterialAssignmentOp
+						{
+							rendererPath = modRenderer.path,
+							materialNames = modRenderer.materialNames,
+							materialGuids = modRenderer.materialGuids
+						});
+					}
+				}
+				else
+				{
+					// New renderer
+					asset.operations.Add(new DerivedFbxAsset.EmbeddedMaterialAssignmentOp
+					{
+						rendererPath = modRenderer.path,
+						materialNames = modRenderer.materialNames,
+						materialGuids = modRenderer.materialGuids
+					});
+				}
+			}
+		}
+		
+		private static void CaptureMeshReorganizationChanges(ManifestBuilder.Manifest v1, ManifestBuilder.Manifest v2, DerivedFbxAsset asset)
+		{
+			var baseMeshes = v1.meshes.ToDictionary(m => m.name);
+			var modMeshes = v2.meshes.ToDictionary(m => m.name);
+			
+			// Check for removed meshes
+			foreach (var baseMesh in v1.meshes)
+			{
+				if (!modMeshes.ContainsKey(baseMesh.name))
+				{
+					asset.operations.Add(new DerivedFbxAsset.EmbeddedMeshReorganizationOp
+					{
+						type = DerivedFbxAsset.EmbeddedMeshReorganizationOp.ReorganizationType.Remove,
+						meshName = baseMesh.name,
+						meshPath = ""
+					});
+				}
+			}
+			
+			// Check for new meshes
+			foreach (var modMesh in v2.meshes)
+			{
+				if (!baseMeshes.ContainsKey(modMesh.name))
+				{
+					asset.operations.Add(new DerivedFbxAsset.EmbeddedMeshReorganizationOp
+					{
+						type = DerivedFbxAsset.EmbeddedMeshReorganizationOp.ReorganizationType.Add,
+						meshName = modMesh.name,
+						meshPath = ""
+					});
+				}
+			}
+		}
+		
+		private static PatchPackage.SeedMaps ConvertSeedMaps(DerivedFbxAsset.SeedMaps seeds)
+		{
+			if (seeds == null) return new PatchPackage.SeedMaps();
+			
+			var result = new PatchPackage.SeedMaps();
+			foreach (var pair in seeds.boneAliases)
+				result.boneAliases.Add(new PatchPackage.StringPair { from = pair.from, to = pair.to });
+			foreach (var pair in seeds.materialAliases)
+				result.materialAliases.Add(new PatchPackage.StringPair { from = pair.from, to = pair.to });
+			foreach (var pair in seeds.blendshapeAliases)
+				result.blendshapeAliases.Add(new PatchPackage.StringPair { from = pair.from, to = pair.to });
+			
+			return result;
+		}
 	}
 }
 

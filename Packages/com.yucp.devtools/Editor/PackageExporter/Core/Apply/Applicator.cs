@@ -23,7 +23,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				string logPath = Path.Combine(logDir, "YUCP_PatchImporter.log");
 				string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
 				File.AppendAllText(logPath, $"[{timestamp}] [Applicator] {message}\n");
-				Debug.Log($"[Applicator] {message}");
 			}
 			catch { }
 		}
@@ -43,7 +42,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			if (processedPatches != null && processedPatches.Contains(patchTargetKey))
 			{
 				WriteLog($"Patch+target combination already processed: {patchTargetKey}, skipping");
-				Debug.Log($"[Applicator] Patch+target combination already processed: {patchTargetKey}, skipping");
 				// Try to find existing state
 				string checkDerivedDir = "Packages/com.yucp.temp/Derived";
 				if (AssetDatabase.IsValidFolder(checkDerivedDir))
@@ -77,7 +75,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						if (processedPatches == null)
 							processedPatches = new HashSet<string>();
 						processedPatches.Add(patchTargetKey);
-						Debug.Log($"[Applicator] Patch already applied to {baseFbxPath}, skipping");
 						derivedAssets = existingState.producedDerivedAssets ?? new List<UnityEngine.Object>();
 						return existingState;
 					}

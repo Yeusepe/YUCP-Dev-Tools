@@ -75,11 +75,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     progressCallback?.Invoke(0.2f, "Obfuscating assemblies...");
                     
-                    // Show warning about obfuscation time
-                    if (profile.assembliesToObfuscate.Count(a => a.enabled) > 3)
-                    {
-                        Debug.Log("[PackageBuilder] Obfuscating multiple assemblies - this may take several minutes. Please wait...");
-                    }
                     
                     if (!ConfuserExManager.ObfuscateAssemblies(
                         profile.assembliesToObfuscate,
@@ -128,7 +123,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                 string asmdefDir = Path.GetDirectoryName(asmdefPath).Replace("\\", "/");
                                 if (fileDir.StartsWith(asmdefDir, StringComparison.OrdinalIgnoreCase))
                                 {
-                                    Debug.Log($"[PackageBuilder] Excluding obfuscated assembly file from export folders: {assetPath}");
                                     return false; // Exclude this file
                                 }
                             }
@@ -161,7 +155,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         if (depPackageInfo != null && Directory.Exists(depPackageInfo.packagePath))
                         {
                             bundledPackagePaths[dep.packageName] = depPackageInfo.packagePath;
-                            Debug.Log($"[PackageBuilder] Will bundle complete package: {dep.packageName} from {depPackageInfo.packagePath}");
                         }
                         else
                         {
@@ -183,8 +176,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                          profile.dependencies,
                          null
                      );
-                     
-                     Debug.Log("[PackageBuilder] Generated package.json content (will inject after export)");
                  }
                 
                 result.filesExported = assetsToExport.Count;                
@@ -290,18 +281,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                      catch { /* ignore */ }
                      return false;
                  });
-                 if (safetyRemoved > 0)
-                 {
-                     Debug.LogWarning($"[PackageBuilder] Safety check removed {safetyRemoved} derived FBX(s) that were still in the export list");
-                 }
-                 
-                 // If patch temp folder exists, ensure it's included (so newly generated patch assets are exported)
-                 if (AssetDatabase.IsValidFolder("Packages/com.yucp.temp/Patches") && !finalValidAssets.Contains("Packages/com.yucp.temp/Patches"))
-                 {
-                     finalValidAssets = new List<string>(finalValidAssets) { "Packages/com.yucp.temp/Patches" };
-                 }
-                 
-                 if (finalValidAssets.Count == 0)
+                if (safetyRemoved > 0)
+                {
+                    Debug.LogWarning($"[PackageBuilder] Safety check removed {safetyRemoved} derived FBX(s) that were still in the export list");
+                }
+                
+                // Note: We don't add the entire Patches folder anymore - only specific DerivedFbxAsset files
+                // are added via patchAssetsToAdd in ConvertDerivedFbxToPatchAssets
+                
+                if (finalValidAssets.Count == 0)
                  {
                      throw new InvalidOperationException("No valid assets remain for export after final validation.");
                  }
@@ -331,10 +319,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                  int retryCount = 0;
                  while (!File.Exists(tempPackagePath) && retryCount < 30) // Increased to 30 attempts (6 seconds)
                  {
-                     if (retryCount % 5 == 0) // Log every 5th attempt
-                     {
-                         Debug.Log($"[PackageBuilder] Waiting for temp package... attempt {retryCount + 1}/30");
-                     }
                      System.Threading.Thread.Sleep(200); // Wait 200ms
                      retryCount++;
                  }
@@ -351,7 +335,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                      throw new FileNotFoundException($"Package export failed - temp file not created after retries: {tempPackagePath}");
                  }
                 
-                 Debug.Log($"[PackageBuilder] Package exported to temp location: {tempPackagePath}");
                  
                  // Inject package.json, auto-installer, and bundled packages into the .unitypackage
                  if (!string.IsNullOrEmpty(packageJsonContent) || bundledPackagePaths.Count > 0)
@@ -366,7 +349,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                              : new List<AssemblyObfuscationSettings>();
                          
                          InjectPackageJsonInstallerAndBundles(tempPackagePath, packageJsonContent, bundledPackagePaths, obfuscatedAssemblies, profile, hasPatchAssets, progressCallback);
-                         Debug.Log("[PackageBuilder] Successfully injected package.json, auto-installer, and bundled packages");
                      }
                      catch (Exception ex)
                      {
@@ -397,7 +379,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         
                         if (PackageIconInjector.AddIconToPackage(tempPackagePath, fullIconPath, finalOutputPath))
                         {
-                            Debug.Log("[PackageBuilder] Icon successfully added to package");
                             iconAdded = true;
                         }
                         else
@@ -447,8 +428,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 result.outputPath = finalOutputPath;
                 result.buildTimeSeconds = (float)(DateTime.Now - startTime).TotalSeconds;
                 
-                Debug.Log($"[PackageBuilder] Export successful! Package saved to: {finalOutputPath}");
-                Debug.Log($"[PackageBuilder] Build time: {result.buildTimeSeconds:F2}s | Files: {result.filesExported} | Obfuscated: {result.assembliesObfuscated}");
                 
                 return result;
             }
@@ -492,8 +471,43 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (assetsToExport == null || assetsToExport.Count == 0) return false;
             
+            // Clean up old sidecar assets from previous exports (MeshDeltaAsset, UVLayerAsset, BlendshapeFrameAsset)
+            // These are no longer needed since all data is now embedded in DerivedFbxAsset
+            try
+            {
+                string patchesPath = "Packages/com.yucp.temp/Patches";
+                if (AssetDatabase.IsValidFolder(patchesPath))
+                {
+                    string[] allGuids = AssetDatabase.FindAssets("", new[] { patchesPath });
+                    int cleanedCount = 0;
+                    foreach (var guid in allGuids)
+                    {
+                        string assetPath = AssetDatabase.GUIDToAssetPath(guid);
+                        string fileName = Path.GetFileNameWithoutExtension(assetPath);
+                        
+                        // Remove old sidecar assets (but keep DerivedFbxAsset files)
+                        if (assetPath.EndsWith(".asset") && 
+                            (fileName.StartsWith("MeshDelta_") || 
+                             fileName.StartsWith("UVLayer_") || 
+                             fileName.StartsWith("Blendshape_") ||
+                             fileName.StartsWith("PatchPackage_"))) // Also remove old PatchPackage files
+                        {
+                            AssetDatabase.DeleteAsset(assetPath);
+                            cleanedCount++;
+                        }
+                    }
+                    if (cleanedCount > 0)
+                    {
+                        AssetDatabase.Refresh();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[PackageBuilder] Failed to clean up old sidecar assets: {ex.Message}");
+            }
+            
             // Gather derived FBXs in the export set
-            Debug.Log($"[PackageBuilder] Scanning {assetsToExport.Count} assets for derived FBXs...");
             var derivedFbxPaths = new List<string>();
             int fbxCount = 0;
             foreach (var assetPath in assetsToExport)
@@ -515,25 +529,26 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 var importer = AssetImporter.GetAtPath(normalizedPath) as ModelImporter;
                 if (importer == null)
                 {
-                    Debug.Log($"[PackageBuilder] Could not get ModelImporter for FBX: {assetPath} (normalized: {normalizedPath})");
                     continue;
                 }
                 
                 try
                 {
                     string userDataJson = importer.userData;
-                    Debug.Log($"[PackageBuilder] Checking FBX: {assetPath}, userData: '{userDataJson}'");
                     
                     var settings = string.IsNullOrEmpty(userDataJson) ? null : JsonUtility.FromJson<DerivedSettings>(userDataJson);
                     if (settings != null && settings.isDerived && !string.IsNullOrEmpty(settings.baseGuid))
                     {
-                        Debug.Log($"[PackageBuilder] Found derived FBX: {assetPath} (baseGuid: {settings.baseGuid})");
                         // Store original path for removal (will normalize during removal)
                         derivedFbxPaths.Add(assetPath);
                     }
                     else if (settings != null)
                     {
-                        Debug.Log($"[PackageBuilder] FBX {assetPath} has settings but isDerived={settings.isDerived}, baseGuid={settings.baseGuid}");
+                        if (settings.isDerived && string.IsNullOrEmpty(settings.baseGuid))
+                        {
+                            Debug.LogWarning($"[PackageBuilder] FBX {assetPath} is marked as derived but has no baseGuid assigned. " +
+                                $"Please assign the base FBX in the ModelImporter inspector. This FBX will NOT be converted to a PatchPackage.");
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -542,7 +557,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
             
-            Debug.Log($"[PackageBuilder] Found {fbxCount} FBX(s) total, {derivedFbxPaths.Count} derived FBX(s)");
+            
+            // Warn if there are FBXs that might need to be marked as derived
+            if (fbxCount > 0 && derivedFbxPaths.Count == 0)
+            {
+                Debug.LogWarning($"[PackageBuilder] Found {fbxCount} FBX(s) in export, but none are marked as 'derived'. " +
+                    $"If any of these FBXs are modifications of a base FBX, mark them as 'Export As Patch (Derived)' in the ModelImporter inspector " +
+                    $"and assign the base FBX. Otherwise, the full FBX will be exported instead of a PatchPackage.");
+            }
+            
             if (derivedFbxPaths.Count == 0) return false;
             
             progressCallback?.Invoke(0.51f, $"Converting {derivedFbxPaths.Count} derived FBX file(s) into PatchPackages...");
@@ -555,10 +578,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             foreach (var modifiedPath in derivedFbxPaths)
             {
                 // Normalize path for AssetImporter
+                string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                 string normalizedModifiedPath = modifiedPath;
                 if (Path.IsPathRooted(normalizedModifiedPath))
                 {
-                    string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                     if (normalizedModifiedPath.StartsWith(projectPath, StringComparison.OrdinalIgnoreCase))
                     {
                         normalizedModifiedPath = normalizedModifiedPath.Substring(projectPath.Length).Replace('\\', '/').TrimStart('/');
@@ -579,13 +602,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     continue;
                 }
                 
-                var policy = new PatchPackage.Policy
+                var policy = new DerivedFbxAsset.Policy
                 {
                     autoApplyThreshold = settings.autoApplyThreshold,
                     reviewThreshold = settings.reviewThreshold,
                     strictTopology = settings.strictTopology
                 };
-                var hints = new PatchPackage.UIHints
+                var hints = new DerivedFbxAsset.UIHints
                 {
                     friendlyName = string.IsNullOrEmpty(settings.friendlyName)
                         ? System.IO.Path.GetFileNameWithoutExtension(modifiedPath)
@@ -594,7 +617,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     category = settings.category
                 };
                 
-                var seeds = new PatchPackage.SeedMaps();
+                var seeds = new DerivedFbxAsset.SeedMaps();
+                
+                // Read the derived FBX GUID from its .meta file
+                string physicalModifiedPath = Path.IsPathRooted(normalizedModifiedPath) 
+                    ? normalizedModifiedPath 
+                    : Path.Combine(projectPath, normalizedModifiedPath.Replace('/', Path.DirectorySeparatorChar));
+                string derivedFbxGuid = MetaFileManager.ReadGuid(physicalModifiedPath);
+                
+                if (string.IsNullOrEmpty(derivedFbxGuid))
+                {
+                    Debug.LogWarning($"[PackageBuilder] Could not read GUID from derived FBX .meta file: {normalizedModifiedPath}. A new GUID will be generated on import.");
+                    // Generate a fallback identifier from the path
+                    derivedFbxGuid = System.Guid.NewGuid().ToString("N");
+                }
                 
                 // Ensure folders exist before building
                 try
@@ -609,25 +645,54 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 try
                 {
-                    var build = PatchBuilder.Build(basePath, normalizedModifiedPath, policy, hints, seeds);
+                    // Build DerivedFbxAsset with all data embedded
+                    var derivedAsset = PatchBuilder.BuildDerivedFbxAsset(basePath, normalizedModifiedPath, policy, hints, seeds);
                     
-                    // Save PatchPackage.asset in temp package folder
-                    string pkgPath = AssetDatabase.GenerateUniqueAssetPath($"Packages/com.yucp.temp/Patches/PatchPackage_{SanitizeFileName(hints.friendlyName)}.asset");
-                    AssetDatabase.CreateAsset(build.patch, pkgPath);
-                    // DON'T call SaveAssets() - it triggers reserialization loops
-                    // The asset is created and will be included in export by path
+                    // Store GUIDs for direct targeting and prefab compatibility
+                    derivedAsset.baseFbxGuid = settings.baseGuid;
+                    derivedAsset.derivedFbxGuid = derivedFbxGuid ?? string.Empty;
+                    derivedAsset.originalDerivedFbxPath = normalizedModifiedPath;
                     
-                    // CRITICAL: Update the script GUID reference in the .asset file to point to the PatchPackage script in temp package
-                    // The asset was created with a reference to the devtools script, but it needs to reference the temp package script
-                    string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                    // Use derived FBX GUID as filename identifier to ensure same derived FBX always uses same patch asset
+                    // This prevents file bloat from GenerateUniqueAssetPath creating numbered duplicates
+                    string fileName = $"DerivedFbxAsset_{derivedFbxGuid.Substring(0, 8)}_{SanitizeFileName(hints.friendlyName)}.asset";
+                    string pkgPath = $"Packages/com.yucp.temp/Patches/{fileName}";
+                    
+                    // Delete existing file if it exists to prevent bloat (same derived FBX = same patch asset file)
                     string physicalAssetPath = Path.Combine(projectPath, pkgPath.Replace('/', Path.DirectorySeparatorChar));
                     if (File.Exists(physicalAssetPath))
                     {
-                        // Find the PatchPackage.cs script GUID in the temp package
-                        string patchPackageScriptPath = "Packages/com.yucp.temp/Editor/PatchPackage.cs";
-                        string patchPackageScriptGuid = AssetDatabase.AssetPathToGUID(patchPackageScriptPath);
+                        File.Delete(physicalAssetPath);
+                        if (File.Exists(physicalAssetPath + ".meta"))
+                        {
+                            File.Delete(physicalAssetPath + ".meta");
+                        }
+                        AssetDatabase.Refresh();
+                    }
+                    
+                    try
+                    {
+                        AssetDatabase.CreateAsset(derivedAsset, pkgPath);
+                        // DON'T call SaveAssets() - it triggers reserialization loops
+                        // The asset is created and will be included in export by path
+                    }
+                    catch (Exception createEx)
+                    {
+                        Debug.LogError($"[PackageBuilder] Failed to create DerivedFbxAsset at {pkgPath}: {createEx.Message}\n{createEx.StackTrace}");
+                        UnityEngine.Object.DestroyImmediate(derivedAsset);
+                        continue;
+                    }
+                    
+                    // CRITICAL: Update the script GUID reference in the .asset file to point to the DerivedFbxAsset script in temp package
+                    // The asset was created with a reference to the devtools script, but it needs to reference the temp package script
+                    // physicalAssetPath is already defined above
+                    if (File.Exists(physicalAssetPath))
+                    {
+                        // Find the DerivedFbxAsset.cs script GUID in the temp package
+                        string derivedFbxAssetScriptPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs";
+                        string derivedFbxAssetScriptGuid = AssetDatabase.AssetPathToGUID(derivedFbxAssetScriptPath);
                         
-                        if (!string.IsNullOrEmpty(patchPackageScriptGuid))
+                        if (!string.IsNullOrEmpty(derivedFbxAssetScriptGuid))
                         {
                             // Read the .asset file and update the script GUID and namespace references
                             string assetContent = File.ReadAllText(physicalAssetPath);
@@ -637,67 +702,101 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             var guidPattern = new System.Text.RegularExpressions.Regex(@"m_Script:\s*\{fileID:\s*\d+,\s*guid:\s*([a-f0-9]{32}),\s*type:\s*\d+\}");
                             if (guidPattern.IsMatch(assetContent))
                             {
-                                assetContent = guidPattern.Replace(assetContent, $"m_Script: {{fileID: 11500000, guid: {patchPackageScriptGuid}, type: 3}}");
+                                assetContent = guidPattern.Replace(assetContent, $"m_Script: {{fileID: 11500000, guid: {derivedFbxAssetScriptGuid}, type: 3}}");
                             }
                             
-                            // Replace namespace references for nested types (e.g., BlendshapeOp, MeshDeltaOp)
-                            // Pattern: YUCP.DevTools.Editor.PackageExporter.PatchPackage/TypeName
-                            assetContent = System.Text.RegularExpressions.Regex.Replace(
-                                assetContent,
-                                @"YUCP\.DevTools\.Editor\.PackageExporter\.PatchPackage/(\w+)",
-                                "YUCP.PatchRuntime.PatchPackage/$1"
+                            // Replace namespace references for nested types (e.g., EmbeddedBlendshapeOp, EmbeddedMeshDeltaOp)
+                            // Unity serializes nested types in YAML format. The format can be:
+                            // - m_Type: YUCP.DevTools.Editor.PackageExporter.DerivedFbxAsset/EmbeddedBlendshapeOp, YUCP.PatchRuntime
+                            // - type: YUCP.DevTools.Editor.PackageExporter.DerivedFbxAsset/EmbeddedBlendshapeOp
+                            // - YUCP.DevTools.Editor.PackageExporter.DerivedFbxAsset/EmbeddedBlendshapeOp, YUCP.PatchRuntime
+                            
+                            string originalContent = assetContent;
+                            
+                            // Use simple string replacement first (most reliable)
+                            // Replace all occurrences of the old namespace with the new one
+                            assetContent = assetContent.Replace(
+                                "YUCP.DevTools.Editor.PackageExporter.DerivedFbxAsset/",
+                                "YUCP.PatchRuntime.DerivedFbxAsset/"
                             );
                             
-                            // Also replace the assembly reference if present
-                            assetContent = System.Text.RegularExpressions.Regex.Replace(
-                                assetContent,
-                                @"com\.yucp\.devtools\.Editor",
+                            // Replace any remaining old namespace references
+                            assetContent = assetContent.Replace(
+                                "YUCP.DevTools.Editor.PackageExporter",
                                 "YUCP.PatchRuntime"
                             );
                             
-                            File.WriteAllText(physicalAssetPath, assetContent);
-                            Debug.Log($"[PackageBuilder] Updated script GUID and namespace references in {pkgPath} to point to temp package");
+                            // Replace assembly references
+                            assetContent = assetContent.Replace(
+                                "com.yucp.devtools.Editor",
+                                "YUCP.PatchRuntime"
+                            );
+                            
+                            // Also use regex for more complex patterns that might have whitespace variations
+                            // Pattern 1: Match nested type references with assembly name after comma
+                            assetContent = System.Text.RegularExpressions.Regex.Replace(
+                                assetContent,
+                                @"YUCP\.DevTools[^\s/]+/",
+                                "YUCP.PatchRuntime.DerivedFbxAsset/",
+                                System.Text.RegularExpressions.RegexOptions.Multiline
+                            );
+                            
+                            // Pattern 2: Match any remaining old namespace references
+                            assetContent = System.Text.RegularExpressions.Regex.Replace(
+                                assetContent,
+                                @"YUCP\.DevTools[^\s,}]+",
+                                "YUCP.PatchRuntime",
+                                System.Text.RegularExpressions.RegexOptions.Multiline
+                            );
+                            
+                            if (assetContent != originalContent)
+                            {
+                                Debug.Log($"[PackageBuilder] Fixed namespace references in DerivedFbxAsset at {pkgPath}");
+                                File.WriteAllText(physicalAssetPath, assetContent);
+                                
+                                // Verify the fix worked - check if old namespace still exists
+                                string verifyContent = File.ReadAllText(physicalAssetPath);
+                                if (verifyContent.Contains("YUCP.DevTools.Editor.PackageExporter"))
+                                {
+                                    Debug.LogWarning($"[PackageBuilder] Namespace fix may not have worked completely. Old namespace still found in {pkgPath}");
+                                    // Try one more aggressive replacement
+                                    verifyContent = verifyContent.Replace("YUCP.DevTools", "YUCP.PatchRuntime");
+                                    File.WriteAllText(physicalAssetPath, verifyContent);
+                                }
+                                
+                                // Force Unity to reimport the asset so it recognizes the namespace changes
+                                AssetDatabase.ImportAsset(pkgPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate | ImportAssetOptions.DontDownloadFromCacheServer);
+                                
+                                // Give Unity a moment to process the import
+                                AssetDatabase.Refresh();
+                            }
+                            else
+                            {
+                                // Even if no changes detected, ensure asset is saved
+                                File.WriteAllText(physicalAssetPath, assetContent);
+                            }
                         }
                         else
                         {
-                            Debug.LogWarning($"[PackageBuilder] Could not find PatchPackage.cs script GUID in temp package - asset may not load correctly");
+                            Debug.LogWarning($"[PackageBuilder] Could not find DerivedFbxAsset.cs script GUID in temp package - asset may not load correctly");
                         }
                         
                         patchAssetsToAdd.Add(pkgPath);
                     }
                     else
                     {
-                        Debug.LogWarning($"[PackageBuilder] PatchPackage.asset was not created at {pkgPath}");
+                        Debug.LogWarning($"[PackageBuilder] DerivedFbxAsset.asset was not created at {pkgPath}");
                     }
                     
-                    // Add all sidecar assets using stored paths (more reliable than GetAssetPath)
-                    int addedSidecars = 0;
-                    foreach (var sidecarPath in build.generatedSidecarPaths)
-                    {
-                        try
-                        {
-                            // Verify file exists physically (reuse projectPath from above)
-                            string sidecarPhysicalPath = Path.Combine(projectPath, sidecarPath.Replace('/', Path.DirectorySeparatorChar));
-                            if (File.Exists(sidecarPhysicalPath))
-                            {
-                                patchAssetsToAdd.Add(sidecarPath);
-                                addedSidecars++;
-                            }
-                        }
-                        catch (Exception sidecarEx)
-                        {
-                            Debug.LogWarning($"[PackageBuilder] Failed to add sidecar asset {sidecarPath}: {sidecarEx.Message}");
-                        }
-                    }
-                    
-                    // Mark FBX for removal from export list (always remove, even if some sidecars failed)
+                    // Mark FBX for removal from export list (no sidecar assets needed - everything is embedded)
                     fbxToRemove.Add(modifiedPath);
                     
-                    Debug.Log($"[PackageBuilder] Generated PatchPackage for derived FBX: {modifiedPath} → {pkgPath} (removing FBX from export, added {addedSidecars}/{build.generatedSidecars.Count} sidecars)");
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[PackageBuilder] Failed to build patch for {modifiedPath}: {ex.Message}\n{ex.StackTrace}");
+                    Debug.LogError($"[PackageBuilder] Failed to build patch for derived FBX {modifiedPath}: {ex.Message}\n{ex.StackTrace}");
+                    Debug.LogError($"[PackageBuilder] The FBX will be exported as-is instead of being converted to a PatchPackage. " +
+                        $"Please check that the base FBX exists and both FBXs have compatible mesh structures.");
                     // Don't remove FBX if patch building completely failed - let user export the FBX as-is
                 }
             }
@@ -705,8 +804,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Remove derived FBXs from export list
             if (fbxToRemove.Count > 0)
             {
-                Debug.Log($"[PackageBuilder] Attempting to remove {fbxToRemove.Count} derived FBX(s) from export list. FBXs to remove: {string.Join(", ", fbxToRemove)}");
-                Debug.Log($"[PackageBuilder] Current export list has {assetsToExport.Count} items. Sample: {string.Join(", ", assetsToExport.Take(5))}");
                 
                 // Normalize paths for comparison (handle both absolute and relative)
                 // Use a helper function to normalize consistently
@@ -730,7 +827,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     string normalized = normalizePath(path);
                     normalizedToRemove.Add(normalized);
-                    Debug.Log($"[PackageBuilder] Normalized removal target: '{path}' → '{normalized}'");
                 }
                 
                 int removedCount = 0;
@@ -741,7 +837,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     if (normalizedToRemove.Contains(normalized))
                     {
                         toRemove.Add(path);
-                        Debug.Log($"[PackageBuilder] Marking for removal: '{path}' (normalized: '{normalized}')");
                     }
                 }
                 
@@ -750,8 +845,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     assetsToExport.Remove(path);
                     removedCount++;
                 }
-                
-                Debug.Log($"[PackageBuilder] Removed {removedCount} derived FBX(s) from export list. Remaining count: {assetsToExport.Count}");
             }
             
             // Add PatchPackage and sidecars to export list
@@ -764,7 +857,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         assetsToExport.Add(patchAsset);
                     }
                 }
-                Debug.Log($"[PackageBuilder] Added {patchAssetsToAdd.Count} patch asset(s) to export list");
                 return patchAssetsToAdd.Count > 0;
             }
             
@@ -894,7 +986,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     File.WriteAllText(existingPackageJsonPath, packageJsonContent);
                     AssetDatabase.Refresh();
-                    Debug.Log($"[PackageBuilder] Updated existing package.json: {existingPackageJsonPath}");
                     return existingPackageJsonPath;
                 }
                 
@@ -914,7 +1005,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                      System.Threading.Thread.Sleep(100);
                      AssetDatabase.Refresh();
                      
-                     Debug.Log($"[PackageBuilder] Created package.json: {tempPackageJsonPath}");
                      return tempPackageJsonPath;
                  }
                 
@@ -969,7 +1059,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // If export inspector has been used and assets are selected, use that instead of folder scan
             if (profile.HasScannedAssets && profile.discoveredAssets != null && profile.discoveredAssets.Count > 0)
             {
-                Debug.Log($"[PackageBuilder] Using Export Inspector asset selection ({profile.discoveredAssets.Count} discovered assets)");
                 
                 // Only include assets that are explicitly marked as included
                 var includedAssets = profile.discoveredAssets
@@ -978,13 +1067,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     .Where(path => !string.IsNullOrEmpty(path))
                     .ToList();
                 
-                Debug.Log($"[PackageBuilder] Export Inspector: {includedAssets.Count} assets marked for inclusion");
                 
                 return includedAssets;
             }
             
             // Otherwise use traditional folder scanning
-            Debug.Log($"[PackageBuilder] Using traditional folder scanning (Export Inspector not used)");
             
             foreach (string folder in profile.foldersToExport)
             {
@@ -1011,7 +1098,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         if (AssetDatabase.IsValidFolder(possiblePath))
                         {
                             assetFolder = possiblePath;
-                            Debug.Log($"[PackageBuilder] Resolved cross-project path: {folder} -> {assetFolder}");
                         }
                         else
                         {
@@ -1226,7 +1312,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     if (foundGuardians.Length > 0)
                     {
                         guardianScriptPath = AssetDatabase.GUIDToAssetPath(foundGuardians[0]);
-                        Debug.Log($"[PackageBuilder] Found Mini Guardian at: {guardianScriptPath}");
                     }
                     
                     if (!string.IsNullOrEmpty(guardianScriptPath) && File.Exists(guardianScriptPath))
@@ -1251,7 +1336,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             string transactionMeta = "fileFormatVersion: 2\nguid: " + transactionGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                             File.WriteAllText(Path.Combine(transactionFolder, "asset.meta"), transactionMeta);
                             
-                            Debug.Log("[PackageBuilder] Added GuardianTransaction.cs (core dependency)");
                         }
                         
                         // 2. Inject PackageGuardianMini.cs
@@ -1284,7 +1368,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         string guardianPackageJsonMeta = "fileFormatVersion: 2\nguid: " + guardianPackageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                         File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "asset.meta"), guardianPackageJsonMeta);
                         
-                        Debug.Log("[PackageBuilder] Added Mini Package Guardian (automatic import protection with transaction rollback)");
                     }
                     else
                     {
@@ -1294,7 +1377,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 else
                 {
-                    Debug.Log("[PackageBuilder] Skipping Mini Guardian injection (com.yucp.components already provides full Package Guardian)");
                 }
                 
                 // 2b. Inject DirectVpmInstaller.cs
@@ -1305,7 +1387,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (foundScripts.Length > 0)
                 {
                     installerScriptPath = AssetDatabase.GUIDToAssetPath(foundScripts[0]);
-                    Debug.Log($"[PackageBuilder] Found DirectVpmInstaller at: {installerScriptPath}");
                 }
                 
                 if (!string.IsNullOrEmpty(installerScriptPath) && File.Exists(installerScriptPath))
@@ -1351,10 +1432,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         string asmdefMeta = "fileFormatVersion: 2\nguid: " + asmdefGuid + "\nAssemblyDefinitionImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                         File.WriteAllText(Path.Combine(asmdefFolder, "asset.meta"), asmdefMeta);
                         
-                        Debug.Log("[PackageBuilder] Added DirectVpmInstaller.asmdef to package");
                     }
                     
-                    Debug.Log("[PackageBuilder] Added DirectVpmInstaller.cs to package");
                     
                     // Also inject InstallerTransactionManager.cs (required dependency for InstallerTxn)
                     string txnManagerPath = Path.Combine(installerDir, "InstallerTransactionManager.cs");
@@ -1371,7 +1450,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         string txnManagerMeta = "fileFormatVersion: 2\nguid: " + txnManagerGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                         File.WriteAllText(Path.Combine(txnManagerFolder, "asset.meta"), txnManagerMeta);
                         
-                        Debug.Log("[PackageBuilder] Added InstallerTransactionManager.cs to package");
                     }
                     else
                     {
@@ -1390,7 +1468,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (foundReloadScripts.Length > 0)
                 {
                     fullReloadScriptPath = AssetDatabase.GUIDToAssetPath(foundReloadScripts[0]);
-                    Debug.Log($"[PackageBuilder] Found FullDomainReload at: {fullReloadScriptPath}");
                 }
                 
                 if (!string.IsNullOrEmpty(fullReloadScriptPath) && File.Exists(fullReloadScriptPath))
@@ -1406,7 +1483,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     string reloadMeta = "fileFormatVersion: 2\nguid: " + reloadGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(Path.Combine(reloadFolder, "asset.meta"), reloadMeta);
                     
-                    Debug.Log("[PackageBuilder] Added FullDomainReload.cs to package");
                 }
                 else
                 {
@@ -1420,18 +1496,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     string[] patchScripts = new string[]
                     {
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Data/PatchPackage.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Data/MeshDeltaAsset.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Data/UVLayerAsset.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Data/MaterialOverrideAsset.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Data/BlendshapeFrameAsset.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Data/AppliedPatchState.cs",
+                        "Packages/com.yucp.devtools/Editor/PackageExporter/Data/DerivedFbxAsset.cs",
+                        "Packages/com.yucp.devtools/Editor/PackageExporter/Core/MetaFileManager.cs",
+                        "Packages/com.yucp.devtools/Editor/PackageExporter/Core/DerivedFbxBuilder.cs",
                         "Packages/com.yucp.devtools/Editor/PackageExporter/Core/ManifestBuilder.cs",
                         "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Correspondence/MapBuilder.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Apply/Applicator.cs",
                         "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Backup/BackupManager.cs",
                         "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Validator.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Templates/YUCPPatchCleanup.cs",
                         "Packages/com.yucp.devtools/Editor/PackageExporter/Templates/YUCPPatchImporter.cs"
                     };
                     
@@ -1496,7 +1567,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             string scriptMeta = "fileFormatVersion: 2\nguid: " + scriptGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                             File.WriteAllText(Path.Combine(scriptFolder, "asset.meta"), scriptMeta);
                             
-                            Debug.Log($"[PackageBuilder] Injected patch script: {fileName} -> {targetPath} (from {sourceScriptPath})");
                             injectedPatchScripts++;
                         }
                         else
@@ -1515,7 +1585,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     if (File.Exists(tempPackageJsonPath))
                     {
                         tempPackageJsonContent = File.ReadAllText(tempPackageJsonPath);
-                        Debug.Log("[PackageBuilder] Injected package.json for com.yucp.temp into package");
                     }
                     else
                     {
@@ -1528,7 +1597,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
   ""unity"": ""2019.4"",
   ""hideInEditor"": true
 }";
-                        Debug.Log("[PackageBuilder] Created and injected default package.json for com.yucp.temp into package");
                     }
                     
                     File.WriteAllText(Path.Combine(tempPackageJsonFolder, "asset"), tempPackageJsonContent);
@@ -1546,17 +1614,31 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     string asmdefContent = @"{
   ""name"": ""YUCP.PatchRuntime"",
   ""rootNamespace"": """",
-  ""references"": [],
+  ""references"": [
+    ""Unity.Formats.Fbx.Editor"",
+    ""Autodesk.Fbx""
+  ],
   ""includePlatforms"": [
     ""Editor""
   ],
   ""excludePlatforms"": [],
   ""allowUnsafeCode"": false,
-  ""overrideReferences"": false,
+  ""overrideReferences"": true,
   ""precompiledReferences"": [],
   ""autoReferenced"": true,
   ""defineConstraints"": [],
-  ""versionDefines"": [],
+  ""versionDefines"": [
+    {
+      ""name"": ""com.unity.formats.fbx"",
+      ""expression"": ""4.0.0"",
+      ""define"": ""UNITY_FORMATS_FBX""
+    },
+    {
+      ""name"": ""com.autodesk.fbx"",
+      ""expression"": ""4.2.0"",
+      ""define"": ""ENABLE_FBX_SDK""
+    }
+  ],
   ""noEngineReferences"": false
 }";
                     File.WriteAllText(Path.Combine(asmdefFolder, "asset"), asmdefContent);
@@ -1565,11 +1647,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     string asmdefMeta = "fileFormatVersion: 2\nguid: " + asmdefGuid + "\nAssemblyDefinitionImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(Path.Combine(asmdefFolder, "asset.meta"), asmdefMeta);
                     
-                    Debug.Log("[PackageBuilder] Created and injected assembly definition for patch runtime scripts");
                     
                     if (injectedPatchScripts > 0)
                     {
-                        Debug.Log($"[PackageBuilder] Injected {injectedPatchScripts} patch runtime script(s) into package");
                     }
                     else
                     {
@@ -1610,9 +1690,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                 if (assemblyInfo.exists)
                                 {
                                     obfuscatedDllPaths[normalizedAsmdefPath] = assemblyInfo.dllPath;
-                                    Debug.Log($"[PackageBuilder] Will replace source code with obfuscated DLL for: {obfuscatedAsm.assemblyName}");
-                                    Debug.Log($"[PackageBuilder]   - Asmdef path (normalized): {normalizedAsmdefPath}");
-                                    Debug.Log($"[PackageBuilder]   - DLL path: {assemblyInfo.dllPath}");
                                 }
                             }
                         }
@@ -1651,7 +1728,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             // Skip ConfuserEx project files
                             if (extension == ".crproj")
                             {
-                                Debug.Log($"[PackageBuilder] Skipping ConfuserEx project file: {relativePath}");
                                 continue;
                             }
                             
@@ -1661,9 +1737,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             {
                                 if (isInObfuscatedAssembly)
                                 {
-                                    Debug.Log($"[PackageBuilder] DEBUG: Skipping source file via isInObfuscatedAssembly (will use obfuscated DLL): {relativePath}");
-                                    Debug.Log($"[PackageBuilder] DEBUG:   File dir: {fileDir}");
-                                    Debug.Log($"[PackageBuilder] DEBUG:   Matched asmdef: {asmdefInDir}");
                                     shouldSkipCsFile = true;
                                 }
                                 else
@@ -1675,9 +1748,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                         string asmdefDir = Path.GetDirectoryName(asmdefPath).Replace("\\", "/");
                                         if (fullPath.StartsWith(asmdefDir + "/", StringComparison.OrdinalIgnoreCase))
                                         {
-                                            Debug.Log($"[PackageBuilder] DEBUG: Skipping source file by full path match (will use obfuscated DLL): {relativePath}");
-                                            Debug.Log($"[PackageBuilder] DEBUG:   File full path: {fullPath}");
-                                            Debug.Log($"[PackageBuilder] DEBUG:   Matched asmdef dir: {asmdefDir}");
                                             shouldSkipCsFile = true;
                                             break;
                                         }
@@ -1695,15 +1765,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             {
                                 string asmdefFullPath = Path.GetFullPath(filePath).Replace("\\", "/");
                                 
-                                // DEBUG: Log when we encounter ANY .asmdef
-                                Debug.Log($"[PackageBuilder] DEBUG: Found .asmdef: {relativePath}");
-                                Debug.Log($"[PackageBuilder] DEBUG:   Full path: {asmdefFullPath}");
-                                Debug.Log($"[PackageBuilder] DEBUG:   isInObfuscatedAssembly: {isInObfuscatedAssembly}");
-                                Debug.Log($"[PackageBuilder] DEBUG:   In obfuscatedAsmdefPaths: {obfuscatedAsmdefPaths.Contains(asmdefFullPath)}");
-                                
                                 if (obfuscatedAsmdefPaths.Contains(asmdefFullPath))
                                 {
-                                    Debug.Log($"[PackageBuilder] Skipping asmdef (replaced by obfuscated DLL): {relativePath}");
                                     
                                     // Add the obfuscated DLL instead (only once per asmdef)
                                     if (!processedAsmdefDirs.Contains(asmdefFullPath))
@@ -1717,11 +1780,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                             string dllRelativePath = Path.Combine(Path.GetDirectoryName(relativePath), dllFileName).Replace("\\", "/");
                                             string dllUnityPathname = $"Packages/{packageName}/{dllRelativePath}";
                                             
-                                            Debug.Log($"[PackageBuilder] DEBUG: Adding obfuscated DLL");
-                                            Debug.Log($"[PackageBuilder] DEBUG:   DLL file: {dllFileName}");
-                                            Debug.Log($"[PackageBuilder] DEBUG:   DLL relative path: {dllRelativePath}");
-                                            Debug.Log($"[PackageBuilder] DEBUG:   DLL Unity pathname: {dllUnityPathname}");
-                                            
                                             string dllGuid = Guid.NewGuid().ToString("N");
                                             string dllMetaContent = GenerateMetaForFile(dllPath, dllGuid);
                                             
@@ -1734,28 +1792,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                             
                                             filesAdded++;
                                             filesReplaced++;
-                                            Debug.Log($"[PackageBuilder] Added obfuscated DLL: {dllFileName} (replaces source code)");
                                         }
                                         else
                                         {
-                                            Debug.LogWarning($"[PackageBuilder] DEBUG: Could not find DLL path for asmdef: {asmdefFullPath}");
+                                            Debug.LogWarning($"[PackageBuilder] Could not find DLL path for asmdef: {asmdefFullPath}");
                                         }
-                                    }
-                                    else
-                                    {
-                                        Debug.Log($"[PackageBuilder] DEBUG: Already processed this asmdef");
                                     }
                                     
                                     continue;
-                                }
-                                else
-                                {
-                                    Debug.Log($"[PackageBuilder] DEBUG: Asmdef NOT in obfuscatedAsmdefPaths set");
-                                    Debug.Log($"[PackageBuilder] DEBUG: obfuscatedAsmdefPaths contains {obfuscatedAsmdefPaths.Count} entries:");
-                                    foreach (var path in obfuscatedAsmdefPaths)
-                                    {
-                                        Debug.Log($"[PackageBuilder] DEBUG:     - {path}");
-                                    }
                                 }
                             }
                             
@@ -1819,15 +1863,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         
                         if (filesReplaced > 0)
                         {
-                            Debug.Log($"[PackageBuilder] Bundled package {packageName}: {filesAdded} files ({filesReplaced} assemblies replaced with obfuscated DLLs)");
                         }
                         else
                         {
-                            Debug.Log($"[PackageBuilder] Bundled complete package {packageName}: {filesAdded} files");
                         }
                     }
                     
-                    Debug.Log($"[PackageBuilder] Total bundled package files injected: {totalBundledFiles}");
                 }
                 
                 // Recompress the package
@@ -1970,7 +2011,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 var profile = profiles[i];
                 
-                Debug.Log($"[PackageBuilder] Exporting profile {i + 1}/{profiles.Count}: {profile.name}");
                 
                 var result = ExportPackage(profile, (progress, status) =>
                 {

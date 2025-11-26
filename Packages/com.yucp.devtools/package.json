@@ -12,6 +12,12 @@
     "com.yucp.components": ">=0.2.9",
     "com.vrchat.core.vpm-resolver": ">=0.1.27"
   },
+  "dependencies": {
+    "com.unity.formats.fbx": "4.2.1"
+  },
+  "optionalDependencies": {
+    "com.autodesk.fbx": "4.2.1"
+  },
   "legacyPackages": []
 }
 

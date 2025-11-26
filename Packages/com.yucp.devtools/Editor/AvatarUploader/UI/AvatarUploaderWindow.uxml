@@ -1,56 +1,56 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
-  <ui:VisualElement class="au-window">
-    <ui:VisualElement class="au-main-container">
-      <ui:VisualElement class="au-top-bar" name="top-bar-host" />
+  <ui:VisualElement class="yucp-window">
+    <ui:VisualElement class="yucp-main-container">
+      <ui:VisualElement class="yucp-top-bar" name="top-bar-host" />
 
-      <ui:VisualElement class="au-content-container">
-        <ui:VisualElement class="au-left-pane">
-          <ui:Label class="au-section-header" text="Collections"/>
-          <ui:VisualElement class="au-profile-toolbar" name="profile-toolbar"/>
+      <ui:VisualElement class="yucp-content-container">
+        <ui:VisualElement class="yucp-left-pane">
+          <ui:Label class="yucp-section-header" text="Collections"/>
+          <ui:VisualElement class="yucp-profile-toolbar" name="profile-toolbar"/>
 
-          <ui:ScrollView class="au-profile-list-scroll">
+          <ui:ScrollView class="yucp-profile-list-scroll">
             <ui:VisualElement name="profile-list-host"/>
           </ui:ScrollView>
         </ui:VisualElement>
 
-        <ui:VisualElement class="au-right-pane">
-          <ui:ScrollView class="au-panel">
+        <ui:VisualElement class="yucp-right-pane">
+          <ui:ScrollView class="yucp-panel">
             <!-- Collection Header: Name and Batch Actions -->
-            <ui:VisualElement class="au-collection-header" name="collection-header-host"/>
+            <ui:VisualElement class="yucp-collection-header" name="collection-header-host"/>
             
             <!-- Bulk Edit Panel: Appears when multiple avatars selected -->
-            <ui:VisualElement class="au-bulk-edit-panel" name="bulk-edit-host"/>
+            <ui:VisualElement class="yucp-bulk-edit-panel" name="bulk-edit-host"/>
             
             <!-- Avatar Grid: Primary view showing all avatars -->
-            <ui:VisualElement class="au-section" name="avatar-grid-host"/>
+            <ui:VisualElement class="yucp-section" name="avatar-grid-host"/>
             
             <!-- Individual Avatar Details: Expandable panel (hidden by default) -->
-            <ui:VisualElement class="au-avatar-details-panel" name="avatar-details-host">
+            <ui:VisualElement class="yucp-avatar-details-panel" name="avatar-details-host">
               <!-- Icon Sidebar: Fixed left sidebar for avatar icon -->
-              <ui:VisualElement class="au-icon-sidebar" name="icon-sidebar-host"/>
+              <ui:VisualElement class="yucp-icon-sidebar" name="icon-sidebar-host"/>
               
               <!-- Main Content: Card-based sections -->
-              <ui:VisualElement class="au-main-content" name="main-content-host">
+              <ui:VisualElement class="yucp-main-content" name="main-content-host">
                 <!-- Gallery Card: Gallery images and carousel -->
-                <ui:VisualElement class="au-section" name="gallery-section-host"/>
+                <ui:VisualElement class="yucp-section" name="gallery-section-host"/>
                 
                 <!-- Basic Information Card: Name, description, tags, styles -->
-                <ui:VisualElement class="au-section" name="metadata-section-host"/>
+                <ui:VisualElement class="yucp-section" name="metadata-section-host"/>
                 
                 <!-- Performance Card: Metrics and insights -->
-                <ui:VisualElement class="au-section" name="performance-section-host"/>
+                <ui:VisualElement class="yucp-section" name="performance-section-host"/>
                 
                 <!-- Visibility Card: Release status -->
-                <ui:VisualElement class="au-section" name="visibility-section-host"/>
+                <ui:VisualElement class="yucp-section" name="visibility-section-host"/>
                 
                 <!-- Validation Card: Issues and warnings -->
-                <ui:VisualElement class="au-section" name="validation-section-host"/>
+                <ui:VisualElement class="yucp-section" name="validation-section-host"/>
                 
                 <!-- Build Actions Card: Primary actions for building -->
-                <ui:VisualElement class="au-section au-section-build-actions" name="build-actions-host"/>
+                <ui:VisualElement class="yucp-section yucp-section-build-actions" name="build-actions-host"/>
                 
                 <!-- Advanced Settings Card: Collapsible section for blueprint IDs and advanced options -->
-                <ui:VisualElement class="au-section au-section-advanced" name="advanced-section-host"/>
+                <ui:VisualElement class="yucp-section yucp-section-advanced" name="advanced-section-host"/>
               </ui:VisualElement>
             </ui:VisualElement>
           </ui:ScrollView>
@@ -58,12 +58,12 @@
       </ui:VisualElement>
 
       <!-- Bottom Bar: Only shown during active builds -->
-      <ui:VisualElement class="au-bottom-bar" name="bottom-bar-host">
-        <ui:VisualElement class="au-progress-container" name="progress-container">
-          <ui:VisualElement class="au-progress-bar">
-            <ui:VisualElement class="au-progress-fill" name="progress-fill"/>
+      <ui:VisualElement class="yucp-bottom-bar" name="bottom-bar-host">
+        <ui:VisualElement class="yucp-progress-container" name="progress-container">
+          <ui:VisualElement class="yucp-progress-bar">
+            <ui:VisualElement class="yucp-progress-fill" name="progress-fill"/>
           </ui:VisualElement>
-          <ui:Label class="au-progress-text" name="progress-text" text="0%"/>
+          <ui:Label class="yucp-progress-text" name="progress-text" text="0%"/>
         </ui:VisualElement>
       </ui:VisualElement>
     </ui:VisualElement>

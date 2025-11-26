@@ -92,11 +92,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             if (filesToBump.Count == 0)
             {
-                Debug.Log("[ProjectVersionScanner] No files with version directives found");
                 return new List<SmartVersionBumper.BumpResult>();
             }
 
-            Debug.Log($"[ProjectVersionScanner] Found {filesToBump.Count} files with version directives");
 
             // Bump all versions
             var results = SmartVersionBumper.BumpMultipleFiles(filesToBump, writeBack, defaultOptions);

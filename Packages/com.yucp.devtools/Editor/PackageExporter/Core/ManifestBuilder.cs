@@ -24,6 +24,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			public List<MaterialInfo> materials = new List<MaterialInfo>();
 			public List<string> blendshapeNames = new List<string>();
 			public List<string> animationClips = new List<string>();
+			public List<BoneInfo> bones = new List<BoneInfo>();
+			public List<RendererInfo> renderers = new List<RendererInfo>();
 		}
 
 		[Serializable]
@@ -40,6 +42,26 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		{
 			public string name;
 			public string shaderName;
+		}
+		
+		[Serializable]
+		public class BoneInfo
+		{
+			public string name;
+			public string path;
+			public string parentPath;
+			public Vector3 localPosition;
+			public Quaternion localRotation;
+			public Vector3 localScale;
+		}
+		
+		[Serializable]
+		public class RendererInfo
+		{
+			public string path;
+			public string meshName;
+			public string[] materialNames;
+			public string[] materialGuids;
 		}
 
 		public static Manifest BuildForFbx(string fbxAssetPath)
@@ -94,9 +116,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					}
 				}
 			}
+			
+			// Capture bone hierarchy and renderer information from the prefab/GameObject
+			var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(fbxAssetPath);
+			if (prefab != null)
+			{
+				CaptureBoneHierarchy(prefab.transform, manifest, "");
+				CaptureRendererInfo(prefab.transform, manifest, "");
+			}
 
 			// Compute manifestId as a stable hash of summarized content
-			string summary = $"{manifest.assetGuid}|{string.Join(",", manifest.meshes.Select(m => $"{m.name}:{m.vertexCount}:{m.subMeshCount}:{m.uvChannels}"))}|{string.Join(",", manifest.materials.Select(m => $"{m.name}:{m.shaderName}"))}|{string.Join(",", manifest.blendshapeNames)}|{string.Join(",", manifest.animationClips)}";
+			string summary = $"{manifest.assetGuid}|{string.Join(",", manifest.meshes.Select(m => $"{m.name}:{m.vertexCount}:{m.subMeshCount}:{m.uvChannels}"))}|{string.Join(",", manifest.materials.Select(m => $"{m.name}:{m.shaderName}"))}|{string.Join(",", manifest.blendshapeNames)}|{string.Join(",", manifest.animationClips)}|{string.Join(",", manifest.bones.Select(b => $"{b.path}:{b.localPosition}:{b.localRotation}:{b.localScale}"))}|{string.Join(",", manifest.renderers.Select(r => $"{r.path}:{r.meshName}:{string.Join(";", r.materialNames ?? new string[0])}"))}";
 			manifest.manifestId = ComputeHash(summary);
 
 			Persist(manifest);
@@ -126,6 +156,77 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				var bytes = System.Text.Encoding.UTF8.GetBytes(input);
 				var hashBytes = sha.ComputeHash(bytes);
 				return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+			}
+		}
+
+		private static void CaptureBoneHierarchy(Transform transform, Manifest manifest, string parentPath)
+		{
+			string currentPath = string.IsNullOrEmpty(parentPath) ? transform.name : $"{parentPath}/{transform.name}";
+			
+			var boneInfo = new BoneInfo
+			{
+				name = transform.name,
+				path = currentPath,
+				parentPath = parentPath,
+				localPosition = transform.localPosition,
+				localRotation = transform.localRotation,
+				localScale = transform.localScale
+			};
+			manifest.bones.Add(boneInfo);
+			
+			foreach (Transform child in transform)
+			{
+				CaptureBoneHierarchy(child, manifest, currentPath);
+			}
+		}
+		
+		private static void CaptureRendererInfo(Transform transform, Manifest manifest, string parentPath)
+		{
+			string currentPath = string.IsNullOrEmpty(parentPath) ? transform.name : $"{parentPath}/{transform.name}";
+			
+			var renderer = transform.GetComponent<Renderer>();
+			if (renderer != null)
+			{
+				var rendererInfo = new RendererInfo
+				{
+					path = currentPath,
+					materialNames = new string[renderer.sharedMaterials.Length],
+					materialGuids = new string[renderer.sharedMaterials.Length]
+				};
+				
+				if (renderer is SkinnedMeshRenderer skinnedRenderer && skinnedRenderer.sharedMesh != null)
+				{
+					rendererInfo.meshName = skinnedRenderer.sharedMesh.name;
+				}
+				else if (renderer is MeshRenderer meshRenderer)
+				{
+					var meshFilter = transform.GetComponent<MeshFilter>();
+					if (meshFilter != null && meshFilter.sharedMesh != null)
+					{
+						rendererInfo.meshName = meshFilter.sharedMesh.name;
+					}
+				}
+				
+				for (int i = 0; i < renderer.sharedMaterials.Length; i++)
+				{
+					var mat = renderer.sharedMaterials[i];
+					if (mat != null)
+					{
+						rendererInfo.materialNames[i] = mat.name;
+						string matPath = AssetDatabase.GetAssetPath(mat);
+						if (!string.IsNullOrEmpty(matPath))
+						{
+							rendererInfo.materialGuids[i] = AssetDatabase.AssetPathToGUID(matPath);
+						}
+					}
+				}
+				
+				manifest.renderers.Add(rendererInfo);
+			}
+			
+			foreach (Transform child in transform)
+			{
+				CaptureRendererInfo(child, manifest, currentPath);
 			}
 		}
 

@@ -41,6 +41,19 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			settings.EnableBuildCaching = EditorGUILayout.Toggle("Enable Build Caching", settings.EnableBuildCaching);
 
 			EditorGUILayout.Space();
+			EditorGUILayout.LabelField("Preview Settings", EditorStyles.boldLabel);
+			settings.DisableCursorTracking = EditorGUILayout.Toggle("Disable Avatar Cursor Tracking", settings.DisableCursorTracking);
+			settings.UseLowSpecMode = EditorGUILayout.Toggle("Use Low-Spec Mode (Show Icons Instead of 3D Preview)", settings.UseLowSpecMode);
+			if (!settings.UseLowSpecMode)
+			{
+				var isLowSpec = IsLowSpecSystem();
+				if (isLowSpec)
+				{
+					EditorGUILayout.HelpBox("Your system appears to be low-spec. Consider enabling low-spec mode for better performance.", MessageType.Info);
+				}
+			}
+
+			EditorGUILayout.Space();
 			EditorGUILayout.LabelField("Gallery Integration", EditorStyles.boldLabel);
 			settings.EnableGalleryIntegration = EditorGUILayout.ToggleLeft("Enable gallery API requests (uses Control Panel session)", settings.EnableGalleryIntegration);
 
@@ -57,6 +70,31 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			{
 				settings.Save();
 			}
+		}
+
+		private static bool IsLowSpecSystem()
+		{
+			var graphicsMemory = SystemInfo.graphicsMemorySize;
+			var systemMemory = SystemInfo.systemMemorySize;
+			var processorCount = SystemInfo.processorCount;
+			var graphicsDeviceType = SystemInfo.graphicsDeviceType;
+
+			bool isLowSpec = false;
+
+			if (graphicsMemory > 0 && graphicsMemory < 2048)
+				isLowSpec = true;
+
+			if (systemMemory > 0 && systemMemory < 4096)
+				isLowSpec = true;
+
+			if (processorCount < 4)
+				isLowSpec = true;
+
+			if (graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.OpenGLES2 ||
+			    graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.OpenGLES3)
+				isLowSpec = true;
+
+			return isLowSpec;
 		}
 
 		[SettingsProvider]

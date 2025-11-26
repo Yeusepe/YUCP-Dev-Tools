@@ -8,9 +8,9 @@ using System.Collections.Generic;
 namespace YUCP.PatchCleanup
 {
     /// <summary>
-    /// Standalone patch importer that applies patches on import.
+    /// Standalone patch importer that applies DerivedFbxAsset patches on import.
     /// This script is included in the temp package and handles patch application.
-    /// All required code (ManifestBuilder, MapBuilder, Applicator, etc.) is in the temp package.
+    /// Uses direct GUID targeting and preserves the original derived FBX GUID for prefab compatibility.
     /// </summary>
     public class YUCPPatchImporter : AssetPostprocessor
     {
@@ -37,7 +37,6 @@ namespace YUCP.PatchCleanup
         static YUCPPatchImporter()
         {
             WriteLog("YUCPPatchImporter static constructor called - importer is loaded and compiled!");
-            // Schedule a delayed check for patches that might have been imported before scripts compiled
             EditorApplication.delayCall += CheckForPatchesOnLoad;
         }
         
@@ -51,11 +50,60 @@ namespace YUCP.PatchCleanup
             
             WriteLog("CheckForPatchesOnLoad called - checking for existing patches");
             
-            // Check if there are any PatchPackage assets already in the project
-            // This handles the case where patches were imported before scripts compiled
             try
             {
-                // Search for all .asset files in the Patches folder
+                // First, check if there's a pending patch retry after package installation
+                string patchPathKey = "YUCP.DerivedFbxBuilder.PendingPatchPath";
+                string pendingPatchPath = EditorPrefs.GetString(patchPathKey, "");
+                if (!string.IsNullOrEmpty(pendingPatchPath))
+                {
+                    WriteLog($"Found pending patch retry after package installation: {pendingPatchPath}");
+                    
+                    // Wait a moment for packages to finish resolving
+                    EditorApplication.delayCall += () =>
+                    {
+                        EditorApplication.delayCall += () =>
+                        {
+                            // Check if Unity FBX Exporter is now available
+                            bool fbxExporterAvailable = false;
+                            try
+                            {
+                                var modelExporterType = System.Type.GetType("UnityEditor.Formats.Fbx.Exporter.ModelExporter, Unity.Formats.Fbx.Editor");
+                                if (modelExporterType != null)
+                                {
+                                    var exportMethod = modelExporterType.GetMethod("ExportObject", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                                    fbxExporterAvailable = exportMethod != null;
+                                }
+                            }
+                            catch { }
+                            
+                            if (fbxExporterAvailable)
+                            {
+                                WriteLog("Unity FBX Exporter is now available. Automatically retrying patch application...");
+                                // Clear the processed flag for this patch so it can be retried
+                                if (processedPatches != null && processedPatches.Contains(pendingPatchPath))
+                                {
+                                    processedPatches.Remove(pendingPatchPath);
+                                }
+                                // Reset the hasCheckedOnLoad flag so patches are checked again
+                                hasCheckedOnLoad = false;
+                                // Don't clear the EditorPrefs yet - let it be cleared on successful application
+                                CheckForPatchesOnLoad();
+                            }
+                            else
+                            {
+                                WriteLog("Unity FBX Exporter still not available. Waiting for package resolution...");
+                                // Try again after a longer delay (packages might still be downloading)
+                                EditorApplication.delayCall += () =>
+                                {
+                                    hasCheckedOnLoad = false;
+                                    CheckForPatchesOnLoad();
+                                };
+                            }
+                        };
+                    };
+                }
+                
                 string patchesFolder = "Packages/com.yucp.temp/Patches";
                 if (!AssetDatabase.IsValidFolder(patchesFolder))
                 {
@@ -63,7 +111,6 @@ namespace YUCP.PatchCleanup
                     return;
                 }
                 
-                // Find all assets in the Patches folder
                 string[] allGuids = AssetDatabase.FindAssets("", new[] { patchesFolder });
                 WriteLog($"Found {allGuids.Length} asset(s) in Patches folder");
                 
@@ -72,24 +119,20 @@ namespace YUCP.PatchCleanup
                 {
                     string path = AssetDatabase.GUIDToAssetPath(guid);
                     
-                    // Look for PatchPackage assets specifically
-                    if (path.Contains("PatchPackage") && path.EndsWith(".asset") && path.Contains("com.yucp.temp"))
+                    if (path.Contains("DerivedFbxAsset") && path.EndsWith(".asset") && path.Contains("com.yucp.temp"))
                     {
                         WriteLog($"Found existing patch: {path} - attempting to apply");
                         
-                        // Skip if already processed
                         if (processedPatches != null && processedPatches.Contains(path))
                         {
                             WriteLog($"  Skipping (already processed): {path}");
                             continue;
                         }
                         
-                        // Mark as processed before applying
                         if (processedPatches == null)
                             processedPatches = new HashSet<string>();
                         processedPatches.Add(path);
                         
-                        // Apply the patch
                         TryApplyPatch(path);
                         appliedCount++;
                     }
@@ -107,67 +150,50 @@ namespace YUCP.PatchCleanup
         {
             WriteLog($"OnPostprocessAllAssets called with {importedAssets?.Length ?? 0} imported assets");
             
-            // Skip if we're in the middle of an export (prevents reserialization loops)
+            // Skip if we're in the middle of an export
             try
             {
                 var packageBuilderType = System.Type.GetType("YUCP.DevTools.Editor.PackageExporter.PackageBuilder, Assembly-CSharp-Editor");
                 if (packageBuilderType != null)
                 {
-                    WriteLog("PackageBuilder type found (devtools present)");
                     var isExportingField = packageBuilderType.GetField("s_isExporting", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
                     if (isExportingField != null && (bool)isExportingField.GetValue(null))
                     {
                         WriteLog("Export in progress, skipping patch detection");
-                        return; // Skip patch application during export
+                        return;
                     }
                 }
-                else
-                {
-                    WriteLog("PackageBuilder type NOT found (standalone mode - good)");
-                }
             }
-            catch (Exception ex)
-            {
-                WriteLog($"Error checking export flag: {ex.Message}");
-            }
+            catch { }
             
-            // Look for PatchPackage imports - IGNORE assets in Derived folder (they're outputs, not inputs)
-            // CRITICAL: Only process patches that are ACTUALLY being imported right now
-            // Track processed patches to prevent re-processing
             if (processedPatches == null)
                 processedPatches = new HashSet<string>();
             
             int patchCount = 0;
             foreach (var path in importedAssets ?? new string[0])
             {
-                WriteLog($"Checking imported asset: {path}");
-                
-                // Skip derived assets - they're outputs from patch application, not patch packages
+                // Skip derived assets - they're outputs, not inputs
                 if (path.Contains("/Derived/") || path.Contains("\\Derived\\"))
                 {
-                    WriteLog($"  Skipping (Derived folder): {path}");
                     continue;
                 }
-                    
-                // Skip anything not in Patches folder - patches should only be in Patches folder
+                
+                // Only process DerivedFbxAsset files in Patches folder
                 if (!path.Contains("/Patches/") && !path.Contains("\\Patches\\"))
                 {
-                    WriteLog($"  Skipping (not in Patches folder): {path}");
                     continue;
                 }
                 
-                // Skip if we've already processed this patch
                 if (processedPatches.Contains(path))
                 {
-                    WriteLog($"  Skipping (already processed): {path}");
                     continue;
                 }
                 
-                if (path.Contains("PatchPackage") && path.EndsWith(".asset") && path.Contains("com.yucp.temp"))
+                if (path.Contains("DerivedFbxAsset") && path.EndsWith(".asset") && path.Contains("com.yucp.temp"))
                 {
                     patchCount++;
                     WriteLog($"  FOUND PATCH: {path}");
-                    processedPatches.Add(path); // Mark as processed BEFORE applying
+                    processedPatches.Add(path);
                     TryApplyPatch(path);
                 }
             }
@@ -180,26 +206,19 @@ namespace YUCP.PatchCleanup
             WriteLog($"TryApplyPatch called for: {patchPath}");
             try
             {
-                // Try multiple type names - the namespace might be different
-                var patchType = System.Type.GetType("YUCP.PatchRuntime.PatchPackage, Assembly-CSharp-Editor");
-                if (patchType == null)
+                // Find DerivedFbxAsset type
+                var derivedFbxAssetType = System.Type.GetType("YUCP.PatchRuntime.DerivedFbxAsset, YUCP.PatchRuntime");
+                if (derivedFbxAssetType == null)
                 {
-                    WriteLog("  PatchPackage type not found with YUCP.PatchRuntime namespace, trying alternatives...");
-                    // Try without namespace
-                    patchType = System.Type.GetType("PatchPackage, Assembly-CSharp-Editor");
-                }
-                if (patchType == null)
-                {
-                    // Try finding by searching all types
                     var assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
                     foreach (var asm in assemblies)
                     {
                         try
                         {
-                            patchType = asm.GetType("YUCP.PatchRuntime.PatchPackage");
-                            if (patchType != null)
+                            derivedFbxAssetType = asm.GetType("YUCP.PatchRuntime.DerivedFbxAsset");
+                            if (derivedFbxAssetType != null)
                             {
-                                WriteLog($"  Found PatchPackage type in assembly: {asm.FullName}");
+                                WriteLog($"  Found DerivedFbxAsset type in assembly: {asm.FullName}");
                                 break;
                             }
                         }
@@ -207,37 +226,19 @@ namespace YUCP.PatchCleanup
                     }
                 }
                 
-                if (patchType == null)
+                if (derivedFbxAssetType == null)
                 {
-                    WriteLog("  ERROR: PatchPackage type not found in any assembly. Listing available types...");
-                    var assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
-                    foreach (var asm in assemblies)
-                    {
-                        try
-                        {
-                            var types = asm.GetTypes().Where(t => t.Name.Contains("PatchPackage")).ToArray();
-                            if (types.Length > 0)
-                            {
-                                WriteLog($"  Found PatchPackage-related types in {asm.FullName}: {string.Join(", ", types.Select(t => t.FullName))}");
-                            }
-                        }
-                        catch { }
-                    }
-                    Debug.LogWarning($"[YUCP PatchImporter] PatchPackage type not found. Ensure patch scripts are in temp package.");
+                    WriteLog("  ERROR: DerivedFbxAsset type not found");
+                    Debug.LogWarning($"[YUCP PatchImporter] DerivedFbxAsset type not found. Ensure patch scripts are in temp package.");
                     return;
                 }
                 
-                WriteLog($"  PatchPackage type found: {patchType.FullName}");
+                // Fix script GUID and namespace references if needed
+                string derivedFbxAssetScriptPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs";
+                string derivedFbxAssetScriptGuid = AssetDatabase.AssetPathToGUID(derivedFbxAssetScriptPath);
                 
-                // Try to fix the script GUID reference in the .asset file if it's wrong
-                string patchPackageScriptPath = "Packages/com.yucp.temp/Editor/PatchPackage.cs";
-                string patchPackageScriptGuid = AssetDatabase.AssetPathToGUID(patchPackageScriptPath);
-                
-                if (!string.IsNullOrEmpty(patchPackageScriptGuid))
+                if (!string.IsNullOrEmpty(derivedFbxAssetScriptGuid))
                 {
-                    WriteLog($"  PatchPackage script GUID: {patchPackageScriptGuid}");
-                    
-                    // Read and fix the .asset file if needed
                     string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                     string physicalAssetPath = Path.Combine(projectPath, patchPath.Replace('/', Path.DirectorySeparatorChar));
                     
@@ -246,34 +247,45 @@ namespace YUCP.PatchCleanup
                         string assetContent = File.ReadAllText(physicalAssetPath);
                         bool needsUpdate = false;
                         
-                        // Fix script GUID reference
+                        // Fix script GUID
                         var guidPattern = new System.Text.RegularExpressions.Regex(@"m_Script:\s*\{fileID:\s*\d+,\s*guid:\s*([a-f0-9]{32}),\s*type:\s*\d+\}");
                         var match = guidPattern.Match(assetContent);
                         
                         if (match.Success)
                         {
                             string currentGuid = match.Groups[1].Value;
-                            if (currentGuid != patchPackageScriptGuid)
+                            if (currentGuid != derivedFbxAssetScriptGuid)
                             {
-                                WriteLog($"  Fixing script GUID reference: {currentGuid} -> {patchPackageScriptGuid}");
-                                assetContent = guidPattern.Replace(assetContent, $"m_Script: {{fileID: 11500000, guid: {patchPackageScriptGuid}, type: 3}}");
+                                WriteLog($"  Fixing script GUID reference: {currentGuid} -> {derivedFbxAssetScriptGuid}");
+                                assetContent = guidPattern.Replace(assetContent, $"m_Script: {{fileID: 11500000, guid: {derivedFbxAssetScriptGuid}, type: 3}}");
                                 needsUpdate = true;
                             }
                         }
                         
-                        // Fix namespace references for nested types (e.g., BlendshapeOp, MeshDeltaOp)
-                        if (System.Text.RegularExpressions.Regex.IsMatch(assetContent, @"YUCP\.DevTools\.Editor\.PackageExporter\.PatchPackage/"))
+                        // Fix namespace references - catch all variations
+                        bool namespaceFixed = false;
+                        
+                        // Fix nested type references: YUCP.DevTools.Editor.PackageExporter.DerivedFbxAsset/EmbeddedBlendshapeOp
+                        if (System.Text.RegularExpressions.Regex.IsMatch(assetContent, @"YUCP\.DevTools\.Editor\.PackageExporter"))
                         {
-                            WriteLog($"  Fixing namespace references for nested types...");
+                            WriteLog($"  Fixing namespace references (DevTools -> PatchRuntime)...");
+                            // Replace all occurrences of the old namespace
                             assetContent = System.Text.RegularExpressions.Regex.Replace(
                                 assetContent,
-                                @"YUCP\.DevTools\.Editor\.PackageExporter\.PatchPackage/(\w+)",
-                                "YUCP.PatchRuntime.PatchPackage/$1"
+                                @"YUCP\.DevTools\.Editor\.PackageExporter\.DerivedFbxAsset/(\w+)",
+                                "YUCP.PatchRuntime.DerivedFbxAsset/$1"
                             );
+                            // Also replace any other references to the old namespace
+                            assetContent = System.Text.RegularExpressions.Regex.Replace(
+                                assetContent,
+                                @"YUCP\.DevTools\.Editor\.PackageExporter",
+                                "YUCP.PatchRuntime"
+                            );
+                            namespaceFixed = true;
                             needsUpdate = true;
                         }
                         
-                        // Fix assembly references
+                        // Fix assembly references: com.yucp.devtools.Editor
                         if (System.Text.RegularExpressions.Regex.IsMatch(assetContent, @"com\.yucp\.devtools\.Editor"))
                         {
                             WriteLog($"  Fixing assembly references...");
@@ -282,71 +294,160 @@ namespace YUCP.PatchCleanup
                                 @"com\.yucp\.devtools\.Editor",
                                 "YUCP.PatchRuntime"
                             );
+                            namespaceFixed = true;
                             needsUpdate = true;
+                        }
+                        
+                        // Also check for any remaining old namespace patterns
+                        if (System.Text.RegularExpressions.Regex.IsMatch(assetContent, @"YUCP\.DevTools"))
+                        {
+                            WriteLog($"  Fixing remaining DevTools namespace references...");
+                            assetContent = System.Text.RegularExpressions.Regex.Replace(
+                                assetContent,
+                                @"YUCP\.DevTools[^\s,}]+",
+                                "YUCP.PatchRuntime"
+                            );
+                            namespaceFixed = true;
+                            needsUpdate = true;
+                        }
+                        
+                        if (namespaceFixed)
+                        {
+                            WriteLog($"  Namespace fix applied");
                         }
                         
                         if (needsUpdate)
                         {
                             File.WriteAllText(physicalAssetPath, assetContent);
-                            
-                            // Force reimport after fixing
                             AssetDatabase.ImportAsset(patchPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
                             WriteLog($"  Reimported asset after fixing references");
                         }
                     }
                 }
                 
-                // Force import the asset first - Unity may not have imported it yet
-                WriteLog($"  Forcing import of patch asset...");
+                // Force import
                 AssetDatabase.ImportAsset(patchPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
                 
-                // Try loading with the specific type first
-                var patch = AssetDatabase.LoadAssetAtPath(patchPath, patchType);
-                
-                // If that fails, try loading as generic ScriptableObject and casting
+                // Load the asset
+                var patch = AssetDatabase.LoadAssetAtPath(patchPath, derivedFbxAssetType);
                 if (patch == null)
                 {
-                    WriteLog($"  Type-specific load failed, trying generic ScriptableObject...");
-                    var genericObj = AssetDatabase.LoadAssetAtPath<ScriptableObject>(patchPath);
-                    if (genericObj != null)
+                    // Validate file exists and check size before loading (very large files can cause crashes)
+                    string physicalPath = patchPath.Replace("Packages/", "").Replace("Assets/", "");
+                    physicalPath = Path.Combine(Application.dataPath.Replace("/Assets", ""), physicalPath);
+                    
+                    if (File.Exists(physicalPath))
                     {
-                        WriteLog($"  Loaded as generic ScriptableObject, type: {genericObj.GetType().FullName}");
-                        // Check if it's assignable to our patch type
-                        if (patchType.IsAssignableFrom(genericObj.GetType()))
+                        long fileSize = new FileInfo(physicalPath).Length;
+                        // Warn if file is very large (over 100MB) - might cause serialization issues
+                        if (fileSize > 100 * 1024 * 1024)
                         {
-                            patch = genericObj;
-                            WriteLog($"  Successfully cast to PatchPackage type");
-                        }
-                        else
-                        {
-                            WriteLog($"  Type mismatch: expected {patchType.FullName}, got {genericObj.GetType().FullName}");
+                            WriteLog($"  WARNING: Patch file is very large ({fileSize / (1024 * 1024)}MB), may cause issues");
+                            Debug.LogWarning($"[YUCP PatchImporter] Patch file is very large: {patchPath} ({fileSize / (1024 * 1024)}MB)");
                         }
                     }
-                }
-                
-                // If still null, try loading by GUID
-                if (patch == null)
-                {
-                    WriteLog($"  Generic load failed, trying by GUID...");
-                    string guid = AssetDatabase.AssetPathToGUID(patchPath);
-                    if (!string.IsNullOrEmpty(guid))
+                    
+                    var genericObj = AssetDatabase.LoadAssetAtPath<ScriptableObject>(patchPath);
+                    if (genericObj != null && derivedFbxAssetType.IsAssignableFrom(genericObj.GetType()))
                     {
-                        WriteLog($"  Found GUID: {guid}");
-                        var guidObj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(AssetDatabase.GUIDToAssetPath(guid));
-                        if (guidObj != null && patchType.IsAssignableFrom(guidObj.GetType()))
-                        {
-                            patch = guidObj;
-                            WriteLog($"  Loaded via GUID");
-                        }
+                        patch = genericObj;
                     }
                 }
                 
                 if (patch == null)
                 {
                     WriteLog($"  ERROR: Could not load patch asset at path: {patchPath}");
-                    WriteLog($"  File exists: {File.Exists(patchPath)}");
-                    WriteLog($"  AssetDatabase.Contains: {AssetDatabase.Contains(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(patchPath))}");
-                    Debug.LogWarning($"[YUCP PatchImporter] Could not load patch asset: {patchPath}. The asset may be missing its script reference. Try re-importing the package.");
+                    Debug.LogWarning($"[YUCP PatchImporter] Could not load patch asset: {patchPath}");
+                    return;
+                }
+                
+                // Check if the asset has missing types (corrupted/incompatible format)
+                try
+                {
+                    var operationsField = patch.GetType().GetField("operations");
+                    if (operationsField != null)
+                    {
+                        var operations = operationsField.GetValue(patch) as System.Collections.IList;
+                        if (operations != null)
+                        {
+                            int nullCount = 0;
+                            foreach (var op in operations)
+                            {
+                                if (op == null)
+                                {
+                                    nullCount++;
+                                }
+                            }
+                            
+                            if (nullCount > 0)
+                            {
+                                // If we have null operations, try one more time to fix the namespace and reload
+                                WriteLog($"  Found {nullCount} null operation(s), attempting namespace fix and reload...");
+                                
+                                // Re-read and fix the file again
+                                string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                                string physicalAssetPath = Path.Combine(projectPath, patchPath.Replace('/', Path.DirectorySeparatorChar));
+                                
+                                if (File.Exists(physicalAssetPath))
+                                {
+                                    string assetContent = File.ReadAllText(physicalAssetPath);
+                                    bool namespaceFixed = false;
+                                    
+                                    // Aggressive namespace replacement
+                                    if (assetContent.Contains("YUCP.DevTools.Editor.PackageExporter"))
+                                    {
+                                        assetContent = assetContent.Replace("YUCP.DevTools.Editor.PackageExporter", "YUCP.PatchRuntime");
+                                        namespaceFixed = true;
+                                    }
+                                    if (assetContent.Contains("com.yucp.devtools.Editor"))
+                                    {
+                                        assetContent = assetContent.Replace("com.yucp.devtools.Editor", "YUCP.PatchRuntime");
+                                        namespaceFixed = true;
+                                    }
+                                    
+                                    if (namespaceFixed)
+                                    {
+                                        File.WriteAllText(physicalAssetPath, assetContent);
+                                        AssetDatabase.ImportAsset(patchPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+                                        WriteLog($"  Re-fixed namespace and reloaded asset");
+                                        
+                                        // Try loading again
+                                        patch = AssetDatabase.LoadAssetAtPath(patchPath, derivedFbxAssetType);
+                                        if (patch != null)
+                                        {
+                                            operationsField = patch.GetType().GetField("operations");
+                                            if (operationsField != null)
+                                            {
+                                                operations = operationsField.GetValue(patch) as System.Collections.IList;
+                                                if (operations != null)
+                                                {
+                                                    nullCount = 0;
+                                                    foreach (var op in operations)
+                                                    {
+                                                        if (op == null) nullCount++;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                if (nullCount > 0)
+                                {
+                                    Debug.LogError($"[YUCP PatchImporter] Patch asset {patchPath} contains {nullCount} null operation(s). This asset was created with an incompatible format.\n" +
+                                        "The namespace fix was attempted but failed. Please delete this asset file and re-export your package.\n" +
+                                        $"Delete: {patchPath}");
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception checkEx)
+                {
+                    Debug.LogError($"[YUCP PatchImporter] Patch asset {patchPath} appears to be corrupted or incompatible.\n" +
+                        "This may be due to a format change. Please delete this asset file and re-export your package.\n" +
+                        $"Delete: {patchPath}\nError: {checkEx.Message}");
                     return;
                 }
                 
@@ -356,7 +457,7 @@ namespace YUCP.PatchCleanup
             catch (Exception ex)
             {
                 WriteLog($"  ERROR in TryApplyPatch: {ex.Message}\n{ex.StackTrace}");
-                Debug.LogWarning($"[YUCP PatchImporter] Error processing patch {patchPath}: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogWarning($"[YUCP PatchImporter] Error processing patch {patchPath}: {ex.Message}");
             }
         }
         
@@ -364,303 +465,289 @@ namespace YUCP.PatchCleanup
         {
             try
             {
-                // Use reflection to access patch properties and methods
                 var patchType = patchObj.GetType();
-                var sourceManifestIdProp = patchType.GetProperty("sourceManifestId") as System.Reflection.MemberInfo ?? patchType.GetField("sourceManifestId");
-                var opsProp = patchType.GetProperty("ops") as System.Reflection.MemberInfo ?? patchType.GetField("ops");
-                var policyProp = patchType.GetProperty("policy") as System.Reflection.MemberInfo ?? patchType.GetField("policy");
-                var uiHintsProp = patchType.GetProperty("uiHints") as System.Reflection.MemberInfo ?? patchType.GetField("uiHints");
-                var seedMapsProp = patchType.GetProperty("seedMaps") as System.Reflection.MemberInfo ?? patchType.GetField("seedMaps");
                 
-                if (sourceManifestIdProp == null || opsProp == null || policyProp == null)
-                {
-                    Debug.LogWarning($"[YUCP PatchImporter] Patch missing required properties");
-                    return;
-                }
+                // Get patch properties using reflection
+                var baseFbxGuidField = patchType.GetField("baseFbxGuid");
+                var derivedFbxGuidField = patchType.GetField("derivedFbxGuid");
+                var targetFbxNameField = patchType.GetField("targetFbxName");
+                var originalDerivedFbxPathField = patchType.GetField("originalDerivedFbxPath");
+                var uiHintsField = patchType.GetField("uiHints");
                 
-                string sourceManifestId = (GetMemberValue(sourceManifestIdProp, patchObj) ?? "").ToString();
-                var ops = GetMemberValue(opsProp, patchObj) as System.Collections.IList;
-                var policy = GetMemberValue(policyProp, patchObj);
-                var uiHints = uiHintsProp != null ? GetMemberValue(uiHintsProp, patchObj) : null;
-                var seedMaps = seedMapsProp != null ? GetMemberValue(seedMapsProp, patchObj) : null;
+                string baseFbxGuid = baseFbxGuidField != null ? baseFbxGuidField.GetValue(patchObj) as string : null;
+                string derivedFbxGuid = derivedFbxGuidField != null ? derivedFbxGuidField.GetValue(patchObj) as string : null;
+                string targetFbxName = targetFbxNameField != null ? targetFbxNameField.GetValue(patchObj) as string : null;
+                string originalDerivedFbxPath = originalDerivedFbxPathField != null ? originalDerivedFbxPathField.GetValue(patchObj) as string : null;
                 
-                if (ops == null || ops.Count == 0)
-                {
-                    Debug.Log($"[YUCP PatchImporter] Patch has no operations, skipping");
-                    return;
-                }
-                
-                // Get friendly name
+                // Get friendly name from UIHints
                 string friendlyName = Path.GetFileNameWithoutExtension(patchPath);
-                if (uiHints != null)
+                if (uiHintsField != null)
                 {
-                    var friendlyNameProp = uiHints.GetType().GetProperty("friendlyName") as System.Reflection.MemberInfo ?? uiHints.GetType().GetField("friendlyName");
-                    if (friendlyNameProp != null)
+                    var uiHints = uiHintsField.GetValue(patchObj);
+                    if (uiHints != null)
                     {
-                        var fn = GetMemberValue(friendlyNameProp, uiHints);
-                        if (fn != null && !string.IsNullOrEmpty(fn.ToString()))
-                            friendlyName = fn.ToString();
+                        var friendlyNameField = uiHints.GetType().GetField("friendlyName");
+                        if (friendlyNameField != null)
+                        {
+                            var fn = friendlyNameField.GetValue(uiHints) as string;
+                            if (!string.IsNullOrEmpty(fn))
+                                friendlyName = fn;
+                        }
                     }
                 }
                 
-                // Get policy thresholds
-                var autoApplyThresholdProp = policy.GetType().GetProperty("autoApplyThreshold") as System.Reflection.MemberInfo ?? policy.GetType().GetField("autoApplyThreshold");
-                var reviewThresholdProp = policy.GetType().GetProperty("reviewThreshold") as System.Reflection.MemberInfo ?? policy.GetType().GetField("reviewThreshold");
-                float autoApplyThreshold = 0.8f;
-                float reviewThreshold = 0.4f;
-                if (autoApplyThresholdProp != null)
-                    autoApplyThreshold = Convert.ToSingle(GetMemberValue(autoApplyThresholdProp, policy));
-                if (reviewThresholdProp != null)
-                    reviewThreshold = Convert.ToSingle(GetMemberValue(reviewThresholdProp, policy));
+                if (string.IsNullOrEmpty(targetFbxName))
+                {
+                    targetFbxName = friendlyName;
+                }
                 
-                // Find candidate FBX models in the project
-                WriteLog($"  Searching for FBX models in project...");
-                var modelGuids = AssetDatabase.FindAssets("t:Model");
-                var modelPaths = modelGuids.Select(AssetDatabase.GUIDToAssetPath).ToList();
-                WriteLog($"  Found {modelPaths.Count} FBX model(s) in project");
+                // Direct targeting: use baseFbxGuid to find the target FBX
+                if (string.IsNullOrEmpty(baseFbxGuid))
+                {
+                    WriteLog($"  ERROR: baseFbxGuid is missing from patch");
+                    Debug.LogWarning($"[YUCP PatchImporter] Patch missing baseFbxGuid, cannot apply");
+                    return;
+                }
                 
-                WriteLog($"  Looking for patch runtime types...");
+                string baseFbxPath = AssetDatabase.GUIDToAssetPath(baseFbxGuid);
+                if (string.IsNullOrEmpty(baseFbxPath) || !baseFbxPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
+                {
+                    WriteLog($"  ERROR: baseFbxGuid {baseFbxGuid} does not resolve to a valid FBX");
+                    Debug.LogWarning($"[YUCP PatchImporter] baseFbxGuid {baseFbxGuid} does not resolve to a valid FBX");
+                    return;
+                }
                 
-                // Get ManifestBuilder type (using YUCP.PatchRuntime namespace from temp package)
-                // Try with the correct assembly name first
-                var manifestBuilderType = System.Type.GetType("YUCP.PatchRuntime.ManifestBuilder, YUCP.PatchRuntime");
-                var mapBuilderType = System.Type.GetType("YUCP.PatchRuntime.MapBuilder, YUCP.PatchRuntime");
-                var applicatorType = System.Type.GetType("YUCP.PatchRuntime.Applicator, YUCP.PatchRuntime");
-                var backupManagerType = System.Type.GetType("YUCP.PatchRuntime.BackupManager, YUCP.PatchRuntime");
+                WriteLog($"  Using direct targeting: baseFbxGuid={baseFbxGuid} -> {baseFbxPath}");
                 
-                // If not found, search all assemblies
-                if (manifestBuilderType == null || mapBuilderType == null || applicatorType == null || backupManagerType == null)
+                // Get DerivedFbxBuilder type
+                var derivedFbxBuilderType = System.Type.GetType("YUCP.PatchRuntime.DerivedFbxBuilder, YUCP.PatchRuntime");
+                if (derivedFbxBuilderType == null)
                 {
                     var assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
                     foreach (var asm in assemblies)
                     {
                         try
                         {
-                            if (manifestBuilderType == null)
-                                manifestBuilderType = asm.GetType("YUCP.PatchRuntime.ManifestBuilder");
-                            if (mapBuilderType == null)
-                                mapBuilderType = asm.GetType("YUCP.PatchRuntime.MapBuilder");
-                            if (applicatorType == null)
-                                applicatorType = asm.GetType("YUCP.PatchRuntime.Applicator");
-                            if (backupManagerType == null)
-                                backupManagerType = asm.GetType("YUCP.PatchRuntime.BackupManager");
-                            
-                            if (manifestBuilderType != null && mapBuilderType != null && applicatorType != null && backupManagerType != null)
+                            derivedFbxBuilderType = asm.GetType("YUCP.PatchRuntime.DerivedFbxBuilder");
+                            if (derivedFbxBuilderType != null)
                                 break;
                         }
                         catch { }
                     }
                 }
                 
-                WriteLog($"    ManifestBuilder: {(manifestBuilderType != null ? manifestBuilderType.FullName : "NOT FOUND")}");
-                WriteLog($"    MapBuilder: {(mapBuilderType != null ? mapBuilderType.FullName : "NOT FOUND")}");
-                WriteLog($"    Applicator: {(applicatorType != null ? applicatorType.FullName : "NOT FOUND")}");
-                WriteLog($"    BackupManager: {(backupManagerType != null ? backupManagerType.FullName : "NOT FOUND")}");
-                
-                if (manifestBuilderType == null || mapBuilderType == null || applicatorType == null || backupManagerType == null)
+                if (derivedFbxBuilderType == null)
                 {
-                    WriteLog("  ERROR: Required patch application types not found. Searching all assemblies...");
-                    var assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
-                    foreach (var asm in assemblies)
+                    WriteLog("  ERROR: DerivedFbxBuilder type not found");
+                    Debug.LogError($"[YUCP PatchImporter] DerivedFbxBuilder type not found");
+                    return;
+                }
+                
+                // Get BuildDerivedFbx method
+                var buildMethod = derivedFbxBuilderType.GetMethod("BuildDerivedFbx", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                if (buildMethod == null)
+                {
+                    WriteLog("  ERROR: BuildDerivedFbx method not found");
+                    Debug.LogError($"[YUCP PatchImporter] BuildDerivedFbx method not found");
+                    return;
+                }
+                
+                // Determine output path - use original path if available, otherwise construct from target name
+                string outputPath;
+                if (!string.IsNullOrEmpty(originalDerivedFbxPath))
+                {
+                    outputPath = originalDerivedFbxPath;
+                    WriteLog($"  Using original path: {outputPath}");
+                }
+                else
+                {
+                    // Fallback: try to find by GUID or construct path
+                    if (!string.IsNullOrEmpty(derivedFbxGuid))
                     {
-                        try
+                        string pathByGuid = AssetDatabase.GUIDToAssetPath(derivedFbxGuid);
+                        if (!string.IsNullOrEmpty(pathByGuid) && pathByGuid.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
                         {
-                            var types = asm.GetTypes().Where(t => t.Name.Contains("ManifestBuilder") || t.Name.Contains("MapBuilder") || t.Name.Contains("Applicator")).ToArray();
-                            if (types.Length > 0)
+                            outputPath = pathByGuid;
+                            WriteLog($"  Found path by GUID: {outputPath}");
+                        }
+                        else
+                        {
+                            outputPath = $"Packages/com.yucp.temp/Derived/{targetFbxName}.fbx";
+                            WriteLog($"  Using fallback path: {outputPath}");
+                        }
+                    }
+                    else
+                    {
+                        outputPath = $"Packages/com.yucp.temp/Derived/{targetFbxName}.fbx";
+                        WriteLog($"  Using default path: {outputPath}");
+                    }
+                }
+                
+                WriteLog($"  Building derived FBX: {baseFbxPath} -> {outputPath}");
+                WriteLog($"  Preserving GUID: {derivedFbxGuid ?? "none"}");
+                
+                // Store patch path for automatic retry if package installation is needed
+                string patchPathKey = "YUCP.DerivedFbxBuilder.PendingPatchPath";
+                EditorPrefs.SetString(patchPathKey, patchPath);
+                
+                // Call BuildDerivedFbx
+                object result = null;
+                try
+                {
+                    result = buildMethod.Invoke(null, new object[] { baseFbxPath, patchObj, outputPath, derivedFbxGuid ?? string.Empty });
+                    
+                    // Clear retry flag on success
+                    EditorPrefs.DeleteKey(patchPathKey);
+                }
+                catch (System.Reflection.TargetInvocationException tie)
+                {
+                    WriteLog($"  ERROR: TargetInvocationException: {tie.Message}");
+                    if (tie.InnerException != null)
+                    {
+                        WriteLog($"  Inner Exception: {tie.InnerException.GetType().Name}: {tie.InnerException.Message}");
+                        WriteLog($"  Stack Trace: {tie.InnerException.StackTrace}");
+                        Debug.LogError($"[YUCP PatchImporter] Error invoking BuildDerivedFbx: {tie.InnerException.GetType().Name}: {tie.InnerException.Message}\n{tie.InnerException.StackTrace}");
+                    }
+                    throw;
+                }
+                catch (System.Exception ex)
+                {
+                    WriteLog($"  ERROR: Exception: {ex.GetType().Name}: {ex.Message}");
+                    WriteLog($"  Stack Trace: {ex.StackTrace}");
+                    Debug.LogError($"[YUCP PatchImporter] Error invoking BuildDerivedFbx: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+                    throw;
+                }
+                
+                string createdPath = result as string;
+                
+                if (string.IsNullOrEmpty(createdPath))
+                {
+                    WriteLog($"  ERROR: BuildDerivedFbx returned null");
+                    Debug.LogError($"[YUCP PatchImporter] Failed to build derived FBX");
+                    return;
+                }
+                
+                WriteLog($"  Successfully created derived FBX: {createdPath}");
+                Debug.Log($"[YUCP PatchImporter] Successfully created derived FBX: {createdPath}");
+                
+                // Update prefab references if GUID was preserved
+                if (!string.IsNullOrEmpty(derivedFbxGuid))
+                {
+                    WriteLog($"  Finding prefabs referencing original derived FBX (GUID: {derivedFbxGuid})...");
+                    
+                    // Find all prefabs that reference the original derived FBX by GUID
+                    // Even though we preserved the GUID, Unity may need a refresh to recognize the new Prefab
+                    string[] allPrefabGuids = AssetDatabase.FindAssets("t:Prefab");
+                    int updatedCount = 0;
+                    
+                    foreach (var prefabGuid in allPrefabGuids)
+                    {
+                        string prefabPath = AssetDatabase.GUIDToAssetPath(prefabGuid);
+                        if (string.IsNullOrEmpty(prefabPath)) continue;
+                        
+                        // Check if this prefab depends on the original derived FBX
+                        string[] dependencies = AssetDatabase.GetDependencies(prefabPath, false);
+                        bool referencesDerivedFbx = false;
+                        
+                        foreach (var depPath in dependencies)
+                        {
+                            string depGuid = AssetDatabase.AssetPathToGUID(depPath);
+                            if (depGuid == derivedFbxGuid)
                             {
-                                WriteLog($"    Found in {asm.FullName}: {string.Join(", ", types.Select(t => t.FullName))}");
+                                referencesDerivedFbx = true;
+                                break;
                             }
                         }
-                        catch { }
-                    }
-                    Debug.LogError($"[YUCP PatchImporter] Required patch application types not found. Ensure all patch scripts are in temp package.");
-                    return;
-                }
-                
-                // Get static methods
-                var buildForFbxMethod = manifestBuilderType.GetMethod("BuildForFbx", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                var buildMapMethod = mapBuilderType.GetMethod("Build", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                var applyToTargetMethod = applicatorType.GetMethod("ApplyToTarget", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                var backupPrefabsMethod = backupManagerType.GetMethod("BackupPrefabsReferencing", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                var createPatchedPrefabsMethod = backupManagerType.GetMethod("CreatePatchedPrefabCopies", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                
-                if (buildForFbxMethod == null || buildMapMethod == null || applyToTargetMethod == null)
-                {
-                    Debug.LogError($"[YUCP PatchImporter] Required patch application methods not found.");
-                    return;
-                }
-                
-                foreach (var modelPath in modelPaths)
-                {
-                    try
-                    {
-                        WriteLog($"  Processing FBX: {modelPath}");
                         
-                        // Build manifest for target
-                        var targetManifest = buildForFbxMethod.Invoke(null, new object[] { modelPath });
-                        if (targetManifest == null)
+                        if (referencesDerivedFbx)
                         {
-                            WriteLog($"    Could not build manifest, skipping");
-                            continue;
-                        }
-                        
-                        // Build correspondence map
-                        var v1 = Activator.CreateInstance(manifestBuilderType.GetNestedType("Manifest"));
-                        var manifestIdField = v1.GetType().GetField("manifestId");
-                        if (manifestIdField != null)
-                            manifestIdField.SetValue(v1, sourceManifestId);
-                        var meshesField = v1.GetType().GetField("meshes");
-                        if (meshesField != null)
-                            meshesField.SetValue(v1, Activator.CreateInstance(typeof(List<>).MakeGenericType(manifestBuilderType.GetNestedType("MeshInfo"))));
-                        
-                        var map = buildMapMethod.Invoke(null, new object[] { v1, targetManifest, seedMaps });
-                        
-                        // Compute score based on operation targets
-                        int targets = 0;
-                        int hits = 0;
-                        foreach (var op in ops)
-                        {
-                            targets++;
-                            var opType = op.GetType();
-                            var targetMeshNameProp = opType.GetProperty("targetMeshName") as System.Reflection.MemberInfo ?? opType.GetField("targetMeshName");
-                            if (targetMeshNameProp != null)
+                            WriteLog($"    Found prefab referencing derived FBX: {prefabPath}");
+                            
+                            // Load the prefab and check if it needs updating
+                            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                            if (prefab != null)
                             {
-                                string targetMeshName = (GetMemberValue(targetMeshNameProp, op) ?? "").ToString();
-                                var meshesProp = targetManifest.GetType().GetProperty("meshes") as System.Reflection.MemberInfo ?? targetManifest.GetType().GetField("meshes");
-                                if (meshesProp != null)
+                                // Force Unity to refresh the reference by reimporting the prefab
+                                // Since we preserved the GUID, Unity should recognize the new Prefab
+                                AssetDatabase.ImportAsset(prefabPath, ImportAssetOptions.ForceUpdate | ImportAssetOptions.ForceSynchronousImport);
+                                updatedCount++;
+                            }
+                        }
+                    }
+                    
+                    // Also update mesh references in prefabs
+                    var backupManagerType = System.Type.GetType("YUCP.PatchRuntime.BackupManager, YUCP.PatchRuntime");
+                    if (backupManagerType != null)
+                    {
+                        var updatePrefabMethod = backupManagerType.GetMethod("UpdatePrefabMeshReferences", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                        if (updatePrefabMethod != null)
+                        {
+                            try
+                            {
+                                // Load the created prefab to get derived meshes
+                                var createdPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(createdPath);
+                                if (createdPrefab != null)
                                 {
-                                    var meshes = GetMemberValue(meshesProp, targetManifest) as System.Collections.IEnumerable;
-                                    if (meshes != null)
+                                    // Build mesh map: mesh name -> derived mesh
+                                    var meshMap = new Dictionary<string, Mesh>();
+                                    foreach (var meshFilter in createdPrefab.GetComponentsInChildren<MeshFilter>(true))
                                     {
-                                        foreach (var mesh in meshes)
+                                        if (meshFilter.sharedMesh != null && !meshMap.ContainsKey(meshFilter.sharedMesh.name))
+                                            meshMap[meshFilter.sharedMesh.name] = meshFilter.sharedMesh;
+                                    }
+                                    foreach (var skinnedMeshRenderer in createdPrefab.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                                    {
+                                        if (skinnedMeshRenderer.sharedMesh != null && !meshMap.ContainsKey(skinnedMeshRenderer.sharedMesh.name))
+                                            meshMap[skinnedMeshRenderer.sharedMesh.name] = skinnedMeshRenderer.sharedMesh;
+                                    }
+                                    
+                                    // Update mesh references in all prefabs that reference the derived FBX
+                                    foreach (var prefabGuid in allPrefabGuids)
+                                    {
+                                        string prefabPath = AssetDatabase.GUIDToAssetPath(prefabGuid);
+                                        if (string.IsNullOrEmpty(prefabPath)) continue;
+                                        
+                                        string[] dependencies = AssetDatabase.GetDependencies(prefabPath, false);
+                                        bool referencesDerivedFbx = false;
+                                        foreach (var depPath in dependencies)
                                         {
-                                            var nameProp = mesh.GetType().GetProperty("name") as System.Reflection.MemberInfo ?? mesh.GetType().GetField("name");
-                                            if (nameProp != null && (GetMemberValue(nameProp, mesh) ?? "").ToString() == targetMeshName)
+                                            if (AssetDatabase.AssetPathToGUID(depPath) == derivedFbxGuid)
                                             {
-                                                hits++;
+                                                referencesDerivedFbx = true;
                                                 break;
                                             }
                                         }
+                                        
+                                        if (referencesDerivedFbx && meshMap.Count > 0)
+                                        {
+                                            // Update mesh references in this prefab
+                                            updatePrefabMethod.Invoke(null, new object[] { prefabPath, baseFbxPath, meshMap });
+                                        }
                                     }
+                                    
+                                    WriteLog($"  Updated {updatedCount} prefab(s) and mesh references");
                                 }
                             }
-                        }
-                        float score = targets > 0 ? (float)hits / targets : 0f;
-                        
-                        WriteLog($"    Score: {score:0.##} (targets: {targets}, hits: {hits}, autoApplyThreshold: {autoApplyThreshold}, reviewThreshold: {reviewThreshold})");
-                        
-                        bool auto = score >= autoApplyThreshold;
-                        bool ask = score >= reviewThreshold && score < autoApplyThreshold;
-                        
-                        if (auto)
-                        {
-                            WriteLog($"    AUTO-APPLYING patch '{friendlyName}' to {modelPath} (score {score:0.##})");
-                            Debug.Log($"[YUCP PatchImporter] Auto-applying patch '{friendlyName}' to {modelPath} (score {score:0.##})");
-                            
-                            // Backup prefabs
-                            if (backupPrefabsMethod != null)
+                            catch (Exception prefabEx)
                             {
-                                backupPrefabsMethod.Invoke(null, new object[] { modelPath, null });
+                                WriteLog($"  Warning: Failed to update prefab mesh references: {prefabEx.Message}");
                             }
-                            
-                            // Apply patch
-                            var applyResult = applyToTargetMethod.Invoke(null, new object[] { modelPath, patchObj, score, "name-map", null });
-                            if (applyResult != null)
-                            {
-                                var state = applyResult;
-                                var derivedAssetsField = state.GetType().GetField("derivedAssets");
-                                var derivedAssets = derivedAssetsField?.GetValue(state) as List<UnityEngine.Object>;
-                                
-                                // Create patched prefab copies
-                                if (createPatchedPrefabsMethod != null && derivedAssets != null)
-                                {
-                                    createPatchedPrefabsMethod.Invoke(null, new object[] { modelPath, derivedAssets });
-                                }
-                                
-                                // Record applied patch
-                                RecordAppliedPatch(patchObj, modelPath, state, derivedAssets ?? new List<UnityEngine.Object>());
-                            }
-                        }
-                        else if (ask)
-                        {
-                            Debug.Log($"[YUCP PatchImporter] Patch '{friendlyName}' candidate for {modelPath} (score {score:0.##}). Review recommended.");
                         }
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        Debug.LogWarning($"[YUCP PatchImporter] Error applying patch to {modelPath}: {ex.Message}");
+                        WriteLog($"  Updated {updatedCount} prefab(s) (mesh reference update not available)");
                     }
+                    
+                    // Force a refresh to ensure Unity recognizes the GUID change
+                    AssetDatabase.Refresh();
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[YUCP PatchImporter] Error applying patch: {ex.Message}\n{ex.StackTrace}");
+                WriteLog($"  ERROR in ApplyPatch: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogError($"[YUCP PatchImporter] Error applying patch: {ex.Message}");
             }
-        }
-        
-        private static void RecordAppliedPatch(UnityEngine.Object patch, string targetFbxPath, object state, List<UnityEngine.Object> derivedAssets)
-        {
-            try
-            {
-                string patchPackagePath = AssetDatabase.GetAssetPath(patch);
-                string statePath = "";
-                if (state != null)
-                {
-                    statePath = AssetDatabase.GetAssetPath(state as UnityEngine.Object);
-                }
-                var derivedPaths = derivedAssets
-                    .Select(a => AssetDatabase.GetAssetPath(a))
-                    .Where(p => !string.IsNullOrEmpty(p))
-                    .ToList();
-                
-                // Call cleanup script's RecordAppliedPatch method
-                var cleanupType = System.Type.GetType("YUCP.PatchCleanup.YUCPPatchCleanup, Assembly-CSharp-Editor");
-                if (cleanupType != null)
-                {
-                    var recordMethod = cleanupType.GetMethod("RecordAppliedPatch", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                    if (recordMethod != null)
-                    {
-                        var patchType = patch.GetType();
-                        var uiHintsProp = patchType.GetProperty("uiHints") as System.Reflection.MemberInfo ?? patchType.GetField("uiHints");
-                        string friendlyName = Path.GetFileNameWithoutExtension(patchPackagePath);
-                        if (uiHintsProp != null)
-                        {
-                            var uiHints = GetMemberValue(uiHintsProp, patch);
-                            if (uiHints != null)
-                            {
-                                var friendlyNameProp = uiHints.GetType().GetProperty("friendlyName") as System.Reflection.MemberInfo ?? uiHints.GetType().GetField("friendlyName");
-                                if (friendlyNameProp != null)
-                                {
-                                    var fn = GetMemberValue(friendlyNameProp, uiHints);
-                                    if (fn != null && !string.IsNullOrEmpty(fn.ToString()))
-                                        friendlyName = fn.ToString();
-                                }
-                            }
-                        }
-                        
-                        recordMethod.Invoke(null, new object[] { 
-                            friendlyName,
-                            patchPackagePath,
-                            targetFbxPath,
-                            statePath,
-                            derivedPaths
-                        });
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[YUCP PatchImporter] Failed to record applied patch: {ex.Message}");
-            }
-        }
-        
-        private static object GetMemberValue(System.Reflection.MemberInfo member, object obj)
-        {
-            if (member is System.Reflection.PropertyInfo prop)
-                return prop.GetValue(obj);
-            if (member is System.Reflection.FieldInfo field)
-                return field.GetValue(obj);
-            return null;
         }
     }
 }

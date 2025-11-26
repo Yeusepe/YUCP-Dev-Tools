@@ -2,6 +2,7 @@ using System;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
+using YUCP.DevTools.Editor.AvatarUploader;
 
 namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 {
@@ -25,6 +26,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 		private readonly IMGUIContainer _imguiContainer;
 		private PreviewRenderUtility _previewUtility;
 		private GameObject _previewInstance;
+		private GameObject _prefabAsset;
 		private Transform _headBone;
 		private Transform _leftEyeBone;
 		private Transform _rightEyeBone;
@@ -39,6 +41,8 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 		private bool _isMouseOver;
 		private EditorWindow _parentWindow;
 		private readonly Color _backgroundColor = Color.black;
+		private bool _useLowSpecMode;
+		private bool _disableCursorTracking;
 
 		public AvatarTilePreviewRenderer()
 		{
@@ -86,6 +90,19 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 
 		public void SetTarget(GameObject prefab)
 		{
+			var settings = AvatarUploaderSettings.Instance;
+			_useLowSpecMode = settings.UseLowSpecMode || IsLowSpecSystem();
+			_disableCursorTracking = settings.DisableCursorTracking;
+
+			_prefabAsset = prefab;
+
+			if (_useLowSpecMode)
+			{
+				CleanupPreviewInstance();
+				_imguiContainer.MarkDirtyRepaint();
+				return;
+			}
+
 			EnsurePreviewUtility();
 			CleanupPreviewInstance();
 
@@ -246,17 +263,23 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 
 		private void OnGUIHandler()
 		{
+			var rect = _imguiContainer.contentRect;
+			if (rect.width <= 4f || rect.height <= 4f || rect.width <= 0 || rect.height <= 0)
+			{
+				return;
+			}
+
+			if (_useLowSpecMode)
+			{
+				DrawIconPreview(rect);
+				return;
+			}
+
 			if (_previewUtility == null || _previewInstance == null)
 			{
 				var width = resolvedStyle.width > 0 ? resolvedStyle.width : 100;
 				var height = resolvedStyle.height > 0 ? resolvedStyle.height : 100;
 				EditorGUI.DrawRect(new Rect(0, 0, width, height), _backgroundColor * 0.9f);
-				return;
-			}
-
-			var rect = _imguiContainer.contentRect;
-			if (rect.width <= 4f || rect.height <= 4f || rect.width <= 0 || rect.height <= 0)
-			{
 				return;
 			}
 
@@ -300,7 +323,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			// Update eyes to track cursor (more responsive than head)
 			// Eyes should look TOWARDS the mouse - EXAGGERATED movement
 			// Account for their rest rotation (where they're looking by default)
-			if (_leftEyeBone != null || _rightEyeBone != null)
+			if (!_disableCursorTracking && (_leftEyeBone != null || _rightEyeBone != null))
 			{
 				// Calculate look direction for eyes - reduced exaggeration
 				// Apply rotations independently to avoid cross-axis contamination
@@ -346,7 +369,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			}
 			
 			// Update head bone with subtle movement (eyes do most of the tracking)
-			if (_headBone != null)
+			if (!_disableCursorTracking && _headBone != null)
 			{
 				// Head moves less than eyes - subtle following
 				// Fix X inversion: when mouse is right (+normalizedX), head should look right
@@ -393,7 +416,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			// Continuously repaint to keep 3D render alive and update eye/head tracking throughout window
 			// Always repaint, not just when mouse is over, to maintain smooth rendering and high resolution
 			// Use EditorApplication.update for consistent frame rate
-			if (!_disposed && _previewInstance != null)
+			if (!_useLowSpecMode && !_disposed && _previewInstance != null)
 			{
 				EditorApplication.delayCall += () => 
 				{
@@ -592,6 +615,59 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 				bounds.Encapsulate(renderers[i].bounds);
 			}
 			return bounds;
+		}
+
+		private void DrawIconPreview(Rect rect)
+		{
+			EditorGUI.DrawRect(rect, _backgroundColor * 0.9f);
+
+			if (_prefabAsset == null)
+			{
+				return;
+			}
+
+			Texture2D icon = AssetPreview.GetAssetPreview(_prefabAsset);
+			if (icon == null)
+			{
+				icon = EditorGUIUtility.FindTexture("Prefab Icon");
+			}
+
+			if (icon != null)
+			{
+				var iconSize = Mathf.Min(rect.width, rect.height) * 0.7f;
+				var iconRect = new Rect(
+					rect.x + (rect.width - iconSize) * 0.5f,
+					rect.y + (rect.height - iconSize) * 0.5f,
+					iconSize,
+					iconSize
+				);
+				GUI.DrawTexture(iconRect, icon, ScaleMode.ScaleToFit);
+			}
+		}
+
+		private static bool IsLowSpecSystem()
+		{
+			var graphicsMemory = SystemInfo.graphicsMemorySize;
+			var systemMemory = SystemInfo.systemMemorySize;
+			var processorCount = SystemInfo.processorCount;
+			var graphicsDeviceType = SystemInfo.graphicsDeviceType;
+
+			bool isLowSpec = false;
+
+			if (graphicsMemory > 0 && graphicsMemory < 2048)
+				isLowSpec = true;
+
+			if (systemMemory > 0 && systemMemory < 4096)
+				isLowSpec = true;
+
+			if (processorCount < 4)
+				isLowSpec = true;
+
+			if (graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.OpenGLES2 ||
+			    graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.OpenGLES3)
+				isLowSpec = true;
+
+			return isLowSpec;
 		}
 
 		private void CleanupPreviewInstance()

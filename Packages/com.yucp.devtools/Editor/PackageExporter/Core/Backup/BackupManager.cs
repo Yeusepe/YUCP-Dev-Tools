@@ -56,7 +56,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						if (settings.isDerived && settings.baseGuid == baseGuid)
 						{
 							// Found a modified FBX for this base - we're in export mode, skip backups
-							Debug.Log($"[BackupManager] Skipping backup - modified FBX exists ({modelPath}), we're in export mode");
 							return;
 						}
 					}
@@ -81,7 +80,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			
 			if (!hasReferencingPrefabs)
 			{
-				Debug.Log($"[BackupManager] No prefabs reference {baseFbxPath}, skipping backup");
 				return;
 			}
 
@@ -127,6 +125,34 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			string[] allPrefabGuids = AssetDatabase.FindAssets("t:Prefab");
 			string patchedDir = EnsurePatchedRoot();
 
+			// Build a map of base mesh names to patched mesh assets
+			var meshMap = new Dictionary<string, Mesh>();
+			var baseMeshes = LoadMeshesFromFbx(baseFbxPath);
+			foreach (var derivedAsset in derivedAssets)
+			{
+				if (derivedAsset is Mesh patchedMesh)
+				{
+					// Extract base mesh name from patched mesh name (e.g., "MeshName_Patched" -> "MeshName")
+					string baseName = patchedMesh.name;
+					if (baseName.EndsWith("_Patched"))
+						baseName = baseName.Substring(0, baseName.Length - "_Patched".Length);
+					else if (baseName.EndsWith("_UV"))
+						baseName = baseName.Substring(0, baseName.Length - "_UV".Length);
+					else if (baseName.EndsWith("_BS"))
+						baseName = baseName.Substring(0, baseName.Length - "_BS".Length);
+					
+					// Find matching base mesh
+					foreach (var kvp in baseMeshes)
+					{
+						if (kvp.Key == baseName || patchedMesh.name.StartsWith(kvp.Key))
+						{
+							meshMap[kvp.Key] = patchedMesh;
+							break;
+						}
+					}
+				}
+			}
+
 			foreach (var guid in allPrefabGuids)
 			{
 				string path = AssetDatabase.GUIDToAssetPath(guid);
@@ -136,12 +162,72 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					string destPath = AssetDatabase.GenerateUniqueAssetPath($"{patchedDir}/{Path.GetFileNameWithoutExtension(path)}_Patched.prefab");
 					if (AssetDatabase.CopyAsset(path, destPath))
 					{
+						// Update mesh references in the copied prefab
+						UpdatePrefabMeshReferences(destPath, baseFbxPath, meshMap);
 						created.Add(destPath);
 					}
 				}
 			}
 			AssetDatabase.Refresh();
 			return created;
+		}
+		
+		private static Dictionary<string, Mesh> LoadMeshesFromFbx(string fbxPath)
+		{
+			var dict = new Dictionary<string, Mesh>();
+			var assets = AssetDatabase.LoadAllAssetsAtPath(fbxPath);
+			foreach (var asset in assets)
+			{
+				if (asset is Mesh mesh && !dict.ContainsKey(mesh.name))
+					dict.Add(mesh.name, mesh);
+			}
+			return dict;
+		}
+		
+		public static void UpdatePrefabMeshReferences(string prefabPath, string baseFbxPath, Dictionary<string, Mesh> meshMap)
+		{
+			if (meshMap.Count == 0) return;
+			
+			var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+			if (prefab == null) return;
+			
+			bool modified = false;
+			
+			// Update MeshFilter components
+			var meshFilters = prefab.GetComponentsInChildren<MeshFilter>(true);
+			foreach (var mf in meshFilters)
+			{
+				if (mf.sharedMesh != null)
+				{
+					string meshName = mf.sharedMesh.name;
+					if (meshMap.TryGetValue(meshName, out var patchedMesh))
+					{
+						mf.sharedMesh = patchedMesh;
+						modified = true;
+					}
+				}
+			}
+			
+			// Update SkinnedMeshRenderer components
+			var skinnedRenderers = prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+			foreach (var smr in skinnedRenderers)
+			{
+				if (smr.sharedMesh != null)
+				{
+					string meshName = smr.sharedMesh.name;
+					if (meshMap.TryGetValue(meshName, out var patchedMesh))
+					{
+						smr.sharedMesh = patchedMesh;
+						modified = true;
+					}
+				}
+			}
+			
+			if (modified)
+			{
+				PrefabUtility.SaveAsPrefabAsset(prefab, prefabPath);
+				AssetDatabase.SaveAssets();
+			}
 		}
 
 		private static string EnsureBackupRoot()
