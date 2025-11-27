@@ -11,7 +11,8 @@
         "com.yucp.components.Editor",
         "VRCFury-Editor",
         "VRCFury",
-        "com.vrcfury.api"
+        "com.vrcfury.api",
+        "Autodesk.Fbx"
     ],
     "includePlatforms": [
         "Editor"
@@ -27,6 +28,11 @@
             "name": "com.vrcfury.vrcfury",
             "expression": "",
             "define": "VRCFURY_INSTALLED"
+        },
+        {
+            "name": "com.autodesk.fbx",
+            "expression": "4.2.0",
+            "define": "ENABLE_FBX_SDK"
         }
     ],
     "noEngineReferences": false

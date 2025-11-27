@@ -277,7 +277,7 @@ namespace YUCP.DevTools.Editor
             
             if (issues.Count == 0)
             {
-                var successLabel = new Label("✓ Variant configuration is valid");
+                var successLabel = new Label("[OK] Variant configuration is valid");
                 successLabel.style.color = Color.green;
                 statusContainer.Add(successLabel);
             }
@@ -285,7 +285,7 @@ namespace YUCP.DevTools.Editor
             {
                 foreach (var issue in issues)
                 {
-                    var issueLabel = new Label($"⚠ {issue}");
+                    var issueLabel = new Label($"[!] {issue}");
                     issueLabel.style.color = Color.yellow;
                     issueLabel.style.marginBottom = 2;
                     statusContainer.Add(issueLabel);

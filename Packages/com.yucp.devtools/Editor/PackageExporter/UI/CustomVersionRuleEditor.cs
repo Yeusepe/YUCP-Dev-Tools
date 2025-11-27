@@ -59,7 +59,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 EditorGUILayout.LabelField($"Actual:   {testResult}", EditorStyles.boldLabel);
                 GUI.color = originalColor;
                 
-                EditorGUILayout.LabelField(testPassed ? "✓ Test PASSED" : "✗ Test FAILED", 
+                EditorGUILayout.LabelField(testPassed ? "[OK] Test PASSED" : "[X] Test FAILED", 
                     new GUIStyle(EditorStyles.label) 
                     { 
                         fontStyle = FontStyle.Bold,

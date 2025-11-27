@@ -361,86 +361,39 @@ namespace YUCP.PatchCleanup
                     return;
                 }
                 
-                // Check if the asset has missing types (corrupted/incompatible format)
+                // Check if the asset has hdiffFilePath (required for binary patching)
                 try
                 {
-                    var operationsField = patch.GetType().GetField("operations");
-                    if (operationsField != null)
+                    var hdiffFilePathField = patch.GetType().GetField("hdiffFilePath");
+                    if (hdiffFilePathField != null)
                     {
-                        var operations = operationsField.GetValue(patch) as System.Collections.IList;
-                        if (operations != null)
+                        string hdiffFilePath = hdiffFilePathField.GetValue(patch) as string;
+                        if (string.IsNullOrEmpty(hdiffFilePath))
                         {
-                            int nullCount = 0;
-                            foreach (var op in operations)
-                            {
-                                if (op == null)
-                                {
-                                    nullCount++;
-                                }
-                            }
-                            
-                            if (nullCount > 0)
-                            {
-                                // If we have null operations, try one more time to fix the namespace and reload
-                                WriteLog($"  Found {nullCount} null operation(s), attempting namespace fix and reload...");
-                                
-                                // Re-read and fix the file again
-                                string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                                string physicalAssetPath = Path.Combine(projectPath, patchPath.Replace('/', Path.DirectorySeparatorChar));
-                                
-                                if (File.Exists(physicalAssetPath))
-                                {
-                                    string assetContent = File.ReadAllText(physicalAssetPath);
-                                    bool namespaceFixed = false;
-                                    
-                                    // Aggressive namespace replacement
-                                    if (assetContent.Contains("YUCP.DevTools.Editor.PackageExporter"))
-                                    {
-                                        assetContent = assetContent.Replace("YUCP.DevTools.Editor.PackageExporter", "YUCP.PatchRuntime");
-                                        namespaceFixed = true;
-                                    }
-                                    if (assetContent.Contains("com.yucp.devtools.Editor"))
-                                    {
-                                        assetContent = assetContent.Replace("com.yucp.devtools.Editor", "YUCP.PatchRuntime");
-                                        namespaceFixed = true;
-                                    }
-                                    
-                                    if (namespaceFixed)
-                                    {
-                                        File.WriteAllText(physicalAssetPath, assetContent);
-                                        AssetDatabase.ImportAsset(patchPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-                                        WriteLog($"  Re-fixed namespace and reloaded asset");
-                                        
-                                        // Try loading again
-                                        patch = AssetDatabase.LoadAssetAtPath(patchPath, derivedFbxAssetType);
-                                        if (patch != null)
-                                        {
-                                            operationsField = patch.GetType().GetField("operations");
-                                            if (operationsField != null)
-                                            {
-                                                operations = operationsField.GetValue(patch) as System.Collections.IList;
-                                                if (operations != null)
-                                                {
-                                                    nullCount = 0;
-                                                    foreach (var op in operations)
-                                                    {
-                                                        if (op == null) nullCount++;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                if (nullCount > 0)
-                                {
-                                    Debug.LogError($"[YUCP PatchImporter] Patch asset {patchPath} contains {nullCount} null operation(s). This asset was created with an incompatible format.\n" +
-                                        "The namespace fix was attempted but failed. Please delete this asset file and re-export your package.\n" +
-                                        $"Delete: {patchPath}");
-                                    return;
-                                }
-                            }
+                            Debug.LogError($"[YUCP PatchImporter] Patch asset {patchPath} has no hdiffFilePath. This asset was created with an incompatible format.\n" +
+                                "Please delete this asset file and re-export your package.\n" +
+                                $"Delete: {patchPath}");
+                            WriteLog($"  ERROR: Patch asset has no hdiffFilePath");
+                            return;
                         }
+                        
+                        // Verify .hdiff file exists
+                        string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                        string hdiffPhysicalPath = Path.Combine(projectPath, hdiffFilePath.Replace('/', Path.DirectorySeparatorChar));
+                        if (!File.Exists(hdiffPhysicalPath))
+                        {
+                            Debug.LogError($"[YUCP PatchImporter] .hdiff file not found: {hdiffPhysicalPath}\n" +
+                                "The patch file may be missing from the package. Please re-export your package.");
+                            WriteLog($"  ERROR: .hdiff file not found: {hdiffFilePath}");
+                            return;
+                        }
+                        
+                        WriteLog($"  Found .hdiff file: {hdiffFilePath}");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[YUCP PatchImporter] Patch asset {patchPath} does not have hdiffFilePath field. This may be an old format patch.");
+                        WriteLog($"  WARNING: Patch asset missing hdiffFilePath field");
                     }
                 }
                 catch (Exception checkEx)

@@ -852,7 +852,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			// Mobile toggle button (hamburger menu)
 			_mobileToggleButton = new Button(ToggleOverlay);
-			_mobileToggleButton.text = "☰";
+			_mobileToggleButton.text = "≡";
 			_mobileToggleButton.AddToClassList("yucp-mobile-toggle");
 			topBar.Add(_mobileToggleButton);
 
@@ -1037,7 +1037,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			if (profile.BuildCount > 0)
 			{
-				var buildBadge = new Label("✓");
+				var buildBadge = new Label("●");
 				buildBadge.style.fontSize = 10;
 				buildBadge.style.color = new Color(0.212f, 0.749f, 0.694f); // YUCP Teal
 				buildBadge.style.marginLeft = 4;
@@ -2236,7 +2236,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			// Build status badge
 			if (!string.IsNullOrEmpty(config.blueprintIdPC) || !string.IsNullOrEmpty(config.blueprintIdQuest))
 			{
-				var builtBadge = new Label("✓");
+				var builtBadge = new Label("●");
 				builtBadge.AddToClassList("yucp-avatar-status-badge");
 				builtBadge.AddToClassList("yucp-avatar-status-built");
 				builtBadge.tooltip = "Has blueprint ID";
@@ -4495,14 +4495,19 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			}
 		}
 
-		// Search for existing instances in the ACTIVE SCENE (what Control Panel sees)
+		// Search for existing instances in ALL LOADED SCENES (not just active scene)
+		// We'll handle moving/copying to active scene if needed
+		VRCAvatarDescriptor foundDescriptor = null;
+		GameObject foundInstance = null;
+		Scene foundScene = default(Scene);
+		
 		foreach (var candidate in Resources.FindObjectsOfTypeAll<VRCAvatarDescriptor>())
 		{
 			if (candidate == null || candidate.gameObject == null)
 				continue;
 
-			// Only consider objects in the active scene (what Control Panel sees)
-			if (candidate.gameObject.scene != activeScene)
+			// Skip objects that are prefab assets (not in any scene)
+			if (candidate.gameObject.scene.name == null)
 				continue;
 
 			var source = PrefabUtility.GetCorrespondingObjectFromSource(candidate.gameObject);
@@ -4510,7 +4515,109 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			    ReferenceEquals(source, input) ||
 			    ReferenceEquals(source, prefabAsset))
 			{
-				return candidate.gameObject;
+				foundDescriptor = candidate;
+				foundInstance = candidate.gameObject;
+				foundScene = candidate.gameObject.scene;
+				break;
+			}
+		}
+
+		// If we found an avatar in a different scene, we need to make it available in the active scene
+		if (foundDescriptor != null && foundInstance != null)
+		{
+			// If it's already in the active scene, use it directly
+			if (foundScene == activeScene)
+			{
+				return foundDescriptor.gameObject;
+			}
+			
+			// Avatar is in a different scene - we need to make it available in the active scene
+			// Check if it's a prefab instance (we can instantiate it)
+			var prefabSource = PrefabUtility.GetCorrespondingObjectFromSource(foundInstance);
+			if (prefabSource != null)
+			{
+				// It's a prefab instance - instantiate it in the active scene
+				// Check if we already have a temporary instance
+				if (_temporaryInstances.TryGetValue(prefabSource, out var existingInstance))
+				{
+					if (existingInstance != null && existingInstance.scene == activeScene)
+					{
+						var existingDescriptor = FindDescriptor(existingInstance);
+						if (existingDescriptor != null)
+						{
+							Debug.Log($"[AvatarUploader] Reusing existing temporary instance of '{prefabSource.name}' in active scene");
+							return existingDescriptor.gameObject;
+						}
+					}
+					else
+					{
+						// Clean up stale instance from different scene
+						if (existingInstance != null)
+							UnityEngine.Object.DestroyImmediate(existingInstance);
+						_temporaryInstances.Remove(prefabSource);
+					}
+				}
+				
+				// Instantiate the prefab in the active scene
+				Debug.Log($"[AvatarUploader] Avatar '{foundInstance.name}' is in scene '{foundScene.name}', instantiating prefab in active scene '{activeScene.name}' for Control Panel");
+				var instance = PrefabUtility.InstantiatePrefab(prefabSource, activeScene) as GameObject;
+				if (instance != null)
+				{
+					instance.SetActive(true);
+					instance.hideFlags = HideFlags.HideAndDontSave;
+					
+					var instanceDescriptor = FindDescriptor(instance);
+					if (instanceDescriptor == null)
+					{
+						// Copy descriptor from the source scene instance
+						instanceDescriptor = instance.AddComponent<VRCAvatarDescriptor>();
+						EditorUtility.CopySerialized(foundDescriptor, instanceDescriptor);
+					}
+					
+					// Copy PipelineManager if it exists on the source
+					if (foundInstance.TryGetComponent<VRC.Core.PipelineManager>(out var sourcePM))
+					{
+						if (instance.TryGetComponent<VRC.Core.PipelineManager>(out var targetPM))
+						{
+							if (!string.IsNullOrEmpty(sourcePM.blueprintId) && string.IsNullOrEmpty(targetPM.blueprintId))
+							{
+								EditorUtility.CopySerialized(sourcePM, targetPM);
+							}
+						}
+						else
+						{
+							var newPM = instance.AddComponent<VRC.Core.PipelineManager>();
+							EditorUtility.CopySerialized(sourcePM, newPM);
+						}
+					}
+					
+					_temporaryInstances[prefabSource] = instance;
+					Debug.Log($"[AvatarUploader] Successfully instantiated avatar from scene '{foundScene.name}' in active scene for Control Panel");
+					return instanceDescriptor != null ? instanceDescriptor.gameObject : instance;
+				}
+			}
+			else
+			{
+				// It's a scene instance (not a prefab) - we need to copy it to the active scene
+				// This is more complex, but we can create a temporary copy
+				Debug.Log($"[AvatarUploader] Avatar '{foundInstance.name}' is a scene instance in '{foundScene.name}', creating temporary copy in active scene '{activeScene.name}' for Control Panel");
+				
+				// Create a temporary copy of the GameObject hierarchy
+				var instance = UnityEngine.Object.Instantiate(foundInstance);
+				instance.name = foundInstance.name + " (Temp)";
+				SceneManager.MoveGameObjectToScene(instance, activeScene);
+				instance.SetActive(true);
+				instance.hideFlags = HideFlags.HideAndDontSave;
+				
+				var instanceDescriptor = FindDescriptor(instance);
+				if (instanceDescriptor != null)
+				{
+					// Store reference for cleanup (use the original instance as key since it's not a prefab)
+					_temporaryInstances[foundInstance] = instance;
+					
+					Debug.Log($"[AvatarUploader] Successfully copied scene instance avatar from '{foundScene.name}' to active scene for Control Panel");
+					return instanceDescriptor.gameObject;
+				}
 			}
 		}
 
@@ -5336,7 +5443,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				var helpBox = new VisualElement();
 				helpBox.AddToClassList("yucp-help-box");
 				helpBox.style.marginBottom = 16;
-				var helpText = new Label("👋 New here? Start by selecting an Avatar Prefab below. Then fill in the name, description, and other details. When ready, scroll down to the Build section to upload your avatar.");
+				var helpText = new Label("New here? Start by selecting an Avatar Prefab below. Then fill in the name, description, and other details. When ready, scroll down to the Build section to upload your avatar.");
 				helpText.AddToClassList("yucp-help-box-text");
 				helpBox.Add(helpText);
 				section.Add(helpBox);
@@ -6016,7 +6123,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			// Add specific optimization tips
 			if (rating == PerformanceRating.Poor || rating == PerformanceRating.VeryPoor)
 			{
-				insight += "\n💡 Tip: Use decimation tools, remove hidden meshes, or create a Quest-optimized version.";
+				insight += "\nTip: Use decimation tools, remove hidden meshes, or create a Quest-optimized version.";
 			}
 
 			return insight;

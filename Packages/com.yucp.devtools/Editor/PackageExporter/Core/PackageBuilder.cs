@@ -648,6 +648,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     // Build DerivedFbxAsset with all data embedded
                     var derivedAsset = PatchBuilder.BuildDerivedFbxAsset(basePath, normalizedModifiedPath, policy, hints, seeds);
                     
+                    if (derivedAsset == null)
+                    {
+                        Debug.LogError($"[PackageBuilder] BuildDerivedFbxAsset returned null for {modifiedPath}. .hdiff file creation may have failed.");
+                        continue;
+                    }
+                    
                     // Store GUIDs for direct targeting and prefab compatibility
                     derivedAsset.baseFbxGuid = settings.baseGuid;
                     derivedAsset.derivedFbxGuid = derivedFbxGuid ?? string.Empty;
@@ -782,13 +788,28 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                         
                         patchAssetsToAdd.Add(pkgPath);
+                        
+                        // Add .hdiff file to export list
+                        if (!string.IsNullOrEmpty(derivedAsset.hdiffFilePath))
+                        {
+                            string hdiffPhysicalPath = Path.Combine(projectPath, derivedAsset.hdiffFilePath.Replace('/', Path.DirectorySeparatorChar));
+                            if (File.Exists(hdiffPhysicalPath))
+                            {
+                                patchAssetsToAdd.Add(derivedAsset.hdiffFilePath);
+                                Debug.Log($"[PackageBuilder] Added .hdiff file to export: {derivedAsset.hdiffFilePath}");
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"[PackageBuilder] .hdiff file not found at: {hdiffPhysicalPath}");
+                            }
+                        }
                     }
                     else
                     {
                         Debug.LogWarning($"[PackageBuilder] DerivedFbxAsset.asset was not created at {pkgPath}");
                     }
                     
-                    // Mark FBX for removal from export list (no sidecar assets needed - everything is embedded)
+                    // Mark FBX for removal from export list (binary patch replaces the FBX)
                     fbxToRemove.Add(modifiedPath);
                     
                 }
@@ -1499,6 +1520,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         "Packages/com.yucp.devtools/Editor/PackageExporter/Data/DerivedFbxAsset.cs",
                         "Packages/com.yucp.devtools/Editor/PackageExporter/Core/MetaFileManager.cs",
                         "Packages/com.yucp.devtools/Editor/PackageExporter/Core/DerivedFbxBuilder.cs",
+                        "Packages/com.yucp.devtools/Editor/PackageExporter/Core/HDiffPatchWrapper.cs",
                         "Packages/com.yucp.devtools/Editor/PackageExporter/Core/ManifestBuilder.cs",
                         "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Correspondence/MapBuilder.cs",
                         "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Backup/BackupManager.cs",
@@ -1615,8 +1637,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
   ""name"": ""YUCP.PatchRuntime"",
   ""rootNamespace"": """",
   ""references"": [
-    ""Unity.Formats.Fbx.Editor"",
-    ""Autodesk.Fbx""
+    ""Unity.Formats.Fbx.Editor""
   ],
   ""includePlatforms"": [
     ""Editor""
@@ -1632,11 +1653,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
       ""name"": ""com.unity.formats.fbx"",
       ""expression"": ""4.0.0"",
       ""define"": ""UNITY_FORMATS_FBX""
-    },
-    {
-      ""name"": ""com.autodesk.fbx"",
-      ""expression"": ""4.2.0"",
-      ""define"": ""ENABLE_FBX_SDK""
     }
   ],
   ""noEngineReferences"": false
@@ -1647,6 +1663,49 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     string asmdefMeta = "fileFormatVersion: 2\nguid: " + asmdefGuid + "\nAssemblyDefinitionImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(Path.Combine(asmdefFolder, "asset.meta"), asmdefMeta);
                     
+                    
+                    // Copy HDiffPatch DLLs to temp package Plugins folder
+                    string[] hdiffDlls = new string[]
+                    {
+                        "Packages/com.yucp.devtools/Plugins/hdiffz.dll",
+                        "Packages/com.yucp.devtools/Plugins/hpatchz.dll"
+                    };
+                    
+                    foreach (var dllPath in hdiffDlls)
+                    {
+                        if (File.Exists(dllPath))
+                        {
+                            string dllGuid = Guid.NewGuid().ToString("N");
+                            string dllFolder = Path.Combine(tempExtractDir, dllGuid);
+                            Directory.CreateDirectory(dllFolder);
+                            
+                            string fileName = Path.GetFileName(dllPath);
+                            string targetPath = $"Packages/com.yucp.temp/Plugins/{fileName}";
+                            
+                            File.Copy(dllPath, Path.Combine(dllFolder, "asset"), true);
+                            File.WriteAllText(Path.Combine(dllFolder, "pathname"), targetPath);
+                            
+                            // Copy the .meta file if it exists
+                            string metaPath = dllPath + ".meta";
+                            if (File.Exists(metaPath))
+                            {
+                                string metaContent = File.ReadAllText(metaPath);
+                                File.WriteAllText(Path.Combine(dllFolder, "asset.meta"), metaContent);
+                            }
+                            else
+                            {
+                                // Create a basic .meta file for the DLL
+                                string dllMeta = "fileFormatVersion: 2\nguid: " + dllGuid + "\nPluginImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  iconMap: {}\n  executionOrder: {}\n  defineConstraints: []\n  isPreloaded: 0\n  isOverridable: 0\n  isExplicitlyReferenced: 0\n  validateReferences: 1\n  platformData:\n  - first:\n      : Any\n    second:\n      enabled: 0\n  - first:\n      Any: \n    second:\n      enabled: 1\n  - first:\n      Editor: Editor\n    second:\n      enabled: 1\n      settings:\n        CPU: AnyCPU\n        DefaultValueInitialized: true\n        OS: AnyOS\n  userData: \n  assetBundleName: \n  assetBundleVariant: \n";
+                                File.WriteAllText(Path.Combine(dllFolder, "asset.meta"), dllMeta);
+                            }
+                            
+                            Debug.Log($"[PackageBuilder] Copied HDiffPatch DLL to temp package: {fileName}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[PackageBuilder] HDiffPatch DLL not found: {dllPath}");
+                        }
+                    }
                     
                     if (injectedPatchScripts > 0)
                     {

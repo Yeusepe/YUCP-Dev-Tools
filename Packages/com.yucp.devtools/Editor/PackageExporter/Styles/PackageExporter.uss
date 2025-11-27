@@ -56,15 +56,17 @@
     background-color: #2a2a2a;
     border-left-width: 2px;
     border-left-color: transparent;
-    border-radius: 4px;
-    transition-duration: 0.1s;
-    transition-property: background-color, border-left-color;
-    transition-timing-function: ease-out;
+    border-radius: 6px;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-property: background-color, border-left-color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .yucp-asset-item:hover {
     background-color: #3a3a3a;
-    border-left-color: rgba(54, 191, 177, 0.2);
+    border-left-color: rgba(54, 191, 177, 0.4);
+    scale: 1.005 1.005;
 }
 
 .yucp-asset-item-checkbox {
@@ -148,8 +150,17 @@
     padding: 6px 8px;
     background-color: #2a2a2a;
     margin-bottom: 4px;
-    border-radius: 4px;
+    border-radius: 6px;
     overflow: hidden;
+    transition-duration: 0.2s, 0.2s;
+    transition-property: background-color, scale;
+    transition-timing-function: ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-folder-item:hover {
+    background-color: #3a3a3a;
+    scale: 1.005 1.005;
 }
 
 .yucp-folder-item-path {
@@ -171,15 +182,18 @@
     background-color: #3a3a3a;
     color: #ffffff;
     font-size: 14px;
+    border-radius: 4px;
     -unity-text-align: middle-center;
     flex-shrink: 0;
-    transition-duration: 0.1s;
-    transition-property: background-color;
-    transition-timing-function: ease-out;
+    transition-duration: 0.2s, 0.2s;
+    transition-property: background-color, scale;
+    transition-timing-function: ease-out, ease-out;
+    scale: 1 1;
 }
 
 .yucp-folder-item-remove:hover {
     background-color: #E24A4A;
+    scale: 1.1 1.1;
 }
 
 /* ============================================================================
@@ -340,15 +354,17 @@
     overflow: hidden;
     min-width: 0;
     max-width: 100%;
-    transition-duration: 0.2s;
-    transition-property: background-color, border-color, border-left-color;
-    transition-timing-function: ease-out;
+    transition-duration: 0.2s, 0.2s, 0.2s, 0.2s;
+    transition-property: background-color, border-color, border-left-color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .yucp-inspector-folder-header:hover {
     background-color: rgba(30, 30, 30, 0.8);
     border-color: rgba(54, 191, 177, 0.4);
     border-left-color: rgba(54, 191, 177, 0.6);
+    scale: 1.005 1.005;
 }
 
 .yucp-inspector-folder-content {
@@ -421,15 +437,17 @@
     font-size: 10px;
     -unity-text-align: middle-center;
     flex-shrink: 0;
-    transition-duration: 0.15s;
-    transition-property: color, scale;
-    transition-timing-function: ease-out;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-property: color, background-color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .yucp-folder-expand-button:hover {
     color: #48d1c3;
     background-color: rgba(54, 191, 177, 0.1);
     border-radius: 3px;
+    scale: 1.1 1.1;
 }
 
 .yucp-folder-count-badge {

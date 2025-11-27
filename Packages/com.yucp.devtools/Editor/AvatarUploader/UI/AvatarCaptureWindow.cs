@@ -571,7 +571,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI
 			else
 			{
 				var prefabPath = AssetDatabase.GetAssetPath(_targetAvatar.avatarPrefab);
-				Debug.LogWarning($"[AvatarCaptureWindow] ✗ No blueprint ID found. Prefab: {_targetAvatar.avatarPrefab.name}, Path: {prefabPath ?? "null"}");
+				Debug.LogWarning($"[AvatarCaptureWindow] [X] No blueprint ID found. Prefab: {_targetAvatar.avatarPrefab.name}, Path: {prefabPath ?? "null"}");
 				
 				// Try to verify PipelineManager exists
 				if (!string.IsNullOrEmpty(prefabPath))

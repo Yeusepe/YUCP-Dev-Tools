@@ -8,7 +8,8 @@ using UnityEngine;
 namespace YUCP.DevTools.Editor.PackageExporter
 {
 	/// <summary>
-	/// Computes a semantic operation log from Base (v1) vs Modified (v2) FBX.
+	/// Generates binary diff patches (.hdiff files) from Base (v1) vs Modified (v2) FBX.
+	/// Based on CocoTools approach: https://github.com/coco1337/CocoTools
 	/// </summary>
 	public static class PatchBuilder
 	{
@@ -266,13 +267,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		}
 		
 		/// <summary>
-		/// Builds a DerivedFbxAsset with all data embedded (no separate sidecar assets).
+		/// Builds a DerivedFbxAsset with binary diff (.hdiff) file.
+		/// Based on CocoTools CocoDiff.cs ExecuteProcess() method.
 		/// </summary>
 		public static DerivedFbxAsset BuildDerivedFbxAsset(string baseFbxPath, string modifiedFbxPath, DerivedFbxAsset.Policy policy, DerivedFbxAsset.UIHints hints, DerivedFbxAsset.SeedMaps seeds)
 		{
 			var v1 = ManifestBuilder.BuildForFbx(baseFbxPath);
-			var v2 = ManifestBuilder.BuildForFbx(modifiedFbxPath);
-			var map = MapBuilder.Build(v1, v2, ConvertSeedMaps(seeds));
 			
 			var asset = ScriptableObject.CreateInstance<DerivedFbxAsset>();
 			asset.sourceManifestId = v1.manifestId;
@@ -281,268 +281,115 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			asset.seedMaps = seeds ?? new DerivedFbxAsset.SeedMaps();
 			asset.targetFbxName = hints.friendlyName;
 			
-			// Load meshes for both FBXs
-			var baseMeshes = LoadMeshesByName(baseFbxPath);
-			var modMeshes = LoadMeshesByName(modifiedFbxPath);
+			// Generate .hdiff file
+			// Based on CocoTools CocoDiff.cs ExecuteProcess() - uses Directory.GetCurrentDirectory()
+			string projectPath = Directory.GetCurrentDirectory();
 			
-			// Mesh deltas (same name, same vertex count)
-			foreach (var kvp in map.meshMap)
+			// Get physical paths - CocoTools uses Path.Combine(Directory.GetCurrentDirectory(), AssetDatabase.GetAssetPath(...))
+			string basePhysicalPath = Path.Combine(projectPath, baseFbxPath);
+			string modifiedPhysicalPath = Path.Combine(projectPath, modifiedFbxPath);
+			
+			// Normalize paths (ensure they exist)
+			basePhysicalPath = Path.GetFullPath(basePhysicalPath);
+			modifiedPhysicalPath = Path.GetFullPath(modifiedPhysicalPath);
+			
+			if (!File.Exists(basePhysicalPath))
 			{
-				if (!baseMeshes.TryGetValue(kvp.Key, out var baseMesh) || !modMeshes.TryGetValue(kvp.Value, out var modMesh))
-					continue;
-				
-				if (baseMesh.vertexCount != modMesh.vertexCount)
+				Debug.LogError($"[PatchBuilder] Base FBX file not found: {basePhysicalPath}");
+				UnityEngine.Object.DestroyImmediate(asset);
+				return null;
+			}
+			
+			if (!File.Exists(modifiedPhysicalPath))
+			{
+				Debug.LogError($"[PatchBuilder] Modified FBX file not found: {modifiedPhysicalPath}");
+				UnityEngine.Object.DestroyImmediate(asset);
+				return null;
+			}
+			
+			// Generate output path for .hdiff file
+			// Based on CocoTools: output in same directory as target file, or in Patches folder
+			string hdiffFileName = $"DerivedFbxAsset_{SanitizeFileName(hints.friendlyName)}.hdiff";
+			string hdiffDir = GetTempAuthoringAssetPath("");
+			string hdiffDirPhysical = Path.GetFullPath(Path.Combine(projectPath, hdiffDir.Replace('/', Path.DirectorySeparatorChar)));
+			string hdiffOutputPath = Path.Combine(hdiffDirPhysical, hdiffFileName);
+			
+			// Ensure directory exists
+			Directory.CreateDirectory(hdiffDirPhysical);
+			
+			// Normalize output path and ensure Windows-style backslashes (DLL may require this)
+			hdiffOutputPath = Path.GetFullPath(hdiffOutputPath);
+			basePhysicalPath = Path.GetFullPath(basePhysicalPath);
+			modifiedPhysicalPath = Path.GetFullPath(modifiedPhysicalPath);
+			
+			// Delete existing .hdiff file if it exists (HDiffPatch doesn't overwrite by default)
+			// Based on CocoTools approach - they use temp file then overwrite, but we can just delete
+			if (File.Exists(hdiffOutputPath))
+			{
+				try
 				{
-					if (policy.strictTopology)
-						continue;
+					File.Delete(hdiffOutputPath);
+					Debug.Log($"[PatchBuilder] Deleted existing .hdiff file: {hdiffOutputPath}");
 				}
-				else
+				catch (System.Exception ex)
 				{
-					// Create embedded mesh delta operation
-					var op = new DerivedFbxAsset.EmbeddedMeshDeltaOp
-					{
-						targetMeshName = kvp.Key,
-						vertexCount = baseMesh.vertexCount,
-						positionDeltas = new Vector3[baseMesh.vertexCount],
-						normalDeltas = new Vector3[baseMesh.vertexCount],
-						tangentDeltas = new Vector3[baseMesh.vertexCount]
-					};
-					
-					var baseVerts = baseMesh.vertices;
-					var baseNormals = baseMesh.normals;
-					var baseTangents = baseMesh.tangents;
-					var modVerts = modMesh.vertices;
-					var modNormals = modMesh.normals;
-					var modTangents = modMesh.tangents;
-					
-					for (int i = 0; i < op.vertexCount; i++)
-					{
-						op.positionDeltas[i] = i < modVerts.Length && i < baseVerts.Length ? (modVerts[i] - baseVerts[i]) : Vector3.zero;
-						op.normalDeltas[i] = (i < modNormals.Length && i < baseNormals.Length) ? (modNormals[i] - baseNormals[i]) : Vector3.zero;
-						var bt = (i < baseTangents.Length) ? baseTangents[i] : Vector4.zero;
-						var mt = (i < modTangents.Length) ? modTangents[i] : Vector4.zero;
-						op.tangentDeltas[i] = new Vector3(mt.x - bt.x, mt.y - bt.y, mt.z - bt.z);
-					}
-					
-					asset.operations.Add(op);
+					Debug.LogWarning($"[PatchBuilder] Could not delete existing .hdiff file: {ex.Message}");
 				}
-				
-				// UV channels: if modified has extra channel, capture it
-				int baseUvChannels = CountUvChannels(baseMesh);
-				int modUvChannels = CountUvChannels(modMesh);
-				for (int ch = 0; ch < 8; ch++)
+			}
+			
+			// Create binary diff using HDiffPatch
+			// Based on CocoTools CocoDiff.cs ExecuteProcess()
+			Debug.Log($"[PatchBuilder] Creating .hdiff file:\n  Base: {basePhysicalPath}\n  Modified: {modifiedPhysicalPath}\n  Output: {hdiffOutputPath}");
+			
+			var diffResult = HDiffPatchWrapper.CreateDiff(
+				basePhysicalPath,
+				modifiedPhysicalPath,
+				hdiffOutputPath,
+				(str) => Debug.Log($"[PatchBuilder] HDiff: {str}"),
+				(str) => Debug.LogError($"[PatchBuilder] HDiff Error: {str}")
+			);
+			
+			if (diffResult != THDiffResult.HDIFF_SUCCESS)
+			{
+				Debug.LogError($"[PatchBuilder] Failed to create .hdiff file: {diffResult}\n" +
+					$"  Base path: {basePhysicalPath} (exists: {File.Exists(basePhysicalPath)})\n" +
+					$"  Modified path: {modifiedPhysicalPath} (exists: {File.Exists(modifiedPhysicalPath)})\n" +
+					$"  Output path: {hdiffOutputPath} (dir exists: {Directory.Exists(Path.GetDirectoryName(hdiffOutputPath))})");
+				UnityEngine.Object.DestroyImmediate(asset);
+				return null;
+			}
+			
+			if (!File.Exists(hdiffOutputPath))
+			{
+				Debug.LogError($"[PatchBuilder] .hdiff file was not created at: {hdiffOutputPath}");
+				UnityEngine.Object.DestroyImmediate(asset);
+				return null;
+			}
+			
+			// Store relative path to .hdiff file
+			string hdiffRelativePath = Path.Combine(hdiffDir, hdiffFileName).Replace(Path.DirectorySeparatorChar, '/');
+			asset.hdiffFilePath = hdiffRelativePath;
+			
+			// Compute optional base FBX hash for verification
+			try
+			{
+				using (var md5 = System.Security.Cryptography.MD5.Create())
 				{
-					bool baseHas = baseUvChannels > ch;
-					bool modHas = modUvChannels > ch;
-					if (!baseHas && modHas)
+					using (var stream = File.OpenRead(basePhysicalPath))
 					{
-						var uvOp = new DerivedFbxAsset.EmbeddedUVLayerOp
-						{
-							targetMeshName = kvp.Key,
-							channel = ch,
-							uvs = GetUvs(modMesh, ch),
-							replaceExisting = false
-						};
-						asset.operations.Add(uvOp);
-					}
-				}
-				
-				// Blendshape operations - extract full frame data for ALL blendshapes in modified FBX
-				// Use sparse storage (only non-zero deltas) like BlendShare for efficiency
-				var baseBs = GetBlendshapeSet(baseMesh);
-				var modBs = GetBlendshapeSet(modMesh);
-				foreach (var name in modBs)
-				{
-					// Always extract full blendshape frame from modified FBX (as user requested)
-						var frame = ExtractBlendshapeFrame(modMesh, name, 0);
-						if (frame != null)
-					{
-						// Validate array sizes to prevent serialization issues
-						if (frame.deltaVertices != null && frame.deltaVertices.Length == modMesh.vertexCount)
-						{
-							var bsOp = new DerivedFbxAsset.EmbeddedBlendshapeOp
-							{
-								targetMeshName = kvp.Key,
-								blendshapeName = name,
-								scale = 1f,
-								frameWeight = frame.frameWeight,
-								vertexIndices = new List<int>(),
-								deltaVertices = new List<Vector3>(),
-								normalIndices = new List<int>(),
-								deltaNormals = new List<Vector3>(),
-								tangentIndices = new List<int>(),
-								deltaTangents = new List<Vector3>()
-							};
-							
-							// Convert full arrays to sparse storage (only non-zero deltas)
-							for (int i = 0; i < modMesh.vertexCount; i++)
-							{
-								if (frame.deltaVertices[i] != Vector3.zero)
-								{
-									bsOp.vertexIndices.Add(i);
-									bsOp.deltaVertices.Add(frame.deltaVertices[i]);
-								}
-								
-								if (frame.deltaNormals != null && frame.deltaNormals.Length == modMesh.vertexCount && frame.deltaNormals[i] != Vector3.zero)
-								{
-									bsOp.normalIndices.Add(i);
-									bsOp.deltaNormals.Add(frame.deltaNormals[i]);
-								}
-								
-								if (frame.deltaTangents != null && frame.deltaTangents.Length == modMesh.vertexCount && frame.deltaTangents[i] != Vector3.zero)
-								{
-									bsOp.tangentIndices.Add(i);
-									bsOp.deltaTangents.Add(frame.deltaTangents[i]);
-								}
-							}
-							
-							asset.operations.Add(bsOp);
-						}
-						else
-						{
-							Debug.LogWarning($"[PatchBuilder] Skipping blendshape {name} for mesh {kvp.Key} - vertex count mismatch (expected {modMesh.vertexCount}, got {frame.deltaVertices?.Length ?? 0})");
-						}
-							
-							// Clean up temporary frame asset
-							UnityEngine.Object.DestroyImmediate(frame);
-						}
+						byte[] hash = md5.ComputeHash(stream);
+						asset.baseFbxHash = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
 					}
 				}
+			}
+			catch (System.Exception ex)
+			{
+				Debug.LogWarning($"[PatchBuilder] Could not compute base FBX hash: {ex.Message}");
+			}
 			
-			// Capture bone hierarchy changes
-			CaptureBoneHierarchyChanges(v1, v2, asset);
-			
-			// Capture material assignment changes
-			CaptureMaterialAssignmentChanges(v1, v2, asset);
-			
-			// Capture mesh reorganization changes
-			CaptureMeshReorganizationChanges(v1, v2, asset);
+			Debug.Log($"[PatchBuilder] Successfully created .hdiff file: {hdiffRelativePath}");
 			
 			return asset;
-		}
-		
-		private static void CaptureBoneHierarchyChanges(ManifestBuilder.Manifest v1, ManifestBuilder.Manifest v2, DerivedFbxAsset asset)
-		{
-			var baseBones = v1.bones.ToDictionary(b => b.path);
-			var modBones = v2.bones.ToDictionary(b => b.path);
-			
-			foreach (var modBone in v2.bones)
-			{
-				if (baseBones.TryGetValue(modBone.path, out var baseBone))
-				{
-					// Check if transform changed
-					if (baseBone.localPosition != modBone.localPosition ||
-					    baseBone.localRotation != modBone.localRotation ||
-					    baseBone.localScale != modBone.localScale)
-					{
-						asset.operations.Add(new DerivedFbxAsset.EmbeddedBoneHierarchyOp
-						{
-							bonePath = modBone.path,
-							localPosition = modBone.localPosition,
-							localRotation = modBone.localRotation,
-							localScale = modBone.localScale,
-							parentBonePath = modBone.parentPath
-						});
-					}
-				}
-				else
-				{
-					// New bone
-					asset.operations.Add(new DerivedFbxAsset.EmbeddedBoneHierarchyOp
-					{
-						bonePath = modBone.path,
-						localPosition = modBone.localPosition,
-						localRotation = modBone.localRotation,
-						localScale = modBone.localScale,
-						parentBonePath = modBone.parentPath
-					});
-				}
-			}
-		}
-		
-		private static void CaptureMaterialAssignmentChanges(ManifestBuilder.Manifest v1, ManifestBuilder.Manifest v2, DerivedFbxAsset asset)
-		{
-			var baseRenderers = v1.renderers.ToDictionary(r => r.path);
-			var modRenderers = v2.renderers.ToDictionary(r => r.path);
-			
-			foreach (var modRenderer in v2.renderers)
-			{
-				if (baseRenderers.TryGetValue(modRenderer.path, out var baseRenderer))
-				{
-					// Check if materials changed
-					bool materialsChanged = false;
-					if (baseRenderer.materialNames == null || modRenderer.materialNames == null ||
-					    baseRenderer.materialNames.Length != modRenderer.materialNames.Length)
-					{
-						materialsChanged = true;
-					}
-					else
-					{
-						for (int i = 0; i < baseRenderer.materialNames.Length; i++)
-						{
-							if (baseRenderer.materialNames[i] != modRenderer.materialNames[i])
-							{
-								materialsChanged = true;
-								break;
-							}
-						}
-					}
-					
-					if (materialsChanged)
-					{
-						asset.operations.Add(new DerivedFbxAsset.EmbeddedMaterialAssignmentOp
-						{
-							rendererPath = modRenderer.path,
-							materialNames = modRenderer.materialNames,
-							materialGuids = modRenderer.materialGuids
-						});
-					}
-				}
-				else
-				{
-					// New renderer
-					asset.operations.Add(new DerivedFbxAsset.EmbeddedMaterialAssignmentOp
-					{
-						rendererPath = modRenderer.path,
-						materialNames = modRenderer.materialNames,
-						materialGuids = modRenderer.materialGuids
-					});
-				}
-			}
-		}
-		
-		private static void CaptureMeshReorganizationChanges(ManifestBuilder.Manifest v1, ManifestBuilder.Manifest v2, DerivedFbxAsset asset)
-		{
-			var baseMeshes = v1.meshes.ToDictionary(m => m.name);
-			var modMeshes = v2.meshes.ToDictionary(m => m.name);
-			
-			// Check for removed meshes
-			foreach (var baseMesh in v1.meshes)
-			{
-				if (!modMeshes.ContainsKey(baseMesh.name))
-				{
-					asset.operations.Add(new DerivedFbxAsset.EmbeddedMeshReorganizationOp
-					{
-						type = DerivedFbxAsset.EmbeddedMeshReorganizationOp.ReorganizationType.Remove,
-						meshName = baseMesh.name,
-						meshPath = ""
-					});
-				}
-			}
-			
-			// Check for new meshes
-			foreach (var modMesh in v2.meshes)
-			{
-				if (!baseMeshes.ContainsKey(modMesh.name))
-				{
-					asset.operations.Add(new DerivedFbxAsset.EmbeddedMeshReorganizationOp
-					{
-						type = DerivedFbxAsset.EmbeddedMeshReorganizationOp.ReorganizationType.Add,
-						meshName = modMesh.name,
-						meshPath = ""
-					});
-				}
-			}
 		}
 		
 		private static PatchPackage.SeedMaps ConvertSeedMaps(DerivedFbxAsset.SeedMaps seeds)

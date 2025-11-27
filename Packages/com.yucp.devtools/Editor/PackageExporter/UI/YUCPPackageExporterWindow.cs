@@ -209,7 +209,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             // Mobile toggle button (hamburger menu)
             _mobileToggleButton = new Button(ToggleOverlay);
-            _mobileToggleButton.text = "☰";
+            _mobileToggleButton.text = "≡";
             _mobileToggleButton.AddToClassList("yucp-mobile-toggle");
             topBar.Add(_mobileToggleButton);
             
@@ -3945,7 +3945,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 $"Example Input: {rule.exampleInput}\n" +
                 $"Expected Output: {rule.exampleOutput}\n" +
                 $"Actual Output: {result}\n\n" +
-                (result == rule.exampleOutput ? "✓ Test PASSED" : "✗ Test FAILED"),
+                (result == rule.exampleOutput ? "[OK] Test PASSED" : "[X] Test FAILED"),
                 "OK"
             );
         }
@@ -5217,7 +5217,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     {
                         if (enabledCount == totalCount)
                         {
-                            statusLabel.text = $"✓ All ({enabledCount}/{totalCount} enabled)";
+                            statusLabel.text = $"[OK] All ({enabledCount}/{totalCount} enabled)";
                             statusLabel.style.color = new Color(0.3f, 0.8f, 0.3f);
                         }
                         else if (enabledCount == 0)

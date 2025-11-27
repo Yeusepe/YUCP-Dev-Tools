@@ -123,10 +123,11 @@
 }
 
 /* ============================================================================
-   BUTTONS - Consistent sizing and styling
+   BUTTONS
    ============================================================================ */
 .yucp-button {
-    height: 32px;
+    height: 36px;
+    min-height: 36px;
     padding-left: 16px;
     padding-right: 16px;
     border-radius: 6px;
@@ -138,47 +139,51 @@
     margin-left: 4px;
     margin-right: 4px;
     -unity-text-align: middle-center;
-    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-duration: 0.2s, 0.2s, 0.2s;
     transition-property: background-color, color, scale;
     transition-timing-function: ease-out, ease-out, ease-out;
     scale: 1 1;
 }
 
 .yucp-button:hover {
-    background-color: #525252;
+    background-color: #4a4a4a;
     color: #ffffff;
-    scale: 1.02 1.02;
+    scale: 1.01 1.01;
 }
 
 .yucp-button:active {
     background-color: #2a2a2a;
     color: #ffffff;
-    scale: 0.98 0.98;
+    scale: 0.99 0.99;
 }
 
 .yucp-button-primary {
+    height: 36px;
+    min-height: 36px;
     background-color: #36BFB1;
     color: #ffffff;
-    transition-duration: 0.1s, 0.1s, 0.15s;
+    font-size: 12px;
+    -unity-font-style: bold;
+    transition-duration: 0.2s, 0.2s, 0.2s;
     transition-property: background-color, color, scale;
     transition-timing-function: ease-out, ease-out, ease-out;
     scale: 1 1;
 }
 
 .yucp-button-primary:hover {
-    background-color: #48d1c3;
-    scale: 1.02 1.02;
+    background-color: #3fc9b8;
+    scale: 1.01 1.01;
 }
 
 .yucp-button-primary:active {
     background-color: #2da89c;
-    scale: 0.98 0.98;
+    scale: 0.99 0.99;
 }
 
 .yucp-button-action {
     background-color: #3a3a3a;
     color: #ffffff;
-    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-duration: 0.2s, 0.2s, 0.2s;
     transition-property: background-color, color, scale;
     transition-timing-function: ease-out, ease-out, ease-out;
     scale: 1 1;
@@ -187,19 +192,19 @@
 .yucp-button-action:hover {
     background-color: #36BFB1;
     color: #ffffff;
-    scale: 1.02 1.02;
+    scale: 1.01 1.01;
 }
 
 .yucp-button-action:active {
     background-color: #2da89c;
     color: #ffffff;
-    scale: 0.98 0.98;
+    scale: 0.99 0.99;
 }
 
 .yucp-button-danger {
     background-color: #3a3a3a;
     color: #ffffff;
-    transition-duration: 0.1s, 0.1s, 0.15s;
+    transition-duration: 0.2s, 0.2s, 0.2s;
     transition-property: background-color, color, scale;
     transition-timing-function: ease-out, ease-out, ease-out;
     scale: 1 1;
@@ -208,45 +213,55 @@
 .yucp-button-danger:hover {
     background-color: #E24A4A;
     color: #ffffff;
-    scale: 1.02 1.02;
+    scale: 1.01 1.01;
 }
 
 .yucp-button-danger:active {
     background-color: #c93a3a;
     color: #ffffff;
-    scale: 0.98 0.98;
+    scale: 0.99 0.99;
 }
 
 .yucp-button-export {
-    background-color: #5BA3FF;
+    background-color: #36BFB1;
     color: #ffffff;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .yucp-button-export:hover {
-    background-color: #7ab5ff;
+    background-color: #3fc9b8;
+    scale: 1.01 1.01;
 }
 
 .yucp-button-export:active {
-    background-color: #4a92ee;
+    background-color: #2da89c;
+    scale: 0.99 0.99;
 }
 
 .yucp-button-build {
+    height: 36px;
+    min-height: 36px;
     background-color: #36BFB1;
     color: #ffffff;
-    transition-duration: 0.1s, 0.1s, 0.15s;
+    font-size: 12px;
+    -unity-font-style: bold;
+    transition-duration: 0.2s, 0.2s, 0.2s;
     transition-property: background-color, color, scale;
     transition-timing-function: ease-out, ease-out, ease-out;
     scale: 1 1;
 }
 
 .yucp-button-build:hover {
-    background-color: #48d1c3;
-    scale: 1.02 1.02;
+    background-color: #3fc9b8;
+    scale: 1.01 1.01;
 }
 
 .yucp-button-build:active {
     background-color: #2da89c;
-    scale: 0.98 0.98;
+    scale: 0.99 0.99;
 }
 
 .yucp-button-small {
@@ -266,16 +281,31 @@
 .yucp-button-icon {
     width: 32px;
     height: 32px;
+    min-width: 32px;
+    min-height: 32px;
     padding-top: 0;
     padding-bottom: 0;
     padding-left: 0;
     padding-right: 0;
     justify-content: center;
     align-items: center;
+    border-radius: 6px;
+    transition-duration: 0.2s, 0.2s;
+    transition-property: background-color, scale;
+    transition-timing-function: ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-button-icon:hover {
+    scale: 1.05 1.05;
+}
+
+.yucp-button-icon:active {
+    scale: 0.95 0.95;
 }
 
 /* ============================================================================
-   TYPOGRAPHY
+   TYPOGRAPHY (Law of Visibility, Visual Hierarchy)
    ============================================================================ */
 .yucp-section-header {
     font-size: 13px;
@@ -305,12 +335,11 @@
     -unity-font-style: bold;
     margin-bottom: 12px;
     color: #ffffff;
-    letter-spacing: 0.3px;
-    padding-bottom: 2px;
+    letter-spacing: 0.2px;
 }
 
 /* ============================================================================
-   PANELS & SECTIONS
+   PANELS & SECTIONS (Miller's Law, Law of Prägnanz - Better Spacing)
    ============================================================================ */
 .yucp-panel {
     flex-direction: column;
@@ -319,13 +348,13 @@
 
 .yucp-section {
     margin-bottom: 16px;
-    padding: 12px;
+    padding: 16px;
     background-color: #1a1a1a;
-    border-radius: 8px;
+    border-radius: 6px;
     border-width: 1px;
     border-color: #2a2a2a;
     overflow: hidden;
-    transition-duration: 0.3s, 0.2s;
+    transition-duration: 0.25s, 0.2s;
     transition-property: opacity, border-color;
     transition-timing-function: ease-out, ease-out;
     opacity: 1;
@@ -441,7 +470,7 @@
     margin-top: 0;
     margin-bottom: 0;
     margin-left: 0;
-    margin-right: 4px;
+    margin-right: 0;
     min-width: 0;
     width: 0;
     align-self: stretch;
@@ -457,17 +486,20 @@
     border-left-width: 3px;
     border-left-color: transparent;
     padding: 10px 12px;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     flex-direction: row;
     align-items: center;
-    transition-duration: 0.2s, 0.2s;
-    transition-property: background-color, border-left-color;
-    transition-timing-function: ease-out, ease-out;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-property: background-color, border-left-color, scale;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .yucp-profile-item:hover {
     background-color: rgba(42, 42, 42, 0.7);
+    scale: 1.005 1.005;
 }
+
 
 .yucp-profile-item-selected {
     background-color: rgba(42, 42, 42, 0.8);
@@ -487,6 +519,9 @@
     justify-content: center;
     align-items: center;
     overflow: hidden;
+    transition-duration: 0.2s;
+    transition-property: background-color, border-color;
+    transition-timing-function: ease-out;
 }
 
 .yucp-profile-item-icon {
@@ -543,22 +578,22 @@
 
 .yucp-profile-buttons Button {
     flex-grow: 1;
-    margin: 2px;
+    margin: 0;
     transition-property: width, margin, flex-grow, height;
     transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
     transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
 }
 
 .yucp-profile-list-container > Button {
-    margin-left: 4px;
-    margin-right: 4px;
+    margin-left: 8px;
+    margin-right: 8px;
     transition-property: width, margin, height;
     transition-duration: 0.5s, 0.5s, 0.5s;
     transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
 }
 
 /* ============================================================================
-   FORM FIELDS
+   FORM FIELDS (Law of Feedback, Visibility, Fitts's Law)
    ============================================================================ */
 .yucp-form-row {
     flex-direction: row;
@@ -686,6 +721,9 @@
     border-radius: 6px;
     padding: 12px;
     margin: 8px 0;
+    transition-duration: 0.2s;
+    transition-property: opacity, border-left-color;
+    transition-timing-function: ease-out;
 }
 
 .yucp-validation-error-text {
@@ -700,6 +738,9 @@
     border-radius: 6px;
     padding: 12px;
     margin: 8px 0;
+    transition-duration: 0.2s;
+    transition-property: opacity, border-left-color;
+    transition-timing-function: ease-out;
 }
 
 .yucp-validation-warning-text {
@@ -714,6 +755,9 @@
     border-radius: 6px;
     padding: 12px;
     margin: 8px 0;
+    transition-duration: 0.2s;
+    transition-property: opacity, border-left-color;
+    transition-timing-function: ease-out;
 }
 
 .yucp-validation-success-text {
@@ -759,8 +803,8 @@
 .yucp-separator {
     height: 1px;
     background-color: #2a2a2a;
-    margin-top: 12px;
-    margin-bottom: 12px;
+    margin-top: 16px;
+    margin-bottom: 16px;
 }
 
 .yucp-spacer {
@@ -811,11 +855,23 @@
     border-color: #3a3a3a;
     border-width: 1px;
     flex-shrink: 0;
+    transition-duration: 0.2s;
+    transition-property: background-color, border-color;
+    transition-timing-function: ease-out;
 }
 
 .yucp-toggle:checked .unity-toggle__checkmark {
     background-color: #36BFB1;
     border-color: #36BFB1;
+}
+
+.yucp-toggle:hover .unity-toggle__checkmark {
+    border-color: #525252;
+}
+
+.yucp-toggle:checked:hover .unity-toggle__checkmark {
+    background-color: #3fc9b8;
+    border-color: #3fc9b8;
 }
 
 .yucp-toggle .unity-label {
@@ -835,6 +891,9 @@
     padding: 12px;
     margin: 8px 0;
     border-radius: 6px;
+    transition-duration: 0.2s;
+    transition-property: opacity, border-left-color;
+    transition-timing-function: ease-out;
 }
 
 .yucp-help-box-text {
