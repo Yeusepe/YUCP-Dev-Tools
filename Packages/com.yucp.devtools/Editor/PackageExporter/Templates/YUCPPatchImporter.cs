@@ -38,10 +38,15 @@ namespace YUCP.PatchCleanup
         {
             WriteLog("YUCPPatchImporter static constructor called - importer is loaded and compiled!");
             EditorApplication.delayCall += CheckForPatchesOnLoad;
+            
+            // Clean up DLLs on editor load to prevent lock issues
+            EditorApplication.delayCall += CleanupDllsOnLoad;
         }
         
         private static HashSet<string> processedPatches = new HashSet<string>();
         private static bool hasCheckedOnLoad = false;
+        private static HashSet<string> importedTempFiles = new HashSet<string>();
+        private static bool s_hasCleanedOnLoad = false;
         
         private static void CheckForPatchesOnLoad()
         {
@@ -146,6 +151,243 @@ namespace YUCP.PatchCleanup
             }
         }
         
+        private static void CleanupDllsOnLoad()
+        {
+            if (s_hasCleanedOnLoad) return;
+            s_hasCleanedOnLoad = true;
+            
+            try
+            {
+                WriteLog("Checking for DLLs to clean up on editor load...");
+                
+                string pluginsPath = "Packages/com.yucp.temp/Plugins";
+                if (!AssetDatabase.IsValidFolder(pluginsPath))
+                {
+                    return;
+                }
+                
+                string[] dllGuids = AssetDatabase.FindAssets("t:DefaultAsset", new[] { pluginsPath });
+                int deletedCount = 0;
+                
+                foreach (var guid in dllGuids)
+                {
+                    string path = AssetDatabase.GUIDToAssetPath(guid);
+                    if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            // Unload the DLL first if possible
+                            var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+                            if (asset != null)
+                            {
+                                Resources.UnloadAsset(asset);
+                            }
+                            
+                            // Delete the DLL
+                            AssetDatabase.DeleteAsset(path);
+                            deletedCount++;
+                            WriteLog($"  Cleaned up DLL on load: {path}");
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteLog($"  Warning: Could not delete DLL {path}: {ex.Message}");
+                        }
+                    }
+                }
+                
+                if (deletedCount > 0)
+                {
+                    AssetDatabase.Refresh();
+                    WriteLog($"Cleaned up {deletedCount} DLL(s) on editor load");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in CleanupDllsOnLoad: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+        
+        private static void DeleteDllsFromPluginsBeforePatching()
+        {
+            try
+            {
+                WriteLog("Deleting DLLs from Plugins folder before patching to ensure Library/YUCP/ DLLs are used...");
+                
+                string pluginsPath = "Packages/com.yucp.temp/Plugins";
+                if (!AssetDatabase.IsValidFolder(pluginsPath))
+                {
+                    return;
+                }
+                
+                string[] dllGuids = AssetDatabase.FindAssets("t:DefaultAsset", new[] { pluginsPath });
+                int deletedCount = 0;
+                
+                foreach (var guid in dllGuids)
+                {
+                    string path = AssetDatabase.GUIDToAssetPath(guid);
+                    if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            // Force unload the DLL first
+                            var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+                            if (asset != null)
+                            {
+                                Resources.UnloadAsset(asset);
+                                asset = null;
+                            }
+                            
+                            // Use direct file deletion to bypass Unity's locks
+                            string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                            string physicalPath = Path.Combine(projectPath, path.Replace('/', Path.DirectorySeparatorChar));
+                            
+                            if (File.Exists(physicalPath))
+                            {
+                                // Remove read-only attribute
+                                File.SetAttributes(physicalPath, FileAttributes.Normal);
+                                
+                                // Delete the file directly
+                                File.Delete(physicalPath);
+                                
+                                // Delete .meta file
+                                string metaPath = physicalPath + ".meta";
+                                if (File.Exists(metaPath))
+                                {
+                                    File.SetAttributes(metaPath, FileAttributes.Normal);
+                                    File.Delete(metaPath);
+                                }
+                                
+                                deletedCount++;
+                                WriteLog($"  Deleted DLL before patching: {path}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteLog($"  Warning: Could not delete DLL {path} before patching: {ex.Message}");
+                        }
+                    }
+                }
+                
+                if (deletedCount > 0)
+                {
+                    AssetDatabase.Refresh();
+                    WriteLog($"Deleted {deletedCount} DLL(s) from Plugins before patching");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in DeleteDllsFromPluginsBeforePatching: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+        
+        private static void CleanupDllsAfterPatchApplication()
+        {
+            try
+            {
+                WriteLog("Cleaning up DLLs after patch application...");
+                
+                // CRITICAL: Free the loaded DLL libraries first to release file locks
+                try
+                {
+                    var hdiffPatchWrapperType = System.Type.GetType("YUCP.DevTools.Editor.PackageExporter.HDiffPatchWrapper, yucp.devtools.Editor");
+                    if (hdiffPatchWrapperType != null)
+                    {
+                        var freeDllsMethod = hdiffPatchWrapperType.GetMethod("FreeDlls", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                        if (freeDllsMethod != null)
+                        {
+                            freeDllsMethod.Invoke(null, null);
+                            WriteLog("  Freed loaded DLL libraries");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteLog($"  Warning: Could not free DLL libraries: {ex.Message}");
+                }
+                
+                // Use delayCall to wait for file handles to be released
+                EditorApplication.delayCall += () =>
+                {
+                    CleanupDllsFromPluginsFolder();
+                };
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in CleanupDllsAfterPatchApplication: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+        
+        private static void CleanupDllsFromPluginsFolder()
+        {
+            try
+            {
+                string pluginsPath = "Packages/com.yucp.temp/Plugins";
+                if (!AssetDatabase.IsValidFolder(pluginsPath))
+                {
+                    return;
+                }
+                
+                string[] dllGuids = AssetDatabase.FindAssets("t:DefaultAsset", new[] { pluginsPath });
+                int deletedCount = 0;
+                
+                foreach (var guid in dllGuids)
+                {
+                    string path = AssetDatabase.GUIDToAssetPath(guid);
+                    if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            // Force unload the DLL first
+                            var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+                            if (asset != null)
+                            {
+                                Resources.UnloadAsset(asset);
+                                asset = null;
+                            }
+                            
+                            // Use direct file deletion to bypass Unity's locks
+                            string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                            string physicalPath = Path.Combine(projectPath, path.Replace('/', Path.DirectorySeparatorChar));
+                            
+                            if (File.Exists(physicalPath))
+                            {
+                                // Remove read-only attribute
+                                File.SetAttributes(physicalPath, FileAttributes.Normal);
+                                
+                                // Delete the file directly
+                                File.Delete(physicalPath);
+                                
+                                // Delete .meta file
+                                string metaPath = physicalPath + ".meta";
+                                if (File.Exists(metaPath))
+                                {
+                                    File.SetAttributes(metaPath, FileAttributes.Normal);
+                                    File.Delete(metaPath);
+                                }
+                                
+                                deletedCount++;
+                                WriteLog($"  Deleted DLL after patch application: {path}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteLog($"  Warning: Could not delete DLL {path}: {ex.Message}");
+                        }
+                    }
+                }
+                
+                if (deletedCount > 0)
+                {
+                    AssetDatabase.Refresh();
+                    WriteLog($"Cleaned up {deletedCount} DLL(s) from Plugins folder");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in CleanupDllsFromPluginsFolder: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+        
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
             WriteLog($"OnPostprocessAllAssets called with {importedAssets?.Length ?? 0} imported assets");
@@ -168,6 +410,36 @@ namespace YUCP.PatchCleanup
             
             if (processedPatches == null)
                 processedPatches = new HashSet<string>();
+            
+            if (importedTempFiles == null)
+                importedTempFiles = new HashSet<string>();
+            
+            // Track files imported to com.yucp.temp from the package (Patches, Editor, Plugins folders, and root files like package.json)
+            // These are the files we'll clean up after FBX build
+            foreach (var path in importedAssets ?? new string[0])
+            {
+                if (path.Contains("com.yucp.temp") && 
+                    !path.Contains("/Derived/") && !path.Contains("\\Derived\\"))
+                {
+                    // Track files in Patches, Editor, Plugins folders
+                    bool isInTempFolder = path.Contains("/Patches/") || path.Contains("\\Patches\\") ||
+                                         path.Contains("/Editor/") || path.Contains("\\Editor\\") ||
+                                         path.Contains("/Plugins/") || path.Contains("\\Plugins\\");
+                    
+                    // Also track root-level files like package.json, .asmdef files, etc.
+                    bool isRootFile = path.Contains("com.yucp.temp/package.json") ||
+                                     path.Contains("com.yucp.temp\\package.json") ||
+                                     (path.Contains("com.yucp.temp") && 
+                                      (path.EndsWith(".asmdef") || path.EndsWith(".asmdef.meta") ||
+                                       path.EndsWith(".asmdef.json") || path.EndsWith(".asmdef.json.meta")));
+                    
+                    if (isInTempFolder || isRootFile)
+                    {
+                        importedTempFiles.Add(path);
+                        WriteLog($"  Tracked imported temp file for cleanup: {path}");
+                    }
+                }
+            }
             
             int patchCount = 0;
             foreach (var path in importedAssets ?? new string[0])
@@ -418,6 +690,9 @@ namespace YUCP.PatchCleanup
         {
             try
             {
+                // CRITICAL: Delete DLLs from Plugins BEFORE patching to ensure we use Library/YUCP/ DLLs
+                DeleteDllsFromPluginsBeforePatching();
+                
                 var patchType = patchObj.GetType();
                 
                 // Get patch properties using reflection
@@ -583,6 +858,21 @@ namespace YUCP.PatchCleanup
                 WriteLog($"  Successfully created derived FBX: {createdPath}");
                 Debug.Log($"[YUCP PatchImporter] Successfully created derived FBX: {createdPath}");
                 
+                // Check if override original references is enabled
+                CheckAndHandleOverrideOriginalReferences(baseFbxPath, baseFbxGuid, createdPath, patchPath);
+                
+                // Clean up imported temp files after successful FBX build
+                // Use nested delayCall to ensure Unity has finished processing the import
+                EditorApplication.delayCall += () =>
+                {
+                    EditorApplication.delayCall += () =>
+                    {
+                        CleanupImportedTempFiles();
+                        // Also clean up DLLs after patches are applied
+                        CleanupDllsAfterPatchApplication();
+                    };
+                };
+                
                 // Update prefab references if GUID was preserved
                 if (!string.IsNullOrEmpty(derivedFbxGuid))
                 {
@@ -700,6 +990,522 @@ namespace YUCP.PatchCleanup
             {
                 WriteLog($"  ERROR in ApplyPatch: {ex.Message}\n{ex.StackTrace}");
                 Debug.LogError($"[YUCP PatchImporter] Error applying patch: {ex.Message}");
+            }
+        }
+        
+        private static void CleanupImportedTempFiles()
+        {
+            try
+            {
+                if (importedTempFiles == null || importedTempFiles.Count == 0)
+                {
+                    WriteLog("No imported temp files to clean up");
+                    return;
+                }
+                
+                WriteLog($"Cleaning up {importedTempFiles.Count} imported temp file(s) from package...");
+                
+                int deletedCount = 0;
+                var filesToDelete = new List<string>(importedTempFiles);
+                
+                foreach (var path in filesToDelete)
+                {
+                    // Double-check: Skip Derived folder - we want to keep those files
+                    if (path.Contains("/Derived/") || path.Contains("\\Derived\\"))
+                    {
+                        WriteLog($"  Skipping Derived folder file: {path}");
+                        continue;
+                    }
+                    
+                    // Delete files in Patches, Editor, or Plugins folders
+                    bool isInTempFolder = path.Contains("/Patches/") || path.Contains("\\Patches\\") ||
+                                         path.Contains("/Editor/") || path.Contains("\\Editor\\") ||
+                                         path.Contains("/Plugins/") || path.Contains("\\Plugins\\");
+                    
+                    // Also delete root-level files like package.json, .asmdef files, etc.
+                    bool isRootFile = path.Contains("com.yucp.temp/package.json") ||
+                                     path.Contains("com.yucp.temp\\package.json") ||
+                                     (path.Contains("com.yucp.temp") && 
+                                      (path.EndsWith(".asmdef") || path.EndsWith(".asmdef.meta") ||
+                                       path.EndsWith(".asmdef.json") || path.EndsWith(".asmdef.json.meta")));
+                    
+                    if (!isInTempFolder && !isRootFile)
+                    {
+                        WriteLog($"  Skipping file outside cleanup folders: {path}");
+                        continue;
+                    }
+                    
+                    try
+                    {
+                        // For DLLs, use direct file deletion to bypass Unity's locks
+                        // For other files, use AssetDatabase.DeleteAsset
+                        bool isDll = path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+                        
+                        if (isDll)
+                        {
+                            // Force unload the DLL first
+                            var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+                            if (asset != null)
+                            {
+                                Resources.UnloadAsset(asset);
+                                asset = null;
+                            }
+                            
+                            // Use direct file deletion for DLLs
+                            string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                            string physicalPath = Path.Combine(projectPath, path.Replace('/', Path.DirectorySeparatorChar));
+                            
+                            if (File.Exists(physicalPath))
+                            {
+                                File.SetAttributes(physicalPath, FileAttributes.Normal);
+                                File.Delete(physicalPath);
+                                
+                                // Delete .meta file
+                                string metaPath = physicalPath + ".meta";
+                                if (File.Exists(metaPath))
+                                {
+                                    File.SetAttributes(metaPath, FileAttributes.Normal);
+                                    File.Delete(metaPath);
+                                }
+                                
+                                deletedCount++;
+                                WriteLog($"  Deleted DLL (direct): {path}");
+                            }
+                        }
+                        else
+                        {
+                            // Use AssetDatabase.DeleteAsset for non-DLL files
+                            if (AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path) != null || File.Exists(Path.Combine(Application.dataPath, "..", path.Replace('/', Path.DirectorySeparatorChar))))
+                            {
+                                AssetDatabase.DeleteAsset(path);
+                                deletedCount++;
+                                WriteLog($"  Deleted: {path}");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteLog($"  Warning: Failed to delete {path}: {ex.Message}");
+                    }
+                }
+                
+                // Clear the tracked files
+                importedTempFiles.Clear();
+                
+                // Clean up empty folders after deleting files
+                try
+                {
+                    string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                    string tempPackagePath = Path.Combine(projectPath, "Packages", "com.yucp.temp");
+                    
+                    // Clean up empty folders (but keep Derived folder)
+                    string[] foldersToCheck = new string[]
+                    {
+                        Path.Combine(tempPackagePath, "Patches"),
+                        Path.Combine(tempPackagePath, "Editor"),
+                        Path.Combine(tempPackagePath, "Plugins")
+                    };
+                    
+                    foreach (var folder in foldersToCheck)
+                    {
+                        if (Directory.Exists(folder))
+                        {
+                            try
+                            {
+                                var files = Directory.GetFiles(folder, "*", SearchOption.AllDirectories)
+                                    .Where(f => !f.EndsWith(".meta")).ToArray();
+                                
+                                if (files.Length == 0)
+                                {
+                                    Directory.Delete(folder, true);
+                                    WriteLog($"  Deleted empty folder: {folder}");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                WriteLog($"  Warning: Could not delete folder {folder}: {ex.Message}");
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteLog($"  Warning: Error cleaning up empty folders: {ex.Message}");
+                }
+                
+                // Try to clean up Unity's Temp/Export Package directory
+                // This helps prevent "Access is denied" errors on re-import
+                try
+                {
+                    string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                    string tempExportPath = Path.Combine(projectPath, "Temp", "Export Package");
+                    if (Directory.Exists(tempExportPath))
+                    {
+                        // Try to delete the directory, but don't fail if it's locked
+                        try
+                        {
+                            // Delete files individually first, then directory
+                            var files = Directory.GetFiles(tempExportPath, "*", SearchOption.AllDirectories);
+                            foreach (var file in files)
+                            {
+                                try
+                                {
+                                    File.SetAttributes(file, FileAttributes.Normal);
+                                    File.Delete(file);
+                                }
+                                catch { }
+                            }
+                            
+                            Directory.Delete(tempExportPath, true);
+                            WriteLog($"  Cleaned up Unity Temp/Export Package directory");
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteLog($"  Could not delete Temp/Export Package (may be locked by Unity): {ex.Message}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteLog($"  Warning: Could not access Temp/Export Package: {ex.Message}");
+                }
+                
+                AssetDatabase.Refresh();
+                
+                WriteLog($"Cleanup complete: deleted {deletedCount} file(s) from Packages/com.yucp.temp");
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in CleanupImportedTempFiles: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogWarning($"[YUCP PatchImporter] Error cleaning up temp files: {ex.Message}");
+            }
+        }
+        
+        private static void CheckAndHandleOverrideOriginalReferences(string baseFbxPath, string baseFbxGuid, string newFbxPath, string patchPath)
+        {
+            try
+            {
+                // Check if override is enabled in the patch asset
+                bool overrideEnabled = false;
+                
+                try
+                {
+                    var patchAsset = AssetDatabase.LoadAssetAtPath<ScriptableObject>(patchPath);
+                    if (patchAsset != null)
+                    {
+                        var overrideField = patchAsset.GetType().GetField("overrideOriginalReferences");
+                        if (overrideField != null)
+                        {
+                            overrideEnabled = (bool)overrideField.GetValue(patchAsset);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteLog($"  Warning: Could not read overrideOriginalReferences from patch: {ex.Message}");
+                }
+                
+                if (!overrideEnabled)
+                {
+                    WriteLog("Override Original References is not enabled, skipping GUID swap");
+                    return;
+                }
+                
+                WriteLog("Override Original References is enabled, checking for confirmation...");
+                
+                // Get the new FBX GUID
+                string newFbxGuid = AssetDatabase.AssetPathToGUID(newFbxPath);
+                if (string.IsNullOrEmpty(newFbxGuid))
+                {
+                    WriteLog("  ERROR: Could not get GUID for new FBX");
+                    return;
+                }
+                
+                if (string.IsNullOrEmpty(baseFbxGuid))
+                {
+                    WriteLog("  ERROR: baseFbxGuid is empty, cannot override references");
+                    return;
+                }
+                
+                // Show confirmation dialog
+                string baseFbxName = Path.GetFileNameWithoutExtension(baseFbxPath);
+                bool confirmed = EditorUtility.DisplayDialog(
+                    "Override Original References",
+                    $"This will replace all references to the original FBX \"{baseFbxName}\" with the new derived FBX.\n\n" +
+                    $"Original FBX GUID: {baseFbxGuid}\n" +
+                    $"New FBX GUID: {newFbxGuid}\n\n" +
+                    "This operation can be reversed via Tools->YUCP->Revert GUID Override.\n\n" +
+                    "Do you want to proceed?",
+                    "Yes, Override References",
+                    "Cancel"
+                );
+                
+                if (!confirmed)
+                {
+                    WriteLog("User cancelled override operation");
+                    return;
+                }
+                
+                WriteLog($"User confirmed override. Swapping GUIDs: {baseFbxGuid} -> {newFbxGuid}");
+                
+                // Perform GUID swap
+                int swappedCount = SwapGuidReferences(baseFbxGuid, newFbxGuid, baseFbxPath);
+                
+                if (swappedCount > 0)
+                {
+                    // Store swap info for reversal
+                    StoreGuidSwapInfo(baseFbxGuid, newFbxGuid, baseFbxPath, newFbxPath);
+                    
+                    AssetDatabase.Refresh();
+                    WriteLog($"Successfully swapped GUIDs in {swappedCount} file(s)");
+                    Debug.Log($"[YUCP PatchImporter] Overrode references: {swappedCount} file(s) now reference the new FBX instead of the original");
+                }
+                else
+                {
+                    WriteLog("No files found with references to swap");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in CheckAndHandleOverrideOriginalReferences: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogError($"[YUCP PatchImporter] Error handling override original references: {ex.Message}");
+            }
+        }
+        
+        [Serializable]
+        private class DerivedSettings
+        {
+            public bool isDerived;
+            public string baseGuid;
+            public string friendlyName;
+            public string category;
+            public bool overrideOriginalReferences = false;
+        }
+        
+        private static int SwapGuidReferences(string oldGuid, string newGuid, string oldFbxPath)
+        {
+            int swappedCount = 0;
+            try
+            {
+                WriteLog($"Swapping GUID references: {oldGuid} -> {newGuid}");
+                
+                string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                
+                // Get the new FBX path to exclude it
+                string newFbxPath = AssetDatabase.GUIDToAssetPath(newGuid);
+                string newFbxPhysicalPath = string.IsNullOrEmpty(newFbxPath) ? null : 
+                    Path.Combine(projectPath, newFbxPath.Replace('/', Path.DirectorySeparatorChar));
+                
+                // Find all .meta files in Assets and Packages (skip Library, Temp, etc.)
+                string[] searchPaths = new string[]
+                {
+                    Path.Combine(projectPath, "Assets"),
+                    Path.Combine(projectPath, "Packages")
+                };
+                
+                foreach (var searchPath in searchPaths)
+                {
+                    if (!Directory.Exists(searchPath))
+                        continue;
+                    
+                    string[] allMetaFiles = Directory.GetFiles(searchPath, "*.meta", SearchOption.AllDirectories);
+                    
+                    foreach (var metaFile in allMetaFiles)
+                    {
+                        try
+                        {
+                            // Skip the new FBX's meta file itself
+                            if (!string.IsNullOrEmpty(newFbxPhysicalPath) && 
+                                metaFile.Equals(newFbxPhysicalPath + ".meta", StringComparison.OrdinalIgnoreCase))
+                            {
+                                continue;
+                            }
+                            
+                            // Skip the old FBX's meta file (we don't want to change its own GUID)
+                            string assetPath = metaFile.Substring(0, metaFile.Length - 5);
+                            string relativePath = assetPath.Replace(projectPath, "").Replace('\\', '/').TrimStart('/');
+                            string assetGuid = AssetDatabase.AssetPathToGUID(relativePath);
+                            
+                            if (assetGuid == oldGuid)
+                            {
+                                continue; // Skip the old FBX's own meta file
+                            }
+                            
+                            string content = File.ReadAllText(metaFile);
+                            bool wasModified = false;
+                            
+                            // Replace GUID references in the meta file
+                            // Look for patterns like: guid: OLD_GUID or {fileID: 11500000, guid: OLD_GUID, type: 2}
+                            // Use word boundaries to avoid partial matches
+                            string oldGuidPattern = @"\b" + oldGuid + @"\b";
+                            if (System.Text.RegularExpressions.Regex.IsMatch(content, oldGuidPattern))
+                            {
+                                content = System.Text.RegularExpressions.Regex.Replace(content, oldGuidPattern, newGuid);
+                                wasModified = true;
+                            }
+                            
+                            if (wasModified)
+                            {
+                                File.WriteAllText(metaFile, content);
+                                swappedCount++;
+                                WriteLog($"  Swapped GUID in: {relativePath}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteLog($"  Warning: Could not process {metaFile}: {ex.Message}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in SwapGuidReferences: {ex.Message}\n{ex.StackTrace}");
+            }
+            
+            return swappedCount;
+        }
+        
+        private static void StoreGuidSwapInfo(string oldGuid, string newGuid, string oldPath, string newPath)
+        {
+            try
+            {
+                string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string swapInfoPath = Path.Combine(projectPath, "Library", "YUCP", "guid_swaps.json");
+                
+                Directory.CreateDirectory(Path.GetDirectoryName(swapInfoPath));
+                
+                var swapInfo = new GuidSwapInfo
+                {
+                    oldGuid = oldGuid,
+                    newGuid = newGuid,
+                    oldPath = oldPath,
+                    newPath = newPath,
+                    timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                };
+                
+                List<GuidSwapInfo> swaps = new List<GuidSwapInfo>();
+                
+                // Load existing swaps
+                if (File.Exists(swapInfoPath))
+                {
+                    try
+                    {
+                        string existingJson = File.ReadAllText(swapInfoPath);
+                        var existingSwaps = JsonUtility.FromJson<GuidSwapList>(existingJson);
+                        if (existingSwaps != null && existingSwaps.swaps != null)
+                        {
+                            swaps = existingSwaps.swaps;
+                        }
+                    }
+                    catch { }
+                }
+                
+                // Remove any existing swap for this oldGuid (only one active swap per GUID)
+                swaps.RemoveAll(s => s.oldGuid == oldGuid);
+                
+                // Add new swap
+                swaps.Add(swapInfo);
+                
+                // Save
+                var swapList = new GuidSwapList { swaps = swaps };
+                string json = JsonUtility.ToJson(swapList, true);
+                File.WriteAllText(swapInfoPath, json);
+                
+                WriteLog($"Stored GUID swap info for reversal");
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in StoreGuidSwapInfo: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+        
+        [Serializable]
+        private class GuidSwapInfo
+        {
+            public string oldGuid;
+            public string newGuid;
+            public string oldPath;
+            public string newPath;
+            public string timestamp;
+        }
+        
+        [Serializable]
+        private class GuidSwapList
+        {
+            public List<GuidSwapInfo> swaps = new List<GuidSwapInfo>();
+        }
+        
+        [MenuItem("Tools/YUCP/Revert GUID Override")]
+        public static void RevertGuidOverride()
+        {
+            try
+            {
+                string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string swapInfoPath = Path.Combine(projectPath, "Library", "YUCP", "guid_swaps.json");
+                
+                if (!File.Exists(swapInfoPath))
+                {
+                    EditorUtility.DisplayDialog("No GUID Swaps", "No GUID override operations found to revert.", "OK");
+                    return;
+                }
+                
+                string json = File.ReadAllText(swapInfoPath);
+                var swapList = JsonUtility.FromJson<GuidSwapList>(json);
+                
+                if (swapList == null || swapList.swaps == null || swapList.swaps.Count == 0)
+                {
+                    EditorUtility.DisplayDialog("No GUID Swaps", "No GUID override operations found to revert.", "OK");
+                    return;
+                }
+                
+                // Build list of swaps for display
+                string swapListText = string.Join("\n", swapList.swaps.Select(s => 
+                    $"  • {Path.GetFileName(s.oldPath)} -> {Path.GetFileName(s.newPath)} ({s.timestamp})"
+                ));
+                
+                // Confirm reversal
+                bool confirmed = EditorUtility.DisplayDialog(
+                    "Revert GUID Override",
+                    $"Found {swapList.swaps.Count} GUID override operation(s):\n\n{swapListText}\n\n" +
+                    "This will restore all references to the original FBX.\n\n" +
+                    "Do you want to revert all of them?",
+                    "Yes, Revert All",
+                    "Cancel"
+                );
+                
+                if (!confirmed)
+                {
+                    return;
+                }
+                
+                int revertedCount = 0;
+                foreach (var swap in swapList.swaps)
+                {
+                    WriteLog($"Reverting GUID swap: {swap.newGuid} -> {swap.oldGuid}");
+                    int count = SwapGuidReferences(swap.newGuid, swap.oldGuid, swap.newPath);
+                    revertedCount += count;
+                }
+                
+                // Delete swap info file after reverting all
+                File.Delete(swapInfoPath);
+                
+                AssetDatabase.Refresh();
+                
+                EditorUtility.DisplayDialog(
+                    "Reversion Complete",
+                    $"Successfully reverted {revertedCount} GUID reference(s) from {swapList.swaps.Count} operation(s).",
+                    "OK"
+                );
+                
+                WriteLog($"Reverted {revertedCount} GUID reference(s)");
+                Debug.Log($"[YUCP PatchImporter] Reverted {revertedCount} GUID reference(s)");
+            }
+            catch (Exception ex)
+            {
+                EditorUtility.DisplayDialog("Error", $"Failed to revert GUID override: {ex.Message}", "OK");
+                WriteLog($"ERROR in RevertGuidOverride: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogError($"[YUCP PatchImporter] Error reverting GUID override: {ex.Message}");
             }
         }
     }

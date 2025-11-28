@@ -193,12 +193,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 EditorUtility.DisplayProgressBar("Building Derived FBX", "Building DerivedFbxAsset...", 0.3f);
 
-                var policy = new DerivedFbxAsset.Policy
-                {
-                    autoApplyThreshold = 0.8f,
-                    reviewThreshold = 0.4f,
-                    strictTopology = false
-                };
+                var policy = new DerivedFbxAsset.Policy();
 
                 var hints = new DerivedFbxAsset.UIHints
                 {

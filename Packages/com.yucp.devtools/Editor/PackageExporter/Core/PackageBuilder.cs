@@ -407,6 +407,68 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     File.Delete(tempPackagePath);
                 }
                 
+                // Clean up files we created in the temp package folder
+                // Delete Editor folder (patch runtime scripts)
+                string tempEditorPath = "Packages/com.yucp.temp/Editor";
+                if (AssetDatabase.IsValidFolder(tempEditorPath))
+                {
+                    try
+                    {
+                        // Use AssetDatabase to delete the folder (handles .meta files automatically)
+                        AssetDatabase.DeleteAsset(tempEditorPath);
+                        Debug.Log("[PackageBuilder] Cleaned up temp Editor folder");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[PackageBuilder] Error cleaning up temp Editor folder: {ex.Message}");
+                        // Fallback: try physical deletion
+                        try
+                        {
+                            string physicalEditorPath = Path.Combine(Application.dataPath, "..", "Packages", "com.yucp.temp", "Editor");
+                            if (Directory.Exists(physicalEditorPath))
+                            {
+                                Directory.Delete(physicalEditorPath, true);
+                            }
+                        }
+                        catch (Exception ex2)
+                        {
+                            Debug.LogWarning($"[PackageBuilder] Fallback cleanup also failed: {ex2.Message}");
+                        }
+                    }
+                }
+                
+                // Delete Plugins folder (HDiffPatch DLLs)
+                string tempPluginsPath = "Packages/com.yucp.temp/Plugins";
+                if (AssetDatabase.IsValidFolder(tempPluginsPath))
+                {
+                    try
+                    {
+                        // Use AssetDatabase to delete the folder (handles .meta files automatically)
+                        AssetDatabase.DeleteAsset(tempPluginsPath);
+                        Debug.Log("[PackageBuilder] Cleaned up temp Plugins folder");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[PackageBuilder] Error cleaning up temp Plugins folder: {ex.Message}");
+                        // Fallback: try physical deletion
+                        try
+                        {
+                            string physicalPluginsPath = Path.Combine(Application.dataPath, "..", "Packages", "com.yucp.temp", "Plugins");
+                            if (Directory.Exists(physicalPluginsPath))
+                            {
+                                Directory.Delete(physicalPluginsPath, true);
+                            }
+                        }
+                        catch (Exception ex2)
+                        {
+                            Debug.LogWarning($"[PackageBuilder] Fallback cleanup also failed: {ex2.Message}");
+                        }
+                    }
+                }
+                
+                // Refresh AssetDatabase to reflect deletions
+                AssetDatabase.Refresh();
+                
                 // Restore original DLLs if obfuscation was used
                 if (profile.enableObfuscation)
                 {
@@ -602,12 +664,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     continue;
                 }
                 
-                var policy = new DerivedFbxAsset.Policy
-                {
-                    autoApplyThreshold = settings.autoApplyThreshold,
-                    reviewThreshold = settings.reviewThreshold,
-                    strictTopology = settings.strictTopology
-                };
+                var policy = new DerivedFbxAsset.Policy();
                 var hints = new DerivedFbxAsset.UIHints
                 {
                     friendlyName = string.IsNullOrEmpty(settings.friendlyName)
@@ -616,6 +673,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     thumbnail = null,
                     category = settings.category
                 };
+                
+                bool overrideOriginalReferences = settings.overrideOriginalReferences;
                 
                 var seeds = new DerivedFbxAsset.SeedMaps();
                 
@@ -658,6 +717,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     derivedAsset.baseFbxGuid = settings.baseGuid;
                     derivedAsset.derivedFbxGuid = derivedFbxGuid ?? string.Empty;
                     derivedAsset.originalDerivedFbxPath = normalizedModifiedPath;
+                    derivedAsset.overrideOriginalReferences = overrideOriginalReferences;
                     
                     // Use derived FBX GUID as filename identifier to ensure same derived FBX always uses same patch asset
                     // This prevents file bloat from GenerateUniqueAssetPath creating numbered duplicates
@@ -889,11 +949,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             public bool isDerived;
             public string baseGuid;
-            public float autoApplyThreshold = 0.8f;
-            public float reviewThreshold = 0.4f;
-            public bool strictTopology = false;
             public string friendlyName;
             public string category;
+            public bool overrideOriginalReferences = false;
         }
         
         private static void EnsureAuthoringFolder()

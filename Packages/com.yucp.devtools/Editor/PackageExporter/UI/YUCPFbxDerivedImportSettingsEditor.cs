@@ -16,11 +16,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		{
 			public bool isDerived;
 			public string baseGuid;
-			public float autoApplyThreshold = 0.8f;
-			public float reviewThreshold = 0.4f;
-			public bool strictTopology = false;
 			public string friendlyName;
 			public string category;
+			public bool overrideOriginalReferences = false;
 		}
 
 		public override void OnInspectorGUI()
@@ -65,15 +63,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				}
 
 				EditorGUILayout.Space(4);
-				EditorGUILayout.LabelField("Policy", EditorStyles.boldLabel);
-				settings.autoApplyThreshold = EditorGUILayout.Slider("Auto-Apply Threshold", settings.autoApplyThreshold, 0f, 1f);
-				settings.reviewThreshold = EditorGUILayout.Slider("Review Threshold", settings.reviewThreshold, 0f, 1f);
-				settings.strictTopology = EditorGUILayout.Toggle("Strict Topology Gate", settings.strictTopology);
-
-				EditorGUILayout.Space(4);
 				EditorGUILayout.LabelField("UI Hints", EditorStyles.boldLabel);
 				settings.friendlyName = EditorGUILayout.TextField("Friendly Name", string.IsNullOrEmpty(settings.friendlyName) ? System.IO.Path.GetFileNameWithoutExtension(importer.assetPath) : settings.friendlyName);
 				settings.category = EditorGUILayout.TextField("Category", settings.category);
+				
+				EditorGUILayout.Space(4);
+				EditorGUILayout.HelpBox("Override Original References: After generating the derived FBX, replace all references to the original FBX with the new one. This can be reversed via Tools->YUCP->Revert GUID Override.", MessageType.Info);
+				settings.overrideOriginalReferences = EditorGUILayout.Toggle(new GUIContent("Override Original References"), settings.overrideOriginalReferences);
 			}
 
 			if (EditorGUI.EndChangeCheck())

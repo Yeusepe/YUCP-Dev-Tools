@@ -18,9 +18,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		{
 			public bool isDerived;
 			public string baseGuid;
-			public float autoApplyThreshold = 0.8f;
-			public float reviewThreshold = 0.4f;
-			public bool strictTopology = false;
 			public string friendlyName;
 			public string category;
 		}

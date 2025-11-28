@@ -18,6 +18,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		[SerializeField] public string originalDerivedFbxPath; // Original path of the derived FBX (for reconstruction)
 		[SerializeField] public string hdiffFilePath; // Path to the .hdiff binary diff file
 		[SerializeField] public string baseFbxHash; // Optional hash of base FBX for additional verification
+		[SerializeField] public bool overrideOriginalReferences = false; // If true, replace all references to original FBX with new FBX
 		
 		[SerializeField] public Policy policy = new Policy();
 		[SerializeField] public UIHints uiHints = new UIHints();

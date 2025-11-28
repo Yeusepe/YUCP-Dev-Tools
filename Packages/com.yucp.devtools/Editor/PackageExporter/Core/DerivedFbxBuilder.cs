@@ -38,7 +38,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			{
 				// Verify base FBX exists
 				if (!File.Exists(Path.Combine(Path.GetFullPath(Path.Combine(Application.dataPath, "..")), baseFbxPath.Replace('/', Path.DirectorySeparatorChar))))
-				{
+			{
 					Debug.LogError($"[DerivedFbxBuilder] Base FBX not found at: {baseFbxPath}");
 					return null;
 				}
@@ -49,7 +49,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					Debug.LogError($"[DerivedFbxBuilder] Base FBX verification failed. The base FBX may not match the expected version.");
 					return null;
 				}
-				
+			
 				// Get physical paths
 				// Based on CocoTools CocoPatch.cs path handling
 				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
@@ -73,23 +73,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				if (patchResult != THPatchResult.HPATCH_SUCCESS)
 				{
 					Debug.LogError($"[DerivedFbxBuilder] Failed to apply binary patch: {patchResult}");
-					return null;
+				return null;
 				}
 				
 				if (!File.Exists(outputPhysicalPath))
 				{
 					Debug.LogError($"[DerivedFbxBuilder] Patched FBX file was not created at: {outputPhysicalPath}");
-					return null;
-				}
-				
+				return null;
+			}
+			
 				// Handle meta file (GUID preservation)
 				TryCopyMetaWithGuid(outputPhysicalPath, derivedAsset?.originalDerivedFbxPath, baseFbxPath, targetGuid);
 				
 				// Import the patched FBX
 				// Based on CocoTools CocoUtils.ForceOverwrite() AssetDatabase.ImportAsset call
 				AssetDatabase.ImportAsset(fbxPath, ImportAssetOptions.ForceUpdate);
-				AssetDatabase.Refresh();
-				
+			AssetDatabase.Refresh();
+			
 				Debug.Log($"[DerivedFbxBuilder] Successfully created patched FBX: {fbxPath}");
 				
 				return fbxPath;
@@ -97,8 +97,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			catch (System.Exception ex)
 			{
 				Debug.LogError($"[DerivedFbxBuilder] Error applying binary patch: {ex.Message}\n{ex.StackTrace}");
-				return null;
-			}
+			return null;
+		}
 		}
 		
 		/// <summary>
@@ -138,9 +138,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					{
 						Debug.LogWarning($"[DerivedFbxBuilder] Base FBX manifest ID mismatch. Expected: {derivedAsset.sourceManifestId}, Got: {manifest.manifestId}. Continuing anyway...");
 						// Don't fail on manifest mismatch, just warn (manifest might change slightly)
-					}
-					else
-					{
+				}
+				else
+				{
 						Debug.Log($"[DerivedFbxBuilder] Base FBX manifest ID verification passed: {manifest.manifestId}");
 					}
 				}
@@ -153,9 +153,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					{
 						Debug.LogWarning($"[DerivedFbxBuilder] Base FBX GUID mismatch. Expected: {derivedAsset.baseFbxGuid}, Got: {baseGuid}. Continuing anyway...");
 						// Don't fail on GUID mismatch, just warn (GUID might be different in different projects)
-					}
-					else
-					{
+				}
+				else
+				{
 						Debug.Log($"[DerivedFbxBuilder] Base FBX GUID verification passed: {baseGuid}");
 					}
 				}
@@ -204,8 +204,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					if (File.Exists(originalMeta))
 					{
 						string metaContent = File.ReadAllText(originalMeta);
-						if (!string.IsNullOrEmpty(targetGuid))
-						{
+			if (!string.IsNullOrEmpty(targetGuid))
+			{
 							metaContent = System.Text.RegularExpressions.Regex.Replace(
 								metaContent,
 								@"guid:\s*[a-f0-9]{32}",
@@ -271,12 +271,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						{
 							writeGuidMethod.Invoke(null, new object[] { physicalOutputPath, targetGuid });
 							Debug.Log($"[DerivedFbxBuilder] Created .meta file with GUID: {targetGuid}");
-							return;
-						}
-					}
+				return;
+			}
 				}
-				catch (System.Exception ex)
-				{
+			}
+			catch (System.Exception ex)
+			{
 					Debug.LogWarning($"[DerivedFbxBuilder] Failed to create .meta file: {ex.Message}");
 				}
 			}
