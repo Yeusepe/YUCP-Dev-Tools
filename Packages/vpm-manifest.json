@@ -64,7 +64,7 @@
       "dependencies": {}
     },
     "com.yucp.components": {
-      "version": "0.2.9",
+      "version": "0.3.8",
       "dependencies": {
         "com.vrcfury.vrcfury": ">=1.1258.0",
         "com.vrchat.core.vpm-resolver": ">=0.1.27"
