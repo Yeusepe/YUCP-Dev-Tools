@@ -46,6 +46,7 @@ namespace YUCP.PatchCleanup
         private static HashSet<string> processedPatches = new HashSet<string>();
         private static bool hasCheckedOnLoad = false;
         private static HashSet<string> importedTempFiles = new HashSet<string>();
+        private static HashSet<string> createdDerivedFbxPaths = new HashSet<string>();
         private static bool s_hasCleanedOnLoad = false;
         
         private static void CheckForPatchesOnLoad()
@@ -858,6 +859,11 @@ namespace YUCP.PatchCleanup
                 WriteLog($"  Successfully created derived FBX: {createdPath}");
                 Debug.Log($"[YUCP PatchImporter] Successfully created derived FBX: {createdPath}");
                 
+                // Track this derived FBX for cleanup
+                if (createdDerivedFbxPaths == null)
+                    createdDerivedFbxPaths = new HashSet<string>();
+                createdDerivedFbxPaths.Add(createdPath);
+                
                 // Check if override original references is enabled
                 CheckAndHandleOverrideOriginalReferences(baseFbxPath, baseFbxGuid, createdPath, patchPath);
                 
@@ -868,6 +874,8 @@ namespace YUCP.PatchCleanup
                     EditorApplication.delayCall += () =>
                     {
                         CleanupImportedTempFiles();
+                        // Clean patching scripts from derived FBX importers
+                        CleanupDerivedFbxImporterSettings();
                         // Also clean up DLLs after patches are applied
                         CleanupDllsAfterPatchApplication();
                     };
@@ -1178,6 +1186,96 @@ namespace YUCP.PatchCleanup
             {
                 WriteLog($"ERROR in CleanupImportedTempFiles: {ex.Message}\n{ex.StackTrace}");
                 Debug.LogWarning($"[YUCP PatchImporter] Error cleaning up temp files: {ex.Message}");
+            }
+        }
+        
+        private static void CleanupDerivedFbxImporterSettings()
+        {
+            try
+            {
+                if (createdDerivedFbxPaths == null || createdDerivedFbxPaths.Count == 0)
+                {
+                    WriteLog("No derived FBX files to clean up importer settings for");
+                    return;
+                }
+                
+                WriteLog($"Cleaning up ModelImporter settings for {createdDerivedFbxPaths.Count} derived FBX file(s)...");
+                
+                int cleanedCount = 0;
+                var pathsToClean = new List<string>(createdDerivedFbxPaths);
+                
+                foreach (var fbxPath in pathsToClean)
+                {
+                    try
+                    {
+                        // Only process FBX files
+                        if (!fbxPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+                        
+                        var importer = AssetImporter.GetAtPath(fbxPath) as ModelImporter;
+                        if (importer == null)
+                        {
+                            WriteLog($"  Skipping {fbxPath}: Not a ModelImporter");
+                            continue;
+                        }
+                        
+                        // Check if userData contains patching information
+                        if (string.IsNullOrEmpty(importer.userData))
+                        {
+                            WriteLog($"  Skipping {fbxPath}: No userData");
+                            continue;
+                        }
+                        
+                        try
+                        {
+                            // Try to parse as DerivedSettings
+                            var settings = JsonUtility.FromJson<DerivedSettings>(importer.userData);
+                            if (settings != null && settings.isDerived)
+                            {
+                                // Clear the patching information
+                                importer.userData = "";
+                                EditorUtility.SetDirty(importer);
+                                importer.SaveAndReimport();
+                                cleanedCount++;
+                                WriteLog($"  Cleaned patching settings from: {fbxPath}");
+                            }
+                        }
+                        catch
+                        {
+                            // If parsing fails, check if it contains patching-related strings
+                            string userDataLower = importer.userData.ToLowerInvariant();
+                            if (userDataLower.Contains("isderived") || userDataLower.Contains("derived") || userDataLower.Contains("patch"))
+                            {
+                                // Clear userData if it contains patching-related content
+                                importer.userData = "";
+                                EditorUtility.SetDirty(importer);
+                                importer.SaveAndReimport();
+                                cleanedCount++;
+                                WriteLog($"  Cleaned patching settings from: {fbxPath} (pattern match)");
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteLog($"  Warning: Failed to clean importer settings for {fbxPath}: {ex.Message}");
+                    }
+                }
+                
+                // Clear the tracked paths after cleaning
+                createdDerivedFbxPaths.Clear();
+                
+                if (cleanedCount > 0)
+                {
+                    AssetDatabase.Refresh();
+                    WriteLog($"Cleaned ModelImporter settings for {cleanedCount} derived FBX file(s)");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in CleanupDerivedFbxImporterSettings: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogWarning($"[YUCP PatchImporter] Error cleaning derived FBX importer settings: {ex.Message}");
             }
         }
         

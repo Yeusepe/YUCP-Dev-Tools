@@ -367,6 +367,40 @@
     scale: 1.005 1.005;
 }
 
+/* Parent folders - bold, prominent cards with uniform neutral colorway */
+.yucp-inspector-folder-header.yucp-folder-parent {
+    background-color: rgba(26, 26, 26, 0.8);
+    border-left-width: 5px;
+    border-left-color: rgba(107, 107, 107, 0.8);
+    padding: 16px 12px;
+    margin-top: 12px;
+    margin-bottom: 10px;
+    position: relative;
+}
+
+.yucp-inspector-folder-header.yucp-folder-parent:hover {
+    background-color: rgba(30, 30, 30, 0.9);
+    border-left-color: rgba(107, 107, 107, 1.0);
+    scale: 1.005 1.005;
+}
+
+/* Child folders - thin, nested, clearly subordinate with uniform colorway */
+.yucp-inspector-folder-header.yucp-folder-child {
+    background-color: rgba(26, 26, 26, 0.5);
+    border-left-width: 1px;
+    border-left-color: rgba(107, 107, 107, 0.4);
+    padding: 6px 8px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    opacity: 1.0;
+    position: relative;
+}
+
+.yucp-inspector-folder-header.yucp-folder-child:hover {
+    background-color: rgba(30, 30, 30, 0.7);
+    border-left-color: rgba(107, 107, 107, 0.6);
+}
+
 .yucp-inspector-folder-content {
     flex-direction: row;
     align-items: center;

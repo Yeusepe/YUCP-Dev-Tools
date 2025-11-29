@@ -366,7 +366,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         public string GetFolderPath()
         {
-            return isFolder ? assetPath : Path.GetDirectoryName(assetPath);
+            string path = isFolder ? assetPath : Path.GetDirectoryName(assetPath);
+            
+            // Ensure we return a relative path
+            if (string.IsNullOrEmpty(path))
+                return path;
+            
+            // If it's already relative (doesn't start with drive letter), return as-is
+            if (!Path.IsPathRooted(path))
+                return path.Replace('\\', '/');
+            
+            // Convert absolute path to relative
+            string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            if (path.StartsWith(projectPath))
+            {
+                string relative = path.Substring(projectPath.Length);
+                if (relative.StartsWith("\\") || relative.StartsWith("/"))
+                {
+                    relative = relative.Substring(1);
+                }
+                return relative.Replace('\\', '/');
+            }
+            
+            return path.Replace('\\', '/');
         }
     }
 }

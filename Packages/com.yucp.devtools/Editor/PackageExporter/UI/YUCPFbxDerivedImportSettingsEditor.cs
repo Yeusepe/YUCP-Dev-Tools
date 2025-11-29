@@ -20,10 +20,52 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			public string category;
 			public bool overrideOriginalReferences = false;
 		}
+		
+		private UnityEditor.Editor defaultEditor;
+
+		private void OnEnable()
+		{
+			// Create Unity's default ModelImporter inspector to preserve tabs
+			if (defaultEditor == null && target != null)
+			{
+				// Try to get Unity's ModelImporterEditor using reflection to preserve tabs
+				try
+				{
+					var modelImporterEditorType = System.Type.GetType("UnityEditor.ModelImporterEditor, UnityEditor");
+					if (modelImporterEditorType != null)
+					{
+						defaultEditor = UnityEditor.Editor.CreateEditor(target, modelImporterEditorType);
+					}
+				}
+				catch (System.Exception ex)
+				{
+					Debug.LogWarning($"[YUCP FBX Editor] Could not create default ModelImporter editor: {ex.Message}");
+				}
+			}
+		}
+
+		private void OnDisable()
+		{
+			if (defaultEditor != null)
+			{
+				DestroyImmediate(defaultEditor);
+				defaultEditor = null;
+			}
+		}
 
 		public override void OnInspectorGUI()
 		{
-			base.OnInspectorGUI();
+			// Draw Unity's default inspector with tabs first
+			if (defaultEditor != null)
+			{
+				defaultEditor.OnInspectorGUI();
+			}
+			else
+			{
+				// Fallback: Try DrawDefaultInspector which should show the default inspector
+				// Note: This may not preserve tabs in all Unity versions
+				DrawDefaultInspector();
+			}
 
 			var importer = target as ModelImporter;
 			if (importer == null) return;

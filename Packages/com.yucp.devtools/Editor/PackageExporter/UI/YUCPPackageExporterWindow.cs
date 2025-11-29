@@ -7,6 +7,7 @@ using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 using YUCP.DevTools.Components;
+using YUCP.DevTools.Editor.Utilities;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -1330,6 +1331,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
             title.AddToClassList("yucp-section-title");
             section.Add(title);
             
+            var folderListContainer = new VisualElement();
+            folderListContainer.AddToClassList("yucp-folder-list-container");
+            
             if (profile.foldersToExport.Count == 0)
             {
                 var warning = new VisualElement();
@@ -1337,7 +1341,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 var warningText = new Label("No folders added. Add folders to export.");
                 warningText.AddToClassList("yucp-validation-error-text");
                 warning.Add(warningText);
-                section.Add(warning);
+                folderListContainer.Add(warning);
             }
             else
             {
@@ -1350,7 +1354,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     var folderItem = new VisualElement();
                     folderItem.AddToClassList("yucp-folder-item");
                     
-                    var pathLabel = new Label(profile.foldersToExport[i]);
+                    var displayPath = GetDisplayPath(profile.foldersToExport[i]);
+                    var pathLabel = new Label(displayPath);
                     pathLabel.AddToClassList("yucp-folder-item-path");
                     folderItem.Add(pathLabel);
                     
@@ -1362,16 +1367,95 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     folderList.Add(folderItem);
                 }
                 
-                section.Add(folderList);
+                folderListContainer.Add(folderList);
             }
+            
+            section.Add(folderListContainer);
             
             var addButton = new Button(() => AddFolder(profile)) { text = "+ Add Folder" };
             addButton.AddToClassList("yucp-button");
             addButton.AddToClassList("yucp-button-action");
             addButton.style.marginTop = 8;
+            
+            // Add drag-and-drop handlers directly to the button
+            addButton.RegisterCallback<DragUpdatedEvent>(evt =>
+            {
+                if (IsDragValid(evt))
+                {
+                    DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+                    addButton.style.backgroundColor = new Color(0.3f, 0.6f, 0.9f, 0.5f);
+                    evt.StopPropagation();
+                }
+                else
+                {
+                    DragAndDrop.visualMode = DragAndDropVisualMode.Rejected;
+                }
+            });
+            
+            addButton.RegisterCallback<DragExitedEvent>(evt =>
+            {
+                addButton.style.backgroundColor = new StyleColor(StyleKeyword.Null);
+            });
+            
+            addButton.RegisterCallback<DragPerformEvent>(evt =>
+            {
+                if (IsDragValid())
+                {
+                    var draggedPaths = DragAndDrop.paths;
+                    bool addedAny = false;
+                    
+                    foreach (var path in draggedPaths)
+                    {
+                        if (AssetDatabase.IsValidFolder(path))
+                        {
+                            string relativePath = GetRelativePath(Path.GetFullPath(path));
+                            if (string.IsNullOrEmpty(relativePath))
+                            {
+                                relativePath = path;
+                            }
+                            
+                            // Only add if not already in list
+                            if (!profile.foldersToExport.Contains(relativePath))
+                            {
+                                Undo.RecordObject(profile, "Add Export Folder via Drag");
+                                profile.foldersToExport.Add(relativePath);
+                                addedAny = true;
+                            }
+                        }
+                    }
+                    
+                    if (addedAny)
+                    {
+                        EditorUtility.SetDirty(profile);
+                        AssetDatabase.SaveAssets();
+                        UpdateProfileDetails();
+                    }
+                    
+                    addButton.style.backgroundColor = new StyleColor(StyleKeyword.Null);
+                    evt.StopPropagation();
+                }
+            });
+            
             section.Add(addButton);
             
             return section;
+        }
+        
+        private bool IsDragValid(DragUpdatedEvent evt = null)
+        {
+            if (DragAndDrop.paths == null || DragAndDrop.paths.Length == 0)
+                return false;
+            
+            // Check if at least one valid folder is being dragged
+            foreach (var path in DragAndDrop.paths)
+            {
+                if (AssetDatabase.IsValidFolder(path))
+                {
+                    return true;
+                }
+            }
+            
+            return false;
         }
 
         private VisualElement CreateExclusionFiltersSection(ExportProfile profile)
@@ -1700,6 +1784,68 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					
 					section.Add(filterToggles);
                     
+                    // Tree view controls
+                    var treeControlsRow = new VisualElement();
+                    treeControlsRow.style.flexDirection = FlexDirection.Row;
+                    treeControlsRow.style.marginTop = 8;
+                    treeControlsRow.style.marginBottom = 8;
+                    
+                    // Expand/Collapse All buttons
+                    var expandAllButton = new Button(() =>
+                    {
+                        // Expand all folders
+                        var filteredAssets = profile.discoveredAssets.AsEnumerable();
+                        if (!string.IsNullOrWhiteSpace(inspectorSearchFilter))
+                        {
+                            filteredAssets = filteredAssets.Where(a => 
+                                a.assetPath.IndexOf(inspectorSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0);
+                        }
+                        var filteredList = filteredAssets.ToList();
+                        var rootNode = BuildFolderTree(filteredList.Where(a => !a.isFolder).ToList());
+                        
+                        // Recursively set all folders to expanded
+                        SetAllFoldersExpanded(rootNode, true);
+                        
+                        var assetListContainer = section.Q<VisualElement>("asset-list-container");
+                        if (assetListContainer != null)
+                        {
+                            assetListContainer.Clear();
+                            RebuildAssetList(profile, assetListContainer);
+                        }
+                    }) { text = "Expand All" };
+                    expandAllButton.AddToClassList("yucp-button");
+                    expandAllButton.AddToClassList("yucp-button-small");
+                    expandAllButton.style.marginRight = 4;
+                    treeControlsRow.Add(expandAllButton);
+                    
+                    var collapseAllButton = new Button(() =>
+                    {
+                        // Collapse all folders
+                        var filteredAssets = profile.discoveredAssets.AsEnumerable();
+                        if (!string.IsNullOrWhiteSpace(inspectorSearchFilter))
+                        {
+                            filteredAssets = filteredAssets.Where(a => 
+                                a.assetPath.IndexOf(inspectorSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0);
+                        }
+                        var filteredList = filteredAssets.ToList();
+                        var rootNode = BuildFolderTree(filteredList.Where(a => !a.isFolder).ToList());
+                        
+                        // Recursively set all folders to collapsed
+                        SetAllFoldersExpanded(rootNode, false);
+                        
+                        var assetListContainer = section.Q<VisualElement>("asset-list-container");
+                        if (assetListContainer != null)
+                        {
+                            assetListContainer.Clear();
+                            RebuildAssetList(profile, assetListContainer);
+                        }
+                    }) { text = "Collapse All" };
+                    collapseAllButton.AddToClassList("yucp-button");
+                    collapseAllButton.AddToClassList("yucp-button-small");
+                    treeControlsRow.Add(collapseAllButton);
+                    
+                    section.Add(treeControlsRow);
+                    
                     // Asset list header with actions
                     var listHeader = new VisualElement();
                     listHeader.AddToClassList("yucp-inspector-list-header");
@@ -1798,7 +1944,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             var ignoreItem = new VisualElement();
                             ignoreItem.AddToClassList("yucp-folder-item");
                             
-                            var ignorePathLabel = new Label(ignoreFolder);
+                            var displayPath = GetDisplayPath(ignoreFolder);
+                            var ignorePathLabel = new Label(displayPath);
                             ignorePathLabel.AddToClassList("yucp-folder-item-path");
                             ignoreItem.Add(ignorePathLabel);
                             
@@ -1877,6 +2024,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
             container.Add(assetListScroll);
         }
         
+        private void SetAllFoldersExpanded(FolderTreeNode node, bool expanded)
+        {
+            node.IsExpanded = expanded;
+            folderExpandedStates[node.FullPath] = expanded;
+            
+            foreach (var child in node.Children)
+            {
+                SetAllFoldersExpanded(child, expanded);
+            }
+        }
+        
         private FolderTreeNode BuildFolderTree(List<DiscoveredAsset> assets)
         {
             var root = new FolderTreeNode("Assets", "Assets");
@@ -1900,19 +2058,28 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 FolderTreeNode current = root;
                 string currentPath = "Assets";
+                int depth = 0; // Track depth for default expansion behavior
                 
                 foreach (string segment in segments)
                 {
+                    depth++;
                     currentPath = currentPath == "Assets" ? $"Assets/{segment}" : $"{currentPath}/{segment}";
                     
                     var child = current.Children.FirstOrDefault(c => c.Name == segment);
                     if (child == null)
                     {
                         child = new FolderTreeNode(segment, currentPath);
-                        // Default to expanded for better navigation, unless user has collapsed it
-                        child.IsExpanded = folderExpandedStates.ContainsKey(currentPath) 
-                            ? folderExpandedStates[currentPath] 
-                            : true; // Always expand by default for easier navigation
+                        // Progressive disclosure: only expand first 2 levels by default to reduce cognitive load
+                        // Depth 1-2: expanded, Depth 3+: collapsed
+                        if (folderExpandedStates.ContainsKey(currentPath))
+                        {
+                            child.IsExpanded = folderExpandedStates[currentPath];
+                        }
+                        else
+                        {
+                            // Default: expand first 2 levels, collapse deeper nesting
+                            child.IsExpanded = depth <= 2;
+                        }
                         current.Children.Add(child);
                     }
                     else
@@ -1921,6 +2088,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         if (folderExpandedStates.ContainsKey(currentPath))
                         {
                             child.IsExpanded = folderExpandedStates[currentPath];
+                        }
+                        else if (!folderExpandedStates.ContainsKey(currentPath))
+                        {
+                            // If no saved state, apply default expansion rule
+                            child.IsExpanded = depth <= 2;
                         }
                     }
                     
@@ -1963,17 +2135,26 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
             
-            // Render assets in this folder
+            // Render assets in this folder with visual grouping
             if (node.Assets.Count > 0 && (depth == 0 || node.IsExpanded))
             {
+                // Create a container for assets in this folder
+                var assetsContainer = new VisualElement();
+                // Assets are indented to show they belong to the folder
+                assetsContainer.style.marginLeft = depth > 0 ? (16 + (depth * 24) + 28) : 16;
+                assetsContainer.style.marginTop = depth > 0 ? 4 : 0;
+                assetsContainer.style.marginBottom = node.Children.Count > 0 ? 6 : 0;
+                
                 foreach (var asset in node.Assets)
                 {
                     var assetItem = CreateAssetItem(asset, profile, depth == 0 ? 0 : depth + 1);
-                    container.Add(assetItem);
+                    assetsContainer.Add(assetItem);
                 }
+                
+                container.Add(assetsContainer);
             }
             
-            // Render child folders
+            // Render child folders with visual grouping to show they belong to parent
             if (node.Children.Count > 0 && (depth == 0 || node.IsExpanded))
             {
                 foreach (var child in node.Children)
@@ -1987,38 +2168,170 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var folderHeader = new VisualElement();
             folderHeader.AddToClassList("yucp-inspector-folder-header");
-            folderHeader.style.paddingLeft = 12 + (depth * 24); // Increased indentation for better hierarchy
+            
+            // Progressive indentation: 16px base + 28px per level (increased for clearer hierarchy)
+            int baseIndent = 16;
+            int indentPerLevel = 28;
+            
+            // PARENT FOLDERS (depth 1-2): Major, prominent sections with bold styling
+            if (depth <= 2)
+            {
+                folderHeader.AddToClassList("yucp-folder-parent");
+                folderHeader.style.position = Position.Relative; // Needed for absolute positioned shadow
+                folderHeader.style.paddingLeft = baseIndent + (depth * indentPerLevel);
+                folderHeader.style.paddingTop = 16;
+                folderHeader.style.paddingBottom = 16;
+                folderHeader.style.paddingRight = 12;
+                folderHeader.style.marginTop = depth > 1 ? 12 : 8;
+                folderHeader.style.marginBottom = 10;
+                
+                // Strong border and background using uniform neutral colors
+                folderHeader.style.borderLeftWidth = 5;
+                folderHeader.style.borderLeftColor = new Color(0.42f, 0.42f, 0.42f, 0.8f); // Neutral gray border #6B6B6B
+                folderHeader.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.8f); // Dark background
+                folderHeader.style.borderTopLeftRadius = 6;
+                folderHeader.style.borderTopRightRadius = 6;
+                folderHeader.style.borderBottomLeftRadius = 6;
+                folderHeader.style.borderBottomRightRadius = 6;
+                
+                // Add custom box shadow for parent folders using reusable utility
+                var shadowConfig = YucpBoxShadowUtility.BoxShadowConfig.Default;
+                shadowConfig.borderRadius = 6f;
+                shadowConfig.color = new Color(0f, 0f, 0f, 0.3f); // Neutral dark shadow
+                YucpBoxShadowUtility.AddBoxShadow(folderHeader, shadowConfig);
+                
+                // Add hover effect with enhanced shadow
+                var hoverConfig = shadowConfig;
+                hoverConfig.offsetY = 2f;
+                hoverConfig.blurRadius = 6f;
+                hoverConfig.color = new Color(0f, 0f, 0f, 0.4f);
+                YucpBoxShadowUtility.AddHoverShadowEffect(folderHeader, shadowConfig, hoverConfig);
+            }
+            // CHILD FOLDERS (depth 3+): Nested, subdued, clearly subordinate
+            else
+            {
+                folderHeader.AddToClassList("yucp-folder-child");
+                folderHeader.style.paddingLeft = baseIndent + (depth * indentPerLevel) + 12; // Extra indent
+                folderHeader.style.paddingTop = 6;
+                folderHeader.style.paddingBottom = 6;
+                folderHeader.style.paddingRight = 8;
+                folderHeader.style.marginTop = 2;
+                folderHeader.style.marginBottom = 2;
+                folderHeader.style.marginLeft = 8; // Slight left margin to show nesting
+                
+                // Thin, subtle border - uniform colorway, not greyed out
+                folderHeader.style.borderLeftWidth = 1;
+                folderHeader.style.borderLeftColor = new Color(0.42f, 0.42f, 0.42f, 0.4f); // Same neutral gray as parent, lighter
+                folderHeader.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.5f); // Same dark background, more transparent
+                folderHeader.style.opacity = 1.0f; // Full opacity - not greyed out
+                folderHeader.style.borderTopLeftRadius = 3;
+                folderHeader.style.borderTopRightRadius = 3;
+                folderHeader.style.borderBottomLeftRadius = 3;
+                folderHeader.style.borderBottomRightRadius = 3;
+                
+                // Add visual connector line to show nesting under parent
+                var connectorLine = new VisualElement();
+                connectorLine.style.position = Position.Absolute;
+                connectorLine.style.left = baseIndent + ((depth - 1) * indentPerLevel) + 10;
+                connectorLine.style.top = -2;
+                connectorLine.style.width = 1;
+                connectorLine.style.height = 100;
+                connectorLine.style.backgroundColor = new Color(0.4f, 0.4f, 0.4f, 0.15f);
+                folderHeader.Add(connectorLine);
+                
+                // Horizontal connector line from parent to child
+                var horizontalLine = new VisualElement();
+                horizontalLine.style.position = Position.Absolute;
+                horizontalLine.style.left = baseIndent + ((depth - 1) * indentPerLevel) + 10;
+                horizontalLine.style.width = 14;
+                horizontalLine.style.height = 1;
+                horizontalLine.style.top = 10;
+                horizontalLine.style.backgroundColor = new Color(0.4f, 0.4f, 0.4f, 0.15f);
+                folderHeader.Add(horizontalLine);
+            }
             
             var folderHeaderContent = new VisualElement();
             folderHeaderContent.AddToClassList("yucp-inspector-folder-content");
             
-            // Expand/collapse button
+            // Expand/collapse button with size variation based on depth
             var expandButton = new Button(() =>
             {
                 node.IsExpanded = !node.IsExpanded;
                 folderExpandedStates[node.FullPath] = node.IsExpanded;
                 
-                // Rebuild just the asset list, not the entire UI
-                // The folderHeader is inside a ScrollView, which is inside the asset-list-container
-                // Go up to find the container
-                VisualElement scrollView = folderHeader.parent;
+                // Rebuild just the asset list, preserving scroll position
+                ScrollView scrollView = folderHeader.parent as ScrollView;
                 if (scrollView != null)
                 {
                     VisualElement container = scrollView.parent;
                     if (container != null && container.name == "asset-list-container")
                     {
+                        // Save current scroll position
+                        float savedScrollY = scrollView.scrollOffset.y;
+                        
                         container.Clear();
                         RebuildAssetList(profile, container);
+                        
+                        // Restore scroll position after layout completes (wait 2 frames for layout)
+                        container.schedule.Execute(() =>
+                        {
+                            ScrollView newScroll = container.Q<ScrollView>();
+                            if (newScroll != null && savedScrollY >= 0)
+                            {
+                                newScroll.scrollOffset = new Vector2(newScroll.scrollOffset.x, savedScrollY);
+                            }
+                        }).ExecuteLater(2);
                     }
                 }
             });
             expandButton.AddToClassList("yucp-folder-expand-button");
             expandButton.text = node.IsExpanded ? "▼" : "▶";
-            folderHeaderContent.Add(expandButton);
             
-            // Folder name label - make it clickable to navigate to folder
-            var folderLabel = new Label(node.Name);
+            // Button size varies by depth for better visual hierarchy
+            if (depth <= 2)
+            {
+                expandButton.style.fontSize = 12;
+                expandButton.style.width = 20;
+                expandButton.style.height = 20;
+            }
+            else
+            {
+                expandButton.style.fontSize = 10;
+                expandButton.style.width = 16;
+                expandButton.style.height = 16;
+            }
+            folderHeaderContent.Add(expandButton);
+                                   
+            // Folder name with clear typography hierarchy
+            string folderDisplayName = node.Name;
+            var folderLabel = new Label(folderDisplayName);
             folderLabel.AddToClassList("yucp-inspector-folder-label");
+            
+            // Much clearer font size and style differences
+            if (depth <= 2)
+            {
+                folderLabel.style.fontSize = 14;
+                folderLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                folderLabel.style.color = new Color(1f, 1f, 1f, 1f); // Full white
+                folderLabel.style.marginLeft = 8;
+            }
+            else
+            {
+                folderLabel.style.fontSize = 10;
+                folderLabel.style.unityFontStyleAndWeight = FontStyle.Normal;
+                folderLabel.style.color = new Color(1f, 1f, 1f, 1f); // Full white - not greyed out
+                folderLabel.style.marginLeft = 6;
+                
+                // Show parent folder context for deeply nested folders
+                var parentPath = GetDisplayPath(node.FullPath);
+                var pathParts = parentPath.Split('/');
+                if (pathParts.Length > 2)
+                {
+                    folderDisplayName = $"{pathParts[pathParts.Length - 2]} > {node.Name}";
+                    folderLabel.text = folderDisplayName;
+                }
+            }
+            
             folderLabel.RegisterCallback<MouseDownEvent>(evt =>
             {
                 if (evt.button == 0) // Left click
@@ -2028,12 +2341,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
             });
             folderHeaderContent.Add(folderLabel);
             
-            // Asset count badge
+            // Asset count badge with size variation
             int totalAssets = CountTotalAssets(node);
             if (totalAssets > 0)
             {
                 var countBadge = new Label($"({totalAssets})");
                 countBadge.AddToClassList("yucp-folder-count-badge");
+                if (depth <= 2)
+                {
+                    countBadge.style.fontSize = 11;
+                }
+                else
+                {
+                    countBadge.style.fontSize = 9;
+                    countBadge.style.opacity = 0.7f;
+                }
                 folderHeaderContent.Add(countBadge);
             }
             
@@ -2200,7 +2522,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var assetItem = new VisualElement();
             assetItem.AddToClassList("yucp-asset-item");
-            assetItem.style.paddingLeft = 12 + (depth * 24); // Increased indentation to match folders
+            
+            // Assets use the existing yucp-asset-item class styling
+            // No need for custom inline styles - let CSS handle it
             
             // Checkbox
             var checkbox = new Toggle { value = asset.included };
@@ -3150,6 +3474,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             return absolutePath;
         }
+        
+        private string GetDisplayPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return path;
+            
+            // If already a relative path (doesn't start with drive letter or root), return as-is
+            if (!Path.IsPathRooted(path))
+                return path.Replace('\\', '/');
+            
+            // Convert absolute path to relative
+            string relativePath = GetRelativePath(path);
+            
+            // Normalize slashes
+            return relativePath.Replace('\\', '/');
+        }
 
         private void AddDependency(ExportProfile profile)
         {
@@ -3330,7 +3670,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             
             string foldersList = profile.foldersToExport.Count > 0 
-                ? string.Join("\n", profile.foldersToExport.Take(5)) + (profile.foldersToExport.Count > 5 ? $"\n... and {profile.foldersToExport.Count - 5} more" : "")
+                ? string.Join("\n", profile.foldersToExport.Take(5).Select(f => GetDisplayPath(f))) + (profile.foldersToExport.Count > 5 ? $"\n... and {profile.foldersToExport.Count - 5} more" : "")
                 : "None configured";
             
             int bundledDeps = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Bundle);

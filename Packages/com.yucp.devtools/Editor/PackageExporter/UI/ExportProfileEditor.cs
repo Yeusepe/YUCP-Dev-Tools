@@ -666,6 +666,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return absolutePath;
         }
         
+        private string GetDisplayPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return path;
+            
+            // If already a relative path (doesn't start with drive letter or root), return as-is
+            if (!Path.IsPathRooted(path))
+                return path.Replace('\\', '/');
+            
+            // Convert absolute path to relative
+            string relativePath = GetRelativePath(path);
+            
+            // Normalize slashes
+            return relativePath.Replace('\\', '/');
+        }
+        
         private void ExportSingleProfile(ExportProfile profile)
         {
             bool shouldExport = EditorUtility.DisplayDialog(
@@ -948,7 +964,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 for (int i = profile.permanentIgnoreFolders.Count - 1; i >= 0; i--)
                 {
                     EditorGUILayout.BeginHorizontal();
-                    EditorGUILayout.LabelField(profile.permanentIgnoreFolders[i]);
+                    string displayPath = GetDisplayPath(profile.permanentIgnoreFolders[i]);
+                    EditorGUILayout.LabelField(displayPath);
                     
                     if (GUILayout.Button("Remove", GUILayout.Width(60)))
                     {
