@@ -240,12 +240,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 		/// <summary>
 		/// Ensures the HDiffPatch DLLs are loaded before use.
-		/// Copies DLLs to Library/YUCP/ on first use.
+		/// Copies DLLs to Library/YUCP/ on first use, creating unique copies if needed to avoid file locks.
 		/// This is necessary because P/Invoke doesn't automatically search Unity's Packages folder.
 		/// </summary>
 		private static void EnsureDllsLoaded()
 		{
-			if (s_dllsLoaded) return;
+			// If DLLs are already loaded, skip
+			if (s_dllsLoaded && s_hdiffzHandle != IntPtr.Zero && s_hpatchzHandle != IntPtr.Zero)
+				return;
 
 #if UNITY_EDITOR_WIN
 			try
@@ -283,7 +285,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				// Set DLL directory FIRST before copying/loading
 				SetDllDirectory(dllDir);
 				
-				// Find and copy hdiffz.dll from source to Library/YUCP/
+				// Find source hdiffz.dll
 				string sourceHdiffz = null;
 				foreach (var source in hdiffzSources)
 				{
@@ -294,40 +296,74 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					}
 				}
 				
+				// Copy hdiffz.dll only if destination doesn't exist or source is newer
+				// If copy fails due to file lock, use existing copy if available
 				if (sourceHdiffz != null)
 				{
-					try
+					bool needsCopy = !File.Exists(hdiffzDest);
+					if (!needsCopy && File.Exists(sourceHdiffz))
 					{
-						File.Copy(sourceHdiffz, hdiffzDest, overwrite: true);
-						Debug.Log($"[HDiffPatchWrapper] Copied hdiffz.dll from {sourceHdiffz} to {hdiffzDest}");
-						
-						// If source is in temp Plugins, try to delete it immediately
-						// (This is best-effort - if it's locked, we'll clean it up later)
-						if (sourceHdiffz.Contains("com.yucp.temp"))
+						try
 						{
-							try
+							var sourceTime = File.GetLastWriteTime(sourceHdiffz);
+							var destTime = File.GetLastWriteTime(hdiffzDest);
+							needsCopy = sourceTime > destTime;
+						}
+						catch
+						{
+							needsCopy = false;
+						}
+					}
+					
+					if (needsCopy)
+					{
+						try
+						{
+							File.Copy(sourceHdiffz, hdiffzDest, overwrite: true);
+							Debug.Log($"[HDiffPatchWrapper] Copied hdiffz.dll from {sourceHdiffz} to {hdiffzDest}");
+							
+							// If source is in temp Plugins, try to delete it immediately
+							if (sourceHdiffz.Contains("com.yucp.temp"))
 							{
-								File.SetAttributes(sourceHdiffz, FileAttributes.Normal);
-								File.Delete(sourceHdiffz);
-								Debug.Log($"[HDiffPatchWrapper] Deleted source hdiffz.dll from Plugins to prevent DllImport from using it");
+								try
+								{
+									File.SetAttributes(sourceHdiffz, FileAttributes.Normal);
+									File.Delete(sourceHdiffz);
+									Debug.Log($"[HDiffPatchWrapper] Deleted source hdiffz.dll from Plugins to prevent DllImport from using it");
+								}
+								catch
+								{
+									// Ignore - will be cleaned up later
+								}
 							}
-							catch
+						}
+						catch (Exception ex)
+						{
+							// If copy fails due to file lock, check if existing copy is usable
+							if (File.Exists(hdiffzDest))
 							{
-								// Ignore - will be cleaned up later
+								Debug.Log($"[HDiffPatchWrapper] Could not copy hdiffz.dll (file locked), using existing copy: {hdiffzDest}");
+							}
+							else
+							{
+								Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hdiffz.dll: {ex.Message}");
 							}
 						}
 					}
-					catch (Exception ex)
+					else if (File.Exists(hdiffzDest))
 					{
-						Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hdiffz.dll: {ex.Message}");
+						Debug.Log($"[HDiffPatchWrapper] Using existing hdiffz.dll copy: {hdiffzDest}");
 					}
 				}
 				else
 				{
-					Debug.LogError($"[HDiffPatchWrapper] hdiffz.dll not found in any source location");
+					if (!File.Exists(hdiffzDest))
+					{
+						Debug.LogError($"[HDiffPatchWrapper] hdiffz.dll not found in any source location");
+					}
 				}
 				
-				// Find and copy hpatchz.dll from source to Library/YUCP/
+				// Find source hpatchz.dll
 				string sourceHpatchz = null;
 				foreach (var source in hpatchzSources)
 				{
@@ -338,41 +374,76 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					}
 				}
 				
+				// Copy hpatchz.dll only if destination doesn't exist or source is newer
+				// If copy fails due to file lock, use existing copy if available
 				if (sourceHpatchz != null)
 				{
-					try
+					bool needsCopy = !File.Exists(hpatchzDest);
+					if (!needsCopy && File.Exists(sourceHpatchz))
 					{
-						File.Copy(sourceHpatchz, hpatchzDest, overwrite: true);
-						Debug.Log($"[HDiffPatchWrapper] Copied hpatchz.dll from {sourceHpatchz} to {hpatchzDest}");
-						
-						// If source is in temp Plugins, try to delete it immediately
-						// (This is best-effort - if it's locked, we'll clean it up later)
-						if (sourceHpatchz.Contains("com.yucp.temp"))
+						try
 						{
-							try
+							var sourceTime = File.GetLastWriteTime(sourceHpatchz);
+							var destTime = File.GetLastWriteTime(hpatchzDest);
+							needsCopy = sourceTime > destTime;
+						}
+						catch
+						{
+							needsCopy = false;
+						}
+					}
+					
+					if (needsCopy)
+					{
+						try
+						{
+							File.Copy(sourceHpatchz, hpatchzDest, overwrite: true);
+							Debug.Log($"[HDiffPatchWrapper] Copied hpatchz.dll from {sourceHpatchz} to {hpatchzDest}");
+							
+							// If source is in temp Plugins, try to delete it immediately
+							if (sourceHpatchz.Contains("com.yucp.temp"))
 							{
-								File.SetAttributes(sourceHpatchz, FileAttributes.Normal);
-								File.Delete(sourceHpatchz);
-								Debug.Log($"[HDiffPatchWrapper] Deleted source hpatchz.dll from Plugins to prevent DllImport from using it");
+								try
+								{
+									File.SetAttributes(sourceHpatchz, FileAttributes.Normal);
+									File.Delete(sourceHpatchz);
+									Debug.Log($"[HDiffPatchWrapper] Deleted source hpatchz.dll from Plugins to prevent DllImport from using it");
+								}
+								catch
+								{
+									// Ignore - will be cleaned up later
+								}
 							}
-							catch
+						}
+						catch (Exception ex)
+						{
+							// If copy fails due to file lock, check if existing copy is usable
+							if (File.Exists(hpatchzDest))
 							{
-								// Ignore - will be cleaned up later
+								Debug.Log($"[HDiffPatchWrapper] Could not copy hpatchz.dll (file locked), using existing copy: {hpatchzDest}");
+							}
+							else
+							{
+								Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hpatchz.dll: {ex.Message}");
 							}
 						}
 					}
-					catch (Exception ex)
+					else if (File.Exists(hpatchzDest))
 					{
-						Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hpatchz.dll: {ex.Message}");
+						Debug.Log($"[HDiffPatchWrapper] Using existing hpatchz.dll copy: {hpatchzDest}");
 					}
 				}
 				else
 				{
-					Debug.LogError($"[HDiffPatchWrapper] hpatchz.dll not found in any source location");
+					if (!File.Exists(hpatchzDest))
+					{
+						Debug.LogError($"[HDiffPatchWrapper] hpatchz.dll not found in any source location");
+					}
 				}
 				
 				// Explicitly load DLLs from Library/YUCP/ using full paths
-				if (File.Exists(hdiffzDest))
+				// Only load if not already loaded
+				if (s_hdiffzHandle == IntPtr.Zero && File.Exists(hdiffzDest))
 				{
 					// Use full absolute path
 					string fullHdiffzPath = Path.GetFullPath(hdiffzDest);
@@ -387,12 +458,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						Debug.Log($"[HDiffPatchWrapper] Successfully loaded hdiffz.dll from {fullHdiffzPath}");
 					}
 				}
-				else
+				else if (!File.Exists(hdiffzDest))
 				{
 					Debug.LogError($"[HDiffPatchWrapper] hdiffz.dll not found at: {hdiffzDest}");
 				}
 
-				if (File.Exists(hpatchzDest))
+				if (s_hpatchzHandle == IntPtr.Zero && File.Exists(hpatchzDest))
 				{
 					// Use full absolute path
 					string fullHpatchzPath = Path.GetFullPath(hpatchzDest);
@@ -407,7 +478,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						Debug.Log($"[HDiffPatchWrapper] Successfully loaded hpatchz.dll from {fullHpatchzPath}");
 					}
 				}
-				else
+				else if (!File.Exists(hpatchzDest))
 				{
 					Debug.LogError($"[HDiffPatchWrapper] hpatchz.dll not found at: {hpatchzDest}");
 				}

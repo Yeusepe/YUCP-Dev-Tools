@@ -370,6 +370,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			string hdiffRelativePath = Path.Combine(hdiffDir, hdiffFileName).Replace(Path.DirectorySeparatorChar, '/');
 			asset.hdiffFilePath = hdiffRelativePath;
 			
+			// Extract and embed the meta file content from the original derived FBX
+			// This preserves humanoid Avatar mappings and other ModelImporter settings
+			ExtractAndEmbedMetaFile(modifiedFbxPath, asset);
+			
 			// Compute optional base FBX hash for verification
 			try
 			{
@@ -390,6 +394,54 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			Debug.Log($"[PatchBuilder] Successfully created .hdiff file: {hdiffRelativePath}");
 			
 			return asset;
+		}
+		
+		/// <summary>
+		/// Extracts and embeds the meta file content from the original derived FBX.
+		/// This preserves humanoid Avatar mappings and ModelImporter settings.
+		/// The GUID will be replaced when recreating the meta file.
+		/// </summary>
+		private static void ExtractAndEmbedMetaFile(string modifiedFbxPath, DerivedFbxAsset asset)
+		{
+			if (string.IsNullOrEmpty(modifiedFbxPath))
+			{
+				Debug.LogWarning("[PatchBuilder] Cannot extract meta file: modifiedFbxPath is null or empty");
+				return;
+			}
+			
+			try
+			{
+				string projectPath = Directory.GetCurrentDirectory();
+				string metaPath = Path.Combine(projectPath, modifiedFbxPath) + ".meta";
+				metaPath = Path.GetFullPath(metaPath);
+				
+				if (!File.Exists(metaPath))
+				{
+					Debug.LogWarning($"[PatchBuilder] Meta file not found for original derived FBX: {metaPath}. " +
+						$"Humanoid Avatar mappings will need to be reconfigured after import.");
+					return;
+				}
+				
+				// Read the entire meta file content
+				string metaContent = File.ReadAllText(metaPath);
+				
+				// Remove the GUID line - it will be replaced with the target GUID when recreating
+				// This prevents conflicts and ensures the correct GUID is used
+				metaContent = System.Text.RegularExpressions.Regex.Replace(
+					metaContent,
+					@"guid:\s*[a-f0-9]{32}",
+					"guid: PLACEHOLDER_GUID",
+					System.Text.RegularExpressions.RegexOptions.IgnoreCase
+				);
+				
+				asset.embeddedMetaFileContent = metaContent;
+				Debug.Log($"[PatchBuilder] Extracted and embedded meta file content from '{modifiedFbxPath}' (preserves humanoid Avatar mappings)");
+			}
+			catch (Exception ex)
+			{
+				Debug.LogWarning($"[PatchBuilder] Failed to extract meta file from '{modifiedFbxPath}': {ex.Message}. " +
+					$"Humanoid Avatar mappings will need to be reconfigured after import.");
+			}
 		}
 		
 		private static PatchPackage.SeedMaps ConvertSeedMaps(DerivedFbxAsset.SeedMaps seeds)

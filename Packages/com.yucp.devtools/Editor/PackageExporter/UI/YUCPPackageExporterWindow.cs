@@ -1114,6 +1114,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 var inspectorSection = CreateExportInspectorSection(selectedProfile);
                 _profileDetailsContainer.Add(inspectorSection);
                 
+                // Auto-scan assets when profile is opened (if not scanned yet and has folders)
+                if (selectedProfile != null && selectedProfile.foldersToExport.Count > 0)
+                {
+                    if (!selectedProfile.HasScannedAssets)
+                    {
+                        EditorApplication.delayCall += () =>
+                        {
+                            if (selectedProfile != null)
+                            {
+                                ScanAssetsForInspector(selectedProfile, silent: true);
+                            }
+                        };
+                    }
+                }
+                
                 // Exclusion Filters Section
                 var exclusionSection = CreateExclusionFiltersSection(selectedProfile);
                 _profileDetailsContainer.Add(exclusionSection);
@@ -1900,12 +1915,61 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             var title = new Label($"Export Inspector ({profile.discoveredAssets.Count} assets)");
             title.AddToClassList("yucp-section-title");
+            title.style.flexGrow = 1;
             header.Add(title);
+            
+            var rescanButton = new Button(() => 
+            {
+                Undo.RecordObject(profile, "Rescan Assets");
+                ScanAssetsForInspector(profile, silent: true);
+            });
+            rescanButton.tooltip = "Rescan Assets";
+            rescanButton.AddToClassList("yucp-button");
+            rescanButton.AddToClassList("yucp-button-small");
+            
+            var refreshIcon = EditorGUIUtility.IconContent("Refresh");
+            if (refreshIcon != null && refreshIcon.image != null)
+            {
+                rescanButton.text = "";
+                var iconImage = new Image();
+                iconImage.image = refreshIcon.image as Texture2D;
+                iconImage.style.width = 16;
+                iconImage.style.height = 16;
+                iconImage.style.alignSelf = Align.Center;
+                iconImage.style.marginLeft = Length.Auto();
+                iconImage.style.marginRight = Length.Auto();
+                iconImage.style.marginTop = Length.Auto();
+                iconImage.style.marginBottom = Length.Auto();
+                rescanButton.Add(iconImage);
+            }
+            else
+            {
+                rescanButton.text = "⟳";
+            }
+            
+            rescanButton.style.justifyContent = Justify.Center;
+            rescanButton.style.alignItems = Align.Center;
+            rescanButton.style.marginRight = 4;
+            rescanButton.SetEnabled(profile.foldersToExport.Count > 0);
+            header.Add(rescanButton);
             
             var toggleButton = new Button(() => 
             {
+                bool wasOpen = showExportInspector;
                 showExportInspector = !showExportInspector;
                 UpdateProfileDetails();
+                
+                // Scan when section is opened
+                if (showExportInspector && !wasOpen && profile != null && profile.foldersToExport.Count > 0)
+                {
+                    EditorApplication.delayCall += () =>
+                    {
+                        if (profile != null)
+                        {
+                            ScanAssetsForInspector(profile, silent: true);
+                        }
+                    };
+                }
             }) 
             { text = showExportInspector ? "▼" : "▶" };
             toggleButton.AddToClassList("yucp-button");
@@ -1913,6 +1977,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
             header.Add(toggleButton);
             
             section.Add(header);
+            
+            // Auto-scan when section is visible and needs scanning
+            if (showExportInspector && profile != null && profile.foldersToExport.Count > 0)
+            {
+                if (!profile.HasScannedAssets)
+                {
+                    // Scan immediately if not scanned yet
+                    EditorApplication.delayCall += () =>
+                    {
+                        if (profile != null)
+                        {
+                            ScanAssetsForInspector(profile, silent: true);
+                        }
+                    };
+                }
+            }
             
             if (showExportInspector)
             {
@@ -1931,41 +2011,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 actionButtons.style.marginTop = 8;
                 actionButtons.style.marginBottom = 8;
                 
-                var scanButton = new Button(() => ScanAssetsForInspector(profile)) { text = "Scan Assets" };
-                scanButton.AddToClassList("yucp-button");
-                scanButton.AddToClassList("yucp-button-action");
-                scanButton.style.flexGrow = 1;
-                scanButton.style.marginRight = 4;
-                scanButton.SetEnabled(profile.foldersToExport.Count > 0);
-                actionButtons.Add(scanButton);
-                
-                var rescanButton = new Button(() => ScanProfileDependencies(profile)) { text = "Rescan" };
-                rescanButton.AddToClassList("yucp-button");
-                rescanButton.AddToClassList("yucp-button-action");
-                rescanButton.style.flexGrow = 1;
-                rescanButton.style.marginLeft = 4;
-                rescanButton.style.marginRight = 4;
-                actionButtons.Add(rescanButton);
-                
-                var clearButton = new Button(() => ClearAssetScan(profile)) { text = "Clear Scan" };
-                clearButton.AddToClassList("yucp-button");
-                clearButton.AddToClassList("yucp-button-action");
-                clearButton.style.flexGrow = 1;
-                clearButton.style.marginLeft = 4;
-                clearButton.SetEnabled(profile.discoveredAssets.Count > 0);
-                actionButtons.Add(clearButton);
-                
-                section.Add(actionButtons);
-                
-                // Show scan required message
+                // Show scan in progress message
                 if (!profile.HasScannedAssets)
                 {
-                    var warning = new VisualElement();
-                    warning.AddToClassList("yucp-validation-error");
-                    var warningText = new Label("Click 'Scan Assets' to discover all assets from your export folders.");
-                    warningText.AddToClassList("yucp-validation-error-text");
-                    warning.Add(warningText);
-                    section.Add(warning);
+                    var infoBox = new VisualElement();
+                    infoBox.AddToClassList("yucp-help-box");
+                    var infoText = new Label("Scanning assets... This will complete automatically.");
+                    infoText.AddToClassList("yucp-help-box-text");
+                    infoBox.Add(infoText);
+                    section.Add(infoBox);
                 }
                 else
                 {
@@ -4009,7 +4063,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
 
         // Scanning operations (simplified implementations)
-        private void ScanAssetsForInspector(ExportProfile profile)
+        private void ScanAssetsForInspector(ExportProfile profile, bool silent = false)
         {
             EditorUtility.DisplayProgressBar("Scanning Assets", "Discovering assets from export folders...", 0f);
             
@@ -4019,18 +4073,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 profile.MarkScanned();
                 EditorUtility.SetDirty(profile);
                 
-                EditorUtility.DisplayDialog(
-                    "Scan Complete",
-                    $"Discovered {profile.discoveredAssets.Count} assets.\n\n" +
-                    AssetCollector.GetAssetSummary(profile.discoveredAssets),
-                    "OK");
+                if (!silent)
+                {
+                    EditorUtility.DisplayDialog(
+                        "Scan Complete",
+                        $"Discovered {profile.discoveredAssets.Count} assets.\n\n" +
+                        AssetCollector.GetAssetSummary(profile.discoveredAssets),
+                        "OK");
+                }
                 
                 UpdateProfileDetails();
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[Package Exporter] Asset scan failed: {ex.Message}");
-                EditorUtility.DisplayDialog("Scan Failed", $"Failed to scan assets:\n{ex.Message}", "OK");
+                if (!silent)
+                {
+                    EditorUtility.DisplayDialog("Scan Failed", $"Failed to scan assets:\n{ex.Message}", "OK");
+                }
             }
             finally
             {

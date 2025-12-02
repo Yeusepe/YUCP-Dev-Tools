@@ -307,6 +307,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Debug.LogWarning($"[PackageBuilder] Safety check removed {safetyRemoved} derived FBX(s) that were still in the export list");
                 }
                 
+                // Aggressive final filter: Remove ANY assets in ignored folders (catches everything that slipped through)
+                progressCallback?.Invoke(0.64f, "Performing final ignore list check...");
+                int ignoredRemoved = finalValidAssets.RemoveAll(assetPath =>
+                {
+                    if (ShouldExcludeAsset(assetPath, profile))
+                    {
+                        Debug.LogWarning($"[PackageBuilder] Final filter: Removing asset in ignored folder: {assetPath}");
+                        return true;
+                    }
+                    return false;
+                });
+                
+                if (ignoredRemoved > 0)
+                {
+                    Debug.LogWarning($"[PackageBuilder] Final filter removed {ignoredRemoved} asset(s) that were in ignored folders");
+                }
+                
                 // Only specific DerivedFbxAsset files are added
                 // are added via patchAssetsToAdd in ConvertDerivedFbxToPatchAssets
                 
@@ -1332,6 +1349,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         /// <summary>
         /// Manually collect and filter dependencies for assets, respecting ignore lists
+        /// Recursively collects dependencies up to a maximum depth to catch nested dependencies
         /// </summary>
         private static void CollectFilteredDependencies(List<string> assetsToExport, ExportProfile profile, Action<float, string> progressCallback)
         {
@@ -1342,34 +1360,44 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             var processedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var allDependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var toProcess = new Queue<string>();
+            const int maxDepth = 5; // Prevent infinite loops while still catching nested deps
             
-            // Mark original assets as processed
+            // Mark original assets as processed and add to queue for dependency collection
             foreach (var asset in assetsToExport)
             {
                 string unityPath = GetRelativePackagePath(asset);
-                processedPaths.Add(unityPath);
+                if (!string.IsNullOrEmpty(unityPath))
+                {
+                    processedPaths.Add(unityPath);
+                    toProcess.Enqueue(unityPath);
+                }
             }
             
-            // Collect dependencies for each asset
-            int assetCount = assetsToExport.Count;
-            for (int i = 0; i < assetCount; i++)
+            // Recursively collect dependencies with depth limiting
+            int depth = 0;
+            int itemsAtCurrentDepth = toProcess.Count;
+            
+            while (toProcess.Count > 0 && depth < maxDepth)
             {
-                string assetPath = assetsToExport[i];
+                if (itemsAtCurrentDepth == 0)
+                {
+                    depth++;
+                    itemsAtCurrentDepth = toProcess.Count;
+                }
+                
+                string assetPath = toProcess.Dequeue();
+                itemsAtCurrentDepth--;
                 
                 try
                 {
-                    string unityPath = GetRelativePackagePath(assetPath);
-                    
-                    if (string.IsNullOrEmpty(unityPath))
-                        continue;
-                    
-                    // Get dependencies (non-recursive to avoid deep chains)
-                    string[] dependencies = AssetDatabase.GetDependencies(unityPath, recursive: false);
+                    // Get dependencies (non-recursive - we handle recursion manually)
+                    string[] dependencies = AssetDatabase.GetDependencies(assetPath, recursive: false);
                     
                     foreach (string dep in dependencies)
                     {
                         // Skip self-reference
-                        if (dep == unityPath)
+                        if (dep == assetPath)
                             continue;
                         
                         // Skip if already processed
@@ -1378,14 +1406,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         
                         processedPaths.Add(dep);
                         
-                        // Check if dependency should be excluded
+                        // Check if dependency should be excluded BEFORE adding to queue
                         if (ShouldExcludeAsset(dep, profile))
                         {
                             Debug.Log($"[PackageBuilder] Excluding dependency (in ignore list): {dep}");
                             continue;
                         }
                         
+                        // Add to dependencies and queue for further dependency collection
                         allDependencies.Add(dep);
+                        if (depth < maxDepth - 1) // Don't queue if we're at max depth
+                        {
+                            toProcess.Enqueue(dep);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -1397,7 +1430,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Add filtered dependencies to export list
             if (allDependencies.Count > 0)
             {
-                Debug.Log($"[PackageBuilder] Adding {allDependencies.Count} filtered dependencies to export");
+                Debug.Log($"[PackageBuilder] Adding {allDependencies.Count} filtered dependencies to export (checked {depth} levels deep)");
                 assetsToExport.AddRange(allDependencies);
             }
         }

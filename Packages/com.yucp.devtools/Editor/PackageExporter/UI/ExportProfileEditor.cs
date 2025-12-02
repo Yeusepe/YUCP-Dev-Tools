@@ -33,11 +33,34 @@ namespace YUCP.DevTools.Editor.PackageExporter
     private string inspectorSearchFilter = "";
     private bool showOnlyIncluded = false;
     private bool showOnlyExcluded = false;
+    
+    private string lastFoldersHash = "";
+    private bool wasExportInspectorOpen = false;
+        
+        private void OnEnable()
+        {
+            lastFoldersHash = "";
+            
+            var profile = (ExportProfile)target;
+            if (profile != null && profile.foldersToExport != null && profile.foldersToExport.Count > 0)
+            {
+                // Always scan when profile is opened
+                EditorApplication.delayCall += () =>
+                {
+                    if (profile != null)
+                    {
+                        ScanAssetsForInspector(profile, silent: true);
+                    }
+                };
+            }
+        }
         
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
             var profile = (ExportProfile)target;
+            
+            AutoScanIfNeeded(profile);
             
             EditorGUILayout.Space(5);
             
@@ -133,8 +156,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             // Export Inspector
             EditorGUILayout.Space(5);
-            showExportInspector = EditorGUILayout.BeginFoldoutHeaderGroup(showExportInspector, 
-                $"Export Inspector ({profile.discoveredAssets.Count} assets)");
+            DrawExportInspectorHeader(profile);
             if (showExportInspector)
             {
                 DrawSection(() =>
@@ -142,7 +164,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     DrawExportInspector(profile);
                 });
             }
-            EditorGUILayout.EndFoldoutHeaderGroup();
             
             // Unity Export Options
             EditorGUILayout.Space(5);
@@ -801,41 +822,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             EditorGUILayout.HelpBox(
                 "The Export Inspector shows all assets discovered from your export folders. " +
-                "Scan to discover assets, then deselect unwanted items or add folders to the permanent ignore list.",
+                "Assets are automatically scanned when the profile is opened or when folders change.",
                 MessageType.Info);
             
-            // Action buttons
-            EditorGUILayout.BeginHorizontal();
-            
-            GUI.enabled = profile.foldersToExport.Count > 0;
-            if (GUILayout.Button("Scan Assets", GUILayout.Height(30)))
-            {
-                Undo.RecordObject(profile, "Scan Assets");
-                ScanAssetsForInspector(profile);
-            }
-            GUI.enabled = true;
-            
-            GUI.enabled = profile.discoveredAssets.Count > 0;
-            if (GUILayout.Button("Clear Scan", GUILayout.Height(30)))
-            {
-                if (EditorUtility.DisplayDialog("Clear Scan", 
-                    "Clear all discovered assets and rescan later?", "Clear", "Cancel"))
-                {
-                    Undo.RecordObject(profile, "Clear Asset Scan");
-                    profile.ClearScan();
-                    EditorUtility.SetDirty(profile);
-                }
-            }
-            GUI.enabled = true;
-            
-            EditorGUILayout.EndHorizontal();
-            
-            // Show scan required message
+            // Show scan in progress message
             if (!profile.HasScannedAssets)
             {
                 EditorGUILayout.HelpBox(
-                    "Click 'Scan Assets' to discover all assets from your export folders.",
-                    MessageType.Warning);
+                    "Scanning assets... This will complete automatically.",
+                    MessageType.Info);
                 return;
             }
             
@@ -1044,9 +1039,132 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
         
         /// <summary>
+        /// Draw custom header for Export Inspector with rescan button
+        /// </summary>
+        private void DrawExportInspectorHeader(ExportProfile profile)
+        {
+            Rect rect = EditorGUILayout.GetControlRect();
+            // Unity's foldout dropdown arrow is typically 18px
+            float buttonSize = 18f;
+            
+            bool wasOpen = showExportInspector;
+            showExportInspector = EditorGUI.BeginFoldoutHeaderGroup(rect, showExportInspector, 
+                $"Export Inspector ({profile.discoveredAssets.Count} assets)");
+            
+            // Position button on the right, just before the dropdown arrow
+            // Unity's foldout dropdown is typically around 18-20px from the right edge
+            float dropdownWidth = 18f;
+            Rect buttonRect = new Rect(rect.xMax - dropdownWidth - buttonSize - 4, rect.y + (rect.height - buttonSize) / 2, buttonSize, buttonSize);
+            
+            GUI.enabled = profile.foldersToExport.Count > 0;
+            
+            var refreshIcon = EditorGUIUtility.IconContent("Refresh");
+            GUIContent buttonContent;
+            
+            if (refreshIcon != null && refreshIcon.image != null)
+            {
+                buttonContent = new GUIContent(refreshIcon.image, "Rescan Assets");
+            }
+            else
+            {
+                buttonContent = new GUIContent("⟳", "Rescan Assets");
+            }
+            
+            var rescanStyle = new GUIStyle(GUI.skin.button);
+            rescanStyle.padding = new RectOffset(0, 0, 0, 0);
+            rescanStyle.fixedWidth = buttonSize;
+            rescanStyle.fixedHeight = buttonSize;
+            rescanStyle.alignment = TextAnchor.MiddleCenter;
+            rescanStyle.imagePosition = ImagePosition.ImageOnly;
+            rescanStyle.normal.background = null;
+            rescanStyle.hover.background = null;
+            rescanStyle.active.background = null;
+            
+            if (GUI.Button(buttonRect, buttonContent, rescanStyle))
+            {
+                Undo.RecordObject(profile, "Rescan Assets");
+                ScanAssetsForInspector(profile, silent: true);
+            }
+            
+            GUI.enabled = true;
+            
+            if (showExportInspector && !wasOpen)
+            {
+                wasExportInspectorOpen = true;
+                // Scan when section is opened
+                EditorApplication.delayCall += () =>
+                {
+                    if (profile != null && profile.foldersToExport.Count > 0)
+                    {
+                        ScanAssetsForInspector(profile, silent: true);
+                    }
+                };
+            }
+            
+            if (!showExportInspector)
+            {
+                wasExportInspectorOpen = false;
+            }
+            
+            // Always check if scan is needed when section is visible
+            if (showExportInspector)
+            {
+                AutoScanIfNeeded(profile);
+            }
+            
+            EditorGUI.EndFoldoutHeaderGroup();
+        }
+        
+        /// <summary>
+        /// Automatically scan assets if needed (when inspector opens or folders change)
+        /// </summary>
+        private void AutoScanIfNeeded(ExportProfile profile)
+        {
+            if (profile.foldersToExport == null || profile.foldersToExport.Count == 0)
+            {
+                lastFoldersHash = "";
+                return;
+            }
+            
+            string currentFoldersHash = GetFoldersHash(profile.foldersToExport);
+            bool foldersChanged = !string.IsNullOrEmpty(lastFoldersHash) && currentFoldersHash != lastFoldersHash;
+            bool needsScan = !profile.HasScannedAssets || foldersChanged;
+            
+            if (needsScan)
+            {
+                lastFoldersHash = currentFoldersHash;
+                
+                EditorApplication.delayCall += () =>
+                {
+                    if (profile != null)
+                    {
+                        ScanAssetsForInspector(profile, silent: true);
+                    }
+                };
+            }
+            else
+            {
+                lastFoldersHash = currentFoldersHash;
+            }
+        }
+        
+        /// <summary>
+        /// Get hash of folders list for change detection
+        /// </summary>
+        private string GetFoldersHash(List<string> folders)
+        {
+            if (folders == null || folders.Count == 0)
+                return "";
+            
+            var sorted = new List<string>(folders);
+            sorted.Sort();
+            return string.Join("|", sorted);
+        }
+        
+        /// <summary>
         /// Scan assets for the inspector
         /// </summary>
-        private void ScanAssetsForInspector(ExportProfile profile)
+        private void ScanAssetsForInspector(ExportProfile profile, bool silent = false)
         {
             EditorUtility.DisplayProgressBar("Scanning Assets", "Discovering assets from export folders...", 0f);
             
@@ -1054,18 +1172,25 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 profile.discoveredAssets = AssetCollector.ScanExportFolders(profile, profile.includeDependencies);
                 profile.MarkScanned();
+                lastFoldersHash = GetFoldersHash(profile.foldersToExport);
                 EditorUtility.SetDirty(profile);
                 
-                EditorUtility.DisplayDialog(
-                    "Scan Complete",
-                    $"Discovered {profile.discoveredAssets.Count} assets.\n\n" +
-                    AssetCollector.GetAssetSummary(profile.discoveredAssets),
-                    "OK");
+                if (!silent)
+                {
+                    EditorUtility.DisplayDialog(
+                        "Scan Complete",
+                        $"Discovered {profile.discoveredAssets.Count} assets.\n\n" +
+                        AssetCollector.GetAssetSummary(profile.discoveredAssets),
+                        "OK");
+                }
             }
             catch (System.Exception ex)
             {
                 Debug.LogError($"[ExportProfileEditor] Asset scan failed: {ex.Message}");
-                EditorUtility.DisplayDialog("Scan Failed", $"Failed to scan assets:\n{ex.Message}", "OK");
+                if (!silent)
+                {
+                    EditorUtility.DisplayDialog("Scan Failed", $"Failed to scan assets:\n{ex.Message}", "OK");
+                }
             }
             finally
             {
@@ -1116,7 +1241,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Automatically rescan after adding to ignore list
                 EditorApplication.delayCall += () => {
-                    ScanAssetsForInspector(profile);
+                    ScanAssetsForInspector(profile, silent: true);
                 };
             }
             else
@@ -1210,7 +1335,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     "Rescan",
                     "Later"))
                 {
-                    ScanAssetsForInspector(profile);
+                    ScanAssetsForInspector(profile, silent: true);
                 }
             }
         }

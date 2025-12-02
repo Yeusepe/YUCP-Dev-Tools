@@ -82,8 +82,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				return null;
 			}
 			
-				// Handle meta file (GUID preservation)
-				TryCopyMetaWithGuid(outputPhysicalPath, derivedAsset?.originalDerivedFbxPath, baseFbxPath, targetGuid);
+				// Handle meta file (GUID preservation) - use embedded meta content if available
+				TryCopyMetaWithGuid(outputPhysicalPath, derivedAsset?.originalDerivedFbxPath, baseFbxPath, targetGuid, derivedAsset);
 				
 				// Import the patched FBX
 				// Adapted from CocoTools CocoUtils.ForceOverwrite() AssetDatabase.ImportAsset call
@@ -185,15 +185,52 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		}
 		
 		/// <summary>
-		/// Copies meta file with GUID preservation.
-		/// Adapted from CocoTools CocoUtils.ForceOverwrite() approach.
+		/// Creates meta file using embedded content from DerivedFbxAsset, preserving humanoid Avatar mappings.
+		/// Falls back to original derived FBX meta file if embedded content is not available.
+		/// Never uses base FBX meta to avoid incompatible humanoid mappings.
 		/// </summary>
-		private static void TryCopyMetaWithGuid(string physicalOutputPath, string originalDerivedFbxPath, string baseFbxPath, string targetGuid)
+		private static void TryCopyMetaWithGuid(string physicalOutputPath, string originalDerivedFbxPath, string baseFbxPath, string targetGuid, DerivedFbxAsset derivedAsset = null)
 		{
 			string outputMetaPath = physicalOutputPath + ".meta";
 			string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 			
-			// Try to copy from original derived FBX meta first
+			// Priority 1: Use embedded meta file content from DerivedFbxAsset (best option - works in any project)
+			if (derivedAsset != null && !string.IsNullOrEmpty(derivedAsset.embeddedMetaFileContent))
+			{
+				try
+				{
+					string metaContent = derivedAsset.embeddedMetaFileContent;
+					
+					// Replace placeholder GUID with actual target GUID
+					if (!string.IsNullOrEmpty(targetGuid))
+					{
+						metaContent = System.Text.RegularExpressions.Regex.Replace(
+							metaContent,
+							@"guid:\s*PLACEHOLDER_GUID",
+							$"guid: {targetGuid}",
+							System.Text.RegularExpressions.RegexOptions.IgnoreCase
+						);
+						
+						// Also handle case where GUID might have been extracted as-is
+						metaContent = System.Text.RegularExpressions.Regex.Replace(
+							metaContent,
+							@"guid:\s*[a-f0-9]{32}",
+							$"guid: {targetGuid}",
+							System.Text.RegularExpressions.RegexOptions.IgnoreCase
+						);
+					}
+					
+					File.WriteAllText(outputMetaPath, metaContent);
+					Debug.Log($"[DerivedFbxBuilder] Recreated .meta file from embedded content (preserves humanoid Avatar mappings)");
+					return;
+				}
+				catch (System.Exception ex)
+				{
+					Debug.LogWarning($"[DerivedFbxBuilder] Failed to recreate .meta from embedded content: {ex.Message}");
+				}
+			}
+			
+			// Priority 2: Try to copy from original derived FBX meta (fallback if embedded content not available)
 			if (!string.IsNullOrEmpty(originalDerivedFbxPath))
 			{
 				try
@@ -204,38 +241,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					if (File.Exists(originalMeta))
 					{
 						string metaContent = File.ReadAllText(originalMeta);
-			if (!string.IsNullOrEmpty(targetGuid))
-			{
-							metaContent = System.Text.RegularExpressions.Regex.Replace(
-								metaContent,
-								@"guid:\s*[a-f0-9]{32}",
-								$"guid: {targetGuid}",
-								System.Text.RegularExpressions.RegexOptions.IgnoreCase
-							);
-						}
-						
-						File.WriteAllText(outputMetaPath, metaContent);
-						Debug.Log($"[DerivedFbxBuilder] Copied original derived FBX .meta from '{originalDerivedFbxPath}' to output");
-						return;
-					}
-				}
-				catch (System.Exception ex)
-				{
-					Debug.LogWarning($"[DerivedFbxBuilder] Failed to copy original .meta: {ex.Message}");
-				}
-			}
-			
-			// Fall back to base FBX meta
-			if (!string.IsNullOrEmpty(baseFbxPath))
-			{
-				try
-				{
-					string basePhysical = Path.Combine(projectPath, baseFbxPath.Replace('/', Path.DirectorySeparatorChar));
-					string baseMeta = basePhysical + ".meta";
-					
-					if (File.Exists(baseMeta))
-					{
-						string metaContent = File.ReadAllText(baseMeta);
 						if (!string.IsNullOrEmpty(targetGuid))
 						{
 							metaContent = System.Text.RegularExpressions.Regex.Replace(
@@ -247,38 +252,41 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						}
 						
 						File.WriteAllText(outputMetaPath, metaContent);
-						Debug.Log($"[DerivedFbxBuilder] Copied base FBX .meta from '{baseFbxPath}' to output");
+						Debug.Log($"[DerivedFbxBuilder] Copied original derived FBX .meta from '{originalDerivedFbxPath}' to output (preserves humanoid Avatar mappings)");
 						return;
 					}
 				}
 				catch (System.Exception ex)
 				{
-					Debug.LogWarning($"[DerivedFbxBuilder] Failed to copy base .meta: {ex.Message}");
+					Debug.LogWarning($"[DerivedFbxBuilder] Failed to copy original derived FBX .meta: {ex.Message}");
 				}
 			}
 			
-			// If no meta file found, create one with target GUID
+			// Priority 3: Create fresh meta file (Unity will regenerate Avatar)
+			// WARNING: Embedded content and original meta file not available
+			Debug.LogWarning($"[DerivedFbxBuilder] Embedded meta content and original derived FBX .meta file not available. " +
+				$"Creating fresh .meta file. Unity will regenerate the Avatar/humanoid mapping on import. " +
+				$"If this derived FBX uses humanoid rigging, you may need to reconfigure the Avatar mapping after import.");
+			
+			// Create fresh meta file with target GUID (Unity will regenerate Avatar and import settings)
 			if (!string.IsNullOrEmpty(targetGuid))
 			{
 				try
 				{
-					// Use MetaFileManager if available, otherwise create basic meta
-					var metaFileManagerType = System.Type.GetType("YUCP.DevTools.Editor.PackageExporter.MetaFileManager, yucp.devtools.Editor");
-					if (metaFileManagerType != null)
+					if (MetaFileManager.WriteGuid(physicalOutputPath, targetGuid))
 					{
-						var writeGuidMethod = metaFileManagerType.GetMethod("WriteGuid", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-						if (writeGuidMethod != null)
-						{
-							writeGuidMethod.Invoke(null, new object[] { physicalOutputPath, targetGuid });
-							Debug.Log($"[DerivedFbxBuilder] Created .meta file with GUID: {targetGuid}");
-				return;
-			}
+						Debug.Log($"[DerivedFbxBuilder] Created fresh .meta file with GUID: {targetGuid}. Unity will regenerate Avatar on import.");
+						return;
+					}
+				}
+				catch (System.Exception ex)
+				{
+					Debug.LogError($"[DerivedFbxBuilder] Failed to create fresh .meta file: {ex.Message}");
 				}
 			}
-			catch (System.Exception ex)
+			else
 			{
-					Debug.LogWarning($"[DerivedFbxBuilder] Failed to create .meta file: {ex.Message}");
-				}
+				Debug.LogError("[DerivedFbxBuilder] Cannot create .meta file: targetGuid is null or empty");
 			}
 		}
 	}
