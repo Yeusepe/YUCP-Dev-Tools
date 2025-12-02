@@ -8,8 +8,8 @@
    ============================================================================ */
 .yucp-window {
     /* Base colors */
-    --yucp-bg-primary: #090909;      /* YUCP dark background */
-    --yucp-bg-secondary: #1a1a1a;    /* Card/panel background */
+    --yucp-bg-primary: #151515;      /* YUCP dark gray background */
+    --yucp-bg-secondary:rgb(19, 19, 19);    /* Card/panel background */
     --yucp-bg-tertiary: #2a2a2a;     /* List items, inputs */
     --yucp-bg-hover: #525252;        /* Hover states - YUCP gray */
     
@@ -35,7 +35,7 @@
    ============================================================================ */
 .yucp-window {
     flex-grow: 1;
-    background-color: #090909;
+    background-color: #151515;
     min-width: 0;
 }
 
@@ -46,23 +46,23 @@
 }
 
 /* ============================================================================
-   TOP BAR - Header with Logo & Title
+   TOP BAR - Header with Menu
    ============================================================================ */
 .yucp-top-bar {
     flex-direction: row;
-    min-height: 100px;
-    padding-top: 16px;
-    padding-bottom: 16px;
-    padding-left: 20px;
-    padding-right: 20px;
-    background-color: #1a1a1a;
-    border-bottom-width: 1px;
-    border-bottom-color: #2a2a2a;
+    min-height: 48px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    padding-left: 16px;
+    padding-right: 16px;
+    background-color: #1f1f1f;
+    border-bottom-width: 0;
     align-items: center;
-    flex-wrap: wrap;
+    justify-content: space-between;
+    flex-wrap: nowrap;
     overflow: hidden;
     transition-property: flex-wrap, min-height, padding;
-    transition-duration: 0.5s, 0.5s, 0.5s;
+    transition-duration: 0.3s, 0.3s, 0.3s;
     transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
 }
 
@@ -76,10 +76,76 @@
     transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
 }
 
+.yucp-package-logo {
+    flex-shrink: 0;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
 .yucp-title {
-    font-size: 20px;
+    font-size: 18px;
     color: #ffffff;
     -unity-font-style: bold;
+    margin-right: 16px;
+}
+
+.yucp-menu-spacer {
+    flex-grow: 1;
+    min-width: 20px;
+}
+
+.yucp-menu-button-group {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.yucp-menu-button {
+    height: 32px;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-left: 4px;
+    margin-right: 4px;
+    background-color: transparent;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 6px;
+    color: #b0b0b0;
+    font-size: 12px;
+    -unity-font-style: normal;
+    transition-property: background-color, color, border-color;
+    transition-duration: 0.15s, 0.15s, 0.15s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+}
+
+.yucp-menu-button:hover {
+    background-color: #2a2a2a;
+    color: #ffffff;
+    border-color: #3a3a3a;
+}
+
+.yucp-menu-button:active {
+    background-color: #36BFB1;
+    color: #ffffff;
+    border-color: #36BFB1;
+}
+
+.yucp-menu-button:disabled {
+    opacity: 0.4;
+    color: #606060;
+}
+
+.yucp-menu-dropdown {
+    padding-right: 8px;
+}
+
+.yucp-menu-separator {
+    width: 1px;
+    height: 24px;
+    background-color: #2a2a2a;
+    margin-left: 8px;
+    margin-right: 8px;
 }
 
 /* ============================================================================
@@ -97,7 +163,7 @@
     width: 270px;
     min-width: 200px;
     flex-shrink: 0;
-    background-color: #090909;
+    background-color: #151515;
     border-right-width: 1px;
     border-right-color: #2a2a2a;
     padding: 20px;
@@ -111,7 +177,7 @@
     flex-grow: 1;
     flex-shrink: 1;
     min-width: 0;
-    background-color: #090909;
+    background-color: #151515;
     overflow: hidden;
     transition-property: opacity, width;
     transition-duration: 0.5s, 0.5s;
@@ -351,12 +417,11 @@
     padding: 16px;
     background-color: #1a1a1a;
     border-radius: 6px;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     overflow: hidden;
-    transition-duration: 0.25s, 0.2s;
-    transition-property: opacity, border-color;
-    transition-timing-function: ease-out, ease-out;
+    transition-duration: 0.25s;
+    transition-property: opacity;
+    transition-timing-function: ease-out;
     opacity: 1;
 }
 
@@ -519,18 +584,18 @@
     justify-content: center;
     align-items: center;
     overflow: hidden;
+    position: relative;
     transition-duration: 0.2s;
     transition-property: background-color, border-color;
     transition-timing-function: ease-out;
 }
 
 .yucp-profile-item-icon {
-    width: 40px;
-    height: 40px;
-    border-top-left-radius: 6px;
-    border-top-right-radius: 6px;
-    border-bottom-left-radius: 6px;
-    border-bottom-right-radius: 6px;
+    position: absolute;
+    width: 107%;
+    height: 107%;
+    left: -3.5%;
+    top: -3.5%;
 }
 
 .yucp-profile-item-icon-placeholder {
@@ -673,8 +738,7 @@
 .yucp-bottom-bar {
     flex-direction: column;
     background-color: #1a1a1a;
-    border-top-width: 1px;
-    border-top-color: #2a2a2a;
+    border-top-width: 0;
     padding: 16px 20px;
     flex-shrink: 0;
 }
@@ -964,9 +1028,8 @@
 }
 
 .yucp-left-pane-overlay {
-    background-color: #090909;
-    border-right-width: 1px;
-    border-right-color: #2a2a2a;
+    background-color: #151515;
+    border-right-width: 0;
     padding: 20px;
     transition-property: opacity, left;
     transition-duration: 0.3s, 0.3s;
@@ -999,6 +1062,14 @@
     display: flex;
     opacity: 1;
     scale: 1 1;
+}
+
+.yucp-window-narrow .yucp-menu-button-group {
+    display: none;
+}
+
+.yucp-window-narrow .yucp-menu-spacer {
+    display: none;
 }
 
 .yucp-window-narrow .yucp-right-pane {
@@ -1056,6 +1127,25 @@
 
 .yucp-window-narrow .yucp-filter-row .yucp-toggle {
     margin-bottom: 8px;
+}
+
+.yucp-window-narrow .yucp-section {
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.yucp-window-narrow .yucp-help-box {
+    margin-top: 8px;
+    margin-bottom: 8px;
+    padding: 10px;
+}
+
+.yucp-window-narrow .yucp-validation-error,
+.yucp-window-narrow .yucp-validation-warning,
+.yucp-window-narrow .yucp-validation-success {
+    margin-top: 8px;
+    margin-bottom: 8px;
+    padding: 10px;
 }
 
 /* Medium layout (700px - 900px) - Reduce left pane size */

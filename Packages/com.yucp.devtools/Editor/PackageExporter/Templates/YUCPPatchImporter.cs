@@ -502,7 +502,9 @@ namespace YUCP.PatchCleanup
                 if (derivedFbxAssetType == null)
                 {
                     WriteLog("  ERROR: DerivedFbxAsset type not found");
-                    Debug.LogWarning($"[YUCP PatchImporter] DerivedFbxAsset type not found. Ensure patch scripts are in temp package.");
+                    // Only log as info since this may be expected when patches aren't actively being used
+                    // The patch will be skipped, which is acceptable behavior
+                    Debug.Log($"[YUCP PatchImporter] DerivedFbxAsset type not found for patch {patchPath}. Patch will be skipped. Ensure patch scripts are in temp package if patches are needed.");
                     return;
                 }
                 

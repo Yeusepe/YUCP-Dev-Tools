@@ -70,7 +70,6 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private VisualElement _gallerySectionHost;
 		private ToastNotification _toast;
 		private IVRCSdkControlPanelBuilder _controlPanelBuilder;
-		private bool _controlPanelInitialized;
 		private EventHandler _cpContentChangedHandler;
 		private EventHandler _cpRevalidateHandler;
 		private bool _isSyncingToControlPanel = false;
@@ -434,12 +433,11 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					_cpUiBinder = new ControlPanelUiBinder(this);
 				}
 
-				_cpUiBinder = new ControlPanelUiBinder(this);
-				_cpUiBinder.Initialize(builder);
-				_controlPanelBuilder = builder;
-				AttachControlPanelEventHandlers(builder);
-				_controlPanelInitialized = true;
-				ShowBridgeStatus("Control Panel Ready");
+			_cpUiBinder = new ControlPanelUiBinder(this);
+			_cpUiBinder.Initialize(builder);
+			_controlPanelBuilder = builder;
+			AttachControlPanelEventHandlers(builder);
+			ShowBridgeStatus("Control Panel Ready");
 				RefreshControlPanelValidations();
 				BuildMetadataSection();
 				BuildVisibilitySection();
@@ -499,11 +497,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					_controlPanelBuilder.OnShouldRevalidate -= _cpRevalidateHandler;
 			}
 
-			_cpUiBinder?.Dispose();
-			_cpUiBinder = null;
-			_controlPanelBuilder = null;
-			_controlPanelInitialized = false;
-		}
+		_cpUiBinder?.Dispose();
+		_cpUiBinder = null;
+		_controlPanelBuilder = null;
+	}
 
 		/// <summary>
 		/// Sync blueprint ID from PipelineManager component to AvatarAsset.
@@ -848,7 +845,6 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		{
 			var topBar = new VisualElement();
 			topBar.AddToClassList("yucp-top-bar");
-			topBar.AddToClassList("yucp-top-bar");
 
 			// Mobile toggle button (hamburger menu)
 			_mobileToggleButton = new Button(ToggleOverlay);
@@ -865,7 +861,6 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					image = _logoTexture
 				};
 				logo.AddToClassList("yucp-logo");
-				logo.AddToClassList("yucp-logo");
 
 				float textureAspect = (float)_logoTexture.width / _logoTexture.height;
 				float maxHeight = 50f;
@@ -877,12 +872,35 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				topBar.Add(logo);
 			}
 
-			// Title
-			var title = new Label("Avatar Tools");
-			title.AddToClassList("yucp-title");
-			title.AddToClassList("yucp-title");
-			topBar.Add(title);
+			// Spacer to push buttons to the right
+			var spacer = new VisualElement();
+			spacer.AddToClassList("yucp-menu-spacer");
+			topBar.Add(spacer);
 
+			// Menu button groups
+			topBar.Add(CreateMenuButtonGroup());
+
+			return topBar;
+		}
+
+		private VisualElement CreateMenuButtonGroup()
+		{
+			var container = new VisualElement();
+			container.AddToClassList("yucp-menu-button-group");
+
+			// Build dropdown button
+			var buildButton = CreateDropdownButton("Build", GetBuildMenuItems());
+			container.Add(buildButton);
+
+			// Upload dropdown button
+			var uploadButton = CreateDropdownButton("Upload", GetUploadMenuItems());
+			container.Add(uploadButton);
+
+			// Actions dropdown
+			var actionsButton = CreateDropdownButton("Actions", GetActionsMenuItems());
+			container.Add(actionsButton);
+
+			// Settings button
 			_settingsButton = new Button(OpenSettings)
 			{
 				tooltip = "Open Avatar Tools settings"
@@ -904,9 +922,156 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				_settingsButton.text = "⚙";
 			}
 			
-			topBar.Add(_settingsButton);
+			container.Add(_settingsButton);
 
-			return topBar;
+			return container;
+		}
+
+		private Button CreateDropdownButton(string label, List<ToolbarMenuItem> items)
+		{
+			var button = new Button();
+			button.clicked += () => ShowDropdownMenu(button, items);
+			button.text = label + " ▼";
+			button.AddToClassList("yucp-menu-button");
+			button.AddToClassList("yucp-menu-dropdown");
+			return button;
+		}
+
+		private void ShowDropdownMenu(VisualElement anchor, List<ToolbarMenuItem> items)
+		{
+			var menu = new GenericMenu();
+			
+			foreach (var item in items)
+			{
+				if (item.IsSeparator)
+				{
+					menu.AddSeparator("");
+				}
+				else
+				{
+					menu.AddItem(new GUIContent(item.Label), false, () => item.Callback?.Invoke());
+				}
+			}
+			
+			menu.ShowAsContext();
+		}
+
+		private List<ToolbarMenuItem> GetBuildMenuItems()
+		{
+			return new List<ToolbarMenuItem>
+			{
+				new ToolbarMenuItem
+				{
+					Label = "Build Selected Avatar",
+					Tooltip = "Build the currently selected avatar",
+					Callback = () => {
+						if (_selectedProfile != null && _selectedAvatarIndex >= 0 && _selectedAvatarIndex < _selectedProfile.avatars.Count)
+						{
+							BuildSelectedAvatars(_selectedProfile, BuildWorkflow.BuildOnly);
+						}
+					}
+				},
+				new ToolbarMenuItem
+				{
+					Label = "Build All Selected",
+					Tooltip = "Build all selected avatars in the current collection",
+					Callback = () => {
+						if (_selectedProfile != null && _selectedAvatarIndices.Count > 0)
+						{
+							BuildSelectedAvatars(_selectedProfile, BuildWorkflow.BuildOnly);
+						}
+					}
+				},
+				ToolbarMenuItem.Separator(),
+				new ToolbarMenuItem
+				{
+					Label = "Test Build",
+					Tooltip = "Test build the selected avatar",
+					Callback = () => {
+						if (_selectedProfile != null && _selectedAvatarIndex >= 0 && _selectedAvatarIndex < _selectedProfile.avatars.Count)
+						{
+							BuildSelectedAvatars(_selectedProfile, BuildWorkflow.TestOnly);
+						}
+					}
+				}
+			};
+		}
+
+		private List<ToolbarMenuItem> GetUploadMenuItems()
+		{
+			return new List<ToolbarMenuItem>
+			{
+				new ToolbarMenuItem
+				{
+					Label = "Upload Selected Avatar",
+					Tooltip = "Upload the currently selected avatar",
+					Callback = () => {
+						if (_selectedProfile != null && _selectedAvatarIndex >= 0 && _selectedAvatarIndex < _selectedProfile.avatars.Count)
+						{
+							BuildSelectedAvatars(_selectedProfile, BuildWorkflow.Publish);
+						}
+					}
+				},
+				new ToolbarMenuItem
+				{
+					Label = "Upload All Selected",
+					Tooltip = "Upload all selected avatars",
+					Callback = () => {
+						if (_selectedProfile != null && _selectedAvatarIndices.Count > 0)
+						{
+							BuildSelectedAvatars(_selectedProfile, BuildWorkflow.Publish);
+						}
+					}
+				}
+			};
+		}
+
+		private List<ToolbarMenuItem> GetActionsMenuItems()
+		{
+			return new List<ToolbarMenuItem>
+			{
+				new ToolbarMenuItem
+				{
+					Label = "Refresh Collections",
+					Tooltip = "Refresh avatar collections",
+					Callback = () => {
+						ReloadProfiles();
+						UpdateProfileList();
+					}
+				},
+				new ToolbarMenuItem
+				{
+					Label = "Create New Collection",
+					Tooltip = "Create a new avatar collection",
+					Callback = () => {
+						// Create new collection - would need to implement CreateNewCollection method
+						ReloadProfiles();
+						UpdateProfileList();
+					}
+				},
+				ToolbarMenuItem.Separator(),
+				new ToolbarMenuItem
+				{
+					Label = "Open Control Panel",
+					Tooltip = "Open VRChat SDK Control Panel",
+					Callback = () => {
+						ControlPanelBridge.EnsureBuilder(null, focusPanel: true);
+					}
+				}
+			};
+		}
+
+		private struct ToolbarMenuItem
+		{
+			public string Label;
+			public string Tooltip;
+			public Action Callback;
+			public bool IsSeparator;
+			
+			public static ToolbarMenuItem Separator()
+			{
+				return new ToolbarMenuItem { IsSeparator = true };
+			}
 		}
 
 		private void OpenSettings()
@@ -4062,13 +4227,36 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 				// For Build & Test, if there's no blueprintId, the SDK will assign one automatically
 				// For Build & Publish, the blueprintId must exist (it will be created during ReserveAvatarId)
-				// For Build Only, we need to ensure there's a blueprintId
-				if (workflow == BuildWorkflow.BuildOnly && string.IsNullOrWhiteSpace(pipelineManager.blueprintId))
+			// For Build Only, we need to ensure there's a blueprintId
+			if (workflow == BuildWorkflow.BuildOnly && string.IsNullOrWhiteSpace(pipelineManager.blueprintId))
+			{
+				Undo.RecordObject(pipelineManager, "Assign Blueprint ID");
+				// Try to use the new AssignId overload with ContentType if available
+				var contentTypeType = System.Type.GetType("VRC.SDKBase.ContentType") ?? 
+				                     System.Type.GetType("VRC.Core.ContentType");
+				if (contentTypeType != null)
 				{
-					Undo.RecordObject(pipelineManager, "Assign Blueprint ID");
-					pipelineManager.AssignId();
-					EditorUtility.SetDirty(pipelineManager);
+					var assignIdMethod = pipelineManager.GetType().GetMethod("AssignId", new[] { contentTypeType });
+					if (assignIdMethod != null)
+					{
+						var avatarContentType = Enum.Parse(contentTypeType, "Avatar");
+						assignIdMethod.Invoke(pipelineManager, new[] { avatarContentType });
+					}
+					else
+					{
+						#pragma warning disable CS0618
+						pipelineManager.AssignId();
+						#pragma warning restore CS0618
+					}
 				}
+				else
+				{
+					#pragma warning disable CS0618
+					pipelineManager.AssignId();
+					#pragma warning restore CS0618
+				}
+				EditorUtility.SetDirty(pipelineManager);
+			}
 
 				// Subscribe to progress events if the builder is VRCSdkControlPanelAvatarBuilder
 				EventHandler<(string status, float percentage)> uploadProgressHandler = null;

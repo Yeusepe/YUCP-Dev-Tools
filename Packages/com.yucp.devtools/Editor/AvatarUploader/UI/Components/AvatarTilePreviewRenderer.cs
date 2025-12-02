@@ -32,16 +32,15 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 		private Transform _rightEyeBone;
 		private Transform _leftShoulder;
 		private Transform _rightShoulder;
-		private Transform _leftUpperArm;
-		private Transform _rightUpperArm;
-		private Quaternion _leftEyeRestRotation;
-		private Quaternion _rightEyeRestRotation;
-		private Quaternion _headRestRotation;
-		private bool _disposed;
-		private bool _isMouseOver;
-		private EditorWindow _parentWindow;
-		private readonly Color _backgroundColor = Color.black;
-		private bool _useLowSpecMode;
+	private Transform _leftUpperArm;
+	private Transform _rightUpperArm;
+	private Quaternion _leftEyeRestRotation;
+	private Quaternion _rightEyeRestRotation;
+	private Quaternion _headRestRotation;
+	private bool _disposed;
+	private EditorWindow _parentWindow;
+	private readonly Color _backgroundColor = Color.black;
+	private bool _useLowSpecMode;
 		private bool _disableCursorTracking;
 
 		public AvatarTilePreviewRenderer()
@@ -434,19 +433,17 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			evt.StopPropagation();
 		}
 
-		private void OnMouseEnter(MouseEnterEvent evt)
-		{
-			_isMouseOver = true;
-			// Start continuous repainting for live 3D render
-			_imguiContainer.MarkDirtyRepaint();
-		}
+	private void OnMouseEnter(MouseEnterEvent evt)
+	{
+		// Start continuous repainting for live 3D render
+		_imguiContainer.MarkDirtyRepaint();
+	}
 
-		private void OnMouseLeave(MouseLeaveEvent evt)
-		{
-			_isMouseOver = false;
-			// Keep tracking mouse throughout window
-			_imguiContainer.MarkDirtyRepaint();
-		}
+	private void OnMouseLeave(MouseLeaveEvent evt)
+	{
+		// Keep tracking mouse throughout window
+		_imguiContainer.MarkDirtyRepaint();
+	}
 
 		private void EnsurePreviewUtility()
 		{

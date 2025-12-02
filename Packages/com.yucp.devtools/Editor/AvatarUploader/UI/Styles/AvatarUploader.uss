@@ -43,9 +43,8 @@
     flex-grow: 1;
     flex-shrink: 1;
     min-width: 360px;
-    background-color: #111111;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    background-color: #1a1a1a;
+    border-width: 0;
     border-radius: 8px;
     padding: 16px;
     margin-top: 16px;
@@ -233,19 +232,17 @@
 .yucp-avatar-card {
     background-color: #1a1a1a;
     border-radius: 8px;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     padding: 12px;
     margin-bottom: 12px;
     flex-direction: column;
-    transition-duration: 0.15s, 0.15s;
-    transition-property: background-color, border-color;
-    transition-timing-function: ease-out, ease-out;
+    transition-duration: 0.15s;
+    transition-property: background-color;
+    transition-timing-function: ease-out;
 }
 
 .yucp-avatar-card:hover {
     background-color: #2a2a2a;
-    border-color: #3a3a3a;
 }
 
 .yucp-avatar-card-header {
@@ -312,8 +309,7 @@
 
 .yucp-collection-header-section {
     background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     border-radius: 8px;
     padding: 16px;
     flex-direction: column;
@@ -403,8 +399,7 @@
 
 .yucp-collection-actions-card {
     background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     border-radius: 8px;
     padding: 16px;
     flex-direction: column;
@@ -477,8 +472,7 @@
     margin-right: 20px;
     flex-direction: column;
     background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     border-radius: 8px;
     padding: 16px;
     align-items: stretch;
@@ -540,8 +534,7 @@
    ============================================================================ */
 .yucp-card {
     background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 16px;
@@ -583,8 +576,7 @@
     height: 400px;
     min-height: 400px;
     background-color: #0d0d0d;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     border-radius: 8px;
     position: relative;
     justify-content: center;
@@ -721,8 +713,7 @@
    ============================================================================ */
 .yucp-bulk-edit-panel {
     background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 20px;
@@ -831,9 +822,8 @@
    ============================================================================ */
 .yucp-hero-panel {
     flex-direction: column;
-    background-color: #111111;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    background-color: #1a1a1a;
+    border-width: 0;
     border-radius: 8px;
     padding: 18px;
     margin-top: 16px;
@@ -846,8 +836,7 @@
 
 .yucp-hero-preview-container {
     margin-right: 24px;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     border-radius: 8px;
     background-color: #0c0c0c;
     justify-content: center;
@@ -1023,8 +1012,7 @@
 .yucp-hero-section {
     margin-bottom: 12px;
     background-color: #141414;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     border-radius: 8px;
     padding: 10px;
 }
@@ -1032,8 +1020,7 @@
 .yucp-hero-foldout {
     margin-top: 12px;
     background-color: #141414;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     border-radius: 6px;
     padding: 4px;
 }
@@ -1064,8 +1051,7 @@
 .yucp-hero-stat-card {
     flex-direction: column;
     background-color: #161616;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     border-radius: 8px;
     padding: 8px 14px;
     margin-right: 10px;
@@ -1165,8 +1151,7 @@
    ============================================================================ */
 .yucp-section-build-actions {
     background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     padding: 16px;
     margin-bottom: 16px;
 }
@@ -1358,8 +1343,7 @@
    ============================================================================ */
 .yucp-foldout {
     background-color: #1a1a1a;
-    border-width: 1px;
-    border-color: #2a2a2a;
+    border-width: 0;
     padding: 12px;
     margin-bottom: 8px;
 }

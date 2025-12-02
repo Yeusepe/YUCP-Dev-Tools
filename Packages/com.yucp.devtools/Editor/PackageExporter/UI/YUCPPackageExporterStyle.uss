@@ -4,7 +4,7 @@
    ============================================================================ */
 
 .yucp-exporter-window {
-    background-color: #090909;
+    background-color: #151515;
     padding: 20px;
 }
 

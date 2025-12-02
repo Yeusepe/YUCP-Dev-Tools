@@ -158,6 +158,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Debug.Log($"[PackageBuilder] Force-excluded {excludedCount} assets that were in excluded folders");
                 }
                 
+                // Manually collect dependencies if enabled (respects ignore list)
+                CollectFilteredDependencies(assetsToExport, profile, progressCallback);
+                
+                progressCallback?.Invoke(0.54f, $"Total assets after dependency collection: {assetsToExport.Count}");
+                
                 // Track bundled dependencies to inject later (AssetDatabase.ExportPackage can't handle files without .meta)
                 var bundledPackagePaths = new Dictionary<string, string>(); // packageName -> packagePath
                 var bundledDeps = profile.dependencies.Where(d => d.enabled && d.exportMode == DependencyExportMode.Bundle).ToList();
@@ -203,8 +208,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                  // Build export options
                  ExportPackageOptions options = ExportPackageOptions.Default;
-                 if (profile.includeDependencies)
-                     options |= ExportPackageOptions.IncludeDependencies;
+                 // Note: IncludeDependencies flag removed - we manually collect dependencies with filtering
                  if (profile.recurseFolders)
                      options |= ExportPackageOptions.Recurse;
                 
@@ -524,21 +528,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         if (incrementMethod != null)
                         {
                             incrementMethod.Invoke(null, null);
-                            Debug.Log($"[PackageExporter] Export tracked for milestones. New export count: {EditorPrefs.GetInt("com.yucp.components.milestone.export_count", 0)}");
                         }
-                        else
-                        {
-                            Debug.LogWarning("[PackageExporter] IncrementExportCount method not found on MilestoneTracker");
-                        }
-                    }
-                    else
-                    {
-                        Debug.LogWarning("[PackageExporter] MilestoneTracker type not found in any loaded assembly");
                     }
                 }
-                catch (System.Exception ex)
+                catch (System.Exception)
                 {
-                    Debug.LogError($"[PackageExporter] Failed to track export for milestones: {ex.Message}");
+                    // Silently fail milestone tracking
                 }
                 result.outputPath = finalOutputPath;
                 result.buildTimeSeconds = (float)(DateTime.Now - startTime).TotalSeconds;
@@ -1333,6 +1328,78 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // This checks: .yucpignore files, permanent ignore folders, excludeFolderNames, excludeFilePatterns
             // NOTE: Does NOT check for derived FBX here - that's handled during conversion and final safety check
             return AssetCollector.ShouldIgnoreFile(fullPath, profile);
+        }
+        
+        /// <summary>
+        /// Manually collect and filter dependencies for assets, respecting ignore lists
+        /// </summary>
+        private static void CollectFilteredDependencies(List<string> assetsToExport, ExportProfile profile, Action<float, string> progressCallback)
+        {
+            if (!profile.includeDependencies)
+                return;
+            
+            progressCallback?.Invoke(0.53f, "Collecting dependencies (respecting ignore list)...");
+            
+            var processedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var allDependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            
+            // Mark original assets as processed
+            foreach (var asset in assetsToExport)
+            {
+                string unityPath = GetRelativePackagePath(asset);
+                processedPaths.Add(unityPath);
+            }
+            
+            // Collect dependencies for each asset
+            int assetCount = assetsToExport.Count;
+            for (int i = 0; i < assetCount; i++)
+            {
+                string assetPath = assetsToExport[i];
+                
+                try
+                {
+                    string unityPath = GetRelativePackagePath(assetPath);
+                    
+                    if (string.IsNullOrEmpty(unityPath))
+                        continue;
+                    
+                    // Get dependencies (non-recursive to avoid deep chains)
+                    string[] dependencies = AssetDatabase.GetDependencies(unityPath, recursive: false);
+                    
+                    foreach (string dep in dependencies)
+                    {
+                        // Skip self-reference
+                        if (dep == unityPath)
+                            continue;
+                        
+                        // Skip if already processed
+                        if (processedPaths.Contains(dep))
+                            continue;
+                        
+                        processedPaths.Add(dep);
+                        
+                        // Check if dependency should be excluded
+                        if (ShouldExcludeAsset(dep, profile))
+                        {
+                            Debug.Log($"[PackageBuilder] Excluding dependency (in ignore list): {dep}");
+                            continue;
+                        }
+                        
+                        allDependencies.Add(dep);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[PackageBuilder] Error getting dependencies for {assetPath}: {ex.Message}");
+                }
+            }
+            
+            // Add filtered dependencies to export list
+            if (allDependencies.Count > 0)
+            {
+                Debug.Log($"[PackageBuilder] Adding {allDependencies.Count} filtered dependencies to export");
+                assetsToExport.AddRange(allDependencies);
+            }
         }
         
         /// <summary>

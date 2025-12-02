@@ -7,7 +7,7 @@
 .root-container {
     flex-grow: 1;
     flex-direction: column;
-    background-color: #090909;
+    background-color: #151515;
     padding: 0;
     margin: 0;
     min-height: 100%;
@@ -116,7 +116,7 @@
 /* Tab Content */
 .tab-content {
     flex-grow: 1;
-    background-color: #090909;
+    background-color: #151515;
     padding-top: 16px;
     padding-bottom: 16px;
     padding-left: 20px;

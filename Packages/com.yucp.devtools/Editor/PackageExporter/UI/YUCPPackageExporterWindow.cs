@@ -29,6 +29,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
     }
     
     /// <summary>
+    /// Represents a menu item in the toolbar
+    /// </summary>
+    internal struct ToolbarMenuItem
+    {
+        public string Label;
+        public string Tooltip;
+        public Action Callback;
+        public bool IsSeparator;
+        
+        public static ToolbarMenuItem Separator()
+        {
+            return new ToolbarMenuItem { IsSeparator = true };
+        }
+    }
+    
+    /// <summary>
     /// Main Package Exporter window with profile management and batch export capabilities.
     /// Modern UI Toolkit implementation matching Package Guardian design system.
     /// </summary>
@@ -60,6 +76,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private VisualElement _multiSelectInfo;
         private Button _exportSelectedButton;
         private Button _exportAllButton;
+        private VisualElement _supportToast;
         
         // State
         private List<ExportProfile> allProfiles = new List<ExportProfile>();
@@ -91,12 +108,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private string dependenciesSearchFilter = "";
         
         // Collapsible section states
-        private bool showSummary = true;
-        private bool showValidation = true;
         private bool showExportOptions = true;
         private bool showFolders = true;
         private bool showDependencies = true;
-        private bool showObfuscation = true;
         private bool showQuickActions = true;
         
         private Texture2D logoTexture;
@@ -188,15 +202,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
             root.Add(mainContainer);
             
             // Optional non-intrusive support toast (appears rarely)
-            var supportToast = CreateSupportToast();
-            if (supportToast != null)
+            _supportToast = CreateSupportToast();
+            if (_supportToast != null)
             {
-                Debug.Log("[PackageExporter] Support toast added to UI");
-                root.Add(supportToast);
-            }
-            else
-            {
-                Debug.Log("[PackageExporter] Support toast not added (CreateSupportToast returned null)");
+                // Start hidden for fade-in animation
+                _supportToast.style.opacity = 0;
+                _supportToast.style.translate = new Translate(0, -20);
+                
+                root.Add(_supportToast);
+                
+                // Animate in
+                root.schedule.Execute(() => {
+                    if (_supportToast != null)
+                    {
+                        _supportToast.style.opacity = 1;
+                        _supportToast.style.translate = new Translate(0, 0);
+                    }
+                }).StartingIn(100);
             }
             
             // Schedule delayed rename checks
@@ -227,47 +249,215 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _mobileToggleButton.AddToClassList("yucp-mobile-toggle");
             topBar.Add(_mobileToggleButton);
             
-            // Logo
-            if (logoTexture != null)
+            
+            // Logo image
+            var packageLogo = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.devtools/Resources/Icons/PackageLogo.png");
+            if (packageLogo != null)
             {
-                var logo = new Image();
-                logo.image = logoTexture;
-                logo.scaleMode = ScaleMode.ScaleToFit;
-                logo.AddToClassList("yucp-logo");
-                
-                // Calculate dimensions using aspect ratio
-                float textureAspect = (float)logoTexture.width / logoTexture.height;
-                float maxHeight = 50f;
-                float calculatedWidth = maxHeight * textureAspect;
-                
-                // Apply calculated dimensions
-                logo.style.width = calculatedWidth;
-                logo.style.height = maxHeight;
-                
+                var logo = new VisualElement();
+                logo.AddToClassList("yucp-package-logo");
+                logo.style.backgroundImage = new StyleBackground(packageLogo);
                 topBar.Add(logo);
             }
             
-            // Title
-            var title = new Label("Package Exporter");
-            title.AddToClassList("yucp-title");
-            topBar.Add(title);
+            // Spacer to push buttons to the right
+            var spacer = new VisualElement();
+            spacer.AddToClassList("yucp-menu-spacer");
+            topBar.Add(spacer);
+            
+            // Menu button groups
+            topBar.Add(CreateMenuButtonGroup());
             
             return topBar;
+        }
+        
+        private VisualElement CreateMenuButtonGroup()
+        {
+            var container = new VisualElement();
+            container.AddToClassList("yucp-menu-button-group");
+            
+            // Export dropdown button
+            var exportButton = CreateDropdownButton("Export", GetExportMenuItems());
+            container.Add(exportButton);
+            
+            // Texture Array Builder
+            container.Add(CreateActionButton("Texture", "Open Texture Array Builder", () => {
+                var windowType = System.Type.GetType("YUCP.DevTools.Editor.TextureArrayBuilder.TextureArrayBuilderWindow, yucp.devtools.Editor");
+                if (windowType != null)
+                {
+                    var method = windowType.GetMethod("ShowWindow", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    method?.Invoke(null, null);
+                }
+            }));
+            
+            // Utilities dropdown
+            var utilitiesButton = CreateDropdownButton("Utilities", GetUtilitiesMenuItems());
+            container.Add(utilitiesButton);
+            
+            // Debug dropdown
+            var debugButton = CreateDropdownButton("Debug", GetDebugMenuItems());
+            container.Add(debugButton);
+            
+            return container;
+        }
+        
+        private Button CreateActionButton(string label, string tooltip, Action callback)
+        {
+            var button = new Button(callback);
+            button.text = label;
+            button.tooltip = tooltip;
+            button.AddToClassList("yucp-menu-button");
+            return button;
+        }
+        
+        private Button CreateDropdownButton(string label, List<ToolbarMenuItem> items)
+        {
+            var button = new Button();
+            button.clicked += () => ShowDropdownMenu(button, items);
+            button.text = label + " ▼";
+            button.AddToClassList("yucp-menu-button");
+            button.AddToClassList("yucp-menu-dropdown");
+            return button;
+        }
+        
+        private void ShowDropdownMenu(VisualElement anchor, List<ToolbarMenuItem> items)
+        {
+            var menu = new GenericMenu();
+            
+            foreach (var item in items)
+            {
+                if (item.IsSeparator)
+                {
+                    menu.AddSeparator("");
+                }
+                else
+                {
+                    menu.AddItem(new GUIContent(item.Label), false, () => item.Callback?.Invoke());
+                }
+            }
+            
+            menu.ShowAsContext();
+        }
+        
+        private List<ToolbarMenuItem> GetExportMenuItems()
+        {
+            return new List<ToolbarMenuItem>
+            {
+                new ToolbarMenuItem
+                {
+                    Label = "Export Selected",
+                    Tooltip = "Export selected profile(s)",
+                    Callback = () => ExportSelectedProfiles()
+                },
+                new ToolbarMenuItem
+                {
+                    Label = "Export All",
+                    Tooltip = "Export all profiles",
+                    Callback = () => ExportAllProfiles()
+                },
+                ToolbarMenuItem.Separator(),
+                new ToolbarMenuItem
+                {
+                    Label = "Quick Export Current",
+                    Tooltip = "Quick export the currently selected profile",
+                    Callback = () => {
+                        if (selectedProfile != null)
+                        {
+                            ExportProfile(selectedProfile);
+                        }
+                    }
+                }
+            };
+        }
+        
+        private List<ToolbarMenuItem> GetUtilitiesMenuItems()
+        {
+            return new List<ToolbarMenuItem>
+            {
+                new ToolbarMenuItem
+                {
+                    Label = "Create Export Profile",
+                    Tooltip = "Create a new export profile",
+                    Callback = () => MenuItems.CreateExportProfileFromMenu()
+                },
+                new ToolbarMenuItem
+                {
+                    Label = "Open Profiles Folder",
+                    Tooltip = "Open the export profiles folder",
+                    Callback = () => MenuItems.OpenExportProfilesFolder()
+                },
+                ToolbarMenuItem.Separator(),
+                new ToolbarMenuItem
+                {
+                    Label = "Check ConfuserEx Installation",
+                    Tooltip = "Check if ConfuserEx is installed",
+                    Callback = () => MenuItems.CheckConfuserExInstallation()
+                },
+                new ToolbarMenuItem
+                {
+                    Label = "Scan for @bump Directives",
+                    Tooltip = "Scan project for version bump directives",
+                    Callback = () => MenuItems.ScanProjectForVersionDirectives()
+                }
+            };
+        }
+        
+        private List<ToolbarMenuItem> GetDebugMenuItems()
+        {
+            return new List<ToolbarMenuItem>
+            {
+                new ToolbarMenuItem
+                {
+                    Label = "Derived FBX Debug",
+                    Tooltip = "Open Derived FBX Debug window",
+                    Callback = () => {
+                        var windowType = System.Type.GetType("YUCP.DevTools.Editor.PackageExporter.DerivedFbxDebugWindow, yucp.devtools.Editor");
+                        if (windowType != null)
+                        {
+                            var method = windowType.GetMethod("ShowWindow", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                            method?.Invoke(null, null);
+                        }
+                    }
+                },
+                ToolbarMenuItem.Separator(),
+                new ToolbarMenuItem
+                {
+                    Label = "Validate Install",
+                    Tooltip = "Validate YUCP installation",
+                    Callback = () => {
+                        var menuItemsType = System.Type.GetType("YUCP.DevTools.Editor.PackageExporter.Templates.InstallerHealthTools, yucp.devtools.Editor");
+                        if (menuItemsType != null)
+                        {
+                            var method = menuItemsType.GetMethod("ValidateInstall", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                            method?.Invoke(null, null);
+                        }
+                    }
+                },
+                new ToolbarMenuItem
+                {
+                    Label = "Repair Install",
+                    Tooltip = "Repair YUCP installation",
+                    Callback = () => {
+                        var menuItemsType = System.Type.GetType("YUCP.DevTools.Editor.PackageExporter.Templates.InstallerHealthTools, yucp.devtools.Editor");
+                        if (menuItemsType != null)
+                        {
+                            var method = menuItemsType.GetMethod("RepairInstall", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                            method?.Invoke(null, null);
+                        }
+                    }
+                }
+            };
         }
 
         private VisualElement CreateSupportToast()
         {
-            Debug.Log("[PackageExporter] CreateSupportToast called");
-            
             if (EditorPrefs.GetBool(SupportPrefNeverKey, false))
             {
-                Debug.Log("[PackageExporter] Toast not shown: User permanently dismissed");
                 return null;
             }
             
             if (SessionState.GetBool(SupportSessionDismissKey, false))
             {
-                Debug.Log("[PackageExporter] Toast not shown: Dismissed for this session");
                 return null;
             }
 
@@ -293,18 +483,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     {
                         milestone = getMilestoneMethod.Invoke(null, null);
                         hasMilestone = milestone != null;
-                        if (hasMilestone)
-                        {
-                            var titleProperty = milestone.GetType().GetProperty("Title");
-                            var milestoneTitle = titleProperty?.GetValue(milestone)?.ToString() ?? "Unknown";
-                            Debug.Log($"[PackageExporter] Milestone detected: {milestoneTitle} - Toast will be shown");
-                        }
                     }
                 }
             }
-            catch (System.Exception ex)
+            catch (System.Exception)
             {
-                Debug.LogWarning($"[PackageExporter] Failed to check milestone: {ex.Message}");
+                // Silently fail milestone check
             }
 
             int count = EditorPrefs.GetInt(SupportPrefCounterKey, 0) + 1;
@@ -315,34 +499,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 int cadence = Math.Max(1, EditorPrefs.GetInt(SupportPrefCadenceKey, 1000));
                 if (count % cadence != 0)
                 {
-                    Debug.Log($"[PackageExporter] Toast not shown: Cadence check failed (count: {count}, cadence: {cadence}, need: {cadence - (count % cadence)} more)");
                     return null;
                 }
             }
-            
-            Debug.Log("[PackageExporter] Toast WILL BE SHOWN");
 
             // Toast container - positioned at top-right, yellow theme matching components
             var toast = new VisualElement();
+            toast.AddToClassList("yucp-support-toast");
             toast.style.position = Position.Absolute;
-            toast.style.top = 20;
-            toast.style.right = 20;
-            toast.style.width = 420;
-            toast.style.maxWidth = Length.Percent(90);
-            toast.style.backgroundColor = new Color(0.886f, 0.647f, 0.290f, 0.2f); // Yellow tint
-            toast.style.borderTopLeftRadius = 4;
-            toast.style.borderTopRightRadius = 4;
-            toast.style.borderBottomLeftRadius = 4;
-            toast.style.borderBottomRightRadius = 4;
-            toast.style.paddingTop = 10;
-            toast.style.paddingBottom = 10;
-            toast.style.paddingLeft = 12;
-            toast.style.paddingRight = 12;
+            toast.style.backgroundColor = new Color(0.6f, 0.45f, 0.2f, 0.95f); // Darker yellow/brown
 
             // Content container with horizontal layout
             var content = new VisualElement();
-            content.style.flexDirection = FlexDirection.Row;
-            content.style.alignItems = Align.Center;
+            content.AddToClassList("yucp-support-toast-content");
             toast.Add(content);
 
             // Left: Icon
@@ -359,9 +528,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             // Middle: Title and Subtitle
             var textContainer = new VisualElement();
+            textContainer.AddToClassList("yucp-support-text-container");
+            textContainer.name = "yucp-support-text-container";
             textContainer.style.flexDirection = FlexDirection.Column;
             textContainer.style.flexGrow = 1;
-            textContainer.style.maxWidth = 280;
+            textContainer.style.flexShrink = 1;
+            textContainer.style.minWidth = 0; // Allow shrinking below content size
 
             // Get milestone title and subtitle
             string titleText = "Your Support Keeps This Free";
@@ -375,24 +547,25 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     var subtitleProperty = milestone.GetType().GetProperty("Subtitle");
                     titleText = titleProperty?.GetValue(milestone)?.ToString() ?? titleText;
                     subtitleText = subtitleProperty?.GetValue(milestone)?.ToString() ?? subtitleText;
-                    Debug.Log($"[PackageExporter] Using milestone text - Title: {titleText}");
                 }
-                catch (System.Exception ex)
+                catch (System.Exception)
                 {
-                    Debug.LogWarning($"[PackageExporter] Failed to get milestone text: {ex.Message}");
+                    // Silently fail milestone text retrieval
                 }
             }
 
             var title = new Label(titleText);
+            title.AddToClassList("yucp-support-title");
             title.style.fontSize = 13;
-            title.style.color = new Color(1f, 0.95f, 0.8f, 1f);
+            title.style.color = new Color(1f, 1f, 1f, 1f); // White text
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             title.style.marginBottom = 2;
             textContainer.Add(title);
 
             var subtitle = new Label(subtitleText);
+            subtitle.AddToClassList("yucp-support-subtitle");
             subtitle.style.fontSize = 10;
-            subtitle.style.color = new Color(0.85f, 0.8f, 0.65f, 1f);
+            subtitle.style.color = new Color(0.95f, 0.95f, 0.95f, 1f); // Light gray text
             subtitle.style.whiteSpace = WhiteSpace.Normal;
             textContainer.Add(subtitle);
 
@@ -400,10 +573,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             // Right: Action buttons
             var actionsContainer = new VisualElement();
+            actionsContainer.AddToClassList("yucp-support-actions-container");
+            actionsContainer.name = "yucp-support-actions-container";
             actionsContainer.style.flexDirection = FlexDirection.Column;
             actionsContainer.style.alignItems = Align.FlexEnd;
+            actionsContainer.style.flexShrink = 0; // Don't shrink buttons
+            actionsContainer.style.minWidth = 90;
 
             var supportButton = new Button(() => Application.OpenURL(SupportUrl)) { text = "Support" };
+            supportButton.AddToClassList("yucp-support-button");
             supportButton.style.minWidth = 85;
             supportButton.style.height = 24;
             supportButton.style.fontSize = 11;
@@ -418,10 +596,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             supportButton.style.paddingRight = 12;
             supportButton.style.marginBottom = 4;
             supportButton.RegisterCallback<MouseEnterEvent>(evt => {
-                supportButton.style.backgroundColor = new Color(0.961f, 0.784f, 0.392f, 1f); // Lighter yellow
+                supportButton.style.backgroundColor = new Color(0.9f, 0.7f, 0.4f, 1f); // Lighter on hover
             });
             supportButton.RegisterCallback<MouseLeaveEvent>(evt => {
-                supportButton.style.backgroundColor = new Color(0.886f, 0.647f, 0.290f, 1f);
+                supportButton.style.backgroundColor = new Color(0.8f, 0.6f, 0.3f, 1f);
             });
             actionsContainer.Add(supportButton);
 
@@ -445,33 +623,40 @@ namespace YUCP.DevTools.Editor.PackageExporter
             dismissButton.style.minHeight = 16;
             dismissButton.style.marginRight = 6;
             dismissButton.RegisterCallback<MouseEnterEvent>(evt => {
-                dismissButton.style.color = new Color(0.9f, 0.85f, 0.7f, 1f);
+                dismissButton.style.color = new Color(1f, 1f, 1f, 1f);
             });
             dismissButton.RegisterCallback<MouseLeaveEvent>(evt => {
-                dismissButton.style.color = new Color(0.7f, 0.65f, 0.5f, 1f);
+                dismissButton.style.color = new Color(0.85f, 0.85f, 0.85f, 1f);
             });
             linksContainer.Add(dismissButton);
 
             var neverButton = new Button(() =>
             {
                 EditorPrefs.SetBool(SupportPrefNeverKey, true);
-                toast.RemoveFromHierarchy();
+                
+                // Animate out before removing
+                toast.style.opacity = 0;
+                toast.style.translate = new Translate(0, -20);
+                
+                toast.schedule.Execute(() => {
+                    toast.RemoveFromHierarchy();
+                }).StartingIn(300);
             }) { text = "Never show" };
             neverButton.style.backgroundColor = new StyleColor(StyleKeyword.None);
             neverButton.style.borderTopWidth = 0;
             neverButton.style.borderBottomWidth = 0;
             neverButton.style.borderLeftWidth = 0;
             neverButton.style.borderRightWidth = 0;
-            neverButton.style.color = new Color(0.7f, 0.65f, 0.5f, 1f);
+            neverButton.style.color = new Color(0.85f, 0.85f, 0.85f, 1f);
             neverButton.style.fontSize = 9;
             neverButton.style.paddingLeft = 2;
             neverButton.style.paddingRight = 2;
             neverButton.style.minHeight = 16;
             neverButton.RegisterCallback<MouseEnterEvent>(evt => {
-                neverButton.style.color = new Color(0.9f, 0.85f, 0.7f, 1f);
+                neverButton.style.color = new Color(1f, 1f, 1f, 1f);
             });
             neverButton.RegisterCallback<MouseLeaveEvent>(evt => {
-                neverButton.style.color = new Color(0.7f, 0.65f, 0.5f, 1f);
+                neverButton.style.color = new Color(0.85f, 0.85f, 0.85f, 1f);
             });
             linksContainer.Add(neverButton);
 
