@@ -50,7 +50,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI
 			window._onCaptureComplete = onComplete;
 			window.Initialize();
 			
-			// Delay population to ensure window is fully initialized
+			// Delay population until window is fully initialized
 			EditorApplication.delayCall += () =>
 			{
 				window.PopulateFromPipelineManager();

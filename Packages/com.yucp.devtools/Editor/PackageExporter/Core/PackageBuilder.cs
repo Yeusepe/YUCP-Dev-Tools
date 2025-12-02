@@ -26,14 +26,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Export a package based on the provided profile
+        /// Export a package using the provided profile
         /// </summary>
         public static ExportResult ExportPackage(ExportProfile profile, Action<float, string> progressCallback = null)
         {
             var result = new ExportResult();
             var startTime = DateTime.Now;
             
-            // Set exporting flag to prevent reserialization loops
+            // Set exporting flag
             s_isExporting = true;
             
             try
@@ -82,7 +82,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         (progress, status) =>
                         {
                             progressCallback?.Invoke(0.2f + progress * 0.3f, status);
-                        }))
+                        },
+                        profile.advancedObfuscationSettings))
                     {
                         result.success = false;
                         result.errorMessage = "Assembly obfuscation failed";
@@ -140,6 +141,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 progressCallback?.Invoke(0.52f, $"Found {assetsToExport.Count} assets in export folders (excluded obfuscated assemblies)");
                 
+                // Final safety check: Remove any assets that are in excluded folders (force exclusion regardless of references)
+                int excludedCount = assetsToExport.RemoveAll(assetPath =>
+                {
+                    string fullPath = Path.GetFullPath(assetPath);
+                    if (ShouldExcludeAsset(assetPath, profile))
+                    {
+                        Debug.LogWarning($"[PackageBuilder] Force-excluding asset in excluded folder: {assetPath}");
+                        return true;
+                    }
+                    return false;
+                });
+                
+                if (excludedCount > 0)
+                {
+                    Debug.Log($"[PackageBuilder] Force-excluded {excludedCount} assets that were in excluded folders");
+                }
+                
                 // Track bundled dependencies to inject later (AssetDatabase.ExportPackage can't handle files without .meta)
                 var bundledPackagePaths = new Dictionary<string, string>(); // packageName -> packagePath
                 var bundledDeps = profile.dependencies.Where(d => d.enabled && d.exportMode == DependencyExportMode.Bundle).ToList();
@@ -163,14 +181,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
                 
-                 // Generate package.json if needed (but don't add to Unity export - will inject later)
+                 // Generate package.json if needed (will inject later)
                  string packageJsonContent = null;
                  if (profile.generatePackageJson)
                  {
                      progressCallback?.Invoke(0.58f, "Generating package.json...");
                      
-                     // Generate the content but don't create a file in the Assets folder yet
-                     // This avoids Unity import issues
+                     // Generate the content without creating a file in the Assets folder yet
                      packageJsonContent = DependencyScanner.GeneratePackageJson(
                          profile,
                          profile.dependencies,
@@ -184,7 +201,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 string tempPackagePath = Path.Combine(Path.GetTempPath(), $"YUCP_Temp_{Guid.NewGuid():N}.unitypackage");
                 
-                 // Build export options (Interactive mode is never used in programmatic exports)
+                 // Build export options
                  ExportPackageOptions options = ExportPackageOptions.Default;
                  if (profile.includeDependencies)
                      options |= ExportPackageOptions.IncludeDependencies;
@@ -286,7 +303,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Debug.LogWarning($"[PackageBuilder] Safety check removed {safetyRemoved} derived FBX(s) that were still in the export list");
                 }
                 
-                // Note: We don't add the entire Patches folder anymore - only specific DerivedFbxAsset files
+                // Only specific DerivedFbxAsset files are added
                 // are added via patchAssetsToAdd in ConvertDerivedFbxToPatchAssets
                 
                 if (finalValidAssets.Count == 0)
@@ -487,6 +504,42 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Build result
                 result.success = true;
+                
+                // Track export for milestones
+                try
+                {
+                    System.Type milestoneTrackerType = null;
+                    
+                    // Try to find the type by searching through all loaded assemblies
+                    foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+                    {
+                        milestoneTrackerType = assembly.GetType("YUCP.Components.Editor.SupportBanner.MilestoneTracker");
+                        if (milestoneTrackerType != null)
+                            break;
+                    }
+                    
+                    if (milestoneTrackerType != null)
+                    {
+                        var incrementMethod = milestoneTrackerType.GetMethod("IncrementExportCount", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                        if (incrementMethod != null)
+                        {
+                            incrementMethod.Invoke(null, null);
+                            Debug.Log($"[PackageExporter] Export tracked for milestones. New export count: {EditorPrefs.GetInt("com.yucp.components.milestone.export_count", 0)}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning("[PackageExporter] IncrementExportCount method not found on MilestoneTracker");
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[PackageExporter] MilestoneTracker type not found in any loaded assembly");
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogError($"[PackageExporter] Failed to track export for milestones: {ex.Message}");
+                }
                 result.outputPath = finalOutputPath;
                 result.buildTimeSeconds = (float)(DateTime.Now - startTime).TotalSeconds;
                 
@@ -519,7 +572,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             finally
             {
-                // Always clear exporting flag to prevent reserialization loops
+                // Clear exporting flag
                 s_isExporting = false;
             }
         }
@@ -699,7 +752,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 catch (Exception folderEx)
                 {
                     Debug.LogError($"[PackageBuilder] Failed to ensure authoring folder: {folderEx.Message}\n{folderEx.StackTrace}");
-                    throw; // Re-throw to prevent continuing with invalid state
+                    throw;
                 }
                 
                 try
@@ -719,12 +772,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     derivedAsset.originalDerivedFbxPath = normalizedModifiedPath;
                     derivedAsset.overrideOriginalReferences = overrideOriginalReferences;
                     
-                    // Use derived FBX GUID as filename identifier to ensure same derived FBX always uses same patch asset
-                    // This prevents file bloat from GenerateUniqueAssetPath creating numbered duplicates
+                    // Use derived FBX GUID as filename identifier
                     string fileName = $"DerivedFbxAsset_{derivedFbxGuid.Substring(0, 8)}_{SanitizeFileName(hints.friendlyName)}.asset";
                     string pkgPath = $"Packages/com.yucp.temp/Patches/{fileName}";
                     
-                    // Delete existing file if it exists to prevent bloat (same derived FBX = same patch asset file)
+                    // Delete existing file if it exists (same derived FBX = same patch asset file)
                     string physicalAssetPath = Path.Combine(projectPath, pkgPath.Replace('/', Path.DirectorySeparatorChar));
                     if (File.Exists(physicalAssetPath))
                     {
@@ -749,7 +801,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         continue;
                     }
                     
-                    // CRITICAL: Update the script GUID reference in the .asset file to point to the DerivedFbxAsset script in temp package
+                    // Update the script GUID reference in the .asset file to point to the DerivedFbxAsset script in temp package
                     // The asset was created with a reference to the devtools script, but it needs to reference the temp package script
                     // physicalAssetPath is already defined above
                     if (File.Exists(physicalAssetPath))
@@ -878,7 +930,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Debug.LogError($"[PackageBuilder] Failed to build patch for derived FBX {modifiedPath}: {ex.Message}\n{ex.StackTrace}");
                     Debug.LogError($"[PackageBuilder] The FBX will be exported as-is instead of being converted to a PatchPackage. " +
                         $"Please check that the base FBX exists and both FBXs have compatible mesh structures.");
-                    // Don't remove FBX if patch building completely failed - let user export the FBX as-is
+                    // Keep FBX if patch building completely failed - let user export the FBX as-is
                 }
             }
             
@@ -1005,7 +1057,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 CreateMetaFileIfNeeded(patchesPhysicalPath);
             }
             
-            // Don't force import - just refresh once to avoid reserialization loops
+            // Refresh once without forcing import
             // Unity will recognize the folders naturally
             AssetDatabase.Refresh();
             
@@ -1129,7 +1181,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Collect all assets to export based on profile settings
+        /// Collect all assets to export using profile settings
         /// </summary>
         private static List<string> CollectAssetsToExport(ExportProfile profile)
         {
@@ -1139,11 +1191,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (profile.HasScannedAssets && profile.discoveredAssets != null && profile.discoveredAssets.Count > 0)
             {
                 
-                // Only include assets that are explicitly marked as included
+                // Only include assets that are explicitly marked as included AND not ignored
                 var includedAssets = profile.discoveredAssets
                     .Where(a => a.included && !a.isFolder)
                     .Select(a => GetRelativePackagePath(a.assetPath))
                     .Where(path => !string.IsNullOrEmpty(path))
+                    .Where(assetPath => !ShouldExcludeAsset(assetPath, profile))
                     .ToList();
                 
                 
@@ -1205,7 +1258,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     continue;
                 }
                 
-                // Refresh AssetDatabase to ensure the folder is recognized
+                // Refresh AssetDatabase
                 AssetDatabase.Refresh();
                 
                 // Check if the folder exists in AssetDatabase
@@ -1253,38 +1306,33 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Check if an asset should be excluded based on filters
+        /// Check if an asset should be excluded using filters
+        /// Uses comprehensive exclusion checks including permanent ignore folders and .yucpignore files
+        /// NOTE: Derived FBX files are NOT excluded here - they need to be collected so ConvertDerivedFbxToPatchAssets
+        /// can convert them. They will be removed during conversion and the final safety check ensures none remain.
         /// </summary>
         private static bool ShouldExcludeAsset(string assetPath, ExportProfile profile)
         {
-            // Check file pattern exclusions
-            string fileName = Path.GetFileName(assetPath);
-            foreach (string pattern in profile.excludeFilePatterns)
+            // Convert to full path for comprehensive exclusion checking
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string fullPath;
+            
+            // Handle both Unity-relative paths (Assets/...) and full paths
+            if (Path.IsPathRooted(assetPath))
             {
-                if (string.IsNullOrWhiteSpace(pattern))
-                    continue;
-                
-                // Simple wildcard matching
-                if (WildcardMatch(fileName, pattern))
-                {
-                    return true;
-                }
+                // Already a full path
+                fullPath = Path.GetFullPath(assetPath);
+            }
+            else
+            {
+                // Unity-relative path - combine with project root
+                fullPath = Path.GetFullPath(Path.Combine(projectRoot, assetPath));
             }
             
-            // Check folder name exclusions
-            string[] pathParts = assetPath.Split('/', '\\');
-            foreach (string folderName in profile.excludeFolderNames)
-            {
-                if (string.IsNullOrWhiteSpace(folderName))
-                    continue;
-                
-                if (pathParts.Any(part => part.Equals(folderName, StringComparison.OrdinalIgnoreCase)))
-                {
-                    return true;
-                }
-            }
-            
-            return false;
+            // Use comprehensive exclusion check from AssetCollector
+            // This checks: .yucpignore files, permanent ignore folders, excludeFolderNames, excludeFilePatterns
+            // NOTE: Does NOT check for derived FBX here - that's handled during conversion and final safety check
+            return AssetCollector.ShouldIgnoreFile(fullPath, profile);
         }
         
         /// <summary>
@@ -1370,7 +1418,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Directory.CreateDirectory(packageJsonFolder);
                     
                     File.WriteAllText(Path.Combine(packageJsonFolder, "asset"), packageJsonContent);
-                    // Use a unique path to avoid conflicts between multiple package imports
+                    // Use a unique path
                     File.WriteAllText(Path.Combine(packageJsonFolder, "pathname"), $"Assets/YUCP_TempInstall_{packageJsonGuid}.json");
                     
                     string packageJsonMeta = "fileFormatVersion: 2\nguid: " + packageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
@@ -1378,7 +1426,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 
                 // 2a. Inject Mini Package Guardian (permanent protection layer)
-                // Only inject if com.yucp.components is NOT already a dependency (to avoid duplication)
+                // Only inject if com.yucp.components is NOT already a dependency
                 bool hasYucpComponentsDependency = profile.dependencies != null && 
                     profile.dependencies.Any(d => d.enabled && d.packageName == "com.yucp.components");
                 
@@ -1476,7 +1524,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     string installerContent = File.ReadAllText(installerScriptPath);
                     File.WriteAllText(Path.Combine(installerFolder, "asset"), installerContent);
-                    // Use unique path to avoid conflicts with other package installers
+                    // Use unique path
                     File.WriteAllText(Path.Combine(installerFolder, "pathname"), $"Assets/Editor/YUCP_Installer_{installerGuid}.cs");
                     
                     string installerMeta = "fileFormatVersion: 2\nguid: " + installerGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
@@ -1493,7 +1541,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         Directory.CreateDirectory(asmdefFolder);
                         
                         string asmdefContent = File.ReadAllText(asmdefPath);
-                        // Ensure the injected asmdef has a unique assembly name to avoid collisions
+                        // Use a unique assembly name for the injected asmdef
                         // with any template asmdef included in com.yucp.components or previous installers
                         try
                         {
@@ -1685,7 +1733,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     string tempPackageJsonMeta = "fileFormatVersion: 2\nguid: " + tempPackageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(Path.Combine(tempPackageJsonFolder, "asset.meta"), tempPackageJsonMeta);
                     
-                    // CRITICAL: Create an assembly definition (.asmdef) file for the Editor scripts
+                    // Create an assembly definition (.asmdef) file for the Editor scripts
                     // Scripts in Packages folders need an .asmdef to compile properly
                     string asmdefGuid = Guid.NewGuid().ToString("N");
                     string asmdefFolder = Path.Combine(tempExtractDir, asmdefGuid);
@@ -1816,7 +1864,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         int filesAdded = 0;
                         int filesReplaced = 0;
                         
-                        // Track which asmdef directories have been processed (to avoid adding files multiple times)
+                        // Track which asmdef directories have been processed
                         var processedAsmdefDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                         
                         foreach (string filePath in allFiles)
@@ -1921,7 +1969,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             }
                             
                             // Create pathname for Unity package (put in Packages folder)
-                            // Add .yucp_disabled to compilable files to prevent compilation until dependencies are ready
+                            // Add .yucp_disabled to compilable files
                             string unityPathname = $"Packages/{packageName}/{relativePath.Replace('\\', '/')}";
                             if (isCompilableScript)
                             {
@@ -1929,7 +1977,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             }
                             
                             // GUID handling strategy:
-                            // - For .yucp_disabled files: Generate NEW GUID to avoid conflicts with enabled version
+                            // - For .yucp_disabled files: Generate NEW GUID
                             // - For normal files: Preserve original GUID to maintain references
                             string fileGuid = null;
                             string metaContent = null;
@@ -2053,7 +2101,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Generate appropriate .meta file content based on file extension
+        /// Generate appropriate .meta file content using file extension
         /// </summary>
         private static string GenerateMetaForFile(string filePath, string guid)
         {

@@ -7,7 +7,6 @@ using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
 using YUCP.DevTools.Components;
-using YUCP.DevTools.Editor.Utilities;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -81,7 +80,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private string inspectorSearchFilter = "";
         private bool showOnlyIncluded = false;
         private bool showOnlyExcluded = false;
-        private bool showExportInspector = false;
+        private bool showExportInspector = true;
 		private bool showOnlyDerived = false;
         private Dictionary<string, bool> folderExpandedStates = new Dictionary<string, bool>();
         
@@ -90,6 +89,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         // Dependencies filter state
         private string dependenciesSearchFilter = "";
+        
+        // Collapsible section states
+        private bool showSummary = true;
+        private bool showValidation = true;
+        private bool showExportOptions = true;
+        private bool showFolders = true;
+        private bool showDependencies = true;
+        private bool showObfuscation = true;
+        private bool showQuickActions = true;
         
         private Texture2D logoTexture;
         
@@ -102,7 +110,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private bool _isOverlayOpen = false;
 
         // Support banner prefs (devtools scope)
-        private const string SupportUrl = "https://buymeacoffee.com/yeusepe";
+        private const string SupportUrl = "http://patreon.com/Yeusepe";
         private const string SupportPrefNeverKey = "com.yucp.devtools.support.never";
         private const string SupportPrefCounterKey = "com.yucp.devtools.support.counter";
         private const string SupportPrefCadenceKey = "com.yucp.devtools.support.cadence"; // optional override
@@ -183,7 +191,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var supportToast = CreateSupportToast();
             if (supportToast != null)
             {
+                Debug.Log("[PackageExporter] Support toast added to UI");
                 root.Add(supportToast);
+            }
+            else
+            {
+                Debug.Log("[PackageExporter] Support toast not added (CreateSupportToast returned null)");
             }
             
             // Schedule delayed rename checks
@@ -222,7 +235,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 logo.scaleMode = ScaleMode.ScaleToFit;
                 logo.AddToClassList("yucp-logo");
                 
-                // Calculate dimensions based on aspect ratio to prevent distortion
+                // Calculate dimensions using aspect ratio
                 float textureAspect = (float)logoTexture.width / logoTexture.height;
                 float maxHeight = 50f;
                 float calculatedWidth = maxHeight * textureAspect;
@@ -244,111 +257,226 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private VisualElement CreateSupportToast()
         {
-            if (EditorPrefs.GetBool(SupportPrefNeverKey, false)) return null;
-            if (SessionState.GetBool(SupportSessionDismissKey, false)) return null;
+            Debug.Log("[PackageExporter] CreateSupportToast called");
+            
+            if (EditorPrefs.GetBool(SupportPrefNeverKey, false))
+            {
+                Debug.Log("[PackageExporter] Toast not shown: User permanently dismissed");
+                return null;
+            }
+            
+            if (SessionState.GetBool(SupportSessionDismissKey, false))
+            {
+                Debug.Log("[PackageExporter] Toast not shown: Dismissed for this session");
+                return null;
+            }
+
+            // Check if there's a milestone - if so, always show (bypass cadence)
+            object milestone = null;
+            bool hasMilestone = false;
+            try
+            {
+                System.Type milestoneTrackerType = null;
+                
+                // Try to find the type by searching through all loaded assemblies
+                foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    milestoneTrackerType = assembly.GetType("YUCP.Components.Editor.SupportBanner.MilestoneTracker");
+                    if (milestoneTrackerType != null)
+                        break;
+                }
+                
+                if (milestoneTrackerType != null)
+                {
+                    var getMilestoneMethod = milestoneTrackerType.GetMethod("GetCurrentMilestone", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    if (getMilestoneMethod != null)
+                    {
+                        milestone = getMilestoneMethod.Invoke(null, null);
+                        hasMilestone = milestone != null;
+                        if (hasMilestone)
+                        {
+                            var titleProperty = milestone.GetType().GetProperty("Title");
+                            var milestoneTitle = titleProperty?.GetValue(milestone)?.ToString() ?? "Unknown";
+                            Debug.Log($"[PackageExporter] Milestone detected: {milestoneTitle} - Toast will be shown");
+                        }
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[PackageExporter] Failed to check milestone: {ex.Message}");
+            }
 
             int count = EditorPrefs.GetInt(SupportPrefCounterKey, 0) + 1;
             EditorPrefs.SetInt(SupportPrefCounterKey, count);
 
-            int cadence = Math.Max(1, EditorPrefs.GetInt(SupportPrefCadenceKey, 1000));
-            if (count % cadence != 0) return null;
+            if (!hasMilestone)
+            {
+                int cadence = Math.Max(1, EditorPrefs.GetInt(SupportPrefCadenceKey, 1000));
+                if (count % cadence != 0)
+                {
+                    Debug.Log($"[PackageExporter] Toast not shown: Cadence check failed (count: {count}, cadence: {cadence}, need: {cadence - (count % cadence)} more)");
+                    return null;
+                }
+            }
+            
+            Debug.Log("[PackageExporter] Toast WILL BE SHOWN");
 
-            // Toast container - positioned at top-right
+            // Toast container - positioned at top-right, yellow theme matching components
             var toast = new VisualElement();
             toast.style.position = Position.Absolute;
             toast.style.top = 20;
             toast.style.right = 20;
-            toast.style.width = 380;
+            toast.style.width = 420;
             toast.style.maxWidth = Length.Percent(90);
-            toast.style.backgroundColor = new Color(0.106f, 0.106f, 0.106f, 0.98f); // #1b1b1b with opacity
-            toast.style.borderTopLeftRadius = 6;
-            toast.style.borderTopRightRadius = 6;
-            toast.style.borderBottomLeftRadius = 6;
-            toast.style.borderBottomRightRadius = 6;
-            toast.style.paddingTop = 16;
-            toast.style.paddingBottom = 16;
-            toast.style.paddingLeft = 16;
-            toast.style.paddingRight = 16;
-            toast.style.borderLeftWidth = 3;
-            toast.style.borderLeftColor = new Color(0.212f, 0.749f, 0.694f, 1f); // #36BFB1 YUCP Teal
-            toast.style.borderTopWidth = 1;
-            toast.style.borderRightWidth = 1;
-            toast.style.borderBottomWidth = 1;
-            toast.style.borderTopColor = new Color(0.164f, 0.164f, 0.164f, 1f); // #2a2a2a
-            toast.style.borderRightColor = new Color(0.164f, 0.164f, 0.164f, 1f);
-            toast.style.borderBottomColor = new Color(0.164f, 0.164f, 0.164f, 1f);
+            toast.style.backgroundColor = new Color(0.886f, 0.647f, 0.290f, 0.2f); // Yellow tint
+            toast.style.borderTopLeftRadius = 4;
+            toast.style.borderTopRightRadius = 4;
+            toast.style.borderBottomLeftRadius = 4;
+            toast.style.borderBottomRightRadius = 4;
+            toast.style.paddingTop = 10;
+            toast.style.paddingBottom = 10;
+            toast.style.paddingLeft = 12;
+            toast.style.paddingRight = 12;
 
-            // Header row with title and close button
-            var headerRow = new VisualElement();
-            headerRow.style.flexDirection = FlexDirection.Row;
-            headerRow.style.alignItems = Align.Center;
-            headerRow.style.marginBottom = 10;
+            // Content container with horizontal layout
+            var content = new VisualElement();
+            content.style.flexDirection = FlexDirection.Row;
+            content.style.alignItems = Align.Center;
+            toast.Add(content);
 
-            var title = new Label("Support YUCP");
+            // Left: Icon
+            var iconImage = new Image();
+            var heartIcon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.components/Resources/Icons/NucleoArcade/heart.png");
+            if (heartIcon != null)
+            {
+                iconImage.image = heartIcon;
+            }
+            iconImage.style.width = 32;
+            iconImage.style.height = 32;
+            iconImage.style.marginRight = 10;
+            content.Add(iconImage);
+
+            // Middle: Title and Subtitle
+            var textContainer = new VisualElement();
+            textContainer.style.flexDirection = FlexDirection.Column;
+            textContainer.style.flexGrow = 1;
+            textContainer.style.maxWidth = 280;
+
+            // Get milestone title and subtitle
+            string titleText = "Your Support Keeps This Free";
+            string subtitleText = "Enjoying these tools? Your support keeps them free and helps create more amazing features!";
+            
+            if (milestone != null)
+            {
+                try
+                {
+                    var titleProperty = milestone.GetType().GetProperty("Title");
+                    var subtitleProperty = milestone.GetType().GetProperty("Subtitle");
+                    titleText = titleProperty?.GetValue(milestone)?.ToString() ?? titleText;
+                    subtitleText = subtitleProperty?.GetValue(milestone)?.ToString() ?? subtitleText;
+                    Debug.Log($"[PackageExporter] Using milestone text - Title: {titleText}");
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"[PackageExporter] Failed to get milestone text: {ex.Message}");
+                }
+            }
+
+            var title = new Label(titleText);
             title.style.fontSize = 13;
-            title.style.color = new Color(1f, 1f, 1f, 1f);
+            title.style.color = new Color(1f, 0.95f, 0.8f, 1f);
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.flexGrow = 1;
-            headerRow.Add(title);
+            title.style.marginBottom = 2;
+            textContainer.Add(title);
 
-            var closeButton = new Button(() =>
+            var subtitle = new Label(subtitleText);
+            subtitle.style.fontSize = 10;
+            subtitle.style.color = new Color(0.85f, 0.8f, 0.65f, 1f);
+            subtitle.style.whiteSpace = WhiteSpace.Normal;
+            textContainer.Add(subtitle);
+
+            content.Add(textContainer);
+
+            // Right: Action buttons
+            var actionsContainer = new VisualElement();
+            actionsContainer.style.flexDirection = FlexDirection.Column;
+            actionsContainer.style.alignItems = Align.FlexEnd;
+
+            var supportButton = new Button(() => Application.OpenURL(SupportUrl)) { text = "Support" };
+            supportButton.style.minWidth = 85;
+            supportButton.style.height = 24;
+            supportButton.style.fontSize = 11;
+            supportButton.style.unityFontStyleAndWeight = FontStyle.Bold;
+            supportButton.style.backgroundColor = new Color(0.886f, 0.647f, 0.290f, 1f); // Yellow
+            supportButton.style.color = new Color(0.1f, 0.1f, 0.1f, 1f); // Dark text
+            supportButton.style.borderTopWidth = 0;
+            supportButton.style.borderBottomWidth = 0;
+            supportButton.style.borderLeftWidth = 0;
+            supportButton.style.borderRightWidth = 0;
+            supportButton.style.paddingLeft = 12;
+            supportButton.style.paddingRight = 12;
+            supportButton.style.marginBottom = 4;
+            supportButton.RegisterCallback<MouseEnterEvent>(evt => {
+                supportButton.style.backgroundColor = new Color(0.961f, 0.784f, 0.392f, 1f); // Lighter yellow
+            });
+            supportButton.RegisterCallback<MouseLeaveEvent>(evt => {
+                supportButton.style.backgroundColor = new Color(0.886f, 0.647f, 0.290f, 1f);
+            });
+            actionsContainer.Add(supportButton);
+
+            var linksContainer = new VisualElement();
+            linksContainer.style.flexDirection = FlexDirection.Row;
+
+            var dismissButton = new Button(() =>
             {
                 SessionState.SetBool(SupportSessionDismissKey, true);
                 toast.RemoveFromHierarchy();
-            }) { text = "×" };
-            closeButton.style.width = 24;
-            closeButton.style.height = 24;
-            closeButton.style.fontSize = 16;
-            closeButton.style.backgroundColor = new Color(0.228f, 0.228f, 0.228f, 0f); // Transparent
-            closeButton.style.color = new Color(0.69f, 0.69f, 0.69f, 1f); // #b0b0b0
-            closeButton.style.borderTopWidth = 0;
-            closeButton.style.borderBottomWidth = 0;
-            closeButton.style.borderLeftWidth = 0;
-            closeButton.style.borderRightWidth = 0;
-            closeButton.style.unityTextAlign = TextAnchor.MiddleCenter;
-            closeButton.style.marginLeft = 0;
-            closeButton.style.marginRight = 0;
-            closeButton.style.paddingLeft = 0;
-            closeButton.style.paddingRight = 0;
-            closeButton.style.borderTopLeftRadius = 4;
-            closeButton.style.borderTopRightRadius = 4;
-            closeButton.style.borderBottomLeftRadius = 4;
-            closeButton.style.borderBottomRightRadius = 4;
-            headerRow.Add(closeButton);
-
-            toast.Add(headerRow);
-
-            // Message text
-            var message = new Label("This project stays free because of you. Every tip directly supports maintenance and new releases. If it helped you, please consider supporting my work!");
-            message.style.fontSize = 11;
-            message.style.color = new Color(0.69f, 0.69f, 0.69f, 1f); // #b0b0b0
-            message.style.whiteSpace = WhiteSpace.Normal;
-            message.style.marginBottom = 12;
-            toast.Add(message);
-
-            // Button row
-            var buttonRow = new VisualElement();
-            buttonRow.style.flexDirection = FlexDirection.Row;
-            buttonRow.style.justifyContent = Justify.FlexEnd;
+            }) { text = "Dismiss" };
+            dismissButton.style.backgroundColor = new StyleColor(StyleKeyword.None);
+            dismissButton.style.borderTopWidth = 0;
+            dismissButton.style.borderBottomWidth = 0;
+            dismissButton.style.borderLeftWidth = 0;
+            dismissButton.style.borderRightWidth = 0;
+            dismissButton.style.color = new Color(0.7f, 0.65f, 0.5f, 1f);
+            dismissButton.style.fontSize = 9;
+            dismissButton.style.paddingLeft = 2;
+            dismissButton.style.paddingRight = 2;
+            dismissButton.style.minHeight = 16;
+            dismissButton.style.marginRight = 6;
+            dismissButton.RegisterCallback<MouseEnterEvent>(evt => {
+                dismissButton.style.color = new Color(0.9f, 0.85f, 0.7f, 1f);
+            });
+            dismissButton.RegisterCallback<MouseLeaveEvent>(evt => {
+                dismissButton.style.color = new Color(0.7f, 0.65f, 0.5f, 1f);
+            });
+            linksContainer.Add(dismissButton);
 
             var neverButton = new Button(() =>
             {
                 EditorPrefs.SetBool(SupportPrefNeverKey, true);
                 toast.RemoveFromHierarchy();
-            }) { text = "Never show again" };
-            neverButton.AddToClassList("yucp-button");
-            neverButton.AddToClassList("yucp-button-small");
-            neverButton.style.marginRight = 8;
-            buttonRow.Add(neverButton);
+            }) { text = "Never show" };
+            neverButton.style.backgroundColor = new StyleColor(StyleKeyword.None);
+            neverButton.style.borderTopWidth = 0;
+            neverButton.style.borderBottomWidth = 0;
+            neverButton.style.borderLeftWidth = 0;
+            neverButton.style.borderRightWidth = 0;
+            neverButton.style.color = new Color(0.7f, 0.65f, 0.5f, 1f);
+            neverButton.style.fontSize = 9;
+            neverButton.style.paddingLeft = 2;
+            neverButton.style.paddingRight = 2;
+            neverButton.style.minHeight = 16;
+            neverButton.RegisterCallback<MouseEnterEvent>(evt => {
+                neverButton.style.color = new Color(0.9f, 0.85f, 0.7f, 1f);
+            });
+            neverButton.RegisterCallback<MouseLeaveEvent>(evt => {
+                neverButton.style.color = new Color(0.7f, 0.65f, 0.5f, 1f);
+            });
+            linksContainer.Add(neverButton);
 
-            var supportButton = new Button(() => Application.OpenURL(SupportUrl)) { text = "Support" };
-            supportButton.AddToClassList("yucp-button");
-            supportButton.AddToClassList("yucp-button-primary");
-            supportButton.AddToClassList("yucp-button-small");
-            supportButton.style.marginRight = 0;
-            buttonRow.Add(supportButton);
-
-            toast.Add(buttonRow);
+            actionsContainer.Add(linksContainer);
+            content.Add(actionsContainer);
 
             return toast;
         }
@@ -545,7 +673,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 item.AddToClassList("yucp-profile-item-selected");
             }
             
-            // Icon container - always present for consistent alignment
+            // Icon container
             var iconContainer = new VisualElement();
             iconContainer.AddToClassList("yucp-profile-item-icon-container");
             
@@ -797,17 +925,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 var foldersSection = CreateFoldersSection(selectedProfile);
                 _profileDetailsContainer.Add(foldersSection);
                 
-                // Exclusion Filters Section
-                var exclusionSection = CreateExclusionFiltersSection(selectedProfile);
-                _profileDetailsContainer.Add(exclusionSection);
-                
                 // Export Inspector Section
                 var inspectorSection = CreateExportInspectorSection(selectedProfile);
                 _profileDetailsContainer.Add(inspectorSection);
                 
+                // Exclusion Filters Section
+                var exclusionSection = CreateExclusionFiltersSection(selectedProfile);
+                _profileDetailsContainer.Add(exclusionSection);
+                
                 // Dependencies Section
                 var dependenciesSection = CreateDependenciesSection(selectedProfile);
                 _profileDetailsContainer.Add(dependenciesSection);
+                
+                // Auto-scan dependencies if needed (silent, no dialogs)
+                if (selectedProfile.dependencies.Count == 0 && selectedProfile.foldersToExport.Count > 0)
+                {
+                    EditorApplication.delayCall += () =>
+                    {
+                        if (selectedProfile != null && selectedProfile.dependencies.Count == 0)
+                        {
+                            ScanProfileDependencies(selectedProfile, silent: true);
+                        }
+                    };
+                }
                 
                 // Obfuscation Section
                 var obfuscationSection = CreateObfuscationSection(selectedProfile);
@@ -1046,6 +1186,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var section = new VisualElement();
             section.name = "validation-section";
+            section.AddToClassList("yucp-section");
+            
+            var title = new Label("Validation");
+            title.AddToClassList("yucp-section-title");
+            section.Add(title);
             
             if (!profile.Validate(out string errorMessage))
             {
@@ -1090,9 +1235,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var section = new VisualElement();
             section.AddToClassList("yucp-section");
             
-            var title = new Label("Export Options");
-            title.AddToClassList("yucp-section-title");
-            section.Add(title);
+            var header = CreateCollapsibleHeader("Export Options", 
+                () => showExportOptions, 
+                (value) => { showExportOptions = value; }, 
+                () => UpdateProfileDetails());
+            section.Add(header);
+            
+            if (!showExportOptions)
+            {
+                return section;
+            }
             
             // Toggles container
             var togglesContainer = new VisualElement();
@@ -1327,12 +1479,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var section = new VisualElement();
             section.AddToClassList("yucp-section");
             
-            var title = new Label("Export Folders");
-            title.AddToClassList("yucp-section-title");
-            section.Add(title);
+            var header = CreateCollapsibleHeader("Export Folders", 
+                () => showFolders, 
+                (value) => { showFolders = value; }, 
+                () => UpdateProfileDetails());
+            section.Add(header);
             
-            var folderListContainer = new VisualElement();
-            folderListContainer.AddToClassList("yucp-folder-list-container");
+            if (!showFolders)
+            {
+                return section;
+            }
             
             if (profile.foldersToExport.Count == 0)
             {
@@ -1341,7 +1497,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 var warningText = new Label("No folders added. Add folders to export.");
                 warningText.AddToClassList("yucp-validation-error-text");
                 warning.Add(warningText);
-                folderListContainer.Add(warning);
+                section.Add(warning);
             }
             else
             {
@@ -1354,8 +1510,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     var folderItem = new VisualElement();
                     folderItem.AddToClassList("yucp-folder-item");
                     
-                    var displayPath = GetDisplayPath(profile.foldersToExport[i]);
-                    var pathLabel = new Label(displayPath);
+                    var pathLabel = new Label(profile.foldersToExport[i]);
                     pathLabel.AddToClassList("yucp-folder-item-path");
                     folderItem.Add(pathLabel);
                     
@@ -1367,95 +1522,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     folderList.Add(folderItem);
                 }
                 
-                folderListContainer.Add(folderList);
+                section.Add(folderList);
             }
-            
-            section.Add(folderListContainer);
             
             var addButton = new Button(() => AddFolder(profile)) { text = "+ Add Folder" };
             addButton.AddToClassList("yucp-button");
             addButton.AddToClassList("yucp-button-action");
             addButton.style.marginTop = 8;
-            
-            // Add drag-and-drop handlers directly to the button
-            addButton.RegisterCallback<DragUpdatedEvent>(evt =>
-            {
-                if (IsDragValid(evt))
-                {
-                    DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
-                    addButton.style.backgroundColor = new Color(0.3f, 0.6f, 0.9f, 0.5f);
-                    evt.StopPropagation();
-                }
-                else
-                {
-                    DragAndDrop.visualMode = DragAndDropVisualMode.Rejected;
-                }
-            });
-            
-            addButton.RegisterCallback<DragExitedEvent>(evt =>
-            {
-                addButton.style.backgroundColor = new StyleColor(StyleKeyword.Null);
-            });
-            
-            addButton.RegisterCallback<DragPerformEvent>(evt =>
-            {
-                if (IsDragValid())
-                {
-                    var draggedPaths = DragAndDrop.paths;
-                    bool addedAny = false;
-                    
-                    foreach (var path in draggedPaths)
-                    {
-                        if (AssetDatabase.IsValidFolder(path))
-                        {
-                            string relativePath = GetRelativePath(Path.GetFullPath(path));
-                            if (string.IsNullOrEmpty(relativePath))
-                            {
-                                relativePath = path;
-                            }
-                            
-                            // Only add if not already in list
-                            if (!profile.foldersToExport.Contains(relativePath))
-                            {
-                                Undo.RecordObject(profile, "Add Export Folder via Drag");
-                                profile.foldersToExport.Add(relativePath);
-                                addedAny = true;
-                            }
-                        }
-                    }
-                    
-                    if (addedAny)
-                    {
-                        EditorUtility.SetDirty(profile);
-                        AssetDatabase.SaveAssets();
-                        UpdateProfileDetails();
-                    }
-                    
-                    addButton.style.backgroundColor = new StyleColor(StyleKeyword.Null);
-                    evt.StopPropagation();
-                }
-            });
-            
             section.Add(addButton);
             
             return section;
-        }
-        
-        private bool IsDragValid(DragUpdatedEvent evt = null)
-        {
-            if (DragAndDrop.paths == null || DragAndDrop.paths.Length == 0)
-                return false;
-            
-            // Check if at least one valid folder is being dragged
-            foreach (var path in DragAndDrop.paths)
-            {
-                if (AssetDatabase.IsValidFolder(path))
-                {
-                    return true;
-                }
-            }
-            
-            return false;
         }
 
         private VisualElement CreateExclusionFiltersSection(ExportProfile profile)
@@ -1463,23 +1539,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var section = new VisualElement();
             section.AddToClassList("yucp-section");
             
-            var header = new VisualElement();
-            header.AddToClassList("yucp-inspector-header");
-            
-            var title = new Label("Exclusion Filters");
-            title.AddToClassList("yucp-section-title");
-            header.Add(title);
-            
-            var toggleButton = new Button(() => 
-            {
-                showExclusionFilters = !showExclusionFilters;
-                UpdateProfileDetails();
-            }) 
-            { text = showExclusionFilters ? "▼" : "▶" };
-            toggleButton.AddToClassList("yucp-button");
-            toggleButton.AddToClassList("yucp-button-small");
-            header.Add(toggleButton);
-            
+            var header = CreateCollapsibleHeader("Exclusion Filters", 
+                () => showExclusionFilters, 
+                (value) => { showExclusionFilters = value; }, 
+                () => UpdateProfileDetails());
             section.Add(header);
             
             if (!showExclusionFilters)
@@ -1506,15 +1569,32 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var filePatternsContainer = new VisualElement();
             filePatternsContainer.style.marginBottom = 8;
             
-            foreach (var pattern in profile.excludeFilePatterns.ToList())
+            for (int i = 0; i < profile.excludeFilePatterns.Count; i++)
             {
-                var patternItem = CreateStringListItem(pattern, () =>
-                {
-                    profile.excludeFilePatterns.Remove(pattern);
-                    EditorUtility.SetDirty(profile);
-                    AssetDatabase.SaveAssets();
-                    UpdateProfileDetails();
-                });
+                int index = i;
+                string originalValue = profile.excludeFilePatterns[i];
+                var patternItem = CreateEditableStringListItem(
+                    originalValue,
+                    (newValue) =>
+                    {
+                        if (index < profile.excludeFilePatterns.Count)
+                        {
+                            Undo.RecordObject(profile, "Change Exclusion Pattern");
+                            profile.excludeFilePatterns[index] = newValue;
+                            EditorUtility.SetDirty(profile);
+                        }
+                    },
+                    () =>
+                    {
+                        if (index < profile.excludeFilePatterns.Count)
+                        {
+                            Undo.RecordObject(profile, "Remove Exclusion Pattern");
+                            profile.excludeFilePatterns.RemoveAt(index);
+                            EditorUtility.SetDirty(profile);
+                            AssetDatabase.SaveAssets();
+                            UpdateProfileDetails();
+                        }
+                    });
                 filePatternsContainer.Add(patternItem);
             }
             section.Add(filePatternsContainer);
@@ -1540,15 +1620,32 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             var folderNamesContainer = new VisualElement();
             
-            foreach (var folderName in profile.excludeFolderNames.ToList())
+            for (int i = 0; i < profile.excludeFolderNames.Count; i++)
             {
-                var folderItem = CreateStringListItem(folderName, () =>
-                {
-                    profile.excludeFolderNames.Remove(folderName);
-                    EditorUtility.SetDirty(profile);
-                    AssetDatabase.SaveAssets();
-                    UpdateProfileDetails();
-                });
+                int index = i;
+                string originalValue = profile.excludeFolderNames[i];
+                var folderItem = CreateEditableStringListItem(
+                    originalValue,
+                    (newValue) =>
+                    {
+                        if (index < profile.excludeFolderNames.Count)
+                        {
+                            Undo.RecordObject(profile, "Change Exclusion Folder");
+                            profile.excludeFolderNames[index] = newValue;
+                            EditorUtility.SetDirty(profile);
+                        }
+                    },
+                    () =>
+                    {
+                        if (index < profile.excludeFolderNames.Count)
+                        {
+                            Undo.RecordObject(profile, "Remove Exclusion Folder");
+                            profile.excludeFolderNames.RemoveAt(index);
+                            EditorUtility.SetDirty(profile);
+                            AssetDatabase.SaveAssets();
+                            UpdateProfileDetails();
+                        }
+                    });
                 folderNamesContainer.Add(folderItem);
             }
             section.Add(folderNamesContainer);
@@ -1575,6 +1672,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
             textField.AddToClassList("yucp-input");
             textField.style.flexGrow = 1;
             textField.isReadOnly = true;
+            item.Add(textField);
+            
+            var removeButton = new Button(onRemove) { text = "×" };
+            removeButton.AddToClassList("yucp-button");
+            removeButton.AddToClassList("yucp-folder-item-remove");
+            item.Add(removeButton);
+            
+            return item;
+        }
+
+        private VisualElement CreateEditableStringListItem(string value, Action<string> onValueChanged, Action onRemove)
+        {
+            var item = new VisualElement();
+            item.AddToClassList("yucp-folder-item");
+            
+            var textField = new TextField { value = value };
+            textField.AddToClassList("yucp-input");
+            textField.style.flexGrow = 1;
+            textField.isReadOnly = false;
+            textField.RegisterValueChangedCallback(evt =>
+            {
+                onValueChanged?.Invoke(evt.newValue);
+            });
             item.Add(textField);
             
             var removeButton = new Button(onRemove) { text = "×" };
@@ -1630,13 +1750,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 scanButton.AddToClassList("yucp-button");
                 scanButton.AddToClassList("yucp-button-action");
                 scanButton.style.flexGrow = 1;
+                scanButton.style.marginRight = 4;
                 scanButton.SetEnabled(profile.foldersToExport.Count > 0);
                 actionButtons.Add(scanButton);
+                
+                var rescanButton = new Button(() => ScanProfileDependencies(profile)) { text = "Rescan" };
+                rescanButton.AddToClassList("yucp-button");
+                rescanButton.AddToClassList("yucp-button-action");
+                rescanButton.style.flexGrow = 1;
+                rescanButton.style.marginLeft = 4;
+                rescanButton.style.marginRight = 4;
+                actionButtons.Add(rescanButton);
                 
                 var clearButton = new Button(() => ClearAssetScan(profile)) { text = "Clear Scan" };
                 clearButton.AddToClassList("yucp-button");
                 clearButton.AddToClassList("yucp-button-action");
                 clearButton.style.flexGrow = 1;
+                clearButton.style.marginLeft = 4;
                 clearButton.SetEnabled(profile.discoveredAssets.Count > 0);
                 actionButtons.Add(clearButton);
                 
@@ -1700,7 +1830,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     searchField.RegisterValueChangedCallback(evt =>
                     {
                         inspectorSearchFilter = evt.newValue;
-                        // Don't call UpdateProfileDetails() - it recreates the entire UI
+                        // Skip UpdateProfileDetails() - it recreates the entire UI
                         // Instead, find and update the asset list container only
                         var assetListContainer = section.Q<VisualElement>("asset-list-container");
                         if (assetListContainer != null)
@@ -1783,68 +1913,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					filterToggles.Add(derivedToggle);
 					
 					section.Add(filterToggles);
-                    
-                    // Tree view controls
-                    var treeControlsRow = new VisualElement();
-                    treeControlsRow.style.flexDirection = FlexDirection.Row;
-                    treeControlsRow.style.marginTop = 8;
-                    treeControlsRow.style.marginBottom = 8;
-                    
-                    // Expand/Collapse All buttons
-                    var expandAllButton = new Button(() =>
-                    {
-                        // Expand all folders
-                        var filteredAssets = profile.discoveredAssets.AsEnumerable();
-                        if (!string.IsNullOrWhiteSpace(inspectorSearchFilter))
-                        {
-                            filteredAssets = filteredAssets.Where(a => 
-                                a.assetPath.IndexOf(inspectorSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0);
-                        }
-                        var filteredList = filteredAssets.ToList();
-                        var rootNode = BuildFolderTree(filteredList.Where(a => !a.isFolder).ToList());
-                        
-                        // Recursively set all folders to expanded
-                        SetAllFoldersExpanded(rootNode, true);
-                        
-                        var assetListContainer = section.Q<VisualElement>("asset-list-container");
-                        if (assetListContainer != null)
-                        {
-                            assetListContainer.Clear();
-                            RebuildAssetList(profile, assetListContainer);
-                        }
-                    }) { text = "Expand All" };
-                    expandAllButton.AddToClassList("yucp-button");
-                    expandAllButton.AddToClassList("yucp-button-small");
-                    expandAllButton.style.marginRight = 4;
-                    treeControlsRow.Add(expandAllButton);
-                    
-                    var collapseAllButton = new Button(() =>
-                    {
-                        // Collapse all folders
-                        var filteredAssets = profile.discoveredAssets.AsEnumerable();
-                        if (!string.IsNullOrWhiteSpace(inspectorSearchFilter))
-                        {
-                            filteredAssets = filteredAssets.Where(a => 
-                                a.assetPath.IndexOf(inspectorSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0);
-                        }
-                        var filteredList = filteredAssets.ToList();
-                        var rootNode = BuildFolderTree(filteredList.Where(a => !a.isFolder).ToList());
-                        
-                        // Recursively set all folders to collapsed
-                        SetAllFoldersExpanded(rootNode, false);
-                        
-                        var assetListContainer = section.Q<VisualElement>("asset-list-container");
-                        if (assetListContainer != null)
-                        {
-                            assetListContainer.Clear();
-                            RebuildAssetList(profile, assetListContainer);
-                        }
-                    }) { text = "Collapse All" };
-                    collapseAllButton.AddToClassList("yucp-button");
-                    collapseAllButton.AddToClassList("yucp-button-small");
-                    treeControlsRow.Add(collapseAllButton);
-                    
-                    section.Add(treeControlsRow);
                     
                     // Asset list header with actions
                     var listHeader = new VisualElement();
@@ -1929,7 +1997,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     ignoreHelpBox.Add(ignoreHelpText);
                     section.Add(ignoreHelpBox);
                     
-                    if (profile.permanentIgnoreFolders == null || profile.permanentIgnoreFolders.Count == 0)
+                    if (profile.PermanentIgnoreFolders == null || profile.PermanentIgnoreFolders.Count == 0)
                     {
                         var noIgnoresLabel = new Label("No folders in ignore list.");
                         noIgnoresLabel.AddToClassList("yucp-label-secondary");
@@ -1939,13 +2007,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                     else
                     {
-                        foreach (var ignoreFolder in profile.permanentIgnoreFolders.ToList())
+                        foreach (var ignoreFolder in profile.PermanentIgnoreFolders.ToList())
                         {
                             var ignoreItem = new VisualElement();
                             ignoreItem.AddToClassList("yucp-folder-item");
                             
-                            var displayPath = GetDisplayPath(ignoreFolder);
-                            var ignorePathLabel = new Label(displayPath);
+                            var ignorePathLabel = new Label(ignoreFolder);
                             ignorePathLabel.AddToClassList("yucp-folder-item-path");
                             ignoreItem.Add(ignorePathLabel);
                             
@@ -2024,21 +2091,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             container.Add(assetListScroll);
         }
         
-        private void SetAllFoldersExpanded(FolderTreeNode node, bool expanded)
-        {
-            node.IsExpanded = expanded;
-            folderExpandedStates[node.FullPath] = expanded;
-            
-            foreach (var child in node.Children)
-            {
-                SetAllFoldersExpanded(child, expanded);
-            }
-        }
-        
         private FolderTreeNode BuildFolderTree(List<DiscoveredAsset> assets)
         {
             var root = new FolderTreeNode("Assets", "Assets");
-            root.IsExpanded = true; // Root is always expanded
+            root.IsExpanded = true;
             
             foreach (var asset in assets)
             {
@@ -2058,28 +2114,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 FolderTreeNode current = root;
                 string currentPath = "Assets";
-                int depth = 0; // Track depth for default expansion behavior
                 
                 foreach (string segment in segments)
                 {
-                    depth++;
                     currentPath = currentPath == "Assets" ? $"Assets/{segment}" : $"{currentPath}/{segment}";
                     
                     var child = current.Children.FirstOrDefault(c => c.Name == segment);
                     if (child == null)
                     {
                         child = new FolderTreeNode(segment, currentPath);
-                        // Progressive disclosure: only expand first 2 levels by default to reduce cognitive load
-                        // Depth 1-2: expanded, Depth 3+: collapsed
-                        if (folderExpandedStates.ContainsKey(currentPath))
-                        {
-                            child.IsExpanded = folderExpandedStates[currentPath];
-                        }
-                        else
-                        {
-                            // Default: expand first 2 levels, collapse deeper nesting
-                            child.IsExpanded = depth <= 2;
-                        }
+                        // Default to expanded for better navigation, unless user has collapsed it
+                        child.IsExpanded = folderExpandedStates.ContainsKey(currentPath) 
+                            ? folderExpandedStates[currentPath] 
+                            : true;
                         current.Children.Add(child);
                     }
                     else
@@ -2088,11 +2135,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         if (folderExpandedStates.ContainsKey(currentPath))
                         {
                             child.IsExpanded = folderExpandedStates[currentPath];
-                        }
-                        else if (!folderExpandedStates.ContainsKey(currentPath))
-                        {
-                            // If no saved state, apply default expansion rule
-                            child.IsExpanded = depth <= 2;
                         }
                     }
                     
@@ -2135,26 +2177,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
             
-            // Render assets in this folder with visual grouping
+            // Render assets in this folder
             if (node.Assets.Count > 0 && (depth == 0 || node.IsExpanded))
             {
-                // Create a container for assets in this folder
-                var assetsContainer = new VisualElement();
-                // Assets are indented to show they belong to the folder
-                assetsContainer.style.marginLeft = depth > 0 ? (16 + (depth * 24) + 28) : 16;
-                assetsContainer.style.marginTop = depth > 0 ? 4 : 0;
-                assetsContainer.style.marginBottom = node.Children.Count > 0 ? 6 : 0;
-                
                 foreach (var asset in node.Assets)
                 {
                     var assetItem = CreateAssetItem(asset, profile, depth == 0 ? 0 : depth + 1);
-                    assetsContainer.Add(assetItem);
+                    container.Add(assetItem);
                 }
-                
-                container.Add(assetsContainer);
             }
             
-            // Render child folders with visual grouping to show they belong to parent
+            // Render child folders
             if (node.Children.Count > 0 && (depth == 0 || node.IsExpanded))
             {
                 foreach (var child in node.Children)
@@ -2168,170 +2201,38 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var folderHeader = new VisualElement();
             folderHeader.AddToClassList("yucp-inspector-folder-header");
-            
-            // Progressive indentation: 16px base + 28px per level (increased for clearer hierarchy)
-            int baseIndent = 16;
-            int indentPerLevel = 28;
-            
-            // PARENT FOLDERS (depth 1-2): Major, prominent sections with bold styling
-            if (depth <= 2)
-            {
-                folderHeader.AddToClassList("yucp-folder-parent");
-                folderHeader.style.position = Position.Relative; // Needed for absolute positioned shadow
-                folderHeader.style.paddingLeft = baseIndent + (depth * indentPerLevel);
-                folderHeader.style.paddingTop = 16;
-                folderHeader.style.paddingBottom = 16;
-                folderHeader.style.paddingRight = 12;
-                folderHeader.style.marginTop = depth > 1 ? 12 : 8;
-                folderHeader.style.marginBottom = 10;
-                
-                // Strong border and background using uniform neutral colors
-                folderHeader.style.borderLeftWidth = 5;
-                folderHeader.style.borderLeftColor = new Color(0.42f, 0.42f, 0.42f, 0.8f); // Neutral gray border #6B6B6B
-                folderHeader.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.8f); // Dark background
-                folderHeader.style.borderTopLeftRadius = 6;
-                folderHeader.style.borderTopRightRadius = 6;
-                folderHeader.style.borderBottomLeftRadius = 6;
-                folderHeader.style.borderBottomRightRadius = 6;
-                
-                // Add custom box shadow for parent folders using reusable utility
-                var shadowConfig = YucpBoxShadowUtility.BoxShadowConfig.Default;
-                shadowConfig.borderRadius = 6f;
-                shadowConfig.color = new Color(0f, 0f, 0f, 0.3f); // Neutral dark shadow
-                YucpBoxShadowUtility.AddBoxShadow(folderHeader, shadowConfig);
-                
-                // Add hover effect with enhanced shadow
-                var hoverConfig = shadowConfig;
-                hoverConfig.offsetY = 2f;
-                hoverConfig.blurRadius = 6f;
-                hoverConfig.color = new Color(0f, 0f, 0f, 0.4f);
-                YucpBoxShadowUtility.AddHoverShadowEffect(folderHeader, shadowConfig, hoverConfig);
-            }
-            // CHILD FOLDERS (depth 3+): Nested, subdued, clearly subordinate
-            else
-            {
-                folderHeader.AddToClassList("yucp-folder-child");
-                folderHeader.style.paddingLeft = baseIndent + (depth * indentPerLevel) + 12; // Extra indent
-                folderHeader.style.paddingTop = 6;
-                folderHeader.style.paddingBottom = 6;
-                folderHeader.style.paddingRight = 8;
-                folderHeader.style.marginTop = 2;
-                folderHeader.style.marginBottom = 2;
-                folderHeader.style.marginLeft = 8; // Slight left margin to show nesting
-                
-                // Thin, subtle border - uniform colorway, not greyed out
-                folderHeader.style.borderLeftWidth = 1;
-                folderHeader.style.borderLeftColor = new Color(0.42f, 0.42f, 0.42f, 0.4f); // Same neutral gray as parent, lighter
-                folderHeader.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.5f); // Same dark background, more transparent
-                folderHeader.style.opacity = 1.0f; // Full opacity - not greyed out
-                folderHeader.style.borderTopLeftRadius = 3;
-                folderHeader.style.borderTopRightRadius = 3;
-                folderHeader.style.borderBottomLeftRadius = 3;
-                folderHeader.style.borderBottomRightRadius = 3;
-                
-                // Add visual connector line to show nesting under parent
-                var connectorLine = new VisualElement();
-                connectorLine.style.position = Position.Absolute;
-                connectorLine.style.left = baseIndent + ((depth - 1) * indentPerLevel) + 10;
-                connectorLine.style.top = -2;
-                connectorLine.style.width = 1;
-                connectorLine.style.height = 100;
-                connectorLine.style.backgroundColor = new Color(0.4f, 0.4f, 0.4f, 0.15f);
-                folderHeader.Add(connectorLine);
-                
-                // Horizontal connector line from parent to child
-                var horizontalLine = new VisualElement();
-                horizontalLine.style.position = Position.Absolute;
-                horizontalLine.style.left = baseIndent + ((depth - 1) * indentPerLevel) + 10;
-                horizontalLine.style.width = 14;
-                horizontalLine.style.height = 1;
-                horizontalLine.style.top = 10;
-                horizontalLine.style.backgroundColor = new Color(0.4f, 0.4f, 0.4f, 0.15f);
-                folderHeader.Add(horizontalLine);
-            }
+            folderHeader.style.paddingLeft = 12 + (depth * 24); // Increased indentation for better hierarchy
             
             var folderHeaderContent = new VisualElement();
             folderHeaderContent.AddToClassList("yucp-inspector-folder-content");
             
-            // Expand/collapse button with size variation based on depth
+            // Expand/collapse button
             var expandButton = new Button(() =>
             {
                 node.IsExpanded = !node.IsExpanded;
                 folderExpandedStates[node.FullPath] = node.IsExpanded;
                 
-                // Rebuild just the asset list, preserving scroll position
-                ScrollView scrollView = folderHeader.parent as ScrollView;
+                // Rebuild just the asset list, not the entire UI
+                // The folderHeader is inside a ScrollView, which is inside the asset-list-container
+                // Go up to find the container
+                VisualElement scrollView = folderHeader.parent;
                 if (scrollView != null)
                 {
                     VisualElement container = scrollView.parent;
                     if (container != null && container.name == "asset-list-container")
                     {
-                        // Save current scroll position
-                        float savedScrollY = scrollView.scrollOffset.y;
-                        
                         container.Clear();
                         RebuildAssetList(profile, container);
-                        
-                        // Restore scroll position after layout completes (wait 2 frames for layout)
-                        container.schedule.Execute(() =>
-                        {
-                            ScrollView newScroll = container.Q<ScrollView>();
-                            if (newScroll != null && savedScrollY >= 0)
-                            {
-                                newScroll.scrollOffset = new Vector2(newScroll.scrollOffset.x, savedScrollY);
-                            }
-                        }).ExecuteLater(2);
                     }
                 }
             });
             expandButton.AddToClassList("yucp-folder-expand-button");
             expandButton.text = node.IsExpanded ? "▼" : "▶";
-            
-            // Button size varies by depth for better visual hierarchy
-            if (depth <= 2)
-            {
-                expandButton.style.fontSize = 12;
-                expandButton.style.width = 20;
-                expandButton.style.height = 20;
-            }
-            else
-            {
-                expandButton.style.fontSize = 10;
-                expandButton.style.width = 16;
-                expandButton.style.height = 16;
-            }
             folderHeaderContent.Add(expandButton);
-                                   
-            // Folder name with clear typography hierarchy
-            string folderDisplayName = node.Name;
-            var folderLabel = new Label(folderDisplayName);
+            
+            // Folder name label - make it clickable to navigate to folder
+            var folderLabel = new Label(node.Name);
             folderLabel.AddToClassList("yucp-inspector-folder-label");
-            
-            // Much clearer font size and style differences
-            if (depth <= 2)
-            {
-                folderLabel.style.fontSize = 14;
-                folderLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-                folderLabel.style.color = new Color(1f, 1f, 1f, 1f); // Full white
-                folderLabel.style.marginLeft = 8;
-            }
-            else
-            {
-                folderLabel.style.fontSize = 10;
-                folderLabel.style.unityFontStyleAndWeight = FontStyle.Normal;
-                folderLabel.style.color = new Color(1f, 1f, 1f, 1f); // Full white - not greyed out
-                folderLabel.style.marginLeft = 6;
-                
-                // Show parent folder context for deeply nested folders
-                var parentPath = GetDisplayPath(node.FullPath);
-                var pathParts = parentPath.Split('/');
-                if (pathParts.Length > 2)
-                {
-                    folderDisplayName = $"{pathParts[pathParts.Length - 2]} > {node.Name}";
-                    folderLabel.text = folderDisplayName;
-                }
-            }
-            
             folderLabel.RegisterCallback<MouseDownEvent>(evt =>
             {
                 if (evt.button == 0) // Left click
@@ -2341,21 +2242,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
             });
             folderHeaderContent.Add(folderLabel);
             
-            // Asset count badge with size variation
+            // Asset count badge
             int totalAssets = CountTotalAssets(node);
             if (totalAssets > 0)
             {
                 var countBadge = new Label($"({totalAssets})");
                 countBadge.AddToClassList("yucp-folder-count-badge");
-                if (depth <= 2)
-                {
-                    countBadge.style.fontSize = 11;
-                }
-                else
-                {
-                    countBadge.style.fontSize = 9;
-                    countBadge.style.opacity = 0.7f;
-                }
                 folderHeaderContent.Add(countBadge);
             }
             
@@ -2374,7 +2266,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Normalize node.FullPath - ensure it uses forward slashes
             string pathToProcess = node.FullPath.Replace('\\', '/');
             
-            // Always extract just the relative part starting from "Assets/"
+            // Extract the relative part starting from "Assets/"
             // This handles cases where the path might already be absolute or have duplicates
             string relativePath = pathToProcess;
             
@@ -2437,13 +2329,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 editIgnoreButton.AddToClassList("yucp-button");
                 editIgnoreButton.AddToClassList("yucp-button-small");
                 folderActions.Add(editIgnoreButton);
-            }
-            else
-            {
-                var createIgnoreButton = new Button(() => CreateYucpIgnoreFile(profile, folderFullPath)) { text = "Create .yucpignore" };
-                createIgnoreButton.AddToClassList("yucp-button");
-                createIgnoreButton.AddToClassList("yucp-button-small");
-                folderActions.Add(createIgnoreButton);
             }
             
             var ignoreButton = new Button(() => AddFolderToIgnoreList(profile, node.FullPath)) { text = "Add to Ignore" };
@@ -2522,9 +2407,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var assetItem = new VisualElement();
             assetItem.AddToClassList("yucp-asset-item");
-            
-            // Assets use the existing yucp-asset-item class styling
-            // No need for custom inline styles - let CSS handle it
+            assetItem.style.paddingLeft = 12 + (depth * 24); // Increased indentation to match folders
             
             // Checkbox
             var checkbox = new Toggle { value = asset.included };
@@ -2778,7 +2661,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void RebuildDependencyList(ExportProfile profile, VisualElement section, VisualElement container)
         {
-            // Filter dependencies based on search
+            // Filter dependencies using search
             var filteredDependencies = profile.dependencies.AsEnumerable();
             
             if (!string.IsNullOrWhiteSpace(dependenciesSearchFilter))
@@ -2878,9 +2761,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var section = new VisualElement();
             section.AddToClassList("yucp-section");
             
-            var title = new Label("Package Dependencies");
-            title.AddToClassList("yucp-section-title");
-            section.Add(title);
+            var header = CreateCollapsibleHeader("Package Dependencies", 
+                () => showDependencies, 
+                (value) => { showDependencies = value; }, 
+                () => UpdateProfileDetails());
+            section.Add(header);
+            
+            if (!showDependencies)
+            {
+                return section;
+            }
             
             var helpBox = new VisualElement();
             helpBox.AddToClassList("yucp-help-box");
@@ -2905,7 +2795,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 searchField.RegisterValueChangedCallback(evt =>
                 {
                     dependenciesSearchFilter = evt.newValue;
-                    // Don't rebuild entire UI - just update dependency list
+                    // Update dependency list without rebuilding entire UI
                     var depListContainer = section.Q<VisualElement>("dep-list-container");
                     if (depListContainer != null)
                     {
@@ -2978,26 +2868,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             RebuildDependencyList(profile, section, depListContainer);
             section.Add(depListContainer);
             
-            // Action buttons - row 1
-            var buttonRow1 = new VisualElement();
-            buttonRow1.style.flexDirection = FlexDirection.Row;
-            buttonRow1.style.marginTop = 8;
-            
-            var addButton = new Button(() => AddDependency(profile)) { text = "+ Add Dependency" };
+            // Action buttons
+            var addButton = new Button(() => AddDependency(profile)) { text = "Add dependency manually" };
             addButton.AddToClassList("yucp-button");
             addButton.AddToClassList("yucp-button-action");
             addButton.style.flexGrow = 1;
-            addButton.style.marginRight = 4;
-            buttonRow1.Add(addButton);
-            
-            var scanButton = new Button(() => ScanProfileDependencies(profile)) { text = "Scan Installed" };
-            scanButton.AddToClassList("yucp-button");
-            scanButton.AddToClassList("yucp-button-action");
-            scanButton.style.flexGrow = 1;
-            scanButton.style.marginLeft = 4;
-            buttonRow1.Add(scanButton);
-            
-            section.Add(buttonRow1);
+            addButton.style.marginTop = 8;
+            section.Add(addButton);
             
             // Action buttons - row 2 (Auto-Detect)
             if (profile.dependencies.Count > 0 && profile.foldersToExport.Count > 0)
@@ -3212,7 +3089,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 scanButton.style.marginTop = 8;
                 section.Add(scanButton);
                 
-                // Assembly count
+                // Assembly selection list
                 if (profile.assembliesToObfuscate.Count > 0)
                 {
                     int enabledCount = profile.assembliesToObfuscate.Count(a => a.enabled);
@@ -3220,6 +3097,42 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     countLabel.AddToClassList("yucp-label-secondary");
                     countLabel.style.marginTop = 8;
                     section.Add(countLabel);
+                    
+                    var scrollView = new ScrollView();
+                    scrollView.style.maxHeight = 200;
+                    scrollView.style.marginTop = 8;
+                    
+                    for (int i = 0; i < profile.assembliesToObfuscate.Count; i++)
+                    {
+                        int index = i;
+                        var assembly = profile.assembliesToObfuscate[i];
+                        
+                        var assemblyItem = new VisualElement();
+                        assemblyItem.AddToClassList("yucp-folder-item");
+                        
+                        var checkbox = new Toggle { value = assembly.enabled };
+                        checkbox.AddToClassList("yucp-toggle");
+                        checkbox.RegisterValueChangedCallback(evt =>
+                        {
+                            if (profile != null && index < profile.assembliesToObfuscate.Count)
+                            {
+                                Undo.RecordObject(profile, "Change Assembly Obfuscation");
+                                profile.assembliesToObfuscate[index].enabled = evt.newValue;
+                                EditorUtility.SetDirty(profile);
+                                UpdateProfileDetails();
+                            }
+                        });
+                        assemblyItem.Add(checkbox);
+                        
+                        var assemblyLabel = new Label(assembly.assemblyName);
+                        assemblyLabel.AddToClassList("yucp-folder-item-path");
+                        assemblyLabel.style.marginLeft = 8;
+                        assemblyItem.Add(assemblyLabel);
+                        
+                        scrollView.Add(assemblyItem);
+                    }
+                    
+                    section.Add(scrollView);
                 }
             }
             
@@ -3229,8 +3142,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private VisualElement CreateQuickActionsSection(ExportProfile profile)
         {
             var section = new VisualElement();
-            section.style.flexDirection = FlexDirection.Row;
-            section.style.marginTop = 16;
+            section.AddToClassList("yucp-section");
+            
+            var header = CreateCollapsibleHeader("Quick Actions", 
+                () => showQuickActions, 
+                (value) => { showQuickActions = value; }, 
+                () => UpdateProfileDetails());
+            section.Add(header);
+            
+            if (!showQuickActions)
+            {
+                return section;
+            }
+            
+            var actionsContainer = new VisualElement();
+            actionsContainer.style.flexDirection = FlexDirection.Row;
+            actionsContainer.style.marginTop = 8;
             
             var inspectorButton = new Button(() => 
             {
@@ -3241,7 +3168,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             inspectorButton.AddToClassList("yucp-button");
             inspectorButton.AddToClassList("yucp-button-action");
             inspectorButton.style.flexGrow = 1;
-            section.Add(inspectorButton);
+            actionsContainer.Add(inspectorButton);
             
             var saveButton = new Button(() => 
             {
@@ -3252,7 +3179,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
             saveButton.AddToClassList("yucp-button");
             saveButton.AddToClassList("yucp-button-action");
             saveButton.style.flexGrow = 1;
-            section.Add(saveButton);
+            actionsContainer.Add(saveButton);
+            
+            section.Add(actionsContainer);
             
             return section;
         }
@@ -3271,6 +3200,38 @@ namespace YUCP.DevTools.Editor.PackageExporter
             row.Add(label);
             
             return row;
+        }
+
+        private VisualElement CreateCollapsibleHeader(string title, Func<bool> getExpanded, Action<bool> setExpanded, Action onToggle)
+        {
+            var header = new VisualElement();
+            header.AddToClassList("yucp-inspector-header");
+            
+            var titleLabel = new Label(title);
+            titleLabel.AddToClassList("yucp-section-title");
+            header.Add(titleLabel);
+            
+            var toggleButton = new Button();
+            
+            void UpdateButtonText()
+            {
+                toggleButton.text = getExpanded() ? "▼" : "▶";
+            }
+            
+            toggleButton.clicked += () =>
+            {
+                bool current = getExpanded();
+                setExpanded(!current);
+                UpdateButtonText();
+                onToggle?.Invoke();
+            };
+            
+            UpdateButtonText();
+            toggleButton.AddToClassList("yucp-button");
+            toggleButton.AddToClassList("yucp-button-small");
+            header.Add(toggleButton);
+            
+            return header;
         }
 
         private void UpdateBottomBar()
@@ -3474,22 +3435,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             return absolutePath;
         }
-        
-        private string GetDisplayPath(string path)
-        {
-            if (string.IsNullOrEmpty(path))
-                return path;
-            
-            // If already a relative path (doesn't start with drive letter or root), return as-is
-            if (!Path.IsPathRooted(path))
-                return path.Replace('\\', '/');
-            
-            // Convert absolute path to relative
-            string relativePath = GetRelativePath(path);
-            
-            // Normalize slashes
-            return relativePath.Replace('\\', '/');
-        }
 
         private void AddDependency(ExportProfile profile)
         {
@@ -3558,6 +3503,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             AssetDatabase.CreateAsset(profile, assetPath);
             AssetDatabase.SaveAssets();
+            
+            // Update profile count for milestones
+            try
+            {
+                System.Type milestoneTrackerType = null;
+                
+                // Try to find the type by searching through all loaded assemblies
+                foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    milestoneTrackerType = assembly.GetType("YUCP.Components.Editor.SupportBanner.MilestoneTracker");
+                    if (milestoneTrackerType != null)
+                        break;
+                }
+                
+                if (milestoneTrackerType != null)
+                {
+                    var updateMethod = milestoneTrackerType.GetMethod("UpdateProfileCountFromAssets", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    updateMethod?.Invoke(null, null);
+                }
+            }
+            catch
+            {
+                // Silently fail if milestone tracker is not available
+            }
             
             LoadProfiles();
             
@@ -3632,6 +3601,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
             AssetDatabase.DeleteAsset(assetPath);
             AssetDatabase.SaveAssets();
             
+            // Update profile count for milestones
+            try
+            {
+                System.Type milestoneTrackerType = null;
+                
+                // Try to find the type by searching through all loaded assemblies
+                foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    milestoneTrackerType = assembly.GetType("YUCP.Components.Editor.SupportBanner.MilestoneTracker");
+                    if (milestoneTrackerType != null)
+                        break;
+                }
+                
+                if (milestoneTrackerType != null)
+                {
+                    var updateMethod = milestoneTrackerType.GetMethod("UpdateProfileCountFromAssets", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    updateMethod?.Invoke(null, null);
+                }
+            }
+            catch
+            {
+                // Silently fail if milestone tracker is not available
+            }
+            
             LoadProfiles();
             UpdateProfileList();
             UpdateProfileDetails();
@@ -3670,7 +3663,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             
             string foldersList = profile.foldersToExport.Count > 0 
-                ? string.Join("\n", profile.foldersToExport.Take(5).Select(f => GetDisplayPath(f))) + (profile.foldersToExport.Count > 5 ? $"\n... and {profile.foldersToExport.Count - 5} more" : "")
+                ? string.Join("\n", profile.foldersToExport.Take(5)) + (profile.foldersToExport.Count > 5 ? $"\n... and {profile.foldersToExport.Count - 5} more" : "")
                 : "None configured";
             
             int bundledDeps = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Bundle);
@@ -3860,9 +3853,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
-        private void ScanProfileDependencies(ExportProfile profile)
+        private void ScanProfileDependencies(ExportProfile profile, bool silent = false)
         {
-            EditorUtility.DisplayProgressBar("Scanning Dependencies", "Finding installed packages...", 0.3f);
+            if (!silent)
+            {
+                EditorUtility.DisplayProgressBar("Scanning Dependencies", "Finding installed packages...", 0.3f);
+            }
             
             try
             {
@@ -3870,14 +3866,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 if (foundPackages.Count == 0)
                 {
-                    EditorUtility.ClearProgressBar();
-                    EditorUtility.DisplayDialog("No Packages Found", 
-                        "No installed packages were found in the project.", 
-                        "OK");
+                    if (!silent)
+                    {
+                        EditorUtility.ClearProgressBar();
+                        EditorUtility.DisplayDialog("No Packages Found", 
+                            "No installed packages were found in the project.", 
+                            "OK");
+                    }
                     return;
                 }
                 
-                EditorUtility.DisplayProgressBar("Scanning Dependencies", "Processing packages...", 0.6f);
+                if (!silent)
+                {
+                    EditorUtility.DisplayProgressBar("Scanning Dependencies", "Processing packages...", 0.6f);
+                }
                 
                 profile.dependencies.Clear();
                 
@@ -3887,7 +3889,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     profile.dependencies.Add(dep);
                 }
                 
-                EditorUtility.DisplayProgressBar("Scanning Dependencies", "Auto-detecting usage...", 0.8f);
+                if (!silent)
+                {
+                    EditorUtility.DisplayProgressBar("Scanning Dependencies", "Auto-detecting usage...", 0.8f);
+                }
                 
                 if (profile.foldersToExport.Count > 0)
                 {
@@ -3897,22 +3902,28 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 EditorUtility.SetDirty(profile);
                 AssetDatabase.SaveAssets();
                 
-                int vpmCount = dependencies.Count(d => d.isVpmDependency);
-                int autoEnabled = dependencies.Count(d => d.enabled);
-                
-                string message = $"Found {dependencies.Count} packages:\n\n" +
-                               $"• {vpmCount} VRChat (VPM) packages\n" +
-                               $"• {dependencies.Count - vpmCount} Unity packages\n" +
-                               $"• {autoEnabled} auto-enabled (detected in use)\n\n" +
-                               "Dependencies detected in your export folders have been automatically enabled.";
-                
-                EditorUtility.DisplayDialog("Scan Complete", message, "OK");
+                if (!silent)
+                {
+                    int vpmCount = dependencies.Count(d => d.isVpmDependency);
+                    int autoEnabled = dependencies.Count(d => d.enabled);
+                    
+                    string message = $"Found {dependencies.Count} packages:\n\n" +
+                                   $"• {vpmCount} VRChat (VPM) packages\n" +
+                                   $"• {dependencies.Count - vpmCount} Unity packages\n" +
+                                   $"• {autoEnabled} auto-enabled (detected in use)\n\n" +
+                                   "Dependencies detected in your export folders have been automatically enabled.";
+                    
+                    EditorUtility.DisplayDialog("Scan Complete", message, "OK");
+                }
                 
                 UpdateProfileDetails();
             }
             finally
             {
-                EditorUtility.ClearProgressBar();
+                if (!silent)
+                {
+                    EditorUtility.ClearProgressBar();
+                }
             }
         }
 
@@ -4027,12 +4038,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void AddFolderToIgnoreList(ExportProfile profile, string folderPath)
         {
-            if (profile.permanentIgnoreFolders == null)
-                profile.permanentIgnoreFolders = new List<string>();
-            
-            if (!profile.permanentIgnoreFolders.Contains(folderPath))
+            var ignoreFolders = profile.PermanentIgnoreFolders;
+            if (!ignoreFolders.Contains(folderPath))
             {
-                profile.permanentIgnoreFolders.Add(folderPath);
+                ignoreFolders.Add(folderPath);
                 EditorUtility.SetDirty(profile);
                 
                 if (EditorUtility.DisplayDialog(
@@ -4056,9 +4065,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void RemoveFromIgnoreList(ExportProfile profile, string folderPath)
         {
-            if (profile.permanentIgnoreFolders != null && profile.permanentIgnoreFolders.Contains(folderPath))
+            var ignoreFolders = profile.PermanentIgnoreFolders;
+            if (ignoreFolders != null && ignoreFolders.Contains(folderPath))
             {
-                profile.permanentIgnoreFolders.Remove(folderPath);
+                ignoreFolders.Remove(folderPath);
                 EditorUtility.SetDirty(profile);
                 UpdateProfileDetails();
             }
@@ -4541,7 +4551,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             root.RemoveFromClassList("yucp-window-medium");
             root.RemoveFromClassList("yucp-window-wide");
             
-            // Apply appropriate class based on width
+            // Apply appropriate class
             if (width < 700f)
             {
                 root.AddToClassList("yucp-window-narrow");
@@ -5148,7 +5158,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             section.Add(helpText);
             
             var allIgnoreFolders = selectedProfiles
-                .SelectMany(p => p.permanentIgnoreFolders ?? new List<string>())
+                .SelectMany(p => p.PermanentIgnoreFolders ?? new List<string>())
                 .Distinct()
                 .OrderBy(f => f)
                 .ToList();
@@ -5159,23 +5169,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             foreach (var folder in allIgnoreFolders)
             {
-                bool allHaveFolder = selectedProfiles.All(p => p.permanentIgnoreFolders != null && p.permanentIgnoreFolders.Contains(folder));
-                bool someHaveFolder = selectedProfiles.Any(p => p.permanentIgnoreFolders != null && p.permanentIgnoreFolders.Contains(folder));
+                bool allHaveFolder = selectedProfiles.All(p => p.PermanentIgnoreFolders != null && p.PermanentIgnoreFolders.Contains(folder));
+                bool someHaveFolder = selectedProfiles.Any(p => p.PermanentIgnoreFolders != null && p.PermanentIgnoreFolders.Contains(folder));
                 
                 var folderItem = CreateBulkStringListItem(folder, allHaveFolder, someHaveFolder,
                     (profile, value) =>
                     {
-                        if (profile.permanentIgnoreFolders == null)
-                            profile.permanentIgnoreFolders = new List<string>();
+                        var ignoreFolders = profile.PermanentIgnoreFolders;
                         
                         if (value)
                         {
-                            if (!profile.permanentIgnoreFolders.Contains(folder))
-                                profile.permanentIgnoreFolders.Add(folder);
+                            if (!ignoreFolders.Contains(folder))
+                                ignoreFolders.Add(folder);
                         }
                         else
                         {
-                            profile.permanentIgnoreFolders.Remove(folder);
+                            ignoreFolders.Remove(folder);
                         }
                     });
                 scrollView.Add(folderItem);
@@ -5199,11 +5208,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     ApplyToAllSelected(profile =>
                     {
                         Undo.RecordObject(profile, "Bulk Add Ignore Folder");
-                        if (profile.permanentIgnoreFolders == null)
-                            profile.permanentIgnoreFolders = new List<string>();
-                        if (!profile.permanentIgnoreFolders.Contains(relativePath))
+                        var ignoreFolders = profile.PermanentIgnoreFolders;
+                        if (!ignoreFolders.Contains(relativePath))
                         {
-                            profile.permanentIgnoreFolders.Add(relativePath);
+                            ignoreFolders.Add(relativePath);
                         }
                         EditorUtility.SetDirty(profile);
                     });

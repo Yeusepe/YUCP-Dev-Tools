@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
+ 
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -369,6 +371,56 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                         
                         EditorGUILayout.EndScrollView();
+                        
+                        // Advanced Obfuscation Settings
+                        EditorGUILayout.Space(10);
+                        EditorGUILayout.LabelField("Advanced Obfuscation Settings", EditorStyles.boldLabel);
+                        EditorGUILayout.HelpBox("Fine-grained control over individual protections and Unity compatibility options.", MessageType.Info);
+                        
+                        if (profile.advancedObfuscationSettings == null)
+                        {
+                            profile.advancedObfuscationSettings = new ObfuscationSettings();
+                        }
+                        
+                        var settings = profile.advancedObfuscationSettings;
+                        
+                        EditorGUI.BeginChangeCheck();
+                        
+                        settings.preserveReflection = EditorGUILayout.Toggle(new GUIContent("Preserve Reflection", "Preserve names for reflection-dependent code (GetType, GetMethod, etc.)"), settings.preserveReflection);
+                        if (settings.preserveReflection)
+                        {
+                            EditorGUILayout.HelpBox("When enabled, types and methods used by reflection will not be renamed. This reduces obfuscation strength but ensures compatibility with reflection-based code.", MessageType.Info);
+                        }
+                        
+                        settings.il2cppCompatible = EditorGUILayout.Toggle(new GUIContent("IL2CPP Compatible", "Enable IL2CPP-specific optimizations"), settings.il2cppCompatible);
+                        
+                        EditorGUILayout.Space(5);
+                        EditorGUILayout.LabelField("Individual Protections", EditorStyles.boldLabel);
+                        
+                        settings.enableControlFlow = EditorGUILayout.Toggle(new GUIContent("Control Flow Obfuscation", "Restructures method logic to confuse decompilers"), settings.enableControlFlow);
+                        if (settings.enableControlFlow)
+                        {
+                            settings.controlFlowIntensity = EditorGUILayout.IntSlider(new GUIContent("Control Flow Intensity", "Higher values = more obfuscation (0-100)"), settings.controlFlowIntensity, 0, 100);
+                        }
+                        
+                        settings.enableReferenceProxy = EditorGUILayout.Toggle(new GUIContent("Reference Proxy", "Adds indirection layers to method/field references"), settings.enableReferenceProxy);
+                        if (settings.enableReferenceProxy)
+                        {
+                            settings.referenceProxyDepth = EditorGUILayout.IntSlider(new GUIContent("Reference Proxy Depth", "Number of indirection layers (1-10)"), settings.referenceProxyDepth, 1, 10);
+                        }
+                        
+                        settings.enableConstants = EditorGUILayout.Toggle(new GUIContent("Constants Encryption", "Encrypts string literals and numeric constants"), settings.enableConstants);
+                        settings.enableResources = EditorGUILayout.Toggle(new GUIContent("Resource Protection", "Encrypts embedded resources"), settings.enableResources);
+                        settings.enableInvalidMetadata = EditorGUILayout.Toggle(new GUIContent("Invalid Metadata", "Adds junk metadata to confuse decompilers"), settings.enableInvalidMetadata);
+                        
+                        EditorGUILayout.Space(5);
+                        settings.renameMode = (ObfuscationSettings.RenameMode)EditorGUILayout.EnumPopup(new GUIContent("Rename Mode", "Symbol renaming style"), settings.renameMode);
+                        
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            Undo.RecordObject(profile, "Change Advanced Obfuscation Settings");
+                            EditorUtility.SetDirty(profile);
+                        }
                         
                         EditorGUI.indentLevel--;
                     }
@@ -833,7 +885,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             EditorGUILayout.EndHorizontal();
             
-            // Filter assets based on search and filters
+            // Filter assets using search and filters
             var filteredAssets = profile.discoveredAssets.AsEnumerable();
             
             if (!string.IsNullOrWhiteSpace(inspectorSearchFilter))
@@ -955,22 +1007,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 "Folders in this list will be permanently ignored from all exports (like .gitignore).",
                 MessageType.Info);
             
-            if (profile.permanentIgnoreFolders == null || profile.permanentIgnoreFolders.Count == 0)
+            if (profile.PermanentIgnoreFolders == null || profile.PermanentIgnoreFolders.Count == 0)
             {
                 EditorGUILayout.HelpBox("No folders in ignore list.", MessageType.None);
             }
             else
             {
-                for (int i = profile.permanentIgnoreFolders.Count - 1; i >= 0; i--)
+                for (int i = profile.PermanentIgnoreFolders.Count - 1; i >= 0; i--)
                 {
                     EditorGUILayout.BeginHorizontal();
-                    string displayPath = GetDisplayPath(profile.permanentIgnoreFolders[i]);
+                    string displayPath = GetDisplayPath(profile.PermanentIgnoreFolders[i]);
                     EditorGUILayout.LabelField(displayPath);
                     
                     if (GUILayout.Button("Remove", GUILayout.Width(60)))
                     {
                         Undo.RecordObject(profile, "Remove Ignored Folder");
-                        profile.permanentIgnoreFolders.RemoveAt(i);
+                        profile.PermanentIgnoreFolders.RemoveAt(i);
+                        if (i < profile.PermanentIgnoreFolderGuids.Count)
+                            profile.PermanentIgnoreFolderGuids.RemoveAt(i);
                         EditorUtility.SetDirty(profile);
                     }
                     
@@ -1024,29 +1078,75 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// </summary>
         private void AddFolderToIgnoreList(ExportProfile profile, string folderPath)
         {
-            if (profile.permanentIgnoreFolders == null)
-                profile.permanentIgnoreFolders = new List<string>();
+            // Get Unity-relative path and GUID
+            string unityPath = GetUnityRelativePath(folderPath);
+            string folderGuid = !string.IsNullOrEmpty(unityPath) ? AssetDatabase.AssetPathToGUID(unityPath) : null;
             
-            if (!profile.permanentIgnoreFolders.Contains(folderPath))
+            // Check if already ignored (by path or GUID)
+            bool alreadyIgnored = false;
+            for (int i = 0; i < profile.PermanentIgnoreFolders.Count; i++)
+            {
+                if (profile.PermanentIgnoreFolders[i].Equals(folderPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    alreadyIgnored = true;
+                    break;
+                }
+                
+                // Also check by GUID if available
+                if (i < profile.PermanentIgnoreFolderGuids.Count && 
+                    !string.IsNullOrEmpty(profile.PermanentIgnoreFolderGuids[i]) &&
+                    !string.IsNullOrEmpty(folderGuid) &&
+                    profile.PermanentIgnoreFolderGuids[i].Equals(folderGuid, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Update path if GUID matches but path changed (folder was renamed)
+                    Undo.RecordObject(profile, "Update Ignored Folder Path");
+                    profile.PermanentIgnoreFolders[i] = folderPath;
+                    alreadyIgnored = true;
+                    EditorUtility.SetDirty(profile);
+                    break;
+                }
+            }
+            
+            if (!alreadyIgnored)
             {
                 Undo.RecordObject(profile, "Add Folder to Ignore List");
-                profile.permanentIgnoreFolders.Add(folderPath);
+                profile.PermanentIgnoreFolders.Add(folderPath);
+                profile.PermanentIgnoreFolderGuids.Add(folderGuid ?? "");
                 EditorUtility.SetDirty(profile);
                 
-                // Optionally rescan after adding to ignore list
-                if (EditorUtility.DisplayDialog(
-                    "Added to Ignore List",
-                    $"Added '{folderPath}' to ignore list.\n\nRescan assets now to apply changes?",
-                    "Rescan",
-                    "Later"))
-                {
+                // Automatically rescan after adding to ignore list
+                EditorApplication.delayCall += () => {
                     ScanAssetsForInspector(profile);
-                }
+                };
             }
             else
             {
                 EditorUtility.DisplayDialog("Already Ignored", $"'{folderPath}' is already in the ignore list.", "OK");
             }
+        }
+        
+        private string GetUnityRelativePath(string fullPath)
+        {
+            if (string.IsNullOrEmpty(fullPath))
+                return null;
+                
+            string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string normalizedFullPath = Path.GetFullPath(fullPath);
+            
+            if (normalizedFullPath.StartsWith(projectPath, StringComparison.OrdinalIgnoreCase))
+            {
+                string relative = normalizedFullPath.Substring(projectPath.Length);
+                return relative.TrimStart('\\', '/').Replace('\\', '/');
+            }
+            
+            // If already a Unity path (Assets/... or Packages/...)
+            if (fullPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) || 
+                fullPath.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+            {
+                return fullPath.Replace('\\', '/');
+            }
+            
+            return null;
         }
         
         /// <summary>

@@ -72,7 +72,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             profile.packageName = "NewPackage";
             profile.version = "1.0.0";
             
-            // Add sensible defaults based on location
+            // Add sensible defaults
             profile.foldersToExport.Add(defaultExportFolder);
             profile.includeDependencies = true;
             profile.recurseFolders = true;
@@ -90,6 +90,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             AssetDatabase.CreateAsset(profile, assetPath);
             AssetDatabase.SaveAssets();
+            
+            // Update profile count for milestones
+            try
+            {
+                System.Type milestoneTrackerType = null;
+                
+                // Try to find the type by searching through all loaded assemblies
+                foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    milestoneTrackerType = assembly.GetType("YUCP.Components.Editor.SupportBanner.MilestoneTracker");
+                    if (milestoneTrackerType != null)
+                        break;
+                }
+                
+                if (milestoneTrackerType != null)
+                {
+                    var updateMethod = milestoneTrackerType.GetMethod("UpdateProfileCountFromAssets", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    updateMethod?.Invoke(null, null);
+                }
+            }
+            catch
+            {
+                // Silently fail if milestone tracker is not available
+            }
             
             // Select and ping
             Selection.activeObject = profile;

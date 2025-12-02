@@ -10,7 +10,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
     /// <summary>
     /// Global import monitor for YUCP packages.
     /// This script is part of com.yucp.components and monitors for incoming package imports.
-    /// Provides the same protection as YUCPPackageGuardian (bundled version), but always present.
+    /// Provides the same protection as YUCPPackageGuardian (bundled version).
     /// </summary>
     [InitializeOnLoad]
     public class YUCPImportMonitor : AssetPostprocessor
@@ -74,15 +74,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			}
 
 			// Detect PatchPackage assets and orchestrate application
-			// CRITICAL: Only process patches that are ACTUALLY being imported right now
+			// Only process patches that are ACTUALLY being imported right now
 			// Do NOT scan folders - that causes infinite loops when derived assets trigger this callback
 			var importedPatches = new System.Collections.Generic.List<PatchPackage>();
 			
-			// Track which patches we've already processed to prevent re-processing
+			// Track which patches we've already processed
 			if (processedImports == null)
 				processedImports = new HashSet<string>();
 			
-			// Check ONLY the imported assets array - don't scan folders
+			// Check ONLY the imported assets array
 			foreach (var path in importedAssets)
 			{
 				// Skip derived assets - they're outputs from patch application, not patch packages
@@ -124,7 +124,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		
 		private static void ApplyImportedPatches(System.Collections.Generic.List<PatchPackage> patches)
 		{
-			// Check if patches have already been applied to avoid re-applying
+			// Check if patches have already been applied
 			var appliedPatches = new HashSet<string>();
 			string derivedDir = "Packages/com.yucp.temp/Derived";
 			if (AssetDatabase.IsValidFolder(derivedDir))
@@ -158,7 +158,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				
 				foreach (var modelPath in modelPaths)
 				{
-					// CRITICAL: Check if this patch+target combination is already being processed
+					// Check if this patch+target combination is already being processed
 					// Use the same key format as Applicator uses
 					string patchTargetKey = $"{patchPath}|{modelPath}";
 					
@@ -212,7 +212,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					var targetManifest = ManifestBuilder.BuildForFbx(modelPath);
 					// Basic compatibility check: at least one mesh name overlap
 					var baseManifestJsonId = patch.sourceManifestId;
-					// We do not have v1 manifest content here; heuristic: proceed to mapping based on names using target manifest only
+					// We do not have v1 manifest content here; heuristic: proceed to mapping using names and target manifest only
 					var v1 = new ManifestBuilder.Manifest { manifestId = baseManifestJsonId, meshes = new System.Collections.Generic.List<ManifestBuilder.MeshInfo>() };
 					var v2 = targetManifest;
 					var map = MapBuilder.Build(v1, v2, patch.seedMaps);

@@ -14,6 +14,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
     public static class AssetCollector
     {
         /// <summary>
+        /// Settings stored in ModelImporter.userData for derived FBX files
+        /// </summary>
+        private class DerivedSettings
+        {
+            public bool isDerived;
+            public string baseGuid;
+            public string friendlyName;
+            public string category;
+            public bool overrideOriginalReferences = false;
+        }
+        
+        /// <summary>
         /// Scan all export folders and collect discovered assets with dependencies
         /// </summary>
         public static List<DiscoveredAsset> ScanExportFolders(ExportProfile profile, bool includeDependencies = true)
@@ -35,6 +47,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     continue;
                 }
                 
+                // Check if the export folder itself should be ignored
+                string folderName = Path.GetFileName(fullPath);
+                if (ShouldIgnoreFolder(fullPath, folderName, profile))
+                {
+                    Debug.Log($"[AssetCollector] Skipping excluded export folder: {fullPath}");
+                    continue;
+                }
+                
                 ScanFolder(fullPath, folder, profile, discoveredAssets, processedPaths);
             }
             
@@ -43,6 +63,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 CollectDependencies(discoveredAssets, profile, processedPaths);
             }
+            
+            // Third pass: Post-process to remove any excluded items that might have slipped through
+            discoveredAssets.RemoveAll(asset =>
+            {
+                if (asset.isFolder)
+                {
+                    string folderName = Path.GetFileName(asset.assetPath);
+                    if (ShouldIgnoreFolder(asset.assetPath, folderName, profile))
+                    {
+                        Debug.Log($"[AssetCollector] Removing excluded folder from discovered assets: {asset.assetPath}");
+                        return true;
+                    }
+                }
+                else
+                {
+                    if (ShouldIgnoreFile(asset.assetPath, profile))
+                    {
+                        Debug.Log($"[AssetCollector] Removing excluded file from discovered assets: {asset.assetPath}");
+                        return true;
+                    }
+                }
+                return false;
+            });
             
             // Sort by path for better UI display
             discoveredAssets.Sort((a, b) => string.Compare(a.assetPath, b.assetPath, StringComparison.OrdinalIgnoreCase));
@@ -140,16 +183,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         if (dep == unityPath)
                             continue;
                         
-                        // Convert back to full path
-                        string fullDepPath = Path.GetFullPath(dep);
+                        // Convert Unity-relative path to full path
+                        string fullDepPath;
+                        if (Path.IsPathRooted(dep))
+                        {
+                            // Already a full path
+                            fullDepPath = Path.GetFullPath(dep);
+                        }
+                        else
+                        {
+                            // Unity-relative path - convert to full path
+                            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                            fullDepPath = Path.GetFullPath(Path.Combine(projectRoot, dep.Replace('/', Path.DirectorySeparatorChar)));
+                        }
                         
                         // Skip if already processed
                         if (processedPaths.Contains(fullDepPath))
                             continue;
                         
-                        // Skip if in an ignored folder
+                        // Skip if in an ignored folder - check before adding
                         if (ShouldIgnoreFile(fullDepPath, profile))
+                        {
+                            Debug.Log($"[AssetCollector] Excluding dependency in ignored folder: {dep} ({fullDepPath})");
                             continue;
+                        }
                         
                         allDependencies.Add(fullDepPath);
                     }
@@ -175,37 +232,139 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Check if a folder should be ignored
+        /// Check if a folder should be ignored (public method for use by PackageBuilder and others)
         /// </summary>
-        private static bool ShouldIgnoreFolder(string folderPath, string folderName, ExportProfile profile)
+        public static bool ShouldIgnoreFolder(string folderPath, string folderName, ExportProfile profile)
         {
             // Check .yucpignore files first (highest priority)
             string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             if (YucpIgnoreHandler.ShouldIgnore(folderPath, projectRoot))
                 return true;
             
-            // Check permanent ignore list
-            if (profile.permanentIgnoreFolders != null)
+            // Check permanent ignore list (using both path and GUID for rename safety)
+            if (profile.PermanentIgnoreFolders != null && profile.PermanentIgnoreFolders.Count > 0)
             {
-                foreach (string ignorePath in profile.permanentIgnoreFolders)
+                string folderGuid = AssetDatabase.AssetPathToGUID(GetUnityRelativePath(folderPath));
+                
+                for (int i = 0; i < profile.PermanentIgnoreFolders.Count; i++)
                 {
-                    string fullIgnorePath = Path.GetFullPath(ignorePath);
-                    if (folderPath.StartsWith(fullIgnorePath, StringComparison.OrdinalIgnoreCase))
+                    string ignorePath = profile.PermanentIgnoreFolders[i];
+                    
+                    // Normalize paths for comparison
+                    string fullIgnorePath;
+                    // Check if it's a Unity-relative path (starts with Assets/ or Packages/)
+                    if (ignorePath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) || 
+                        ignorePath.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Convert Unity-relative path to full path
+                        fullIgnorePath = Path.GetFullPath(Path.Combine(projectRoot, ignorePath.Replace('/', Path.DirectorySeparatorChar)));
+                    }
+                    else
+                    {
+                        // Treat as full path
+                        fullIgnorePath = Path.GetFullPath(ignorePath);
+                    }
+                    
+                    string fullFolderPath = Path.GetFullPath(folderPath);
+                    
+                    // Normalize path separators for comparison
+                    fullIgnorePath = fullIgnorePath.Replace("\\", "/");
+                    fullFolderPath = fullFolderPath.Replace("\\", "/");
+                    
+                    // Check by path (handles subfolders)
+                    if (fullFolderPath.Equals(fullIgnorePath, StringComparison.OrdinalIgnoreCase) ||
+                        fullFolderPath.StartsWith(fullIgnorePath + "/", StringComparison.OrdinalIgnoreCase))
                         return true;
+                    
+                    // Check by GUID (handles renamed folders)
+                    if (i < profile.PermanentIgnoreFolderGuids.Count)
+                    {
+                        string ignoreGuid = profile.PermanentIgnoreFolderGuids[i];
+                        if (!string.IsNullOrEmpty(ignoreGuid) && !string.IsNullOrEmpty(folderGuid) && 
+                            ignoreGuid.Equals(folderGuid, StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
                 }
             }
             
-            // Check exclude folder names
-            if (profile.excludeFolderNames != null && profile.excludeFolderNames.Contains(folderName))
-                return true;
+            // Check exclude folder names (supports both folder names and full paths)
+            if (profile.excludeFolderNames != null && profile.excludeFolderNames.Count > 0)
+            {
+                string fullFolderPath = Path.GetFullPath(folderPath);
+                string unityRelativePath = GetUnityRelativePath(folderPath);
+                
+                foreach (string excludePattern in profile.excludeFolderNames)
+                {
+                    if (string.IsNullOrWhiteSpace(excludePattern))
+                        continue;
+                    
+                    // Check if this is a path (contains path separator)
+                    if (excludePattern.Contains(Path.DirectorySeparatorChar) || excludePattern.Contains('/') || excludePattern.Contains('\\'))
+                    {
+                        string fullExcludePath;
+                        
+                        // Check if it's a Unity-relative path (starts with Assets/ or Packages/)
+                        if (excludePattern.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) || 
+                            excludePattern.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Convert Unity-relative path to full path
+                            fullExcludePath = Path.GetFullPath(Path.Combine(projectRoot, excludePattern.Replace('/', Path.DirectorySeparatorChar)));
+                        }
+                        else
+                        {
+                            // Treat as full path
+                            fullExcludePath = Path.GetFullPath(excludePattern);
+                        }
+                        
+                        // Check if folder path matches or is a subfolder of exclude path
+                        if (fullFolderPath.Equals(fullExcludePath, StringComparison.OrdinalIgnoreCase) ||
+                            fullFolderPath.StartsWith(fullExcludePath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                            fullFolderPath.StartsWith(fullExcludePath + "/", StringComparison.OrdinalIgnoreCase) ||
+                            fullFolderPath.StartsWith(fullExcludePath + "\\", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                        
+                        // Also check Unity-relative path if we have one
+                        if (!string.IsNullOrEmpty(unityRelativePath))
+                        {
+                            string excludeUnityPath = excludePattern.Replace('\\', '/');
+                            if (unityRelativePath.Equals(excludeUnityPath, StringComparison.OrdinalIgnoreCase) ||
+                                unityRelativePath.StartsWith(excludeUnityPath + "/", StringComparison.OrdinalIgnoreCase))
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Treat as folder name - check if folder name matches
+                        if (folderName.Equals(excludePattern, StringComparison.OrdinalIgnoreCase))
+                            return true;
+                        
+                        // Also check if the name appears anywhere in the path
+                        string[] pathParts = fullFolderPath.Split(Path.DirectorySeparatorChar, '/', '\\');
+                        if (pathParts.Any(part => part.Equals(excludePattern, StringComparison.OrdinalIgnoreCase)))
+                            return true;
+                        
+                        // Check in Unity-relative path as well
+                        if (!string.IsNullOrEmpty(unityRelativePath))
+                        {
+                            string[] unityPathParts = unityRelativePath.Split('/');
+                            if (unityPathParts.Any(part => part.Equals(excludePattern, StringComparison.OrdinalIgnoreCase)))
+                                return true;
+                        }
+                    }
+                }
+            }
             
             return false;
         }
         
         /// <summary>
-        /// Check if a file should be ignored
+        /// Check if a file should be ignored (public method for use by PackageBuilder and others)
         /// </summary>
-        private static bool ShouldIgnoreFile(string filePath, ExportProfile profile)
+        public static bool ShouldIgnoreFile(string filePath, ExportProfile profile)
         {
             string fileName = Path.GetFileName(filePath);
             string extension = Path.GetExtension(filePath);
@@ -214,6 +373,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             if (YucpIgnoreHandler.ShouldIgnore(filePath, projectRoot))
                 return true;
+            
+            // Ignore .meta files (Unity handles these)
+            if (extension == ".meta")
+                return true;
+            
+            // NOTE: We do NOT exclude derived FBX files here during collection
+            // They need to be collected so ConvertDerivedFbxToPatchAssets can convert them to PatchPackages
+            // They will be removed from the export list during conversion, and a final safety check ensures
+            // no derived FBX files remain in the export package
             
             // Check if file is in an ignored folder
             string folderPath = Path.GetDirectoryName(filePath);
@@ -231,17 +399,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
             
-            // Always ignore .meta files (Unity handles these)
-            if (extension == ".meta")
-                return true;
-            
             return false;
         }
         
         /// <summary>
-        /// Check if a filename matches a pattern (supports * wildcards)
+        /// Check if a filename matches a pattern (supports * wildcards) (public method for reuse)
         /// </summary>
-        private static bool IsFileMatchingPattern(string fileName, string pattern)
+        public static bool IsFileMatchingPattern(string fileName, string pattern)
         {
             if (string.IsNullOrEmpty(pattern))
                 return false;
@@ -281,9 +445,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Convert full path to Unity-relative path (Assets/... or Packages/...)
+        /// Convert full path to Unity-relative path (Assets/... or Packages/...) (public method for reuse)
         /// </summary>
-        private static string GetUnityRelativePath(string fullPath)
+        public static string GetUnityRelativePath(string fullPath)
         {
             string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             fullPath = Path.GetFullPath(fullPath);
@@ -295,6 +459,81 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             
             return null;
+        }
+        
+        /// <summary>
+        /// Check if an FBX file is marked as derived (should be converted to PatchPackage instead of exported)
+        /// Handles both Unity-relative paths and full paths.
+        /// Returns false if the file is not an FBX, cannot be loaded, or is not marked as derived.
+        /// </summary>
+        public static bool IsDerivedFbx(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath))
+                return false;
+            
+            if (!filePath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
+                return false;
+            
+            string unityPath = null;
+            
+            // Try to convert to Unity-relative path
+            try
+            {
+                unityPath = GetUnityRelativePath(filePath);
+                
+                // If conversion failed, try using the path directly if it's already a Unity-relative path
+                if (string.IsNullOrEmpty(unityPath))
+                {
+                    string normalizedPath = filePath.Replace('\\', '/');
+                    if (normalizedPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) || 
+                        normalizedPath.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+                    {
+                        unityPath = normalizedPath;
+                    }
+                    else
+                    {
+                        // Cannot determine Unity path - assume not derived to be safe
+                        return false;
+                    }
+                }
+            }
+            catch
+            {
+                // If path conversion fails, assume not derived to be safe
+                return false;
+            }
+            
+            // Get ModelImporter for this FBX
+            ModelImporter importer = null;
+            try
+            {
+                importer = AssetImporter.GetAtPath(unityPath) as ModelImporter;
+                if (importer == null)
+                    return false;
+            }
+            catch
+            {
+                // If we can't get the importer, assume not derived to be safe
+                return false;
+            }
+            
+            // Check userData for derived settings
+            try
+            {
+                string userDataJson = importer.userData;
+                if (string.IsNullOrEmpty(userDataJson))
+                    return false;
+                
+                var settings = JsonUtility.FromJson<DerivedSettings>(userDataJson);
+                if (settings != null && settings.isDerived)
+                    return true;
+            }
+            catch
+            {
+                // If JSON parsing fails, assume it's not derived (safe default)
+            }
+            
+            return false;
         }
         
         /// <summary>

@@ -9,7 +9,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
 	/// <summary>
 	/// Generates binary diff patches (.hdiff files) from Base (v1) vs Modified (v2) FBX.
-	/// Based on CocoTools approach: https://github.com/coco1337/CocoTools
+	/// Adapted from CocoTools approach: https://github.com/coco1337/CocoTools
 	/// </summary>
 	public static class PatchBuilder
 	{
@@ -268,7 +268,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		
 		/// <summary>
 		/// Builds a DerivedFbxAsset with binary diff (.hdiff) file.
-		/// Based on CocoTools CocoDiff.cs ExecuteProcess() method.
+		/// Adapted from CocoTools CocoDiff.cs ExecuteProcess() method.
 		/// </summary>
 		public static DerivedFbxAsset BuildDerivedFbxAsset(string baseFbxPath, string modifiedFbxPath, DerivedFbxAsset.Policy policy, DerivedFbxAsset.UIHints hints, DerivedFbxAsset.SeedMaps seeds)
 		{
@@ -282,7 +282,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			asset.targetFbxName = hints.friendlyName;
 			
 			// Generate .hdiff file
-			// Based on CocoTools CocoDiff.cs ExecuteProcess() - uses Directory.GetCurrentDirectory()
+			// Adapted from CocoTools CocoDiff.cs ExecuteProcess() - uses Directory.GetCurrentDirectory()
 			string projectPath = Directory.GetCurrentDirectory();
 			
 			// Get physical paths - CocoTools uses Path.Combine(Directory.GetCurrentDirectory(), AssetDatabase.GetAssetPath(...))
@@ -308,7 +308,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			}
 			
 			// Generate output path for .hdiff file
-			// Based on CocoTools: output in same directory as target file, or in Patches folder
+			// Adapted from CocoTools: output in same directory as target file, or in Patches folder
 			string hdiffFileName = $"DerivedFbxAsset_{SanitizeFileName(hints.friendlyName)}.hdiff";
 			string hdiffDir = GetTempAuthoringAssetPath("");
 			string hdiffDirPhysical = Path.GetFullPath(Path.Combine(projectPath, hdiffDir.Replace('/', Path.DirectorySeparatorChar)));
@@ -323,7 +323,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			modifiedPhysicalPath = Path.GetFullPath(modifiedPhysicalPath);
 			
 			// Delete existing .hdiff file if it exists (HDiffPatch doesn't overwrite by default)
-			// Based on CocoTools approach - they use temp file then overwrite, but we can just delete
+			// Adapted from CocoTools approach - they use temp file then overwrite, but we can just delete
 			if (File.Exists(hdiffOutputPath))
 			{
 				try
@@ -338,7 +338,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			}
 			
 			// Create binary diff using HDiffPatch
-			// Based on CocoTools CocoDiff.cs ExecuteProcess()
+			// Adapted from CocoTools CocoDiff.cs ExecuteProcess()
 			Debug.Log($"[PatchBuilder] Creating .hdiff file:\n  Base: {basePhysicalPath}\n  Modified: {modifiedPhysicalPath}\n  Output: {hdiffOutputPath}");
 			
 			var diffResult = HDiffPatchWrapper.CreateDiff(

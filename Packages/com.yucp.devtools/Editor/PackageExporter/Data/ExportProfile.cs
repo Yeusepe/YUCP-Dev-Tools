@@ -44,7 +44,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
         public List<DiscoveredAsset> discoveredAssets = new List<DiscoveredAsset>();
         
         [Tooltip("Folders to permanently ignore from all exports (like .gitignore)")]
-        public List<string> permanentIgnoreFolders = new List<string>();
+        [SerializeField] private List<string> permanentIgnoreFolders = new List<string>();
+        
+        [Tooltip("GUIDs for ignored folders (for rename safety)")]
+        [SerializeField] private List<string> permanentIgnoreFolderGuids = new List<string>();
+        
+        public List<string> PermanentIgnoreFolders => permanentIgnoreFolders ??= new List<string>();
+        public List<string> PermanentIgnoreFolderGuids => permanentIgnoreFolderGuids ??= new List<string>();
         
         [Tooltip("Cache of last scan results for UI performance")]
         [SerializeField] private bool hasScannedAssets = false;
@@ -91,6 +97,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         [Tooltip("Strip debug symbols from obfuscated assemblies")]
         public bool stripDebugSymbols = true;
+        
+        [Tooltip("Advanced obfuscation settings for fine-grained control")]
+        public ObfuscationSettings advancedObfuscationSettings = new ObfuscationSettings();
         
         [Header("Export Settings")]
         [Tooltip("Default export path (leave empty for Desktop)")]

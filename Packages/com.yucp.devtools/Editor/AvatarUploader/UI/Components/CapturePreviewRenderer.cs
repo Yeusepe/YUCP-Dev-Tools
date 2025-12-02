@@ -134,7 +134,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 
 			var rect = _imguiContainer.contentRect;
 			
-			// Validate rect dimensions to prevent RenderTexture.Create errors
+			// Validate rect dimensions
 			if (rect.width <= 4f || rect.height <= 4f || rect.width <= 0 || rect.height <= 0 ||
 			    float.IsNaN(rect.width) || float.IsNaN(rect.height) ||
 			    float.IsInfinity(rect.width) || float.IsInfinity(rect.height))

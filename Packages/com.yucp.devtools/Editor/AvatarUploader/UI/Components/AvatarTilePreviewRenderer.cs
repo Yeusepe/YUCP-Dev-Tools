@@ -194,7 +194,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			// In VRChat avatars, T-pose typically has upper arms/clavicles rotated to point arms horizontally
 			// To get A-pose, we need to rotate them so arms hang down
 			
-			// Try multiple bones in the arm chain to ensure A-pose
+			// Try multiple bones in the arm chain
 			// Start with clavicle/shoulder, then upper arm
 			
 			// Left side
@@ -288,7 +288,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			// We need to convert it to be relative to this specific preview area
 			Vector2 mousePos = Event.current.mousePosition;
 			
-			// Validate rect dimensions to prevent division by zero
+			// Validate rect dimensions
 			if (rect.width <= 0 || rect.height <= 0 || float.IsNaN(rect.width) || float.IsNaN(rect.height))
 			{
 				return; // Skip rotation updates if rect is invalid
@@ -301,7 +301,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			// Use the preview render area center - this is where the avatar is rendered
 			var previewCenter = new Vector2(rect.width * 0.5f, rect.height * 0.5f);
 			
-			// Validate preview center to prevent division by zero
+			// Validate preview center
 			if (previewCenter.x <= 0 || previewCenter.y <= 0 || float.IsNaN(previewCenter.x) || float.IsNaN(previewCenter.y))
 			{
 				return; // Skip rotation updates if center is invalid
@@ -313,7 +313,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			var normalizedX = Mathf.Clamp(((localMousePos.x - previewCenter.x) / previewCenter.x), -1f, 1f);
 			var normalizedY = Mathf.Clamp(((previewCenter.y - localMousePos.y) / previewCenter.y), -1f, 1f);
 			
-			// Validate normalized values to prevent NaN
+			// Validate normalized values
 			if (float.IsNaN(normalizedX) || float.IsNaN(normalizedY) || float.IsInfinity(normalizedX) || float.IsInfinity(normalizedY))
 			{
 				normalizedX = 0f;
@@ -326,11 +326,11 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			if (!_disableCursorTracking && (_leftEyeBone != null || _rightEyeBone != null))
 			{
 				// Calculate look direction for eyes - reduced exaggeration
-				// Apply rotations independently to avoid cross-axis contamination
+				// Apply rotations independently
 				var eyeYaw = -normalizedX * 30f; // Reduced: Mouse right = look right (only affects Y axis)
 				var eyePitch = normalizedY * 20f; // Reduced: Mouse up = look up (Y axis inverted, so no negative)
 				
-				// Apply rotations independently to avoid cross-contamination
+				// Apply rotations independently
 				// Convert rest rotation to Euler, add tracking, convert back
 				if (_leftEyeBone != null)
 				{
@@ -414,7 +414,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			}
 
 			// Continuously repaint to keep 3D render alive and update eye/head tracking throughout window
-			// Always repaint, not just when mouse is over, to maintain smooth rendering and high resolution
+			// Continuously repaint to maintain smooth rendering and high resolution
 			// Use EditorApplication.update for consistent frame rate
 			if (!_useLowSpecMode && !_disposed && _previewInstance != null)
 			{
@@ -444,7 +444,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 		private void OnMouseLeave(MouseLeaveEvent evt)
 		{
 			_isMouseOver = false;
-			// Don't reset - keep tracking mouse throughout window
+			// Keep tracking mouse throughout window
 			_imguiContainer.MarkDirtyRepaint();
 		}
 

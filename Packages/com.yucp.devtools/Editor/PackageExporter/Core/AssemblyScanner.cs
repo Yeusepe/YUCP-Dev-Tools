@@ -140,7 +140,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Scan VPM packages for assemblies based on enabled dependencies set to Bundle mode
+        /// Scan VPM packages for assemblies using enabled dependencies set to Bundle mode
         /// </summary>
         public static List<AssemblyInfo> ScanVpmPackages(List<PackageDependency> dependencies)
         {

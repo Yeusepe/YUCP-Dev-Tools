@@ -164,7 +164,7 @@ namespace YUCP.DirectVpmInstaller
                     return;
                 }
                 
-                // Lock assemblies and disable auto-refresh to prevent mid-install compilation
+                // Lock assemblies and disable auto-refresh
                 EditorApplication.LockReloadAssemblies();
                 AssetDatabase.DisallowAutoRefresh();
                 AssetDatabase.StartAssetEditing();
@@ -250,7 +250,7 @@ namespace YUCP.DirectVpmInstaller
             }
             finally
             {
-                // Always clear coordination markers
+                // Clear coordination markers
                 try { InstallerTxn.ClearMarker("lock"); } catch { }
                 try { InstallerTxn.ClearMarker("pending"); } catch { }
             }
@@ -314,7 +314,7 @@ namespace YUCP.DirectVpmInstaller
                 
                 // Attempt rollback
                 // Rollback handled by caller via InstallerTxn.Rollback()
-                throw; // Re-throw to prevent cleanup
+                throw;
             }
         }
 
@@ -332,7 +332,7 @@ namespace YUCP.DirectVpmInstaller
                 }
             }
             catch { }
-            return true; // best-effort; don't block if undeterminable
+            return true;
         }
 
         private static void TestWritePermission(string folder)
@@ -430,7 +430,7 @@ namespace YUCP.DirectVpmInstaller
                     Debug.Log($"[DirectVpmInstaller] Cleaned up temporary file: {packageJsonPath}");
                 }
                 
-                // Clean up the installer script itself to prevent duplicate assembly errors on re-import
+                // Clean up the installer script itself
                 CleanupInstallerScript();
                 
                 // Find and delete the installer script itself
@@ -740,7 +740,7 @@ namespace YUCP.DirectVpmInstaller
         {
             try
             {
-                // Find and delete all YUCP installer scripts to prevent duplicate assembly errors
+                // Find and delete all YUCP installer scripts
                 string editorPath = Path.Combine(Application.dataPath, "Editor");
                 if (!Directory.Exists(editorPath))
                     return;

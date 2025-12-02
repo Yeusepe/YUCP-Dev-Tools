@@ -60,7 +60,7 @@ namespace YUCP.DevTools.Editor.Utilities
             var shadowContainer = new VisualElement();
             shadowContainer.name = "yucp-box-shadow-container";
             shadowContainer.style.position = Position.Absolute;
-            shadowContainer.pickingMode = PickingMode.Ignore; // Don't intercept mouse events
+            shadowContainer.pickingMode = PickingMode.Ignore;
             
             // Calculate shadow bounds
             float totalSpread = config.spread + config.blurRadius;

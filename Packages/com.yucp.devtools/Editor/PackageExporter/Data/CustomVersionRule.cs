@@ -72,7 +72,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             try
             {
-                // Create the bump function based on rule type
+                // Create the bump function using rule type
                 Func<System.Text.RegularExpressions.Match, VersionBumpOptions, string> bumpFunc = ruleType switch
                 {
                     RuleType.Semver => CreateSemverBumpFunc(),

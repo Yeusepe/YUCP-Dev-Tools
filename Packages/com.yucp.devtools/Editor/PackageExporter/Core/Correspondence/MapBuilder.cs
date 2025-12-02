@@ -5,7 +5,7 @@ using System.Reflection;
 namespace YUCP.DevTools.Editor.PackageExporter
 {
 	/// <summary>
-	/// Builds a simple correspondence map (v1 → v2) using name-based heuristics.
+	/// Builds a simple correspondence map (v1 → v2) using name heuristics.
 	/// Can be extended with multi-signal fusion later.
 	/// </summary>
 	public static class MapBuilder

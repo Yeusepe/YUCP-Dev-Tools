@@ -11,7 +11,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
     /// <summary>
     /// Injects custom icons into Unity packages (.unitypackage files).
-    /// Based on the Unitypackage-icon-creator tool but refactored for programmatic use.
+    /// Adapted from the Unitypackage-icon-creator tool but refactored for programmatic use.
     /// </summary>
     public static class PackageIconInjector
     {

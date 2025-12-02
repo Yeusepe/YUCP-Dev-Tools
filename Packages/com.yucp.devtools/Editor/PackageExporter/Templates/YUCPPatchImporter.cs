@@ -39,7 +39,7 @@ namespace YUCP.PatchCleanup
             WriteLog("YUCPPatchImporter static constructor called - importer is loaded and compiled!");
             EditorApplication.delayCall += CheckForPatchesOnLoad;
             
-            // Clean up DLLs on editor load to prevent lock issues
+            // Clean up DLLs on editor load
             EditorApplication.delayCall += CleanupDllsOnLoad;
         }
         
@@ -93,7 +93,7 @@ namespace YUCP.PatchCleanup
                                 }
                                 // Reset the hasCheckedOnLoad flag so patches are checked again
                                 hasCheckedOnLoad = false;
-                                // Don't clear the EditorPrefs yet - let it be cleared on successful application
+                                // Keep EditorPrefs until successful application
                                 CheckForPatchesOnLoad();
                             }
                             else
@@ -287,7 +287,7 @@ namespace YUCP.PatchCleanup
             {
                 WriteLog("Cleaning up DLLs after patch application...");
                 
-                // CRITICAL: Free the loaded DLL libraries first to release file locks
+                // Free the loaded DLL libraries first to release file locks
                 try
                 {
                     var hdiffPatchWrapperType = System.Type.GetType("YUCP.DevTools.Editor.PackageExporter.HDiffPatchWrapper, yucp.devtools.Editor");
@@ -691,7 +691,7 @@ namespace YUCP.PatchCleanup
         {
             try
             {
-                // CRITICAL: Delete DLLs from Plugins BEFORE patching to ensure we use Library/YUCP/ DLLs
+                // Delete DLLs from Plugins BEFORE patching
                 DeleteDllsFromPluginsBeforePatching();
                 
                 var patchType = patchObj.GetType();
@@ -868,7 +868,7 @@ namespace YUCP.PatchCleanup
                 CheckAndHandleOverrideOriginalReferences(baseFbxPath, baseFbxGuid, createdPath, patchPath);
                 
                 // Clean up imported temp files after successful FBX build
-                // Use nested delayCall to ensure Unity has finished processing the import
+                // Use nested delayCall
                 EditorApplication.delayCall += () =>
                 {
                     EditorApplication.delayCall += () =>
@@ -990,7 +990,7 @@ namespace YUCP.PatchCleanup
                         WriteLog($"  Updated {updatedCount} prefab(s) (mesh reference update not available)");
                     }
                     
-                    // Force a refresh to ensure Unity recognizes the GUID change
+                    // Force a refresh
                     AssetDatabase.Refresh();
                 }
             }
@@ -1149,7 +1149,7 @@ namespace YUCP.PatchCleanup
                     string tempExportPath = Path.Combine(projectPath, "Temp", "Export Package");
                     if (Directory.Exists(tempExportPath))
                     {
-                        // Try to delete the directory, but don't fail if it's locked
+                        // Try to delete the directory, continue if it's locked
                         try
                         {
                             // Delete files individually first, then directory
@@ -1419,7 +1419,7 @@ namespace YUCP.PatchCleanup
                                 continue;
                             }
                             
-                            // Skip the old FBX's meta file (we don't want to change its own GUID)
+                            // Skip the old FBX's meta file
                             string assetPath = metaFile.Substring(0, metaFile.Length - 5);
                             string relativePath = assetPath.Replace(projectPath, "").Replace('\\', '/').TrimStart('/');
                             string assetGuid = AssetDatabase.AssetPathToGUID(relativePath);
@@ -1434,7 +1434,7 @@ namespace YUCP.PatchCleanup
                             
                             // Replace GUID references in the meta file
                             // Look for patterns like: guid: OLD_GUID or {fileID: 11500000, guid: OLD_GUID, type: 2}
-                            // Use word boundaries to avoid partial matches
+                            // Use word boundaries
                             string oldGuidPattern = @"\b" + oldGuid + @"\b";
                             if (System.Text.RegularExpressions.Regex.IsMatch(content, oldGuidPattern))
                             {

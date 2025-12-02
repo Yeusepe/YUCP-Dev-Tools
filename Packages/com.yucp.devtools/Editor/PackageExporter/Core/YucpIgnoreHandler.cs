@@ -20,7 +20,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private static Dictionary<string, List<string>> ignoreCache = new Dictionary<string, List<string>>();
         
         /// <summary>
-        /// Check if a file or folder should be ignored based on .yucpignore files
+        /// Check if a file or folder should be ignored using .yucpignore files
         /// </summary>
         public static bool ShouldIgnore(string path, string projectRoot)
         {
@@ -131,7 +131,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             path = path.Replace("\\", "/");
             pattern = pattern.Replace("\\", "/");
             
-            // Handle negation (! prefix means don't ignore)
+            // Handle negation (! prefix)
             bool negate = false;
             if (pattern.StartsWith("!"))
             {
@@ -181,7 +181,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(pattern))
                 return text == pattern;
             
-            // Simple optimization for exact match
+            // Simple check for exact match
             if (!pattern.Contains("*") && !pattern.Contains("?"))
             {
                 return text.Equals(pattern, StringComparison.OrdinalIgnoreCase);
@@ -263,6 +263,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             try
             {
+                // Ensure directory exists before creating the ignore file
+                if (!Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                    Debug.Log($"[YucpIgnore] Created directory: {directory}");
+                }
+                
                 string ignoreFilePath = Path.Combine(directory, IGNORE_FILENAME);
                 
                 var lines = new List<string>

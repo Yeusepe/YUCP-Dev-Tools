@@ -28,7 +28,7 @@ namespace YUCP.PatchCleanup
         
         private static void CleanupOldAssetsFolders()
         {
-            // Only run once to avoid loops
+            // Only run once
             if (s_hasCleanedOldFolders) return;
             s_hasCleanedOldFolders = true;
             
@@ -191,7 +191,7 @@ namespace YUCP.PatchCleanup
         {
             try
             {
-                // Find AppliedPatchState asset if it exists (use reflection to avoid dependency)
+                // Find AppliedPatchState asset if it exists (use reflection)
                 string stateAssetPath = patchInfo.appliedStatePath;
                 if (!string.IsNullOrEmpty(stateAssetPath) && File.Exists(stateAssetPath))
                 {

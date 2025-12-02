@@ -8,13 +8,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
 	/// <summary>
 	/// Builds derived FBX files using HDiffPatch binary patching.
-	/// Based on CocoTools CocoPatch.cs and CocoUtils.cs implementation.
+	/// Adapted from CocoTools CocoPatch.cs and CocoUtils.cs implementation.
 	/// </summary>
 	public static class DerivedFbxBuilder
 	{
 		/// <summary>
 		/// Builds a derived FBX by applying a binary patch to the base FBX.
-		/// Based on CocoTools CocoPatch.cs ExecuteProcess() method.
+		/// Adapted from CocoTools CocoPatch.cs ExecuteProcess() method.
 		/// </summary>
 		public static string BuildDerivedFbx(string baseFbxPath, DerivedFbxAsset derivedAsset, string outputPath, string targetGuid)
 		{
@@ -51,7 +51,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				}
 			
 				// Get physical paths
-				// Based on CocoTools CocoPatch.cs path handling
+				// Adapted from CocoTools CocoPatch.cs path handling
 				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 				string basePhysicalPath = Path.Combine(projectPath, baseFbxPath.Replace('/', Path.DirectorySeparatorChar));
 				string hdiffPhysicalPath = Path.Combine(projectPath, derivedAsset.hdiffFilePath.Replace('/', Path.DirectorySeparatorChar));
@@ -61,7 +61,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				Directory.CreateDirectory(Path.GetDirectoryName(outputPhysicalPath));
 				
 				// Apply binary patch
-				// Based on CocoTools CocoPatch.cs hpatch_unity call
+				// Adapted from CocoTools CocoPatch.cs hpatch_unity call
 				var patchResult = HDiffPatchWrapper.ApplyPatch(
 					basePhysicalPath,
 					hdiffPhysicalPath,
@@ -86,7 +86,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				TryCopyMetaWithGuid(outputPhysicalPath, derivedAsset?.originalDerivedFbxPath, baseFbxPath, targetGuid);
 				
 				// Import the patched FBX
-				// Based on CocoTools CocoUtils.ForceOverwrite() AssetDatabase.ImportAsset call
+				// Adapted from CocoTools CocoUtils.ForceOverwrite() AssetDatabase.ImportAsset call
 				AssetDatabase.ImportAsset(fbxPath, ImportAssetOptions.ForceUpdate);
 			AssetDatabase.Refresh();
 			
@@ -137,7 +137,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					if (manifest.manifestId != derivedAsset.sourceManifestId)
 					{
 						Debug.LogWarning($"[DerivedFbxBuilder] Base FBX manifest ID mismatch. Expected: {derivedAsset.sourceManifestId}, Got: {manifest.manifestId}. Continuing anyway...");
-						// Don't fail on manifest mismatch, just warn (manifest might change slightly)
+						// Continue on manifest mismatch, just warn
 				}
 				else
 				{
@@ -152,7 +152,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					if (baseGuid != derivedAsset.baseFbxGuid)
 					{
 						Debug.LogWarning($"[DerivedFbxBuilder] Base FBX GUID mismatch. Expected: {derivedAsset.baseFbxGuid}, Got: {baseGuid}. Continuing anyway...");
-						// Don't fail on GUID mismatch, just warn (GUID might be different in different projects)
+						// Continue on GUID mismatch, just warn
 				}
 				else
 				{
@@ -186,7 +186,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		
 		/// <summary>
 		/// Copies meta file with GUID preservation.
-		/// Based on CocoTools CocoUtils.ForceOverwrite() approach.
+		/// Adapted from CocoTools CocoUtils.ForceOverwrite() approach.
 		/// </summary>
 		private static void TryCopyMetaWithGuid(string physicalOutputPath, string originalDerivedFbxPath, string baseFbxPath, string targetGuid)
 		{

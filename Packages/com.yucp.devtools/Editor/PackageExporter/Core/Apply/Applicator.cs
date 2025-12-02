@@ -33,8 +33,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 			WriteLog($"ApplyToTarget called: patch={AssetDatabase.GetAssetPath(patch)}, target={baseFbxPath}, score={score}");
 
-			// CRITICAL: Check if this patch+target combination is already being processed or has been processed
-			// This prevents infinite loops when OnPostprocessAllAssets is triggered
+			// Check if this patch+target combination is already being processed or has been processed
 			string patchPath = AssetDatabase.GetAssetPath(patch);
 			string patchTargetKey = $"{patchPath}|{baseFbxPath}";
 			
@@ -81,7 +80,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				}
 			}
 			
-			// Mark as being processed IMMEDIATELY to prevent re-entry
+			// Mark as being processed IMMEDIATELY
 			if (processedPatches == null)
 				processedPatches = new HashSet<string>();
 			processedPatches.Add(patchTargetKey);
@@ -95,8 +94,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			// Create derived cache folder
 			derivedDir = EnsureDerivedDir();
 			
-			// CRITICAL: Use StartAssetEditing to batch all CreateAsset calls
-			// This prevents OnPostprocessAllAssets from being triggered for each individual asset
+			// Use StartAssetEditing to batch all CreateAsset calls
 			WriteLog($"Processing {patch.ops.Count} operation(s)");
 			AssetDatabase.StartAssetEditing();
 
@@ -245,7 +243,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			AssetDatabase.CreateAsset(state, statePath);
 			derivedAssets.Add(state);
 
-			// CRITICAL: Stop asset editing - this batches all CreateAsset calls
+			// Stop asset editing - this batches all CreateAsset calls
 			// Unity will automatically save assets when StopAssetEditing is called
 			WriteLog($"Stopping asset editing. Created {derivedAssets.Count} derived asset(s)");
 			AssetDatabase.StopAssetEditing();

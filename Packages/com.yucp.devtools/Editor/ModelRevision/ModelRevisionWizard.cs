@@ -227,7 +227,7 @@ namespace YUCP.DevTools.Editor
 
             if (originalPrefabField != null)
             {
-                // Always enable so users can drag and drop
+                // Enable so users can drag and drop
                 originalPrefabField.SetEnabled(true);
                 
                 if (_revisionBase != null)
@@ -242,7 +242,7 @@ namespace YUCP.DevTools.Editor
 
             if (newPrefabField != null)
             {
-                // Always enable so users can drag and drop
+                // Enable so users can drag and drop
                 newPrefabField.SetEnabled(true);
                 
                 if (_targetVariant != null)

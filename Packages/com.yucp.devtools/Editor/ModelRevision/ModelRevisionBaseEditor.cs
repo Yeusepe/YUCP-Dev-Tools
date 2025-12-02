@@ -249,7 +249,7 @@ namespace YUCP.DevTools.Editor
             statusIndicator.style.borderBottomRightRadius = 4;
             statusIndicator.style.marginRight = 8;
             
-            // Set status color based on variant state
+            // Set status color
             if (variant == null)
             {
                 statusIndicator.style.backgroundColor = Color.red;

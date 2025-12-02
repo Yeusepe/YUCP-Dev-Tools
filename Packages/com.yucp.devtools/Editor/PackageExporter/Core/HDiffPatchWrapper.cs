@@ -82,8 +82,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					}
 				}
 				
-				// CRITICAL: Set DLL directory BEFORE any DllImport attributes try to resolve
-				// This ensures Windows searches Library/YUCP/ first
+				// Set DLL directory BEFORE any DllImport attributes try to resolve
 				[DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
 				static extern bool SetDllDirectory(string lpPathName);
 				
@@ -100,7 +99,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 	
 	/// <summary>
 	/// Wrapper for HDiffPatch DLLs (hdiffz.dll and hpatchz.dll).
-	/// Based on CocoTools implementation: https://github.com/coco1337/CocoTools
+	/// Adapted from CocoTools implementation: https://github.com/coco1337/CocoTools
 	/// Original HDiffPatch by Sisong: https://github.com/sisong/HDiffPatch
 	/// </summary>
 	public static class HDiffPatchWrapper
@@ -194,8 +193,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					}
 				}
 				
-				// CRITICAL: Set DLL directory BEFORE any DllImport attributes try to resolve
-				// This ensures Windows searches Library/YUCP/ first
+				// Set DLL directory BEFORE any DllImport attributes try to resolve
 				SetDllDirectory(libraryDir);
 				Debug.Log($"[HDiffPatchWrapper] Set DLL directory to {libraryDir} (static constructor)");
 			}
@@ -242,7 +240,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 		/// <summary>
 		/// Ensures the HDiffPatch DLLs are loaded before use.
-		/// Copies DLLs to Library/YUCP/ on first use to avoid Unity file locking issues.
+		/// Copies DLLs to Library/YUCP/ on first use.
 		/// This is necessary because P/Invoke doesn't automatically search Unity's Packages folder.
 		/// </summary>
 		private static void EnsureDllsLoaded()
@@ -282,8 +280,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				// Get the Library/YUCP directory for SetDllDirectory
 				string dllDir = Path.GetDirectoryName(hdiffzDest);
 				
-				// CRITICAL: Set DLL directory FIRST before copying/loading
-				// This ensures Windows searches Library/YUCP/ before Plugins/
+				// Set DLL directory FIRST before copying/loading
 				SetDllDirectory(dllDir);
 				
 				// Find and copy hdiffz.dll from source to Library/YUCP/
@@ -304,7 +301,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						File.Copy(sourceHdiffz, hdiffzDest, overwrite: true);
 						Debug.Log($"[HDiffPatchWrapper] Copied hdiffz.dll from {sourceHdiffz} to {hdiffzDest}");
 						
-						// If source is in temp Plugins, try to delete it immediately to prevent DllImport from finding it
+						// If source is in temp Plugins, try to delete it immediately
 						// (This is best-effort - if it's locked, we'll clean it up later)
 						if (sourceHdiffz.Contains("com.yucp.temp"))
 						{
@@ -348,7 +345,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						File.Copy(sourceHpatchz, hpatchzDest, overwrite: true);
 						Debug.Log($"[HDiffPatchWrapper] Copied hpatchz.dll from {sourceHpatchz} to {hpatchzDest}");
 						
-						// If source is in temp Plugins, try to delete it immediately to prevent DllImport from finding it
+						// If source is in temp Plugins, try to delete it immediately
 						// (This is best-effort - if it's locked, we'll clean it up later)
 						if (sourceHpatchz.Contains("com.yucp.temp"))
 						{
@@ -374,11 +371,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					Debug.LogError($"[HDiffPatchWrapper] hpatchz.dll not found in any source location");
 				}
 				
-				// CRITICAL: Explicitly load DLLs from Library/YUCP/ using full paths
-				// This ensures we're using the copied DLLs, not the ones in Plugins/
+				// Explicitly load DLLs from Library/YUCP/ using full paths
 				if (File.Exists(hdiffzDest))
 				{
-					// Use full absolute path to ensure we load from Library/YUCP/
+					// Use full absolute path
 					string fullHdiffzPath = Path.GetFullPath(hdiffzDest);
 					s_hdiffzHandle = LoadLibrary(fullHdiffzPath);
 					if (s_hdiffzHandle == IntPtr.Zero)
@@ -398,7 +394,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 				if (File.Exists(hpatchzDest))
 				{
-					// Use full absolute path to ensure we load from Library/YUCP/
+					// Use full absolute path
 					string fullHpatchzPath = Path.GetFullPath(hpatchzDest);
 					s_hpatchzHandle = LoadLibrary(fullHpatchzPath);
 					if (s_hpatchzHandle == IntPtr.Zero)
@@ -431,28 +427,28 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		
 		/// <summary>
 		/// Delegate for HDiff log output.
-		/// Based on CocoTools CocoDiff.cs
+		/// Adapted from CocoTools CocoDiff.cs
 		/// </summary>
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 		public delegate void HDiffzStringOutput(string str);
 		
 		/// <summary>
 		/// Register delegate for HDiff log output.
-		/// Based on CocoTools CocoDiff.cs
+		/// Adapted from CocoTools CocoDiff.cs
 		/// </summary>
 		[DllImport("hdiffz", EntryPoint = "RegisterDelegate")]
 		public static extern void RegisterDelegateHdiffz(HDiffzStringOutput del);
 
 		/// <summary>
 		/// Register delegate for HDiff error output.
-		/// Based on CocoTools CocoDiff.cs
+		/// Adapted from CocoTools CocoDiff.cs
 		/// </summary>
 		[DllImport("hdiffz", EntryPoint = "RegisterErrorDelegate")]
 		public static extern void RegisterErrorDelegateHdiffz(HDiffzStringOutput del);
 
 		/// <summary>
 		/// Create a binary diff file from old and new FBX files.
-		/// Based on CocoTools CocoDiff.cs hdiff_unity function
+		/// Adapted from CocoTools CocoDiff.cs hdiff_unity function
 		/// </summary>
 		/// <param name="oldFileName">Path to the original/base FBX file</param>
 		/// <param name="newFileName">Path to the modified FBX file</param>
@@ -470,28 +466,28 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		
 		/// <summary>
 		/// Delegate for HPatch log output.
-		/// Based on CocoTools CocoPatch.cs
+		/// Adapted from CocoTools CocoPatch.cs
 		/// </summary>
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 		public delegate void HPatchzStringOutput(string str);
 
 		/// <summary>
 		/// Register delegate for HPatch log output.
-		/// Based on CocoTools CocoPatch.cs
+		/// Adapted from CocoTools CocoPatch.cs
 		/// </summary>
 		[DllImport("hpatchz", EntryPoint = "RegisterDelegate")]
 		public static extern void RegisterDelegateHpatchz(HPatchzStringOutput del);
 
 		/// <summary>
 		/// Register delegate for HPatch error output.
-		/// Based on CocoTools CocoPatch.cs
+		/// Adapted from CocoTools CocoPatch.cs
 		/// </summary>
 		[DllImport("hpatchz", EntryPoint = "RegisterErrorDelegate")]
 		public static extern void RegisterErrorDelegateHpatchz(HPatchzStringOutput del);
 
 		/// <summary>
 		/// Apply a binary patch to an FBX file.
-		/// Based on CocoTools CocoPatch.cs hpatch_unity function
+		/// Adapted from CocoTools CocoPatch.cs hpatch_unity function
 		/// </summary>
 		/// <param name="optionCount">Number of patch options</param>
 		/// <param name="options">Array of patch options (usually empty)</param>
@@ -509,7 +505,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 		/// <summary>
 		/// Default diff options used by CocoTools.
-		/// Based on CocoTools CocoDiff.cs DEFAULT_COMMAND
+		/// Adapted from CocoTools CocoDiff.cs DEFAULT_COMMAND
 		/// </summary>
 		private const string DEFAULT_DIFF_OPTIONS = "-m-6 -SD -c-zstd-21-24 -d";
 
@@ -611,7 +607,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 	/// <summary>
 	/// HDiff result codes.
-	/// Based on CocoTools CocoDiff.cs THDiffResult enum
+	/// Adapted from CocoTools CocoDiff.cs THDiffResult enum
 	/// </summary>
 	public enum THDiffResult : int
 	{
@@ -640,7 +636,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 	/// <summary>
 	/// HPatch result codes.
-	/// Based on CocoTools CocoPatch.cs THPatchResult enum
+	/// Adapted from CocoTools CocoPatch.cs THPatchResult enum
 	/// </summary>
 	public enum THPatchResult : int
 	{

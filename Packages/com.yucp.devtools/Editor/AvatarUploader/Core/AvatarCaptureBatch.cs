@@ -87,7 +87,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.Core
 						texture = processedTexture
 					});
 
-					// Small delay to prevent UI blocking
+					// Small delay
 					await Task.Delay(50);
 				}
 				catch (Exception ex)

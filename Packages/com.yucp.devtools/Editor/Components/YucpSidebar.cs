@@ -212,7 +212,7 @@ namespace YUCP.DevTools.Components
             
             container.Clear();
             
-            // Filter items based on search text
+            // Filter items using search text
             var filteredItems = new List<T>();
             if (string.IsNullOrWhiteSpace(_searchText))
             {

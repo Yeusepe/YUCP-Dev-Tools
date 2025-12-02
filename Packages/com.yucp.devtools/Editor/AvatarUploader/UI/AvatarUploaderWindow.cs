@@ -42,7 +42,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		
 		private void ShowBridgeStatus(string message)
 		{
-			// Don't show "Control Panel Ready" toasts - they're not actionable and clutter the UI
+			// Skip "Control Panel Ready" toasts - they're not actionable and clutter the UI
 			// Only show errors/warnings
 			if (message.Contains("unavailable") || message.Contains("error") || message.Contains("Error"))
 			{
@@ -73,10 +73,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		private bool _controlPanelInitialized;
 		private EventHandler _cpContentChangedHandler;
 		private EventHandler _cpRevalidateHandler;
-		private bool _isSyncingToControlPanel = false; // Flag to prevent event feedback loops
-		private bool _isUserTyping = false; // Flag to prevent UI rebuilds while user is typing
-		private GameObject _lastSelectedAvatarRoot = null; // Track last selected avatar to prevent loops
-		private bool _isSelectingAvatar = false; // Flag to prevent recursive SelectAvatar calls
+		private bool _isSyncingToControlPanel = false;
+		private bool _isUserTyping = false;
+		private GameObject _lastSelectedAvatarRoot = null;
+		private bool _isSelectingAvatar = false;
 		private TextField _nameFieldRef; // Reference to name field to update without rebuilding
 		private TextField _descFieldRef; // Reference to description field to update without rebuilding
 		private ControlPanelUiBinder _cpUiBinder;
@@ -148,7 +148,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 	{
 		ReloadProfiles();
 		LoadResources();
-		// Don't restore selected avatar here - wait for CreateGUI to initialize UI elements
+		// Wait for CreateGUI to initialize UI elements before restoring selected avatar
 		// RestoreSelectedAvatar will be called after CreateGUI completes
 		ControlPanelBridge.EnsureBuilder(null);
 		
@@ -455,7 +455,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			_cpContentChangedHandler ??= (_, __) =>
 			{
-				// Only refresh validations, NOT metadata section, to prevent UI rebuilds while typing
+				// Only refresh validations, NOT metadata section
 				if (!_isSyncingToControlPanel)
 					RefreshControlPanelValidations();
 			};
@@ -480,7 +480,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			try
 			{
 				BuildValidationSection();
-				// Also rebuild build actions to update button states based on validation
+				// Also rebuild build actions to update button states
 				BuildBuildActionsSection();
 			}
 			catch (Exception ex)
@@ -532,7 +532,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			if (config == null || config.avatarPrefab == null)
 				return;
 
-			// Don't call PopulateFromPipelineManager here - it's already called in ShowAvatarDetails/UpdateHeroPanel
+			// Skip PopulateFromPipelineManager - it's already called in ShowAvatarDetails/UpdateHeroPanel
 			// Try to get blueprint ID from the asset
 			var blueprintId = config.GetBlueprintId(PlatformSwitcher.BuildPlatform.PC);
 			if (string.IsNullOrEmpty(blueprintId))
@@ -666,7 +666,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			_currentHeroConfig.avatarName = value;
 			EditorUtility.SetDirty(_currentHeroConfig);
 			SaveAvatarAsset(_currentHeroConfig);
-			// Don't rebuild UI - just update specific elements if needed
+			// Update specific elements if needed
 		}
 
 		private void UpdateActiveAvatarDescription(string value)
@@ -681,7 +681,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		}
 
 		/// <summary>
-		/// Explicitly save an AvatarAsset to ensure it persists between Unity sessions.
+		/// Explicitly save an AvatarAsset.
 		/// </summary>
 		private void SaveAvatarAsset(AvatarAsset asset)
 		{
@@ -712,7 +712,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			_currentHeroConfig.tags.Add(tag);
 			EditorUtility.SetDirty(_currentHeroConfig);
 			SaveAvatarAsset(_currentHeroConfig);
-			// Don't rebuild UI - just update specific elements if needed
+			// Update specific elements if needed
 		}
 
 		private void RemoveActiveAvatarTag(string tag)
@@ -726,7 +726,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			Undo.RecordObject(_currentHeroConfig, "Remove Avatar Tag");
 			EditorUtility.SetDirty(_currentHeroConfig);
 			SaveAvatarAsset(_currentHeroConfig);
-			// Don't rebuild UI - just update specific elements if needed
+			// Update specific elements if needed
 		}
 
 		private void UpdateActiveAvatarVisibility(string value)
@@ -1098,7 +1098,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			// Populate all avatars from PipelineManager when collection is loaded
 			if (profile.avatars != null)
 			{
-				// Don't populate from PipelineManager here - it's expensive and causes lag
+				// Skip PopulateFromPipelineManager - it's expensive and causes lag
 				// Only populate when avatar is selected (in ShowAvatarDetails)
 			}
 
@@ -1396,7 +1396,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			bool allPublic = publicCount == selectedAvatars.Count;
 			bool allPrivate = privateCount == selectedAvatars.Count;
 
-			// Vertical layout to prevent overflow
+			// Vertical layout
 			var contentContainer = new VisualElement();
 			contentContainer.style.flexDirection = FlexDirection.Column;
 			contentContainer.style.width = Length.Percent(100);
@@ -1881,7 +1881,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			}
 			else
 			{
-				// Dispose all existing preview renderers before clearing to prevent leaks
+				// Dispose all existing preview renderers before clearing
 				if (_avatarGridContent != null)
 				{
 					foreach (var child in _avatarGridContent.Children().ToList())
@@ -1905,7 +1905,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					if (avatarConfig == null)
 						continue;
 
-					// Don't populate from PipelineManager here - it's expensive and causes duplicates
+					// Skip PopulateFromPipelineManager - it's expensive and causes duplicates
 					// Only populate when avatar is selected (in ShowAvatarDetails) or when Control Panel selects it
 					EnsureGalleryList(avatarConfig);
 					EnsureGalleryLoaded(profile, avatarConfig);
@@ -2177,7 +2177,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					continue;
 				
 				// Populate avatar data from PipelineManager when building grid
-				// Don't populate from PipelineManager here - it's expensive and causes lag
+				// Skip PopulateFromPipelineManager - it's expensive and causes lag
 				// Only populate when avatar is selected (in ShowAvatarDetails)
 					
 				EnsureGalleryList(avatarConfig);
@@ -2394,7 +2394,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				return;
 			}
 
-			// IMPORTANT: Set current config immediately to prevent previous avatar data from showing
+			// Set current config immediately
 			_currentHeroConfig = config;
 			_selectedAvatarIndex = index;
 			_selectedProfile = profile;
@@ -2410,7 +2410,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 					_lastSelectedAvatarRoot = null;
 					_isSelectingAvatar = false;
 				}
-				// If it's the same avatar, keep the flags to prevent unnecessary re-selection
+				// If it's the same avatar, keep the flags
 			}
 			else
 			{
@@ -2419,7 +2419,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				_isSelectingAvatar = false;
 			}
 
-			// Clear all section hosts to prevent showing stale data
+			// Clear all section hosts
 			_iconSidebarHost?.Clear();
 			_gallerySectionHost?.Clear();
 			_metadataSectionHost?.Clear();
@@ -2429,7 +2429,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			_buildActionsHost?.Clear();
 			_advancedSectionHost?.Clear();
 
-			// Show the details panel immediately (don't block on expensive operations)
+			// Show the details panel immediately
 			_avatarDetailsHost.style.display = DisplayStyle.Flex;
 
 			// Update grid selection visual state
@@ -2438,7 +2438,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			// Build icon sidebar
 			BuildIconSidebar(config);
 
-			// Ensure gallery is loaded from API FIRST (always fetch fresh data)
+			// Load gallery from API FIRST
 			EnsureGalleryLoaded(profile, config, forceReload: true);
 
 			// Build gallery card (will show empty initially, then update when loaded)
@@ -2513,7 +2513,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			// Update hero panel immediately with existing data
 			UpdateHeroPanel(profile, config, index);
 
-			// Sync blueprint ID and metadata asynchronously (defer expensive operation to avoid lag)
+			// Sync blueprint ID and metadata asynchronously
 			// Try Control Panel first, then fallback to PipelineManager
 			if (config != null && config.avatarPrefab != null)
 			{
@@ -2930,7 +2930,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 		private void UpdateHeroPanel(AvatarCollection profile, AvatarAsset config, int index)
 		{
-			// If switching to a different avatar, clear hero slides immediately to prevent showing stale content
+			// If switching to a different avatar, clear hero slides immediately
 			var previousConfig = _currentHeroConfig;
 			_currentHeroConfig = config;
 			
@@ -2947,7 +2947,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				return;
 			}
 			
-			// Clear hero slides when switching avatars to prevent showing previous avatar's content
+			// Clear hero slides when switching avatars
 			if (previousConfig != config)
 			{
 				_heroSlides.Clear();
@@ -2962,7 +2962,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				}
 			}
 
-			// Ensure UI elements are initialized - build them if they don't exist (for details panel)
+			// Build UI elements if they don't exist (for details panel)
 			if (_heroPanel == null || _heroInfoContainer == null)
 			{
 				// Try to build hero section in details panel
@@ -3009,7 +3009,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				PopulateAvatarFromAPI(config);
 			}
 			
-			// Select avatar in Control Panel and sync metadata (only if not already selected to prevent loops)
+			// Select avatar in Control Panel and sync metadata (only if not already selected)
 			if (config.avatarPrefab != null)
 			{
 				var descriptorRoot = EnsureDescriptorRoot(config.avatarPrefab, config);
