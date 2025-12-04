@@ -226,7 +226,10 @@
 
 .yucp-window-narrow .yucp-inspector-header Button {
     width: 100%;
-    margin: 0;
+    margin-top: 0;
+    margin-bottom: 8px;
+    margin-left: 0;
+    margin-right: 0;
 }
 
 .yucp-window-medium .yucp-inspector-header {
@@ -276,7 +279,10 @@
 
 .yucp-window-narrow .yucp-inspector-search-row Button {
     width: 100%;
-    margin: 0;
+    margin-top: 0;
+    margin-bottom: 8px;
+    margin-left: 0;
+    margin-right: 0;
 }
 
 .yucp-window-medium .yucp-inspector-search-row .yucp-input {
@@ -337,6 +343,82 @@
 .yucp-window-narrow .yucp-inspector-list-actions Button {
     width: 100%;
     margin: 4px 0;
+}
+
+/* Dependencies list container */
+.yucp-dependency-list-container {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.yucp-window-narrow .yucp-dependency-list-container {
+    width: 100%;
+    max-width: 100%;
+}
+
+/* Dependencies cards */
+.yucp-dependency-card {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.yucp-dependency-card-header {
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.yucp-dependency-card-name {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.yucp-window-narrow .yucp-dependency-card {
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
+}
+
+.yucp-window-narrow .yucp-dependency-card-header {
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: wrap;
+}
+
+.yucp-window-narrow .yucp-dependency-card-header .yucp-toggle {
+    flex-shrink: 0;
+    margin-right: 8px;
+    margin-bottom: 0;
+}
+
+.yucp-window-narrow .yucp-dependency-card-name {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.yucp-window-narrow .yucp-dependency-card-header Button {
+    flex-shrink: 0;
+    margin-left: 8px;
+    margin-top: 0;
+    align-self: auto;
 }
 
 /* Folder header actions in asset list - Beautiful card design */
@@ -665,8 +747,6 @@
     width: 100%;
     margin-bottom: 6px;
     margin-right: 0;
-    word-break: break-all;
-    overflow-wrap: break-word;
     min-width: 0;
 }
 
@@ -744,7 +824,6 @@
 .yucp-window-narrow .yucp-section .yucp-validation-success-text {
     font-size: 11px;
     white-space: normal;
-    word-wrap: break-word;
 }
 
 /* ============================================================================
@@ -752,6 +831,7 @@
    ============================================================================ */
 .yucp-metadata-section {
     padding: 20px;
+    margin-top: 200px;
 }
 
 .yucp-metadata-header {
@@ -806,21 +886,41 @@
     border-radius: 8px;
 }
 
-.yucp-metadata-icon-change-button {
+.yucp-overlay-hover-button {
     position: absolute;
     bottom: 4px;
     left: 4px;
     right: 4px;
     height: 24px;
     font-size: 11px;
-    padding: 0;
-    background-color: rgba(26, 26, 26, 0.95);
+    padding-left: 12px;
+    padding-right: 12px;
+    margin: 0;
+    background-color: rgba(55, 55, 55, 0.95);
     border-width: 1px;
-    border-color: rgba(42, 42, 42, 0.8);
+    border-color: rgba(70, 70, 70, 0.9);
     color: #e0e0e0;
     border-radius: 4px;
     justify-content: center;
     align-items: center;
+    opacity: 0;
+    transition-duration: 0.25s, 0.25s, 0.25s;
+    transition-property: opacity, background-color, border-color;
+    transition-timing-function: ease-out, ease-out, ease-out;
+}
+
+.yucp-overlay-hover-button-visible {
+    opacity: 1;
+}
+
+.yucp-overlay-hover-button:hover {
+    background-color: rgba(65, 65, 65, 0.95);
+    border-color: rgba(80, 80, 80, 0.9);
+}
+
+.yucp-overlay-hover-button:active {
+    background-color: rgba(45, 45, 45, 0.95);
+    border-color: rgba(60, 60, 60, 0.9);
 }
 
 .yucp-metadata-name-field {
@@ -873,15 +973,64 @@
 }
 
 .yucp-metadata-author-field {
-    min-height: 80px;
     background-color: rgba(42, 42, 42, 0.3);
-    border-width: 0;
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.6);
     border-radius: 6px;
-    padding: 10px 12px;
+    padding: 4px 8px;
 }
 
 .yucp-metadata-author-field:focus {
+    border-color: rgba(42, 42, 42, 0.8);
     background-color: rgba(42, 42, 42, 0.4);
+}
+
+.yucp-product-links-container {
+    margin-top: 8px;
+}
+
+.yucp-product-link-card {
+    background-color: rgba(26, 26, 26, 0.4);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.5);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 8px;
+}
+
+.yucp-product-link-content {
+    width: 100%;
+}
+
+.yucp-product-link-icon {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    border-radius: 4px;
+    overflow: hidden;
+    background-color: rgba(42, 42, 42, 0.3);
+}
+
+.yucp-product-link-icon > .unity-image {
+    width: 100%;
+    height: 100%;
+}
+
+.yucp-product-link-label {
+    margin-bottom: 6px;
+    font-size: 12px;
+}
+
+.yucp-product-link-url {
+    font-size: 11px;
+    color: rgba(200, 200, 200, 0.8);
+}
+
+.yucp-button-icon {
+    padding: 4px;
+    min-width: 32px;
+    font-size: 16px;
 }
 
 .yucp-metadata-grid {
@@ -1094,4 +1243,74 @@
     padding-right: 0;
     overflow: hidden;
     -unity-background-scale-mode: stretch-to-fill;
+}
+
+/* ============================================================================
+   BANNER SECTION - Package banner with gradient
+   ============================================================================ */
+.yucp-banner-container {
+    position: relative;
+    height: 400px;
+    margin-bottom: 32px;
+    padding: 0;
+    overflow: visible;
+    flex-shrink: 0;
+    width: 100%;
+    min-width: 100%;
+}
+
+.yucp-banner-image-container {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    -unity-background-scale-mode: scale-and-crop;
+    -unity-background-image-tint-color: rgba(255, 255, 255, 1);
+    background-color: transparent;
+}
+
+.yucp-banner-gradient-overlay {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: transparent;
+    -unity-background-scale-mode: stretch-to-fill;
+}
+
+.yucp-banner-change-button {
+    position: absolute;
+    height: 24px;
+    padding-left: 12px;
+    padding-right: 12px;
+    font-size: 11px;
+    background-color: rgba(50, 50, 50, 0.95);
+    border-width: 1px;
+    border-color: rgba(65, 65, 65, 0.9);
+    color: #e0e0e0;
+    border-radius: 4px;
+    justify-content: center;
+    align-items: center;
+}
+
+.yucp-banner-change-button:hover {
+    background-color: rgba(60, 60, 60, 0.95);
+    border-color: rgba(75, 75, 75, 0.9);
+}
+
+.yucp-banner-change-button:active {
+    background-color: rgba(40, 40, 40, 0.95);
+}
+
+
+/* Responsive banner */
+.yucp-window-narrow .yucp-banner-container {
+    height: 300px;
+}
+
+.yucp-window-medium .yucp-banner-container {
+    height: 350px;
 }

@@ -24,16 +24,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Package version (e.g., 1.0.0)")]
         public string version = "1.0.0";
         
-        [Tooltip("Author name")]
+        [Tooltip("Author name(s) - separate multiple authors with commas")]
         public string author = "";
         
         [Tooltip("Package description")]
         [TextArea(3, 6)]
         public string description = "";
         
+        [Header("Official Product Links")]
+        [Tooltip("Links to where the product is or will be hosted")]
+        public List<ProductLink> productLinks = new List<ProductLink>();
+        
         [Header("Package Icon")]
         [Tooltip("Optional PNG icon for the package")]
         public Texture2D icon;
+        
+        [Header("Package Banner")]
+        [Tooltip("Optional banner image for the package (displayed at the top of the exporter window)")]
+        public Texture2D banner;
         
         [Header("Export Folders")]
         [Tooltip("List of folder paths to include in the package (relative to project root)")]
@@ -398,6 +406,43 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             
             return path.Replace('\\', '/');
+        }
+    }
+    
+    /// <summary>
+    /// Represents an official product link with icon
+    /// </summary>
+    [Serializable]
+    public class ProductLink
+    {
+        [Tooltip("Display label for the link (optional)")]
+        public string label = "";
+        
+        [Tooltip("Full URL to the product page")]
+        public string url = "";
+        
+        [Tooltip("Custom icon for this link (overrides auto-fetched favicon)")]
+        public Texture2D customIcon;
+        
+        [Tooltip("Cached favicon/icon for the website (auto-fetched)")]
+        public Texture2D icon;
+        
+        public ProductLink()
+        {
+        }
+        
+        public ProductLink(string url, string label = "")
+        {
+            this.url = url;
+            this.label = label;
+        }
+        
+        /// <summary>
+        /// Get the icon to display (custom icon takes priority over auto-fetched icon)
+        /// </summary>
+        public Texture2D GetDisplayIcon()
+        {
+            return customIcon != null ? customIcon : icon;
         }
     }
 }

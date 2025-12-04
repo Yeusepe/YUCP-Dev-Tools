@@ -19,7 +19,7 @@ namespace YUCP.DevTools.Editor
         private List<Button> _tabButtons;
         private List<VisualElement> _tabPages;
 
-        [MenuItem("Tools/YUCP/Model Revision Manager")]
+        [MenuItem("Tools/YUCP/Others/Development/Model Revision Manager")]
         public static void OpenWizard()
         {
             var window = GetWindow<ModelRevisionWizard>();

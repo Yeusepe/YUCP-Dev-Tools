@@ -9,14 +9,14 @@ namespace YUCP.DirectVpmInstaller
 {
     internal static class InstallerHealthTools
     {
-        [MenuItem("Tools/YUCP/Validate Install")] 
+        [MenuItem("Tools/YUCP/Others/Installation/Validate Install")] 
         private static void ValidateInstall()
         {
             var report = BuildReport(dryRun: true);
             EditorUtility.DisplayDialog("YUCP Validate Install", report, "OK");
         }
 
-        [MenuItem("Tools/YUCP/Repair Install")] 
+        [MenuItem("Tools/YUCP/Others/Installation/Repair Install")] 
         private static void RepairInstall()
         {
             var report = BuildReport(dryRun: false);

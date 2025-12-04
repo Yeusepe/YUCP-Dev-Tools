@@ -15,6 +15,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
     {
         internal static bool s_isExporting = false;
         
+        private const string DefaultGridPlaceholderPath = "Packages/com.yucp.devtools/Resources/DefaultGrid.png";
+        
+        private static bool IsDefaultGridPlaceholder(Texture2D texture)
+        {
+            if (texture == null) return false;
+            string assetPath = AssetDatabase.GetAssetPath(texture);
+            return assetPath == DefaultGridPlaceholderPath;
+        }
+        
         public class ExportResult
         {
             public bool success;
@@ -404,9 +413,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Directory.CreateDirectory(outputDir);
                 }
                 
-                // Add icon if specified
+                // Add icon if specified (skip DefaultGrid placeholder)
                 bool iconAdded = false;
-                if (profile.icon != null)
+                if (profile.icon != null && !IsDefaultGridPlaceholder(profile.icon))
                 {
                     progressCallback?.Invoke(0.8f, "Adding package icon...");
                     
@@ -2294,4 +2303,5 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
     }
 }
+
 

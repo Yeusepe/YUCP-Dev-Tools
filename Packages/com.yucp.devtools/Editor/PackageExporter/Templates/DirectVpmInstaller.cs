@@ -781,7 +781,7 @@ namespace YUCP.DirectVpmInstaller
             }
         }
         
-        [MenuItem("Tools/YUCP/Manual - Install VPM Dependencies")]
+        [MenuItem("Tools/YUCP/Others/Installation/Install VPM Dependencies")]
         public static void ManualInstallVpmDependencies()
         {
             CheckAndInstallVpmPackages();

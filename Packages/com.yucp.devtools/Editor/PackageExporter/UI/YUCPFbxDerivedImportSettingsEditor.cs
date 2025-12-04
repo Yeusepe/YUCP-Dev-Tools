@@ -15,115 +15,210 @@ namespace YUCP.DevTools.Editor.PackageExporter
 	[CustomEditor(typeof(ModelImporter))]
 	public class YUCPFbxDerivedImportSettingsEditor : AssetImporterEditor
 	{
-		private UnityEditor.Editor m_DefaultEditor;
-		private UnityEditor.Editor m_GameObjectEditor; // Store the GameObject editor we create for assetTarget
-		private static Type s_ModelImporterEditorType;
+	private UnityEditor.Editor m_DefaultEditor;
+	private UnityEditor.Editor m_GameObjectEditor; // Store the GameObject editor we create for assetTarget
+	private static Type s_ModelImporterEditorType;
+	private static System.Reflection.FieldInfo s_OnEnableCalledField;
+	private static System.Reflection.MethodInfo s_GetInspectorCopyCountMethod;
+	private static System.Reflection.MethodInfo s_ReleaseInspectorCopyMethod;
+
+	/// <summary>
+	/// Safely disposes an AssetImporterEditor by manually releasing inspector copies.
+	/// This ensures inspector copies are released to prevent memory leaks.
+	/// </summary>
+	private static void SafeDisposeAssetImporterEditor(AssetImporterEditor editor)
+	{
+		if (editor == null)
+			return;
+
+		if (s_OnEnableCalledField == null)
+		{
+			s_OnEnableCalledField = typeof(AssetImporterEditor).GetField("m_OnEnableCalled", BindingFlags.NonPublic | BindingFlags.Instance);
+		}
+
+		var targetsInstanceIDField = typeof(AssetImporterEditor).GetField("m_TargetsInstanceID", BindingFlags.NonPublic | BindingFlags.Instance);
+		var targetsInstanceID = targetsInstanceIDField?.GetValue(editor) as System.Collections.Generic.List<int>;
+		
+		bool onEnableCalled = s_OnEnableCalledField != null && (bool)(s_OnEnableCalledField.GetValue(editor) ?? false);
+		bool onEnableCompleted = targetsInstanceID != null && targetsInstanceID.Count > 0;
+
+		if (onEnableCalled && onEnableCompleted && targetsInstanceID != null)
+		{
+			foreach (int instanceID in targetsInstanceID)
+			{
+				try
+				{
+					if (s_ReleaseInspectorCopyMethod != null)
+					{
+						s_ReleaseInspectorCopyMethod.Invoke(null, new object[] { instanceID, editor });
+					}
+				}
+				catch (System.Exception)
+				{
+				}
+			}
+			
+			if (targetsInstanceIDField != null)
+			{
+				targetsInstanceIDField.SetValue(editor, new System.Collections.Generic.List<int>());
+			}
+		}
+		
+		if (s_OnEnableCalledField != null)
+		{
+			s_OnEnableCalledField.SetValue(editor, true);
+		}
+	}
 
 		static YUCPFbxDerivedImportSettingsEditor()
 		{
 			var assembly = typeof(ModelImporter).Assembly;
 			s_ModelImporterEditorType = assembly.GetType("UnityEditor.ModelImporterEditor");
+			
+			var assetImporterEditorType = typeof(AssetImporterEditor);
+			s_GetInspectorCopyCountMethod = assetImporterEditorType.GetMethod("GetInspectorCopyCount", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+			s_ReleaseInspectorCopyMethod = assetImporterEditorType.GetMethod("ReleaseInspectorCopy", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
 		}
 
 		public override void OnEnable()
+	{
+		if (m_DefaultEditor != null)
 		{
-			base.OnEnable();
-			
-			// Dispose any existing default editor first
-			if (m_DefaultEditor != null)
+			if (m_DefaultEditor is AssetImporterEditor existingAssetEditor)
 			{
-				DestroyImmediate(m_DefaultEditor);
-				m_DefaultEditor = null;
+				SafeDisposeAssetImporterEditor(existingAssetEditor);
 			}
+			DestroyImmediate(m_DefaultEditor);
+			m_DefaultEditor = null;
+		}
+		
+		if (m_GameObjectEditor != null)
+		{
+			DestroyImmediate(m_GameObjectEditor);
+			m_GameObjectEditor = null;
+		}
+		
+		if (s_ModelImporterEditorType != null && targets != null && targets.Length > 0)
+		{
+			var targetInstanceIDs = targets.Select(t => t.GetInstanceID()).ToHashSet();
 			
-			// Create Unity's default ModelImporterEditor to preserve tab functionality
-			if (s_ModelImporterEditorType != null && targets != null && targets.Length > 0)
+			var existingEditors = Resources.FindObjectsOfTypeAll(s_ModelImporterEditorType)
+				.Cast<UnityEditor.Editor>()
+				.Where(e => e is AssetImporterEditor aie && 
+				           aie.targets != null && 
+				           aie.targets.Length > 0 &&
+				           aie.targets.Any(t => targetInstanceIDs.Contains(t.GetInstanceID())))
+				.ToList();
+			
+			foreach (var existingEditor in existingEditors)
 			{
-				m_DefaultEditor = UnityEditor.Editor.CreateEditor(targets, s_ModelImporterEditorType);
-				
-				// Ensure the default editor's assetTarget is set so ResetAvatar() can work
-				// This is important for the Rig tab to load the Avatar correctly
-				if (m_DefaultEditor != null && m_DefaultEditor is AssetImporterEditor defaultAssetEditor)
+				if (existingEditor is AssetImporterEditor assetEditor)
 				{
-					// Use reflection to access assetTarget since it's protected
-					var assetTargetProp = typeof(AssetImporterEditor).GetProperty("assetTarget", BindingFlags.NonPublic | BindingFlags.Instance);
-					var assetTarget = assetTargetProp?.GetValue(defaultAssetEditor);
-					
-					// Try to manually set assetTarget if it's null
-					// assetTarget comes from m_AssetEditor.target, so set m_AssetEditor
-					if (assetTarget == null && targets != null && targets.Length > 0)
+					SafeDisposeAssetImporterEditor(assetEditor);
+					DestroyImmediate(existingEditor);
+				}
+			}
+		}
+		
+		base.OnEnable();
+		
+		var targetsInstanceIDField = typeof(AssetImporterEditor).GetField("m_TargetsInstanceID", BindingFlags.NonPublic | BindingFlags.Instance);
+		var ourTargetsInstanceID = targetsInstanceIDField?.GetValue(this) as System.Collections.Generic.List<int>;
+		
+		if (ourTargetsInstanceID != null && ourTargetsInstanceID.Count > 0)
+		{
+			foreach (int instanceID in ourTargetsInstanceID)
+			{
+				try
+				{
+					if (s_ReleaseInspectorCopyMethod != null)
 					{
-						// Try to get the imported GameObject and set it as assetTarget
-						if (targets[0] is ModelImporter importer)
+						s_ReleaseInspectorCopyMethod.Invoke(null, new object[] { instanceID, this });
+					}
+				}
+				catch (System.Exception)
+				{
+				}
+			}
+		}
+		
+		if (s_ModelImporterEditorType != null && targets != null && targets.Length > 0)
+		{
+			m_DefaultEditor = UnityEditor.Editor.CreateEditor(targets, s_ModelImporterEditorType);
+			
+			if (m_DefaultEditor != null && m_DefaultEditor is AssetImporterEditor defaultAssetEditor)
+			{
+				var assetTargetProp = typeof(AssetImporterEditor).GetProperty("assetTarget", BindingFlags.NonPublic | BindingFlags.Instance);
+				var assetTarget = assetTargetProp?.GetValue(defaultAssetEditor);
+				
+				if (assetTarget == null && targets != null && targets.Length > 0)
+				{
+					if (targets[0] is ModelImporter importer)
+					{
+						var importedGameObject = AssetDatabase.LoadAssetAtPath<GameObject>(importer.assetPath);
+						if (importedGameObject != null)
 						{
-							var importedGameObject = AssetDatabase.LoadAssetAtPath<GameObject>(importer.assetPath);
-							if (importedGameObject != null)
+							var internalSetMethod = typeof(AssetImporterEditor).GetMethod("InternalSetAssetImporterTargetEditor", BindingFlags.NonPublic | BindingFlags.Instance);
+							if (internalSetMethod != null)
 							{
-								// Try to set m_AssetEditor via InternalSetAssetImporterTargetEditor
-								var internalSetMethod = typeof(AssetImporterEditor).GetMethod("InternalSetAssetImporterTargetEditor", BindingFlags.NonPublic | BindingFlags.Instance);
-								if (internalSetMethod != null)
+								if (m_GameObjectEditor != null)
 								{
-									// Dispose any existing GameObject editor
-									if (m_GameObjectEditor != null)
-									{
-										DestroyImmediate(m_GameObjectEditor);
-										m_GameObjectEditor = null;
-									}
-									
-									// Create a temporary editor for the GameObject to use as assetTarget
-									m_GameObjectEditor = UnityEditor.Editor.CreateEditor(importedGameObject);
-									if (m_GameObjectEditor != null)
-									{
-										internalSetMethod.Invoke(defaultAssetEditor, new object[] { m_GameObjectEditor });
-									}
+									DestroyImmediate(m_GameObjectEditor);
+									m_GameObjectEditor = null;
+								}
+								
+								m_GameObjectEditor = UnityEditor.Editor.CreateEditor(importedGameObject);
+								if (m_GameObjectEditor != null)
+								{
+									internalSetMethod.Invoke(defaultAssetEditor, new object[] { m_GameObjectEditor });
 								}
 							}
 						}
 					}
-					
-					// The assetTarget should be automatically set by Editor.CreateEditor(),
-					// but we verify it's available by checking if the editor has targets
-					if (defaultAssetEditor.targets == null || defaultAssetEditor.targets.Length == 0)
+				}
+				
+				if (defaultAssetEditor.targets == null || defaultAssetEditor.targets.Length == 0)
+				{
+					var targetsField = typeof(AssetImporterEditor).GetField("targets", BindingFlags.Public | BindingFlags.Instance);
+					if (targetsField != null)
 					{
-						// If targets aren't set, try to set them manually
-						var targetsField = typeof(AssetImporterEditor).GetField("targets", BindingFlags.Public | BindingFlags.Instance);
-						if (targetsField != null)
-						{
-							targetsField.SetValue(defaultAssetEditor, targets);
-						}
+						targetsField.SetValue(defaultAssetEditor, targets);
 					}
 				}
-				else
-				{
-					Debug.LogWarning("[YUCPFbxEditor] Default editor is null or not an AssetImporterEditor");
-				}
 			}
-			else
-			{
-				Debug.LogWarning($"[YUCPFbxEditor] Cannot create default editor. s_ModelImporterEditorType: {s_ModelImporterEditorType != null}, targets: {targets != null && targets.Length > 0}");
-			}
+		}
 		}
 
-		public override void OnDisable()
+	public override void OnDisable()
+	{
+		if (m_GameObjectEditor != null)
 		{
-			// Dispose GameObject editor first
-			if (m_GameObjectEditor != null)
+			DestroyImmediate(m_GameObjectEditor);
+			m_GameObjectEditor = null;
+		}
+		
+		if (m_DefaultEditor != null)
+		{
+			if (m_DefaultEditor is AssetImporterEditor defaultAssetEditor)
 			{
-				DestroyImmediate(m_GameObjectEditor);
-				m_GameObjectEditor = null;
+				SafeDisposeAssetImporterEditor(defaultAssetEditor);
 			}
-			
-			// Call base.OnDisable() FIRST to properly dispose of the AssetImporterEditor
-			// This prevents the "previous instance has not been disposed correctly" error
-			base.OnDisable();
-			
-			// Then dispose of our default editor instance
-			if (m_DefaultEditor != null)
+			DestroyImmediate(m_DefaultEditor);
+			m_DefaultEditor = null;
+		}
+		
+		var targetsInstanceIDField = typeof(AssetImporterEditor).GetField("m_TargetsInstanceID", BindingFlags.NonPublic | BindingFlags.Instance);
+		if (targetsInstanceIDField != null)
+		{
+			var ourTargetsInstanceID = targetsInstanceIDField.GetValue(this) as System.Collections.Generic.List<int>;
+			if (ourTargetsInstanceID != null && ourTargetsInstanceID.Count > 0)
 			{
-				DestroyImmediate(m_DefaultEditor);
-				m_DefaultEditor = null;
+				targetsInstanceIDField.SetValue(this, new System.Collections.Generic.List<int>());
 			}
 		}
+		
+		base.OnDisable();
+	}
 
 		public override void SaveChanges()
 		{
@@ -324,7 +419,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			if (extraDataSerializedObject != null)
 				extraDataSerializedObject.Update();
 			
-			// Also update the default editor's serializedObject BEFORE drawing
+			// Also update the default editor's serializedObject
 			// The tabs modify the default editor's serializedObject, so it needs to be in sync
 			AssetImporterEditor defaultAssetEditor = null;
 			if (m_DefaultEditor != null && m_DefaultEditor is AssetImporterEditor)
@@ -378,11 +473,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				YUCPFbxDerivedImportSettingsGUI.Draw(importer);
 			}
 
-			// Ensure GUI is enabled after the YUCP UI (which may have disabled it)
-			// The DisabledScope should handle this, but we explicitly ensure it's enabled for the buttons
+			// Ensure GUI is enabled after the YUCP UI
 			GUI.enabled = true;
 
-			// Sync state after drawing (applied in SaveChanges())
+			// Sync state after drawing
 			if (defaultAssetEditor != null)
 			{
 				var defaultSerializedObjectField = typeof(AssetImporterEditor).GetField("serializedObject", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -591,7 +685,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 		private void DrawRigTabWithManualButtonControl(object rigTab, System.Type rigTabType)
 		{
-			// Ensure Avatar is loaded before drawing - this is critical for the button to be enabled
+			// Ensure Avatar is loaded before drawing
 			var mAvatarField = rigTabType.GetField("m_Avatar", BindingFlags.NonPublic | BindingFlags.Instance);
 			Avatar avatar = null;
 			
@@ -680,8 +774,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			var onInspectorGUIMethod = rigTabType.GetMethod("OnInspectorGUI", BindingFlags.Public | BindingFlags.Instance);
 			if (onInspectorGUIMethod != null)
 			{
-				// Set m_Avatar right before OnInspectorGUI is called
-				// Try ResetAvatar() first (Unity's expected way), then fall back to direct assignment
+				// Set m_Avatar before OnInspectorGUI is called
+				// Try ResetAvatar() first, then fall back to direct assignment
 				if (avatar != null && mAvatarField != null)
 				{
 					var resetAvatarMethod = rigTabType.GetMethod("ResetAvatar", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -723,8 +817,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				
 				onInspectorGUIMethod.Invoke(rigTab, null);
 				
-				// After drawing, verify m_Avatar is still set and re-set if needed
-				// ResetAvatar() might have been called during OnInspectorGUI and cleared it
+				// Verify m_Avatar is still set and re-set if needed
 				if (avatar != null && mAvatarField != null)
 				{
 					var avatarAfterDraw = mAvatarField.GetValue(rigTab) as Avatar;

@@ -5,6 +5,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
+using UnityEngine.Networking;
 using UnityEngine.UIElements;
 using YUCP.DevTools.Components;
 
@@ -72,6 +73,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private YucpSidebar _sidebar;
         private YucpSidebar _sidebarOverlay;
         private VisualElement _progressFill;
+        private VisualElement _bannerImageContainer;
+        private VisualElement _bannerGradientOverlay;
+        private VisualElement _metadataSection;
+        private VisualElement _bannerContainer;
+        private Button _changeBannerButton;
+        private EventCallback<GeometryChangedEvent> _bannerButtonGeometryCallback;
         private Label _progressText;
         private VisualElement _multiSelectInfo;
         private Button _exportSelectedButton;
@@ -92,6 +99,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private const double RENAME_DELAY_SECONDS = 1.5;
         private ExportProfile pendingRenameProfile = null;
         private string pendingRenamePackageName = "";
+        
+        // Brandfetch configuration (Logo API)
+        // Client ID provided by the user for fetching official product icons
+        private const string BrandfetchClientId = "1bxid64Mup7aczewSAYMX";
         
         // Export Inspector state
         private string inspectorSearchFilter = "";
@@ -114,6 +125,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private bool showQuickActions = true;
         
         private Texture2D logoTexture;
+        private Texture2D bannerGradientTexture;
+        private Texture2D dottedBorderTexture;
+        
+        private const float BannerHeight = 410f;
+        private const string DefaultGridPlaceholderPath = "Packages/com.yucp.devtools/Resources/DefaultGrid.png";
         
         // Responsive design elements
         private Button _mobileToggleButton;
@@ -139,6 +155,91 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private void LoadResources()
         {
             logoTexture = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.devtools/Resources/DevTools.png");
+            CreateBannerGradientTexture();
+            CreateDottedBorderTexture();
+        }
+        
+        private static bool IsDefaultGridPlaceholder(Texture2D texture)
+        {
+            if (texture == null) return false;
+            string assetPath = AssetDatabase.GetAssetPath(texture);
+            return assetPath == DefaultGridPlaceholderPath;
+        }
+        
+        private static Texture2D GetPlaceholderTexture()
+        {
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(DefaultGridPlaceholderPath);
+        }
+        
+        private void CreateBannerGradientTexture()
+        {
+            if (bannerGradientTexture != null)
+            {
+                UnityEngine.Object.DestroyImmediate(bannerGradientTexture);
+            }
+            
+            int width = 1;
+            int height = Mathf.RoundToInt(BannerHeight);
+            bannerGradientTexture = new Texture2D(width, height, TextureFormat.RGBA32, false);
+            
+            // Configurable gradient parameters
+            float segment1End = 0.3f;  // Top segment ends at 30% (was 20%)
+            float segment2End = 0.7f;  // Middle segment ends at 70% (was 60%)
+            float alpha1 = 0.2f;        // First segment alpha (was 0.3f)
+            float alpha2 = 0.6f;        // Second segment alpha (was 0.8f)
+            float alpha3 = 1.0f;        // Final alpha (unchanged)
+            
+            for (int y = 0; y < height; y++)
+            {
+                float t = (float)y / (height - 1);
+                Color color;
+                
+                if (t < segment1End)
+                {
+                    float localT = t / segment1End;
+                    color = new Color(0.082f, 0.082f, 0.082f, Mathf.Lerp(0f, alpha1, localT));
+                }
+                else if (t < segment2End)
+                {
+                    float localT = (t - segment1End) / (segment2End - segment1End);
+                    color = new Color(0.082f, 0.082f, 0.082f, Mathf.Lerp(alpha1, alpha2, localT));
+                }
+                else
+                {
+                    float localT = (t - segment2End) / (1.0f - segment2End);
+                    color = new Color(0.082f, 0.082f, 0.082f, Mathf.Lerp(alpha2, alpha3, localT));
+                }
+                
+                for (int x = 0; x < width; x++)
+                {
+                    bannerGradientTexture.SetPixel(x, height - 1 - y, color);
+                }
+            }
+            
+            bannerGradientTexture.Apply();
+        }
+        
+        private void CreateDottedBorderTexture()
+        {
+            int size = 16;
+            dottedBorderTexture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            
+            Color transparent = new Color(0, 0, 0, 0);
+            Color teal = new Color(54f / 255f, 191f / 255f, 177f / 255f, 0.6f);
+            
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    bool isBorder = (x == 0 || x == size - 1 || y == 0 || y == size - 1);
+                    bool isDot = isBorder && ((x % 4 < 2 && y == 0) || (x % 4 < 2 && y == size - 1) || 
+                                              (y % 4 < 2 && x == 0) || (y % 4 < 2 && x == size - 1));
+                    dottedBorderTexture.SetPixel(x, y, isDot ? teal : transparent);
+                }
+            }
+            
+            dottedBorderTexture.Apply();
+            dottedBorderTexture.wrapMode = TextureWrapMode.Repeat;
         }
         
         private void CreateGUI()
@@ -238,6 +339,252 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }).StartingIn(100);
         }
 
+        private VisualElement CreateBannerSection(ExportProfile profile)
+        {
+            var bannerContainer = new VisualElement();
+            bannerContainer.AddToClassList("yucp-banner-container");
+            _bannerContainer = bannerContainer;
+            
+            bannerContainer.style.position = Position.Relative;
+            bannerContainer.style.height = BannerHeight;
+            bannerContainer.style.marginBottom = 0;
+            bannerContainer.style.width = Length.Percent(100);
+            bannerContainer.style.paddingLeft = 0;
+            bannerContainer.style.paddingRight = 0;
+            bannerContainer.style.paddingTop = 0;
+            bannerContainer.style.paddingBottom = 0;
+            bannerContainer.style.flexShrink = 0;
+            bannerContainer.style.overflow = Overflow.Visible;
+            
+            _bannerImageContainer = new VisualElement();
+            _bannerImageContainer.AddToClassList("yucp-banner-image-container");
+            _bannerImageContainer.style.position = Position.Absolute;
+            _bannerImageContainer.style.top = 0;
+            _bannerImageContainer.style.left = 0;
+            _bannerImageContainer.style.right = 0;
+            _bannerImageContainer.style.bottom = 0;
+            Texture2D displayBanner = profile?.banner;
+            if (displayBanner == null)
+            {
+                displayBanner = GetPlaceholderTexture();
+            }
+            if (displayBanner != null)
+            {
+                _bannerImageContainer.style.backgroundImage = new StyleBackground(displayBanner);
+            }
+            bannerContainer.Add(_bannerImageContainer);
+            
+            _bannerGradientOverlay = new VisualElement();
+            _bannerGradientOverlay.AddToClassList("yucp-banner-gradient-overlay");
+            _bannerGradientOverlay.style.position = Position.Absolute;
+            _bannerGradientOverlay.style.top = 0;
+            _bannerGradientOverlay.style.left = 0;
+            _bannerGradientOverlay.style.right = 0;
+            _bannerGradientOverlay.style.bottom = -10;
+            if (bannerGradientTexture != null)
+            {
+                _bannerGradientOverlay.style.backgroundImage = new StyleBackground(bannerGradientTexture);
+            }
+            // Gradient overlay needs to receive pointer events for hover detection but allow button clicks to pass through
+            _bannerGradientOverlay.pickingMode = PickingMode.Position;
+            // Add as sibling so it can use its own parallax factor
+            bannerContainer.Add(_bannerGradientOverlay);
+            
+            // Button will be added to _profileDetailsContainer after contentWrapper
+            // so it's on top of everything
+            
+            return bannerContainer;
+        }
+        
+        private void UpdateBannerButtonPosition()
+        {
+            if (_changeBannerButton == null || _bannerContainer == null || _metadataSection == null || _rightPaneScrollView == null)
+                return;
+            
+            var bannerWidth = _bannerContainer.resolvedStyle.width;
+            var buttonWidth = _changeBannerButton.resolvedStyle.width;
+            var buttonHeight = 24f;
+            
+            if (bannerWidth <= 0 || buttonWidth <= 0)
+                return;
+            
+            // Get world positions to calculate button position relative to ScrollView
+            var bannerBounds = _bannerContainer.worldBound;
+            var metadataBounds = _metadataSection.worldBound;
+            var scrollViewBounds = _rightPaneScrollView.worldBound;
+            
+            // Calculate metadata section position relative to banner
+            // contentWrapper has marginTop = -400, banner height is 410
+            // Metadata section is the first element in contentWrapper
+            var metadataTop = 10f;
+            
+            if (bannerBounds.y >= 0 && metadataBounds.y >= 0)
+            {
+                // Calculate the difference in world Y coordinates
+                var relativeTop = metadataBounds.y - bannerBounds.y;
+                if (relativeTop > 0 && relativeTop < BannerHeight)
+                {
+                    metadataTop = relativeTop;
+                }
+            }
+            
+            // Ensure metadataTop is not negative or zero
+            if (metadataTop <= 0)
+                metadataTop = 10f;
+            
+            // Center vertically between top of banner and metadata section top
+            var centerYInBanner = metadataTop / 2f;
+            
+            // Calculate button position relative to ScrollView
+            var buttonY = bannerBounds.y - scrollViewBounds.y + centerYInBanner - (buttonHeight / 2f);
+            var buttonX = bannerBounds.x - scrollViewBounds.x + (bannerWidth - buttonWidth) / 2f;
+            
+            _changeBannerButton.style.left = buttonX;
+            _changeBannerButton.style.top = buttonY;
+        }
+        
+        private void SetupParallaxScrolling()
+        {
+            if (_rightPaneScrollView == null) return;
+            if (_bannerImageContainer == null && _bannerGradientOverlay == null) return;
+            
+            // Separate parallax speeds so image and gradient can move differently than the content
+            // and differently from each other.
+            const float imageParallaxSpeed = 0.07f;
+            const float gradientParallaxSpeed = 0.069f;
+            
+            Action<float> updateParallax = (scrollY) =>
+            {
+                // Image offset: container moves at (1 - speed) of scroll
+                if (_bannerImageContainer != null)
+                {
+                    var imageOffset = scrollY * (1.0f - imageParallaxSpeed);
+                    _bannerImageContainer.style.translate = new StyleTranslate(new Translate(0, imageOffset));
+                }
+                
+                // Gradient offset: independent speed so it can drift differently
+                if (_bannerGradientOverlay != null)
+                {
+                    var gradientOffset = scrollY * (1.0f - gradientParallaxSpeed);
+                    _bannerGradientOverlay.style.translate = new StyleTranslate(new Translate(0, gradientOffset));
+                }
+            };
+            
+            // Use the vertical scroller's valueChanged event for reliable scroll tracking
+            var verticalScroller = _rightPaneScrollView.verticalScroller;
+            if (verticalScroller != null)
+            {
+                verticalScroller.valueChanged += (value) =>
+                {
+                    updateParallax(value);
+                };
+                
+                // Set initial position
+                updateParallax(verticalScroller.value);
+            }
+            
+            // Also use scheduled callback as backup for continuous updates
+            _rightPaneScrollView.schedule.Execute(() =>
+            {
+                if (_rightPaneScrollView == null) return;
+                if (_bannerImageContainer == null && _bannerGradientOverlay == null) return;
+                
+                // Get current scroll position
+                var scrollOffset = _rightPaneScrollView.scrollOffset;
+                var scrollY = scrollOffset.y;
+                
+                updateParallax(scrollY);
+            }).Every(16); // Update approximately every frame (60fps = ~16ms per frame)
+        }
+        
+        private void ForceBannerFullWidth()
+        {
+            if (_rightPaneScrollView == null || _profileDetailsContainer == null) return;
+            
+            var bannerWrapper = _profileDetailsContainer.Q("banner-wrapper-fullwidth");
+            if (bannerWrapper == null) return;
+            
+            // Access ScrollView's content viewport to allow overflow
+            var contentViewport = _rightPaneScrollView.Q(className: "unity-scroll-view__content-viewport");
+            if (contentViewport != null)
+            {
+                contentViewport.style.overflow = Overflow.Visible;
+            }
+            
+            // Get the right pane (parent of ScrollView) for full width
+            var rightPane = _rightPaneScrollView?.parent;
+            if (rightPane != null)
+            {
+                var paneWidth = rightPane.resolvedStyle.width;
+                if (paneWidth > 0)
+                {
+                    // Set wrapper to full pane width and use negative margins to break out
+                    bannerWrapper.style.position = Position.Relative;
+                    bannerWrapper.style.width = paneWidth;
+                    bannerWrapper.style.minWidth = paneWidth;
+                    bannerWrapper.style.maxWidth = paneWidth;
+                    bannerWrapper.style.marginLeft = -20;
+                    bannerWrapper.style.marginRight = -24;
+                    bannerWrapper.style.marginTop = -20;
+                    bannerWrapper.style.marginBottom = 0;
+                    bannerWrapper.style.paddingLeft = 0;
+                    bannerWrapper.style.paddingRight = 0;
+                    bannerWrapper.style.paddingTop = 0;
+                    bannerWrapper.style.paddingBottom = 0;
+                    bannerWrapper.style.left = 0;
+                    bannerWrapper.style.flexShrink = 0;
+                    
+                    // Set banner container to match wrapper width
+                    var bannerContainer = bannerWrapper.Q(className: "yucp-banner-container");
+                    if (bannerContainer != null)
+                    {
+                        bannerContainer.style.width = paneWidth;
+                        bannerContainer.style.minWidth = paneWidth;
+                        bannerContainer.style.maxWidth = paneWidth;
+                        bannerContainer.style.marginLeft = 0;
+                        bannerContainer.style.marginRight = 0;
+                        bannerContainer.style.marginTop = 0;
+                    }
+                }
+            }
+        }
+        
+        private void OnChangeBannerClicked(ExportProfile profile)
+        {
+            if (profile == null)
+            {
+                EditorUtility.DisplayDialog("No Profile", "Cannot change banner for this profile.", "OK");
+                return;
+            }
+            
+            string bannerPath = EditorUtility.OpenFilePanel("Select Banner Image", "", "png,jpg,jpeg");
+            if (!string.IsNullOrEmpty(bannerPath))
+            {
+                string projectPath = "Assets/YUCP/ExportProfiles/Banners/";
+                if (!AssetDatabase.IsValidFolder("Assets/YUCP/ExportProfiles/Banners"))
+                {
+                    if (!AssetDatabase.IsValidFolder("Assets/YUCP"))
+                        AssetDatabase.CreateFolder("Assets", "YUCP");
+                    if (!AssetDatabase.IsValidFolder("Assets/YUCP/ExportProfiles"))
+                        AssetDatabase.CreateFolder("Assets/YUCP", "ExportProfiles");
+                    AssetDatabase.CreateFolder("Assets/YUCP/ExportProfiles", "Banners");
+                }
+                
+                string fileName = Path.GetFileName(bannerPath);
+                string targetPath = projectPath + fileName;
+                
+                File.Copy(bannerPath, targetPath, true);
+                AssetDatabase.ImportAsset(targetPath);
+                AssetDatabase.Refresh();
+                
+                profile.banner = AssetDatabase.LoadAssetAtPath<Texture2D>(targetPath);
+                EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
+                
+                UpdateProfileDetails();
+            }
+        }
+        
         private VisualElement CreateTopBar()
         {
             var topBar = new VisualElement();
@@ -307,6 +654,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
             button.text = label;
             button.tooltip = tooltip;
             button.AddToClassList("yucp-menu-button");
+            return button;
+        }
+        
+        private Button CreateHoverOverlayButton(string text, Action onClick, VisualElement parentContainer)
+        {
+            var button = new Button(onClick);
+            button.text = text;
+            button.AddToClassList("yucp-overlay-hover-button");
+            button.style.display = DisplayStyle.Flex;
+            button.pickingMode = PickingMode.Ignore;
+            
+            parentContainer.RegisterCallback<MouseEnterEvent>(evt =>
+            {
+                button.AddToClassList("yucp-overlay-hover-button-visible");
+                button.pickingMode = PickingMode.Position;
+            });
+            parentContainer.RegisterCallback<MouseLeaveEvent>(evt =>
+            {
+                button.RemoveFromClassList("yucp-overlay-hover-button-visible");
+                button.pickingMode = PickingMode.Ignore;
+            });
+            
+            parentContainer.Add(button);
             return button;
         }
         
@@ -862,19 +1232,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var iconContainer = new VisualElement();
             iconContainer.AddToClassList("yucp-profile-item-icon-container");
             
-            if (profile.icon != null)
+            var iconImage = new Image();
+            Texture2D displayIcon = profile.icon;
+            if (displayIcon == null)
             {
-                var iconImage = new Image();
-                iconImage.image = profile.icon;
-                iconImage.AddToClassList("yucp-profile-item-icon");
-                iconContainer.Add(iconImage);
+                displayIcon = GetPlaceholderTexture();
             }
-            else
-            {
-                var iconPlaceholder = new VisualElement();
-                iconPlaceholder.AddToClassList("yucp-profile-item-icon-placeholder");
-                iconContainer.Add(iconPlaceholder);
-            }
+            iconImage.image = displayIcon;
+            iconImage.AddToClassList("yucp-profile-item-icon");
+            iconContainer.Add(iconImage);
             
             item.Add(iconContainer);
             
@@ -1075,6 +1441,25 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _emptyState.style.display = DisplayStyle.None;
             _profileDetailsContainer.style.display = DisplayStyle.Flex;
             _profileDetailsContainer.Clear();
+            _bannerImageContainer = null;
+            _bannerGradientOverlay = null;
+            _metadataSection = null;
+            _bannerContainer = null;
+            
+            // Remove old banner button from ScrollView if it exists and clean up any duplicates
+            if (_rightPaneScrollView != null)
+            {
+                // Find and remove ALL banner change buttons (in case there are duplicates)
+                var existingButtons = _rightPaneScrollView.Query<Button>(className: "yucp-overlay-hover-button").ToList();
+                // Also check for the old class name for cleanup
+                var oldButtons = _rightPaneScrollView.Query<Button>(className: "yucp-banner-change-button").ToList();
+                existingButtons.AddRange(oldButtons);
+                foreach (var btn in existingButtons)
+                {
+                    btn.RemoveFromHierarchy();
+                }
+                _changeBannerButton = null;
+            }
             
             // Check if multiple profiles are selected
             if (selectedProfileIndices.Count > 1)
@@ -1090,29 +1475,142 @@ namespace YUCP.DevTools.Editor.PackageExporter
             else
             {
                 // Single profile editor
+                // Remove ScrollView padding so banner can span full width
+                _rightPaneScrollView.style.paddingLeft = 0;
+                _rightPaneScrollView.style.paddingRight = 0;
+                _rightPaneScrollView.style.paddingTop = 0;
+                _rightPaneScrollView.style.paddingBottom = 0;
+                
+                // Banner Section (inside ScrollView so it scrolls with content) - spans full width
+                var bannerSection = CreateBannerSection(selectedProfile);
+                _profileDetailsContainer.Add(bannerSection);
+                
+                // Setup parallax scrolling for banner
+                SetupParallaxScrolling();
+                
+                // Wrap all other sections in a container with padding
+                // Position it over the banner with negative margin
+                var contentWrapper = new VisualElement();
+                contentWrapper.style.position = Position.Relative;
+                contentWrapper.style.paddingLeft = 20;
+                contentWrapper.style.paddingRight = 24;
+                contentWrapper.style.paddingTop = 0;
+                contentWrapper.style.paddingBottom = 20;
+                contentWrapper.style.marginTop = -400;
+                
+                // Make contentWrapper ignore pointer events in the banner area so hover works
+                // But we can't easily do this, so we'll handle hover on the banner section itself
+                
                 // Package Metadata Section
-                var metadataSection = CreateMetadataSection(selectedProfile);
-                _profileDetailsContainer.Add(metadataSection);
+                _metadataSection = CreateMetadataSection(selectedProfile);
+                contentWrapper.Add(_metadataSection);
+                
+                // Register callback to update button position when metadata section geometry changes
+                _metadataSection.RegisterCallback<GeometryChangedEvent>(evt => UpdateBannerButtonPosition());
                 
                 // Quick Summary Section
                 var summarySection = CreateSummarySection(selectedProfile);
-                _profileDetailsContainer.Add(summarySection);
+                contentWrapper.Add(summarySection);
                 
                 // Validation Section
                 var validationSection = CreateValidationSection(selectedProfile);
-                _profileDetailsContainer.Add(validationSection);
+                contentWrapper.Add(validationSection);
                 
                 // Export Options Section
                 var optionsSection = CreateExportOptionsSection(selectedProfile);
-                _profileDetailsContainer.Add(optionsSection);
+                contentWrapper.Add(optionsSection);
                 
                 // Export Folders Section
                 var foldersSection = CreateFoldersSection(selectedProfile);
-                _profileDetailsContainer.Add(foldersSection);
+                contentWrapper.Add(foldersSection);
                 
                 // Export Inspector Section
                 var inspectorSection = CreateExportInspectorSection(selectedProfile);
-                _profileDetailsContainer.Add(inspectorSection);
+                contentWrapper.Add(inspectorSection);
+                
+                // Exclusion Filters Section
+                var exclusionSection = CreateExclusionFiltersSection(selectedProfile);
+                contentWrapper.Add(exclusionSection);
+                
+                // Dependencies Section
+                var dependenciesSection = CreateDependenciesSection(selectedProfile);
+                contentWrapper.Add(dependenciesSection);
+                
+                // Obfuscation Section
+                var obfuscationSection = CreateObfuscationSection(selectedProfile);
+                contentWrapper.Add(obfuscationSection);
+                
+                // Quick Actions
+                var actionsSection = CreateQuickActionsSection(selectedProfile);
+                contentWrapper.Add(actionsSection);
+                
+                _profileDetailsContainer.Add(contentWrapper);
+                
+                // Add banner button directly to ScrollView so it's definitely on top and clickable
+                _changeBannerButton = new Button(() => OnChangeBannerClicked(selectedProfile));
+                _changeBannerButton.text = "Change";
+                _changeBannerButton.AddToClassList("yucp-overlay-hover-button");
+                _changeBannerButton.style.position = Position.Absolute;
+                _changeBannerButton.style.bottom = StyleKeyword.Auto;
+                _changeBannerButton.style.left = StyleKeyword.Auto;
+                _changeBannerButton.style.right = StyleKeyword.Auto;
+                _changeBannerButton.style.opacity = 0f;
+                _changeBannerButton.pickingMode = PickingMode.Ignore;
+                
+                // Register hover events on banner section to show/hide button
+                Action showButton = () =>
+                {
+                    if (_changeBannerButton != null)
+                    {
+                        _changeBannerButton.style.opacity = 1f;
+                        _changeBannerButton.pickingMode = PickingMode.Position;
+                    }
+                };
+                Action hideButton = () =>
+                {
+                    if (_changeBannerButton != null)
+                    {
+                        _changeBannerButton.style.opacity = 0f;
+                        _changeBannerButton.pickingMode = PickingMode.Ignore;
+                    }
+                };
+                
+                // Track mouse position to detect when hovering between top bar bottom and metadata top
+                _rightPaneScrollView.RegisterCallback<MouseMoveEvent>(evt =>
+                {
+                    if (_changeBannerButton == null || _metadataSection == null) return;
+                    
+                    // Find top bar element
+                    var topBar = rootVisualElement.Q(className: "yucp-top-bar");
+                    if (topBar == null) return;
+                    
+                    var topBarBounds = topBar.worldBound;
+                    var metadataBounds = _metadataSection.worldBound;
+                    var scrollViewBounds = _rightPaneScrollView.worldBound;
+                    
+                    // Convert mouse position to world coordinates
+                    var mouseY = scrollViewBounds.y + evt.localMousePosition.y;
+                    
+                    // Detection window: from bottom of top bar to top of metadata section
+                    var detectionTop = topBarBounds.y + topBarBounds.height;
+                    var detectionBottom = metadataBounds.y;
+                    
+                    bool isInDetectionWindow = mouseY >= detectionTop && mouseY <= detectionBottom;
+                    
+                    if (isInDetectionWindow && _changeBannerButton.style.opacity.value < 0.5f)
+                    {
+                        showButton();
+                    }
+                    else if (!isInDetectionWindow && _changeBannerButton.style.opacity.value > 0.5f)
+                    {
+                        hideButton();
+                    }
+                });
+                
+                
+                // Update button position when geometry changes
+                _rightPaneScrollView.RegisterCallback<GeometryChangedEvent>(evt => UpdateBannerButtonPosition());
+                _rightPaneScrollView.Add(_changeBannerButton);
                 
                 // Auto-scan assets when profile is opened (if not scanned yet and has folders)
                 if (selectedProfile != null && selectedProfile.foldersToExport.Count > 0)
@@ -1129,14 +1627,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
                 
-                // Exclusion Filters Section
-                var exclusionSection = CreateExclusionFiltersSection(selectedProfile);
-                _profileDetailsContainer.Add(exclusionSection);
-                
-                // Dependencies Section
-                var dependenciesSection = CreateDependenciesSection(selectedProfile);
-                _profileDetailsContainer.Add(dependenciesSection);
-                
                 // Auto-scan dependencies if needed (silent, no dialogs)
                 if (selectedProfile.dependencies.Count == 0 && selectedProfile.foldersToExport.Count > 0)
                 {
@@ -1148,14 +1638,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                     };
                 }
-                
-                // Obfuscation Section
-                var obfuscationSection = CreateObfuscationSection(selectedProfile);
-                _profileDetailsContainer.Add(obfuscationSection);
-                
-                // Quick Actions
-                var actionsSection = CreateQuickActionsSection(selectedProfile);
-                _profileDetailsContainer.Add(actionsSection);
             }
         }
 
@@ -1180,38 +1662,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var iconImageContainer = new VisualElement();
             iconImageContainer.AddToClassList("yucp-metadata-icon-image-container");
             
-            if (profile.icon != null)
+            var iconImage = new Image();
+            Texture2D displayIcon = profile.icon;
+            if (displayIcon == null)
             {
-                var iconImage = new Image();
-                iconImage.image = profile.icon;
-                iconImage.AddToClassList("yucp-metadata-icon-image");
-                iconImageContainer.Add(iconImage);
+                displayIcon = GetPlaceholderTexture();
             }
-            else
-            {
-                var iconPlaceholder = new VisualElement();
-                iconPlaceholder.AddToClassList("yucp-metadata-icon-placeholder");
-                iconPlaceholder.style.backgroundColor = new Color(0.165f, 0.165f, 0.165f, 0.4f);
-                iconImageContainer.Add(iconPlaceholder);
-            }
+            iconImage.image = displayIcon;
+            iconImage.AddToClassList("yucp-metadata-icon-image");
+            iconImageContainer.Add(iconImage);
             
             // Change icon button overlay
-            var changeIconButton = new Button(() => BrowseForIcon(profile));
-            changeIconButton.AddToClassList("yucp-metadata-icon-change-button");
-            changeIconButton.text = "Change";
-            changeIconButton.style.display = DisplayStyle.None;
-            
-            iconContainer.RegisterCallback<MouseEnterEvent>(evt =>
-            {
-                changeIconButton.style.display = DisplayStyle.Flex;
-            });
-            iconContainer.RegisterCallback<MouseLeaveEvent>(evt =>
-            {
-                changeIconButton.style.display = DisplayStyle.None;
-            });
-            
             iconContainer.Add(iconImageContainer);
-            iconContainer.Add(changeIconButton);
+            CreateHoverOverlayButton("Change", () => BrowseForIcon(profile), iconContainer);
             headerRow.Add(iconContainer);
             
             // Name and version in a column
@@ -1297,18 +1760,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
             });
             section.Add(descField);
             
-            // Author field - styled like description
+            // Author field - compact, single-line
             var authorLabel = new Label("Author");
             authorLabel.AddToClassList("yucp-label");
             authorLabel.style.marginTop = 4;
             authorLabel.style.marginBottom = 6;
             section.Add(authorLabel);
             
-            var authorField = new TextField { value = profile.author, multiline = true };
+            var authorField = new TextField { value = profile.author };
             authorField.AddToClassList("yucp-input");
-            authorField.AddToClassList("yucp-input-multiline");
             authorField.AddToClassList("yucp-metadata-author-field");
-            authorField.tooltip = "Your name or organization";
+            authorField.tooltip = "Author(s) - separate multiple authors with commas";
             authorField.RegisterValueChangedCallback(evt =>
             {
                 if (profile != null)
@@ -1320,7 +1782,872 @@ namespace YUCP.DevTools.Editor.PackageExporter
             });
             section.Add(authorField);
             
+            // Official Product Links section
+            var linksLabel = new Label("Official Product Links");
+            linksLabel.AddToClassList("yucp-label");
+            linksLabel.style.marginTop = 16;
+            linksLabel.style.marginBottom = 6;
+            section.Add(linksLabel);
+            
+            var linksContainer = new VisualElement();
+            linksContainer.AddToClassList("yucp-product-links-container");
+            
+            // Add existing links
+            if (profile.productLinks != null)
+            {
+                foreach (var link in profile.productLinks)
+                {
+                    linksContainer.Add(CreateProductLinkCard(profile, link));
+                }
+            }
+            
+            // Add Link button
+            var addLinkButton = new Button(() => AddProductLink(profile, linksContainer));
+            addLinkButton.text = "+ Add Link";
+            addLinkButton.AddToClassList("yucp-button");
+            addLinkButton.AddToClassList("yucp-button-secondary");
+            addLinkButton.style.marginTop = 8;
+            addLinkButton.style.marginBottom = 4;
+            linksContainer.Add(addLinkButton);
+            
+            section.Add(linksContainer);
+            
             return section;
+        }
+
+        private VisualElement CreateProductLinkCard(ExportProfile profile, ProductLink link)
+        {
+            var card = new VisualElement();
+            card.AddToClassList("yucp-product-link-card");
+            
+            var cardContent = new VisualElement();
+            cardContent.AddToClassList("yucp-product-link-content");
+            cardContent.style.flexDirection = FlexDirection.Row;
+            cardContent.style.alignItems = Align.Center;
+            
+            // Icon container - clickable to set custom icon
+            var iconContainer = new VisualElement();
+            iconContainer.AddToClassList("yucp-product-link-icon");
+            iconContainer.tooltip = "Click to set custom icon";
+            var iconImage = new Image();
+            
+            // Display custom icon if set, otherwise show fetched icon or placeholder
+            Texture2D displayIcon = link.GetDisplayIcon();
+            if (displayIcon != null)
+            {
+                iconImage.image = displayIcon;
+            }
+            else
+            {
+                iconImage.image = GetPlaceholderTexture();
+                // Fetch favicon if URL is provided and no custom icon
+                if (!string.IsNullOrEmpty(link.url))
+                {
+                    FetchFavicon(profile, link, iconImage);
+                }
+            }
+            
+            iconContainer.Add(iconImage);
+            
+            // Add hover overlay button to browse for custom icon
+            CreateHoverOverlayButton("+", () => BrowseForProductLinkIcon(profile, link, iconImage), iconContainer);
+            
+            cardContent.Add(iconContainer);
+            
+            // Link info container
+            var infoContainer = new VisualElement();
+            infoContainer.style.flexGrow = 1;
+            infoContainer.style.marginLeft = 12;
+            
+            // Label field (optional)
+            var labelRow = new VisualElement();
+            labelRow.style.position = Position.Relative;
+            var labelField = new TextField { value = link.label };
+            labelField.AddToClassList("yucp-input");
+            labelField.AddToClassList("yucp-product-link-label");
+            
+            Label labelPlaceholder = null;
+            if (string.IsNullOrEmpty(link.label))
+            {
+                labelPlaceholder = new Label("Link label (optional)");
+                labelPlaceholder.AddToClassList("yucp-label-secondary");
+                labelPlaceholder.style.position = Position.Absolute;
+                labelPlaceholder.style.left = 8;
+                labelPlaceholder.style.top = 4;
+                labelPlaceholder.pickingMode = PickingMode.Ignore;
+                labelRow.Add(labelPlaceholder);
+            }
+            
+            labelField.RegisterValueChangedCallback(evt =>
+            {
+                if (labelPlaceholder != null)
+                {
+                    if (string.IsNullOrEmpty(evt.newValue))
+                    {
+                        labelPlaceholder.style.display = DisplayStyle.Flex;
+                        labelField.style.opacity = 0.7f;
+                    }
+                    else
+                    {
+                        labelPlaceholder.style.display = DisplayStyle.None;
+                        labelField.style.opacity = 1f;
+                    }
+                }
+                
+                if (profile != null && link != null)
+                {
+                    Undo.RecordObject(profile, "Change Link Label");
+                    link.label = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                }
+            });
+            labelRow.Add(labelField);
+            infoContainer.Add(labelRow);
+            
+            // URL field
+            var urlRow = new VisualElement();
+            urlRow.style.position = Position.Relative;
+            urlRow.style.marginTop = 6;
+            var urlField = new TextField { value = link.url };
+            urlField.AddToClassList("yucp-input");
+            urlField.AddToClassList("yucp-product-link-url");
+            
+            Label urlPlaceholder = null;
+            if (string.IsNullOrEmpty(link.url))
+            {
+                urlPlaceholder = new Label("https://example.com");
+                urlPlaceholder.AddToClassList("yucp-label-secondary");
+                urlPlaceholder.style.position = Position.Absolute;
+                urlPlaceholder.style.left = 8;
+                urlPlaceholder.style.top = 4;
+                urlPlaceholder.pickingMode = PickingMode.Ignore;
+                urlRow.Add(urlPlaceholder);
+            }
+            
+            urlField.RegisterValueChangedCallback(evt =>
+            {
+                if (urlPlaceholder != null)
+                {
+                    if (string.IsNullOrEmpty(evt.newValue))
+                    {
+                        urlPlaceholder.style.display = DisplayStyle.Flex;
+                        urlField.style.opacity = 0.7f;
+                    }
+                    else
+                    {
+                        urlPlaceholder.style.display = DisplayStyle.None;
+                        urlField.style.opacity = 1f;
+                    }
+                }
+                
+                if (profile != null && link != null)
+                {
+                    Undo.RecordObject(profile, "Change Link URL");
+                    link.url = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                }
+            });
+            
+            // Fetch favicon when user finishes typing (on blur)
+            urlField.RegisterCallback<BlurEvent>(evt =>
+            {
+                Debug.Log($"[YUCP PackageExporter] URL field blur event triggered for URL: {link.url}");
+                if (profile != null && link != null && !string.IsNullOrEmpty(link.url))
+                {
+                    Debug.Log($"[YUCP PackageExporter] Calling FetchFavicon from blur event");
+                    FetchFavicon(profile, link, iconImage);
+                }
+                else
+                {
+                    Debug.LogWarning($"[YUCP PackageExporter] Blur event: profile or link is null, or URL is empty. Profile: {profile != null}, Link: {link != null}, URL: {link?.url ?? "null"}");
+                }
+            });
+            urlRow.Add(urlField);
+            infoContainer.Add(urlRow);
+            
+            cardContent.Add(infoContainer);
+            
+            // Action buttons
+            var buttonContainer = new VisualElement();
+            buttonContainer.style.flexDirection = FlexDirection.Row;
+            buttonContainer.style.marginLeft = 8;
+            
+            // Clear custom icon button (only show if custom icon is set)
+            if (link.customIcon != null)
+            {
+                var clearIconButton = new Button(() =>
+                {
+                    if (profile != null && link != null)
+                    {
+                        Undo.RecordObject(profile, "Clear Custom Link Icon");
+                        link.customIcon = null;
+                        // Show fetched icon or placeholder
+                        Texture2D displayIcon = link.GetDisplayIcon();
+                        iconImage.image = displayIcon != null ? displayIcon : GetPlaceholderTexture();
+                        EditorUtility.SetDirty(profile);
+                    }
+                });
+                clearIconButton.text = "↺";
+                clearIconButton.tooltip = "Clear custom icon (use auto-fetched)";
+                clearIconButton.AddToClassList("yucp-button");
+                clearIconButton.AddToClassList("yucp-button-icon");
+                clearIconButton.style.width = 32;
+                clearIconButton.style.height = 32;
+                buttonContainer.Add(clearIconButton);
+            }
+            
+            // Open in browser button
+            var openButton = new Button(() =>
+            {
+                if (!string.IsNullOrEmpty(link.url))
+                {
+                    Application.OpenURL(link.url);
+                }
+            });
+            openButton.text = "→";
+            openButton.tooltip = "Open in browser";
+            openButton.AddToClassList("yucp-button");
+            openButton.AddToClassList("yucp-button-icon");
+            openButton.style.width = 32;
+            openButton.style.height = 32;
+            if (link.customIcon != null)
+            {
+                openButton.style.marginLeft = 4;
+            }
+            buttonContainer.Add(openButton);
+            
+            // Remove button
+            var removeButton = new Button(() =>
+            {
+                if (profile != null && profile.productLinks != null)
+                {
+                    Undo.RecordObject(profile, "Remove Product Link");
+                    profile.productLinks.Remove(link);
+                    card.RemoveFromHierarchy();
+                    EditorUtility.SetDirty(profile);
+                }
+            });
+            removeButton.text = "×";
+            removeButton.tooltip = "Remove link";
+            removeButton.AddToClassList("yucp-button");
+            removeButton.AddToClassList("yucp-button-icon");
+            removeButton.style.width = 32;
+            removeButton.style.height = 32;
+            removeButton.style.marginLeft = 4;
+            buttonContainer.Add(removeButton);
+            
+            cardContent.Add(buttonContainer);
+            card.Add(cardContent);
+            
+            return card;
+        }
+
+        private void AddProductLink(ExportProfile profile, VisualElement container)
+        {
+            if (profile.productLinks == null)
+            {
+                profile.productLinks = new List<ProductLink>();
+            }
+            
+            var newLink = new ProductLink();
+            Undo.RecordObject(profile, "Add Product Link");
+            profile.productLinks.Add(newLink);
+            EditorUtility.SetDirty(profile);
+            
+            // Find the add button (last child)
+            var addButton = container.Children().Last();
+            var linkCard = CreateProductLinkCard(profile, newLink);
+            container.Insert(container.childCount - 1, linkCard);
+        }
+
+        private void FetchFavicon(ExportProfile profile, ProductLink link, Image iconImage)
+        {
+            Debug.Log($"[YUCP PackageExporter] FetchFavicon called for URL: {link.url}");
+            
+            if (string.IsNullOrEmpty(link.url))
+            {
+                Debug.LogWarning("[YUCP PackageExporter] FetchFavicon: URL is empty, aborting");
+                return;
+            }
+            
+            // Show loading state
+            iconImage.image = GetPlaceholderTexture();
+            
+            // Extract domain from URL
+            string domain = ExtractDomain(link.url);
+            Debug.Log($"[YUCP PackageExporter] Extracted domain: {domain}");
+            
+            // Reduce to base domain for Brandfetch and favicon (e.g. yeusepe.gumroad.com -> gumroad.com)
+            string baseDomain = ExtractBaseDomain(domain);
+            Debug.Log($"[YUCP PackageExporter] Base domain: {baseDomain}");
+            
+            if (string.IsNullOrEmpty(baseDomain))
+            {
+                Debug.LogWarning("[YUCP PackageExporter] FetchFavicon: Failed to extract domain, aborting");
+                return;
+            }
+            
+            // Start async fetch
+            EditorApplication.update += CheckFaviconRequest;
+            
+            var requestData = new FaviconRequestData
+            {
+                profile = profile,
+                link = link,
+                iconImage = iconImage,
+                domain = baseDomain,
+                currentUrlIndex = 0,
+                request = null,
+                isBrandfetchSearch = false,
+                brandId = null
+            };
+            
+            faviconRequests.Add(requestData);
+            Debug.Log($"[YUCP PackageExporter] Starting favicon request for domain: {domain}");
+            StartFaviconRequest(requestData);
+        }
+
+        private class FaviconRequestData
+        {
+            public ExportProfile profile;
+            public ProductLink link;
+            public Image iconImage;
+            public string domain;
+            public int currentUrlIndex;
+            public UnityWebRequest request;
+            public bool isBrandfetchSearch; // True if this request is for Brandfetch search API
+            public string brandId; // Brandfetch brandId after search
+        }
+
+        private List<FaviconRequestData> faviconRequests = new List<FaviconRequestData>();
+
+        private void CheckFaviconRequest()
+        {
+            for (int i = faviconRequests.Count - 1; i >= 0; i--)
+            {
+                var requestData = faviconRequests[i];
+                
+                if (requestData.request == null)
+                {
+                    Debug.LogWarning($"[YUCP PackageExporter] CheckFaviconRequest: Request is null for domain {requestData.domain}");
+                    continue;
+                }
+                
+                if (requestData.request.isDone)
+                {
+                    Debug.Log($"[YUCP PackageExporter] Request completed for domain {requestData.domain}, result: {requestData.request.result}, URL index: {requestData.currentUrlIndex}");
+                    bool success = false;
+                    
+                    if (requestData.request.result == UnityWebRequest.Result.Success)
+                    {
+                        // Handle Brandfetch search API response
+                        if (requestData.isBrandfetchSearch)
+                        {
+                            string jsonResponse = requestData.request.downloadHandler.text;
+                            Debug.Log($"[YUCP PackageExporter] Brandfetch search response: {jsonResponse}");
+                            
+                            // Parse JSON to extract brandId (simple string parsing)
+                            string brandId = ExtractBrandIdFromJson(jsonResponse);
+                            if (!string.IsNullOrEmpty(brandId))
+                            {
+                                Debug.Log($"[YUCP PackageExporter] Found Brandfetch brandId: {brandId}");
+                                requestData.brandId = brandId;
+                                requestData.isBrandfetchSearch = false;
+                                // Now fetch the actual icon
+                                StartFaviconRequest(requestData);
+                                continue;
+                            }
+                            else
+                            {
+                                Debug.LogWarning("[YUCP PackageExporter] Failed to extract brandId from Brandfetch response");
+                                // Fall through to try next URL
+                            }
+                        }
+                        
+                        byte[] imageData = requestData.request.downloadHandler.data;
+                        if (imageData != null && imageData.Length > 0)
+                        {
+                            Debug.Log($"[YUCP PackageExporter] Downloaded {imageData.Length} bytes of image data");
+                            
+                            // Check if this is an ICO file (ICO files start with 00 00 01 00)
+                            bool isIcoFile = imageData.Length >= 4 && 
+                                           imageData[0] == 0x00 && imageData[1] == 0x00 && 
+                                           imageData[2] == 0x01 && imageData[3] == 0x00;
+                            
+                            if (isIcoFile)
+                            {
+                                Debug.Log($"[YUCP PackageExporter] Detected ICO file format, extracting bitmap from ICO");
+                                Texture2D texture = ExtractBitmapFromIco(imageData);
+                                if (texture != null && texture.width > 0 && texture.height > 0)
+                                {
+                                    Debug.Log($"[YUCP PackageExporter] Successfully extracted bitmap from ICO: {texture.width}x{texture.height}");
+                                    
+                                    // Resize if needed
+                                    if (texture.width != 32 || texture.height != 32)
+                                    {
+                                        texture = ResizeTexture(texture, 32, 32);
+                                        Debug.Log("[YUCP PackageExporter] Resized favicon to 32x32");
+                                    }
+                                    
+                                    // Only set fetched icon if no custom icon is set
+                                    requestData.link.icon = texture;
+                                    if (requestData.link.customIcon == null)
+                                    {
+                                        requestData.iconImage.image = texture;
+                                        Debug.Log($"[YUCP PackageExporter] Favicon successfully set for {requestData.domain}");
+                                    }
+                                    else
+                                    {
+                                        Debug.Log($"[YUCP PackageExporter] Favicon fetched but custom icon is displayed for {requestData.domain}");
+                                    }
+                                    if (requestData.profile != null)
+                                    {
+                                        EditorUtility.SetDirty(requestData.profile);
+                                    }
+                                    success = true;
+                                }
+                                else
+                                {
+                                    Debug.LogWarning($"[YUCP PackageExporter] Failed to extract bitmap from ICO file");
+                                }
+                            }
+                            else
+                            {
+                                // Try to load as texture from raw bytes (PNG, JPG, etc.)
+                                Texture2D texture = new Texture2D(2, 2);
+                                bool loaded = texture.LoadImage(imageData);
+                                
+                                if (loaded && texture.width > 2 && texture.height > 2)
+                                {
+                                    Debug.Log($"[YUCP PackageExporter] Successfully loaded favicon: {texture.width}x{texture.height}");
+                                    
+                                    // Resize if needed (favicons can be various sizes)
+                                    if (texture.width != 32 || texture.height != 32)
+                                    {
+                                        texture = ResizeTexture(texture, 32, 32);
+                                        Debug.Log("[YUCP PackageExporter] Resized favicon to 32x32");
+                                    }
+                                    
+                                    // Only set fetched icon if no custom icon is set
+                                    requestData.link.icon = texture;
+                                    if (requestData.link.customIcon == null)
+                                    {
+                                        requestData.iconImage.image = texture;
+                                        Debug.Log($"[YUCP PackageExporter] Favicon successfully set for {requestData.domain}");
+                                    }
+                                    else
+                                    {
+                                        Debug.Log($"[YUCP PackageExporter] Favicon fetched but custom icon is displayed for {requestData.domain}");
+                                    }
+                                    if (requestData.profile != null)
+                                    {
+                                        EditorUtility.SetDirty(requestData.profile);
+                                    }
+                                    success = true;
+                                }
+                                else
+                                {
+                                    Debug.LogWarning($"[YUCP PackageExporter] Failed to load image data as texture (width: {texture.width}, height: {texture.height}, loaded: {loaded})");
+                                    UnityEngine.Object.DestroyImmediate(texture);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[YUCP PackageExporter] Downloaded data is null or empty");
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[YUCP PackageExporter] Request failed: {requestData.request.error}");
+                    }
+                    
+                    requestData.request.Dispose();
+                    requestData.request = null;
+                    
+                    if (!success)
+                    {
+                        // Try next URL
+                        requestData.currentUrlIndex++;
+                        Debug.Log($"[YUCP PackageExporter] Trying next favicon URL (index {requestData.currentUrlIndex})");
+                        if (requestData.currentUrlIndex < 3)
+                        {
+                            StartFaviconRequest(requestData);
+                            continue;
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[YUCP PackageExporter] All favicon URLs failed for domain: {requestData.domain}");
+                        }
+                    }
+                    
+                    faviconRequests.RemoveAt(i);
+                }
+            }
+            
+            if (faviconRequests.Count == 0)
+            {
+                EditorApplication.update -= CheckFaviconRequest;
+                Debug.Log("[YUCP PackageExporter] All favicon requests completed, removed update callback");
+            }
+        }
+
+        private void StartFaviconRequest(FaviconRequestData requestData)
+        {
+            // Try Brandfetch Logo API first (using base domain), then direct favicon, then DuckDuckGo fallback
+            string[] faviconUrls = new string[]
+            {
+                $"https://cdn.brandfetch.io/{requestData.domain}/w/128/h/128/theme/dark/icon.png?c={BrandfetchClientId}",
+                $"https://{requestData.domain}/favicon.ico",
+                $"https://icons.duckduckgo.com/ip3/{requestData.domain}.ico"
+            };
+            
+            if (requestData.currentUrlIndex >= faviconUrls.Length)
+            {
+                Debug.LogWarning($"[YUCP PackageExporter] URL index {requestData.currentUrlIndex} is out of range");
+                return;
+            }
+            
+            string faviconUrl = faviconUrls[requestData.currentUrlIndex];
+            Debug.Log($"[YUCP PackageExporter] Starting request for favicon URL: {faviconUrl}");
+            
+            // Use regular UnityWebRequest instead of UnityWebRequestTexture to handle various formats
+            requestData.request = UnityWebRequest.Get(faviconUrl);
+            requestData.request.timeout = 5;
+            
+            // Set User-Agent to avoid blocking by some services
+            requestData.request.SetRequestHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+            
+            var operation = requestData.request.SendWebRequest();
+            
+            if (operation == null)
+            {
+                Debug.LogError("[YUCP PackageExporter] Failed to start web request");
+            }
+            else
+            {
+                Debug.Log($"[YUCP PackageExporter] Web request started successfully");
+            }
+        }
+
+        private string ExtractDomain(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+            {
+                Debug.LogWarning("[YUCP PackageExporter] ExtractDomain: URL is empty");
+                return "";
+            }
+            
+            try
+            {
+                if (!url.StartsWith("http://") && !url.StartsWith("https://"))
+                {
+                    url = "https://" + url;
+                    Debug.Log($"[YUCP PackageExporter] ExtractDomain: Added https:// prefix, new URL: {url}");
+                }
+                
+                Uri uri = new Uri(url);
+                string domain = uri.Host;
+                Debug.Log($"[YUCP PackageExporter] ExtractDomain: Extracted domain '{domain}' from URL '{url}'");
+                return domain;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[YUCP PackageExporter] ExtractDomain failed for URL '{url}': {ex.Message}");
+                return "";
+            }
+        }
+
+        private string ExtractBrandIdFromJson(string json)
+        {
+            try
+            {
+                // Simple JSON parsing: look for "brandId":"value"
+                int brandIdIndex = json.IndexOf("\"brandId\"");
+                if (brandIdIndex < 0)
+                    return null;
+                
+                int colonIndex = json.IndexOf(':', brandIdIndex);
+                if (colonIndex < 0)
+                    return null;
+                
+                int quoteStart = json.IndexOf('"', colonIndex);
+                if (quoteStart < 0)
+                    return null;
+                
+                int quoteEnd = json.IndexOf('"', quoteStart + 1);
+                if (quoteEnd < 0)
+                    return null;
+                
+                return json.Substring(quoteStart + 1, quoteEnd - quoteStart - 1);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[YUCP PackageExporter] Error parsing Brandfetch JSON: {ex.Message}");
+                return null;
+            }
+        }
+
+        private string ExtractBaseDomain(string host)
+        {
+            if (string.IsNullOrEmpty(host))
+                return host;
+            
+            var parts = host.Split('.');
+            if (parts.Length <= 2)
+                return host;
+            
+            // Join last two labels (e.g., yeusepe.gumroad.com -> gumroad.com)
+            string baseDomain = parts[parts.Length - 2] + "." + parts[parts.Length - 1];
+            Debug.Log($"[YUCP PackageExporter] ExtractBaseDomain: host='{host}' -> baseDomain='{baseDomain}'");
+            return baseDomain;
+        }
+
+        private Texture2D ResizeTexture(Texture2D source, int width, int height)
+        {
+            RenderTexture rt = RenderTexture.GetTemporary(width, height);
+            Graphics.Blit(source, rt);
+            RenderTexture previous = RenderTexture.active;
+            RenderTexture.active = rt;
+            Texture2D resized = new Texture2D(width, height);
+            resized.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+            resized.Apply();
+            RenderTexture.active = previous;
+            RenderTexture.ReleaseTemporary(rt);
+            return resized;
+        }
+
+        private Texture2D ExtractBitmapFromIco(byte[] icoData)
+        {
+            try
+            {
+                using (var ms = new MemoryStream(icoData))
+                using (var reader = new BinaryReader(ms))
+                {
+                    // ICO header: 6 bytes
+                    short reserved = reader.ReadInt16(); // Should be 0
+                    short type = reader.ReadInt16();     // Should be 1 (icon)
+                    short count = reader.ReadInt16();    // Number of images
+                    
+                    if (reserved != 0 || type != 1 || count <= 0)
+                    {
+                        Debug.LogWarning($"[YUCP PackageExporter] Invalid ICO header: reserved={reserved}, type={type}, count={count}");
+                        return null;
+                    }
+                    
+                    if (count > 20)
+                    {
+                        Debug.LogWarning($"[YUCP PackageExporter] ICO contains too many images: {count}");
+                        return null;
+                    }
+                    
+                    Debug.Log($"[YUCP PackageExporter] ICO file contains {count} images");
+                    
+                    // Read first directory entry (16 bytes)
+                    byte width = reader.ReadByte();
+                    byte height = reader.ReadByte();
+                    reader.ReadByte(); // color count
+                    reader.ReadByte(); // reserved
+                    short planes = reader.ReadInt16();
+                    short bitCount = reader.ReadInt16();
+                    int imageSize = reader.ReadInt32();
+                    int imageOffset = reader.ReadInt32();
+                    
+                    Debug.Log($"[YUCP PackageExporter] ICO entry: {Math.Max((int)width, 1)}x{Math.Max((int)height, 1)}, planes={planes}, bpp={bitCount}, size={imageSize}, offset={imageOffset}");
+                    
+                    if (imageOffset >= icoData.Length || imageOffset + imageSize > icoData.Length)
+                    {
+                        Debug.LogWarning($"[YUCP PackageExporter] Invalid ICO image offset or size");
+                        return null;
+                    }
+                    
+                    // Seek to image data
+                    ms.Seek(imageOffset, SeekOrigin.Begin);
+                    
+                    // Check if it's PNG (PNG files start with 89 50 4E 47)
+                    byte[] header = reader.ReadBytes(4);
+                    ms.Seek(imageOffset, SeekOrigin.Begin); // Reset
+                    
+                    bool isPng = header.Length >= 4 && 
+                                header[0] == 0x89 && header[1] == 0x50 && 
+                                header[2] == 0x4E && header[3] == 0x47;
+                    
+                    if (isPng)
+                    {
+                        Debug.Log("[YUCP PackageExporter] ICO contains PNG data, loading directly");
+                        byte[] pngData = reader.ReadBytes(imageSize);
+                        Texture2D texture = new Texture2D(2, 2);
+                        if (texture.LoadImage(pngData))
+                        {
+                            return texture;
+                        }
+                    }
+                    else
+                    {
+                        // Read BITMAPINFOHEADER (DIB header)
+                        int headerSize = reader.ReadInt32();     // Usually 40
+                        int bmpWidth = reader.ReadInt32();
+                        int bmpHeight = reader.ReadInt32();       // This is total height (image + mask)
+                        reader.ReadInt16();                      // planes
+                        int bpp = reader.ReadInt16();
+                        int compression = reader.ReadInt32();
+                        int imageSizeBytes = reader.ReadInt32();
+                        reader.ReadInt32();                      // xPelsPerMeter
+                        reader.ReadInt32();                      // yPelsPerMeter
+                        int clrUsed = reader.ReadInt32();        // clrUsed
+                        reader.ReadInt32();                      // clrImportant
+                        
+                        // Support palette-based bitmaps (1, 4, 8 bpp) and direct color (24, 32 bpp)
+                        if (bpp != 1 && bpp != 4 && bpp != 8 && bpp != 24 && bpp != 32)
+                        {
+                            Debug.LogWarning($"[YUCP PackageExporter] Unsupported ICO bitmap bpp: {bpp}");
+                            return null;
+                        }
+                        
+                        bool isPaletteBased = (bpp == 1 || bpp == 4 || bpp == 8);
+                        
+                        int realHeight = bmpHeight / 2; // ICO stores height as image+mask
+                        if (realHeight <= 0 || bmpWidth <= 0)
+                        {
+                            Debug.LogWarning($"[YUCP PackageExporter] Invalid ICO bitmap dimensions: {bmpWidth}x{realHeight}");
+                            return null;
+                        }
+                        
+                        if (bmpWidth > 512 || realHeight > 512)
+                        {
+                            Debug.LogWarning($"[YUCP PackageExporter] ICO bitmap too large: {bmpWidth}x{realHeight}");
+                            return null;
+                        }
+                        
+                        // Read color palette if palette-based
+                        Color32[] palette = null;
+                        int paletteSize = 0;
+                        if (isPaletteBased)
+                        {
+                            paletteSize = (bpp == 1) ? 2 : ((bpp == 4) ? 16 : 256);
+                            palette = new Color32[paletteSize];
+                            
+                            // Palette entries are BGR (3 bytes) or BGRA (4 bytes if clrUsed > 0)
+                            int paletteBytes = (clrUsed > 0 && clrUsed <= paletteSize) ? 4 : 3;
+                            for (int i = 0; i < paletteSize; i++)
+                            {
+                                byte b = reader.ReadByte();
+                                byte g = reader.ReadByte();
+                                byte r = reader.ReadByte();
+                                byte a = (paletteBytes == 4) ? reader.ReadByte() : (byte)255;
+                                palette[i] = new Color32(r, g, b, a);
+                            }
+                            Debug.Log($"[YUCP PackageExporter] Read {paletteSize}-color palette for {bpp}-bit bitmap");
+                        }
+                        
+                        // Read the pixel data (DIB, bottom-up, BGR(A) or palette indices)
+                        int bytesPerPixel = isPaletteBased ? 1 : (bpp / 8);
+                        int bitsPerRow = bmpWidth * bpp;
+                        int rowSize = ((bitsPerRow + 31) / 32) * 4; // Row size padded to 4-byte boundary
+                        int dibSize = rowSize * realHeight;
+                        
+                        if (dibSize > imageSize - headerSize - (isPaletteBased ? (paletteSize * (clrUsed > 0 && clrUsed <= paletteSize ? 4 : 3)) : 0))
+                        {
+                            int available = imageSize - headerSize - (isPaletteBased ? (paletteSize * (clrUsed > 0 && clrUsed <= paletteSize ? 4 : 3)) : 0);
+                            Debug.LogWarning($"[YUCP PackageExporter] DIB size calculation: calculated={dibSize}, available={available}");
+                            dibSize = available;
+                        }
+                        
+                        byte[] dib = reader.ReadBytes(dibSize);
+                        if (dib.Length < dibSize)
+                        {
+                            Debug.LogWarning("[YUCP PackageExporter] DIB data truncated");
+                            return null;
+                        }
+                        
+                        // Create texture and convert BGR to RGB or palette indices to colors
+                        Texture2D texture = new Texture2D(bmpWidth, realHeight, TextureFormat.RGBA32, false);
+                        Color32[] pixels = new Color32[bmpWidth * realHeight];
+                        
+                        for (int y = 0; y < realHeight; y++)
+                        {
+                            int srcRow = realHeight - 1 - y; // Bottom-up
+                            int rowOffset = srcRow * rowSize;
+                            
+                            for (int x = 0; x < bmpWidth; x++)
+                            {
+                                Color32 color;
+                                
+                                if (isPaletteBased)
+                                {
+                                    // Read palette index based on bit depth
+                                    int bitOffset = x * bpp;
+                                    int byteIndex = rowOffset + (bitOffset / 8);
+                                    int bitIndex = bitOffset % 8;
+                                    
+                                    if (byteIndex >= dib.Length)
+                                        break;
+                                    
+                                    int paletteIndex = 0;
+                                    if (bpp == 1)
+                                    {
+                                        // 1-bit: each bit is a palette index
+                                        paletteIndex = (dib[byteIndex] >> (7 - bitIndex)) & 0x01;
+                                    }
+                                    else if (bpp == 4)
+                                    {
+                                        // 4-bit: two palette indices per byte
+                                        // For 4-bit, bitIndex will be 0, 4, 8, 12, etc.
+                                        // If bitIndex is 0 or 4 mod 8, it's the first pixel in that byte
+                                        if ((x % 2) == 0)
+                                        {
+                                            // First pixel in byte (high 4 bits)
+                                            paletteIndex = (dib[byteIndex] >> 4) & 0x0F;
+                                        }
+                                        else
+                                        {
+                                            // Second pixel in byte (low 4 bits)
+                                            paletteIndex = dib[byteIndex] & 0x0F;
+                                        }
+                                    }
+                                    else // bpp == 8
+                                    {
+                                        // 8-bit: one byte per pixel
+                                        paletteIndex = dib[byteIndex];
+                                    }
+                                    
+                                    if (paletteIndex >= paletteSize || paletteIndex < 0)
+                                        paletteIndex = 0;
+                                    
+                                    color = palette[paletteIndex];
+                                }
+                                else
+                                {
+                                    // Direct color (24 or 32 bpp)
+                                    int srcIndex = rowOffset + x * bytesPerPixel;
+                                    if (srcIndex + bytesPerPixel > dib.Length)
+                                        break;
+                                    
+                                    byte b = dib[srcIndex + 0];
+                                    byte g = dib[srcIndex + 1];
+                                    byte r = dib[srcIndex + 2];
+                                    byte a = (bytesPerPixel == 4) ? dib[srcIndex + 3] : (byte)255;
+                                    
+                                    color = new Color32(r, g, b, a);
+                                }
+                                
+                                pixels[y * bmpWidth + x] = color;
+                            }
+                        }
+                        
+                        texture.SetPixels32(pixels);
+                        texture.Apply();
+                        Debug.Log($"[YUCP PackageExporter] ICO bitmap extracted as texture: {bmpWidth}x{realHeight}, bpp={bpp}");
+                        return texture;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[YUCP PackageExporter] ExtractBitmapFromIco failed: {ex.Message}\n{ex.StackTrace}");
+            }
+            
+            return null;
         }
 
         private VisualElement CreateSummarySection(ExportProfile profile)
@@ -1386,11 +2713,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var section = new VisualElement();
             section.name = "validation-section";
-            section.AddToClassList("yucp-section");
-            
-            var title = new Label("Validation");
-            title.AddToClassList("yucp-section-title");
-            section.Add(title);
             
             if (!profile.Validate(out string errorMessage))
             {
@@ -3104,6 +4426,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Dependency list container (wraps the list for easy rebuilding)
             var depListContainer = new VisualElement();
             depListContainer.name = "dep-list-container";
+            depListContainer.AddToClassList("yucp-dependency-list-container");
+            depListContainer.style.width = Length.Percent(100);
+            depListContainer.style.maxWidth = Length.Percent(100);
+            depListContainer.style.minWidth = 0;
+            depListContainer.style.overflow = Overflow.Hidden;
             RebuildDependencyList(profile, section, depListContainer);
             section.Add(depListContainer);
             
@@ -3141,6 +4468,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private VisualElement CreateDependencyCard(PackageDependency dep, int index, ExportProfile profile)
         {
             var card = new VisualElement();
+            card.AddToClassList("yucp-dependency-card");
             card.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 1f);
             card.style.marginBottom = 8;
             card.style.paddingTop = 8;
@@ -3149,17 +4477,25 @@ namespace YUCP.DevTools.Editor.PackageExporter
             card.style.paddingRight = 12;
             card.style.borderLeftWidth = 3;
             card.style.borderLeftColor = dep.enabled ? new Color(0.21f, 0.75f, 0.73f, 1f) : new Color(0.3f, 0.3f, 0.3f, 1f);
+            card.style.width = Length.Percent(100);
+            card.style.maxWidth = Length.Percent(100);
+            card.style.minWidth = 0;
             
             // Header row
             var headerRow = new VisualElement();
+            headerRow.AddToClassList("yucp-dependency-card-header");
             headerRow.style.flexDirection = FlexDirection.Row;
             headerRow.style.alignItems = Align.Center;
             headerRow.style.marginBottom = dep.enabled ? 8 : 0;
+            headerRow.style.width = Length.Percent(100);
+            headerRow.style.maxWidth = Length.Percent(100);
+            headerRow.style.minWidth = 0;
             
             // Enable checkbox
             var enableToggle = new Toggle { value = dep.enabled };
             enableToggle.AddToClassList("yucp-toggle");
             enableToggle.style.marginRight = 8;
+            enableToggle.style.flexShrink = 0;
             enableToggle.RegisterValueChangedCallback(evt =>
             {
                 dep.enabled = evt.newValue;
@@ -3174,8 +4510,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             var nameLabel = new Label(label);
             nameLabel.AddToClassList("yucp-label");
+            nameLabel.AddToClassList("yucp-dependency-card-name");
             nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             nameLabel.style.flexGrow = 1;
+            nameLabel.style.minWidth = 0;
             headerRow.Add(nameLabel);
             
             // Remove button
@@ -3190,6 +4528,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             removeButton.AddToClassList("yucp-button-danger");
             removeButton.AddToClassList("yucp-button-small");
             removeButton.style.width = 25;
+            removeButton.style.flexShrink = 0;
             headerRow.Add(removeButton);
             
             card.Add(headerRow);
@@ -3617,6 +4956,36 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 AssetDatabase.SaveAssets();
                 
                 UpdateProfileDetails();
+            }
+        }
+
+        private void BrowseForProductLinkIcon(ExportProfile profile, ProductLink link, Image iconImage)
+        {
+            string iconPath = EditorUtility.OpenFilePanel("Select Custom Icon for Link", "", "png,jpg,jpeg");
+            if (!string.IsNullOrEmpty(iconPath))
+            {
+                string projectPath = "Assets/YUCP/ExportProfiles/LinkIcons/";
+                if (!AssetDatabase.IsValidFolder("Assets/YUCP/ExportProfiles/LinkIcons"))
+                {
+                    if (!AssetDatabase.IsValidFolder("Assets/YUCP"))
+                        AssetDatabase.CreateFolder("Assets", "YUCP");
+                    if (!AssetDatabase.IsValidFolder("Assets/YUCP/ExportProfiles"))
+                        AssetDatabase.CreateFolder("Assets/YUCP", "ExportProfiles");
+                    AssetDatabase.CreateFolder("Assets/YUCP/ExportProfiles", "LinkIcons");
+                }
+                
+                string fileName = Path.GetFileName(iconPath);
+                string targetPath = projectPath + fileName;
+                
+                File.Copy(iconPath, targetPath, true);
+                AssetDatabase.ImportAsset(targetPath);
+                AssetDatabase.Refresh();
+                
+                Undo.RecordObject(profile, "Set Custom Link Icon");
+                link.customIcon = AssetDatabase.LoadAssetAtPath<Texture2D>(targetPath);
+                iconImage.image = link.customIcon;
+                EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
             }
         }
 

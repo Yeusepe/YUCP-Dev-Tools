@@ -103,7 +103,7 @@ namespace YUCP.PatchCleanup
         /// <summary>
         /// Revert patches applied to a specific FBX model
         /// </summary>
-        [MenuItem("Tools/YUCP/Revert Patches for Selected FBX")]
+        [MenuItem("Tools/YUCP/Others/Utilities/Revert Patches for Selected FBX")]
         public static void RevertPatchesForSelected()
         {
             var selected = Selection.activeObject;
@@ -243,7 +243,7 @@ namespace YUCP.PatchCleanup
             }
         }
         
-        [MenuItem("Tools/YUCP/Cleanup Empty Temp Package")]
+        [MenuItem("Tools/YUCP/Others/Utilities/Cleanup Empty Temp Package")]
         public static void CleanupEmptyTempPackage()
         {
             try

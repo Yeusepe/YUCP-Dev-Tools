@@ -1536,7 +1536,7 @@ namespace YUCP.PatchCleanup
             public List<GuidSwapInfo> swaps = new List<GuidSwapInfo>();
         }
         
-        [MenuItem("Tools/YUCP/Revert GUID Override")]
+        [MenuItem("Tools/YUCP/Others/Utilities/Revert GUID Override")]
         public static void RevertGuidOverride()
         {
             try

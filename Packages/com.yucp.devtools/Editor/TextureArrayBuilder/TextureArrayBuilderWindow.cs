@@ -59,7 +59,7 @@ namespace YUCP.DevTools.Editor.TextureArrays
         private int _formatIndex = 1; // Default to DXT5
         private Vector2 _scroll;
 
-        [MenuItem("Tools/YUCP/Texture Array Builder")]
+        [MenuItem("Tools/YUCP/Others/Development/Texture Array Builder")]
         private static void ShowWindow()
         {
             GetWindow<TextureArrayBuilderWindow>("Texture Array Builder").minSize = new Vector2(560, 440);

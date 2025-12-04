@@ -17,7 +17,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private bool saveIntermediateAsset = false;
         private string intermediateAssetPath = "Assets/DerivedFbxAsset_Temp.asset";
 
-        [MenuItem("Tools/YUCP/Debug/Derived FBX Builder")]
+        [MenuItem("Tools/YUCP/Others/Development/Derived FBX Builder")]
         public static void ShowWindow()
         {
             GetWindow<DerivedFbxDebugWindow>("Derived FBX Builder");
