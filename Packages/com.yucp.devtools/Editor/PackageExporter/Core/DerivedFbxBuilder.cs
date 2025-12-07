@@ -36,11 +36,27 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			
 			try
 			{
-				// Verify base FBX exists
-				if (!File.Exists(Path.Combine(Path.GetFullPath(Path.Combine(Application.dataPath, "..")), baseFbxPath.Replace('/', Path.DirectorySeparatorChar))))
-			{
-					Debug.LogError($"[DerivedFbxBuilder] Base FBX not found at: {baseFbxPath}");
-					return null;
+				// Get physical paths first
+				// Adapted from CocoTools CocoPatch.cs path handling
+				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+				string basePhysicalPath = Path.Combine(projectPath, baseFbxPath.Replace('/', Path.DirectorySeparatorChar));
+				string hdiffPhysicalPath = Path.Combine(projectPath, derivedAsset.hdiffFilePath.Replace('/', Path.DirectorySeparatorChar));
+				string outputPhysicalPath = Path.Combine(projectPath, fbxPath.Replace('/', Path.DirectorySeparatorChar));
+				
+				// Verify base FBX exists - use both AssetDatabase and File.Exists for reliability
+				// AssetDatabase check handles Unity assets that may not be physically present yet
+				bool baseFbxExists = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(baseFbxPath) != null;
+				if (!baseFbxExists && !File.Exists(basePhysicalPath))
+				{
+					// If not found, wait a moment and check again (Unity might still be importing)
+					System.Threading.Thread.Sleep(100);
+					AssetDatabase.Refresh();
+					baseFbxExists = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(baseFbxPath) != null;
+					if (!baseFbxExists && !File.Exists(basePhysicalPath))
+					{
+						Debug.LogError($"[DerivedFbxBuilder] Base FBX not found at: {baseFbxPath}");
+						return null;
+					}
 				}
 				
 				// Verify base FBX matches expected hash/manifest
@@ -50,15 +66,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					return null;
 				}
 			
-				// Get physical paths
-				// Adapted from CocoTools CocoPatch.cs path handling
-				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-				string basePhysicalPath = Path.Combine(projectPath, baseFbxPath.Replace('/', Path.DirectorySeparatorChar));
-				string hdiffPhysicalPath = Path.Combine(projectPath, derivedAsset.hdiffFilePath.Replace('/', Path.DirectorySeparatorChar));
-				string outputPhysicalPath = Path.Combine(projectPath, fbxPath.Replace('/', Path.DirectorySeparatorChar));
-				
 				// Ensure output directory exists
 				Directory.CreateDirectory(Path.GetDirectoryName(outputPhysicalPath));
+				
+				// Delete output file if it already exists (HPatch doesn't allow overwriting)
+				if (File.Exists(outputPhysicalPath))
+				{
+					try
+					{
+						File.SetAttributes(outputPhysicalPath, FileAttributes.Normal);
+						File.Delete(outputPhysicalPath);
+						Debug.Log($"[DerivedFbxBuilder] Deleted existing output file before patching: {outputPhysicalPath}");
+					}
+					catch (System.Exception ex)
+					{
+						Debug.LogWarning($"[DerivedFbxBuilder] Could not delete existing output file (may be locked): {ex.Message}. HPatch may fail.");
+					}
+				}
 				
 				// Apply binary patch
 				// Adapted from CocoTools CocoPatch.cs hpatch_unity call
