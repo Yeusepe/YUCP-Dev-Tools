@@ -29,7 +29,6 @@ namespace YUCP.PatchCleanup
                 string logPath = GetLogFilePath();
                 string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
                 File.AppendAllText(logPath, $"[{timestamp}] {message}\n");
-                Debug.Log($"[YUCP PatchImporter] {message}");
             }
             catch { }
         }
@@ -415,19 +414,15 @@ namespace YUCP.PatchCleanup
             if (importedTempFiles == null)
                 importedTempFiles = new HashSet<string>();
             
-            // Track files imported to com.yucp.temp from the package (Patches, Editor, Plugins folders, and root files like package.json)
-            // These are the files we'll clean up after FBX build
             foreach (var path in importedAssets ?? new string[0])
             {
                 if (path.Contains("com.yucp.temp") && 
                     !path.Contains("/Derived/") && !path.Contains("\\Derived\\"))
                 {
-                    // Track files in Patches, Editor, Plugins folders
                     bool isInTempFolder = path.Contains("/Patches/") || path.Contains("\\Patches\\") ||
                                          path.Contains("/Editor/") || path.Contains("\\Editor\\") ||
                                          path.Contains("/Plugins/") || path.Contains("\\Plugins\\");
                     
-                    // Also track root-level files like package.json, .asmdef files, etc.
                     bool isRootFile = path.Contains("com.yucp.temp/package.json") ||
                                      path.Contains("com.yucp.temp\\package.json") ||
                                      (path.Contains("com.yucp.temp") && 
@@ -451,7 +446,6 @@ namespace YUCP.PatchCleanup
                     continue;
                 }
                 
-                // Only process DerivedFbxAsset files in Patches folder
                 if (!path.Contains("/Patches/") && !path.Contains("\\Patches\\"))
                 {
                     continue;
@@ -544,13 +538,11 @@ namespace YUCP.PatchCleanup
                         if (System.Text.RegularExpressions.Regex.IsMatch(assetContent, @"YUCP\.DevTools\.Editor\.PackageExporter"))
                         {
                             WriteLog($"  Fixing namespace references (DevTools -> PatchRuntime)...");
-                            // Replace all occurrences of the old namespace
                             assetContent = System.Text.RegularExpressions.Regex.Replace(
                                 assetContent,
                                 @"YUCP\.DevTools\.Editor\.PackageExporter\.DerivedFbxAsset/(\w+)",
                                 "YUCP.PatchRuntime.DerivedFbxAsset/$1"
                             );
-                            // Also replace any other references to the old namespace
                             assetContent = System.Text.RegularExpressions.Regex.Replace(
                                 assetContent,
                                 @"YUCP\.DevTools\.Editor\.PackageExporter",
@@ -573,7 +565,6 @@ namespace YUCP.PatchCleanup
                             needsUpdate = true;
                         }
                         
-                        // Also check for any remaining old namespace patterns
                         if (System.Text.RegularExpressions.Regex.IsMatch(assetContent, @"YUCP\.DevTools"))
                         {
                             WriteLog($"  Fixing remaining DevTools namespace references...");
@@ -1020,19 +1011,16 @@ namespace YUCP.PatchCleanup
                 
                 foreach (var path in filesToDelete)
                 {
-                    // Double-check: Skip Derived folder - we want to keep those files
                     if (path.Contains("/Derived/") || path.Contains("\\Derived\\"))
                     {
                         WriteLog($"  Skipping Derived folder file: {path}");
                         continue;
                     }
                     
-                    // Delete files in Patches, Editor, or Plugins folders
                     bool isInTempFolder = path.Contains("/Patches/") || path.Contains("\\Patches\\") ||
                                          path.Contains("/Editor/") || path.Contains("\\Editor\\") ||
                                          path.Contains("/Plugins/") || path.Contains("\\Plugins\\");
                     
-                    // Also delete root-level files like package.json, .asmdef files, etc.
                     bool isRootFile = path.Contains("com.yucp.temp/package.json") ||
                                      path.Contains("com.yucp.temp\\package.json") ||
                                      (path.Contains("com.yucp.temp") && 
@@ -1102,13 +1090,11 @@ namespace YUCP.PatchCleanup
                 // Clear the tracked files
                 importedTempFiles.Clear();
                 
-                // Clean up empty folders after deleting files
                 try
                 {
                     string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                     string tempPackagePath = Path.Combine(projectPath, "Packages", "com.yucp.temp");
                     
-                    // Clean up empty folders (but keep Derived folder)
                     string[] foldersToCheck = new string[]
                     {
                         Path.Combine(tempPackagePath, "Patches"),
@@ -1210,7 +1196,6 @@ namespace YUCP.PatchCleanup
                 {
                     try
                     {
-                        // Only process FBX files
                         if (!fbxPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
                         {
                             continue;
@@ -1428,15 +1413,12 @@ namespace YUCP.PatchCleanup
                             
                             if (assetGuid == oldGuid)
                             {
-                                continue; // Skip the old FBX's own meta file
+                                continue;
                             }
                             
                             string content = File.ReadAllText(metaFile);
                             bool wasModified = false;
                             
-                            // Replace GUID references in the meta file
-                            // Look for patterns like: guid: OLD_GUID or {fileID: 11500000, guid: OLD_GUID, type: 2}
-                            // Use word boundaries
                             string oldGuidPattern = @"\b" + oldGuid + @"\b";
                             if (System.Text.RegularExpressions.Regex.IsMatch(content, oldGuidPattern))
                             {
@@ -1501,7 +1483,6 @@ namespace YUCP.PatchCleanup
                     catch { }
                 }
                 
-                // Remove any existing swap for this oldGuid (only one active swap per GUID)
                 swaps.RemoveAll(s => s.oldGuid == oldGuid);
                 
                 // Add new swap

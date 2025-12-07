@@ -24,6 +24,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Package version (e.g., 1.0.0)")]
         public string version = "1.0.0";
         
+        [Tooltip("Package ID (assigned by server when signed, can be used to revoke/remove package)")]
+        public string packageId = "";
+        
         [Tooltip("Author name(s) - separate multiple authors with commas")]
         public string author = "";
         

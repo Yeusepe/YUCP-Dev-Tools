@@ -187,7 +187,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             float segment2End = 0.7f;  // Middle segment ends at 70% (was 60%)
             float alpha1 = 0.2f;        // First segment alpha (was 0.3f)
             float alpha2 = 0.6f;        // Second segment alpha (was 0.8f)
-            float alpha3 = 1.0f;        // Final alpha (unchanged)
+            float alpha3 = 1.0f;
             
             for (int y = 0; y < height; y++)
             {
@@ -470,7 +470,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             };
             
-            // Use the vertical scroller's valueChanged event for reliable scroll tracking
             var verticalScroller = _rightPaneScrollView.verticalScroller;
             if (verticalScroller != null)
             {
@@ -947,7 +946,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             actionsContainer.name = "yucp-support-actions-container";
             actionsContainer.style.flexDirection = FlexDirection.Column;
             actionsContainer.style.alignItems = Align.FlexEnd;
-            actionsContainer.style.flexShrink = 0; // Don't shrink buttons
+            actionsContainer.style.flexShrink = 0;
             actionsContainer.style.minWidth = 90;
 
             var supportButton = new Button(() => Application.OpenURL(SupportUrl)) { text = "Support" };
@@ -1343,7 +1342,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 EditorGUIUtility.PingObject(profile);
             });
             
-            // Show Open Folder option if profile has a save location
             if (!string.IsNullOrEmpty(profile.profileSaveLocation) && System.IO.Directory.Exists(profile.profileSaveLocation))
             {
                 menu.AddItem(new GUIContent("Show in Explorer"), false, () => 
@@ -1446,12 +1444,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _metadataSection = null;
             _bannerContainer = null;
             
-            // Remove old banner button from ScrollView if it exists and clean up any duplicates
             if (_rightPaneScrollView != null)
             {
-                // Find and remove ALL banner change buttons (in case there are duplicates)
                 var existingButtons = _rightPaneScrollView.Query<Button>(className: "yucp-overlay-hover-button").ToList();
-                // Also check for the old class name for cleanup
                 var oldButtons = _rightPaneScrollView.Query<Button>(className: "yucp-banner-change-button").ToList();
                 existingButtons.AddRange(oldButtons);
                 foreach (var btn in existingButtons)
@@ -1520,7 +1515,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 var optionsSection = CreateExportOptionsSection(selectedProfile);
                 contentWrapper.Add(optionsSection);
                 
-                // Export Folders Section
                 var foldersSection = CreateFoldersSection(selectedProfile);
                 contentWrapper.Add(foldersSection);
                 
@@ -1543,6 +1537,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Quick Actions
                 var actionsSection = CreateQuickActionsSection(selectedProfile);
                 contentWrapper.Add(actionsSection);
+                
+                // Package Signing Section
+                var signingSection = CreatePackageSigningSection(selectedProfile);
+                contentWrapper.Add(signingSection);
                 
                 _profileDetailsContainer.Add(contentWrapper);
                 
@@ -1612,7 +1610,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 _rightPaneScrollView.RegisterCallback<GeometryChangedEvent>(evt => UpdateBannerButtonPosition());
                 _rightPaneScrollView.Add(_changeBannerButton);
                 
-                // Auto-scan assets when profile is opened (if not scanned yet and has folders)
                 if (selectedProfile != null && selectedProfile.foldersToExport.Count > 0)
                 {
                     if (!selectedProfile.HasScannedAssets)
@@ -1627,7 +1624,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
                 
-                // Auto-scan dependencies if needed (silent, no dialogs)
                 if (selectedProfile.dependencies.Count == 0 && selectedProfile.foldersToExport.Count > 0)
                 {
                     EditorApplication.delayCall += () =>
@@ -1831,7 +1827,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             iconContainer.tooltip = "Click to set custom icon";
             var iconImage = new Image();
             
-            // Display custom icon if set, otherwise show fetched icon or placeholder
             Texture2D displayIcon = link.GetDisplayIcon();
             if (displayIcon != null)
             {
@@ -1981,7 +1976,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     {
                         Undo.RecordObject(profile, "Clear Custom Link Icon");
                         link.customIcon = null;
-                        // Show fetched icon or placeholder
                         Texture2D displayIcon = link.GetDisplayIcon();
                         iconImage.image = displayIcon != null ? displayIcon : GetPlaceholderTexture();
                         EditorUtility.SetDirty(profile);
@@ -2189,11 +2183,34 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                         Debug.Log("[YUCP PackageExporter] Resized favicon to 32x32");
                                     }
                                     
+                                    // Save the icon as an asset so it persists across domain reloads
+                                    string iconAssetPath = PackageBuilder.SaveTextureAsTemporaryAsset(texture, requestData.link.label ?? requestData.domain);
+                                    if (!string.IsNullOrEmpty(iconAssetPath))
+                                    {
+                                        Texture2D savedIcon = AssetDatabase.LoadAssetAtPath<Texture2D>(iconAssetPath);
+                                        if (savedIcon != null)
+                                        {
+                                            requestData.link.icon = savedIcon;
+                                            Debug.Log($"[YUCP PackageExporter] Saved favicon as asset: {iconAssetPath}");
+                                        }
+                                        else
+                                        {
+                                            // Fallback to in-memory texture if asset loading fails
+                                            requestData.link.icon = texture;
+                                            Debug.LogWarning($"[YUCP PackageExporter] Failed to load saved icon asset, using in-memory texture");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // Fallback to in-memory texture if saving fails
+                                        requestData.link.icon = texture;
+                                        Debug.LogWarning($"[YUCP PackageExporter] Failed to save favicon as asset, using in-memory texture");
+                                    }
+                                    
                                     // Only set fetched icon if no custom icon is set
-                                    requestData.link.icon = texture;
                                     if (requestData.link.customIcon == null)
                                     {
-                                        requestData.iconImage.image = texture;
+                                        requestData.iconImage.image = requestData.link.icon;
                                         Debug.Log($"[YUCP PackageExporter] Favicon successfully set for {requestData.domain}");
                                     }
                                     else
@@ -2228,11 +2245,34 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                         Debug.Log("[YUCP PackageExporter] Resized favicon to 32x32");
                                     }
                                     
+                                    // Save the icon as an asset so it persists across domain reloads
+                                    string iconAssetPath = PackageBuilder.SaveTextureAsTemporaryAsset(texture, requestData.link.label ?? requestData.domain);
+                                    if (!string.IsNullOrEmpty(iconAssetPath))
+                                    {
+                                        Texture2D savedIcon = AssetDatabase.LoadAssetAtPath<Texture2D>(iconAssetPath);
+                                        if (savedIcon != null)
+                                        {
+                                            requestData.link.icon = savedIcon;
+                                            Debug.Log($"[YUCP PackageExporter] Saved favicon as asset: {iconAssetPath}");
+                                        }
+                                        else
+                                        {
+                                            // Fallback to in-memory texture if asset loading fails
+                                            requestData.link.icon = texture;
+                                            Debug.LogWarning($"[YUCP PackageExporter] Failed to load saved icon asset, using in-memory texture");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // Fallback to in-memory texture if saving fails
+                                        requestData.link.icon = texture;
+                                        Debug.LogWarning($"[YUCP PackageExporter] Failed to save favicon as asset, using in-memory texture");
+                                    }
+                                    
                                     // Only set fetched icon if no custom icon is set
-                                    requestData.link.icon = texture;
                                     if (requestData.link.customIcon == null)
                                     {
-                                        requestData.iconImage.image = texture;
+                                        requestData.iconImage.image = requestData.link.icon;
                                         Debug.Log($"[YUCP PackageExporter] Favicon successfully set for {requestData.domain}");
                                     }
                                     else
@@ -2662,7 +2702,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var statsContainer = new VisualElement();
             statsContainer.AddToClassList("yucp-stats-container");
             
-            // Folders
             AddStatItem(statsContainer, "Folders to Export", profile.foldersToExport.Count.ToString());
             
             // Dependencies
@@ -2788,7 +2827,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             });
             togglesContainer.Add(includeDepsToggle);
             
-            // Recurse Folders
             var recurseFoldersToggle = new Toggle("Recurse Folders") { value = profile.recurseFolders };
             recurseFoldersToggle.AddToClassList("yucp-toggle");
             recurseFoldersToggle.tooltip = "Search subfolders when collecting assets to export";
@@ -3728,7 +3766,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (node.Assets.Count == 0 && node.Children.Count == 0 && depth > 0)
                 return;
             
-            // Render folder header (skip root "Assets" node, but show it if it has direct assets)
             if (depth > 0 || (depth == 0 && node.Assets.Count > 0))
             {
                 if (depth > 0)
@@ -3738,7 +3775,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
             
-            // Render assets in this folder
             if (node.Assets.Count > 0 && (depth == 0 || node.IsExpanded))
             {
                 foreach (var asset in node.Assets)
@@ -3748,7 +3784,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
             
-            // Render child folders
             if (node.Children.Count > 0 && (depth == 0 || node.IsExpanded))
             {
                 foreach (var child in node.Children)
@@ -3762,7 +3797,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var folderHeader = new VisualElement();
             folderHeader.AddToClassList("yucp-inspector-folder-header");
-            folderHeader.style.paddingLeft = 12 + (depth * 24); // Increased indentation for better hierarchy
+            folderHeader.style.paddingLeft = 12 + (depth * 24);
             
             var folderHeaderContent = new VisualElement();
             folderHeaderContent.AddToClassList("yucp-inspector-folder-content");
@@ -3773,9 +3808,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 node.IsExpanded = !node.IsExpanded;
                 folderExpandedStates[node.FullPath] = node.IsExpanded;
                 
-                // Rebuild just the asset list, not the entire UI
-                // The folderHeader is inside a ScrollView, which is inside the asset-list-container
-                // Go up to find the container
                 VisualElement scrollView = folderHeader.parent;
                 if (scrollView != null)
                 {
@@ -3791,7 +3823,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             expandButton.text = node.IsExpanded ? "▼" : "▶";
             folderHeaderContent.Add(expandButton);
             
-            // Folder name label - make it clickable to navigate to folder
             var folderLabel = new Label(node.Name);
             folderLabel.AddToClassList("yucp-inspector-folder-label");
             folderLabel.RegisterCallback<MouseDownEvent>(evt =>
@@ -3968,7 +3999,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var assetItem = new VisualElement();
             assetItem.AddToClassList("yucp-asset-item");
-            assetItem.style.paddingLeft = 12 + (depth * 24); // Increased indentation to match folders
+            assetItem.style.paddingLeft = 12 + (depth * 24);
             
             // Checkbox
             var checkbox = new Toggle { value = asset.included };
@@ -4717,6 +4748,40 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return section;
         }
 
+        private VisualElement _signingSectionElement;
+
+        private VisualElement CreatePackageSigningSection(ExportProfile profile)
+        {
+            var signingTab = new YUCP.DevTools.Editor.PackageSigning.UI.PackageSigningTab(profile);
+            _signingSectionElement = signingTab.CreateUI();
+            return _signingSectionElement;
+        }
+
+        /// <summary>
+        /// Refresh the signing section when certificate changes
+        /// </summary>
+        public void RefreshSigningSection()
+        {
+            // If a profile is selected, refresh the entire details view to ensure signing section updates
+            if (selectedProfile != null)
+            {
+                UpdateProfileDetails();
+            }
+            // If no profile selected but signing section exists, just refresh it
+            else if (_signingSectionElement != null)
+            {
+                var parent = _signingSectionElement.parent;
+                if (parent != null)
+                {
+                    var index = parent.IndexOf(_signingSectionElement);
+                    _signingSectionElement.RemoveFromHierarchy();
+                    
+                    var newSigningSection = CreatePackageSigningSection(selectedProfile);
+                    parent.Insert(index, newSigningSection);
+                }
+            }
+        }
+        
         private VisualElement CreateQuickActionsSection(ExportProfile profile)
         {
             var section = new VisualElement();
@@ -6309,7 +6374,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             versionField.RegisterValueChangedCallback(evt =>
             {
-                // Handle placeholder visibility
                 if (versionPlaceholder != null)
                 {
                     if (string.IsNullOrEmpty(evt.newValue))
