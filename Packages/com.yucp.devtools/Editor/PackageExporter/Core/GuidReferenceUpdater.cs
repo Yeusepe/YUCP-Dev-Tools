@@ -136,7 +136,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 									updatedCount++;
 								}
 							}
-							catch (Exception ex)
+							catch (Exception)
 							{
 								// Some files might be binary or locked, ignore errors silently
 								// Debug.LogWarning($"[GuidReferenceUpdater] Could not process {assetFile}: {ex.Message}");
@@ -154,6 +154,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		}
 	}
 }
+
 
 
 

@@ -57,7 +57,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var window = GetWindow<YUCPPackageExporterWindow>();
             var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.devtools/Resources/DevTools.png");
             window.titleContent = new GUIContent("YUCP Package Exporter", icon);
-            window.minSize = new Vector2(400, 500); // Reduced minimum size for responsive design
+            window.minSize = new Vector2(800, 700); // Increased default window size
             window.Show();
         }
         
@@ -84,6 +84,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private Button _exportSelectedButton;
         private Button _exportAllButton;
         private VisualElement _supportToast;
+        
+        // Animated GIF support
+        private Dictionary<string, AnimatedGifData> animatedGifs = new Dictionary<string, AnimatedGifData>();
+        
+        // Resizable inspector state
+        private bool isResizingInspector = false;
+        private float resizeStartY = 0f;
+        private float resizeStartHeight = 0f;
+        private VisualElement currentResizableContainer = null; // Track which container is being resized
+        private Rect currentResizeRect = Rect.zero; // Store the resize rect for cursor
         
         // State
         private List<ExportProfile> allProfiles = new List<ExportProfile>();
@@ -150,6 +160,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             LoadProfiles();
             LoadResources();
+            
+            // Refresh dependencies on domain reload
+            EditorApplication.delayCall += RefreshDependenciesOnDomainReload;
+        }
+        
+        private void RefreshDependenciesOnDomainReload()
+        {
+            // Refresh dependencies for all profiles that have dependencies configured
+            if (selectedProfile != null && selectedProfile.dependencies.Count > 0)
+            {
+                // Silently refresh dependencies to pick up newly installed packages
+                ScanProfileDependencies(selectedProfile, silent: true);
+            }
         }
         
         private void LoadResources()
@@ -240,6 +263,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             dottedBorderTexture.Apply();
             dottedBorderTexture.wrapMode = TextureWrapMode.Repeat;
+        }
+        
+        private void OnGUI()
+        {
+            // Handle cursor changes for resize handle
+            // Use the stored rect instead of worldBound to avoid coordinate issues
+            if (!currentResizeRect.Equals(Rect.zero) && !isResizingInspector)
+            {
+                EditorGUIUtility.AddCursorRect(currentResizeRect, MouseCursor.ResizeVertical);
+            }
         }
         
         private void CreateGUI()
@@ -371,6 +404,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (displayBanner != null)
             {
                 _bannerImageContainer.style.backgroundImage = new StyleBackground(displayBanner);
+                
+                // Check if banner is a GIF and animate it
+                string bannerPath = AssetDatabase.GetAssetPath(displayBanner);
+                if (!string.IsNullOrEmpty(bannerPath) && bannerPath.EndsWith(".gif", StringComparison.OrdinalIgnoreCase))
+                {
+                    StartGifAnimation(_bannerImageContainer, bannerPath);
+                }
             }
             bannerContainer.Add(_bannerImageContainer);
             
@@ -556,7 +596,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
             
-            string bannerPath = EditorUtility.OpenFilePanel("Select Banner Image", "", "png,jpg,jpeg");
+            string bannerPath = EditorUtility.OpenFilePanel("Select Banner Image", "", "png,jpg,jpeg,gif");
             if (!string.IsNullOrEmpty(bannerPath))
             {
                 string projectPath = "Assets/YUCP/ExportProfiles/Banners/";
@@ -1436,9 +1476,37 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
             
+            // Save current inspector height to profile before switching
+            if (selectedProfile != null && currentResizableContainer != null)
+            {
+                float currentHeight = currentResizableContainer.resolvedStyle.height;
+                if (currentHeight <= 0)
+                {
+                    currentHeight = currentResizableContainer.layout.height;
+                }
+                if (currentHeight > 0)
+                {
+                    Undo.RecordObject(selectedProfile, "Save Inspector Height");
+                    selectedProfile.InspectorHeight = currentHeight;
+                    EditorUtility.SetDirty(selectedProfile);
+                }
+            }
+            
             _emptyState.style.display = DisplayStyle.None;
             _profileDetailsContainer.style.display = DisplayStyle.Flex;
+            
+            // Reset scroll position when switching profiles to prevent scroll position bug
+            var oldScrollView = _profileDetailsContainer.Q<ScrollView>(className: "yucp-inspector-list");
+            if (oldScrollView != null)
+            {
+                oldScrollView.verticalScroller.value = 0;
+            }
+            
             _profileDetailsContainer.Clear();
+            
+            // Reset resize tracking
+            currentResizableContainer = null;
+            currentResizeRect = Rect.zero;
             _bannerImageContainer = null;
             _bannerGradientOverlay = null;
             _metadataSection = null;
@@ -1864,7 +1932,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             Label labelPlaceholder = null;
             if (string.IsNullOrEmpty(link.label))
             {
-                labelPlaceholder = new Label("Link label (optional)");
+                labelPlaceholder = new Label("Enter link name here (optional)");
                 labelPlaceholder.AddToClassList("yucp-label-secondary");
                 labelPlaceholder.style.position = Position.Absolute;
                 labelPlaceholder.style.left = 8;
@@ -1872,6 +1940,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 labelPlaceholder.pickingMode = PickingMode.Ignore;
                 labelRow.Add(labelPlaceholder);
             }
+            labelField.tooltip = "Enter a display name for this link (e.g., 'Gumroad', 'Itch.io')";
             
             labelField.RegisterValueChangedCallback(evt =>
             {
@@ -1910,7 +1979,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             Label urlPlaceholder = null;
             if (string.IsNullOrEmpty(link.url))
             {
-                urlPlaceholder = new Label("https://example.com");
+                urlPlaceholder = new Label("Enter link URL here (e.g., https://example.com)");
                 urlPlaceholder.AddToClassList("yucp-label-secondary");
                 urlPlaceholder.style.position = Position.Absolute;
                 urlPlaceholder.style.left = 8;
@@ -1918,6 +1987,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 urlPlaceholder.pickingMode = PickingMode.Ignore;
                 urlRow.Add(urlPlaceholder);
             }
+            urlField.tooltip = "Enter the full URL to the product page (e.g., https://example.gumroad.com/l/product)";
             
             urlField.RegisterValueChangedCallback(evt =>
             {
@@ -1940,10 +2010,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Undo.RecordObject(profile, "Change Link URL");
                     link.url = evt.newValue;
                     EditorUtility.SetDirty(profile);
+                    
+                    // Always fetch and save icon when URL is entered/changed
+                    if (!string.IsNullOrEmpty(evt.newValue))
+                    {
+                        EditorApplication.delayCall += () =>
+                        {
+                            if (profile != null && link != null && !string.IsNullOrEmpty(link.url))
+                            {
+                                FetchFavicon(profile, link, iconImage);
+                            }
+                        };
+                    }
                 }
             });
             
-            // Fetch favicon when user finishes typing (on blur)
+            // Also fetch favicon when user finishes typing (on blur) as backup
             urlField.RegisterCallback<BlurEvent>(evt =>
             {
                 Debug.Log($"[YUCP PackageExporter] URL field blur event triggered for URL: {link.url}");
@@ -2776,7 +2858,108 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 section.Add(successContainer);
             }
             
+            // Add warnings section (non-critical issues)
+            var warnings = CollectWarnings(profile);
+            if (warnings.Count > 0)
+            {
+                var warningsContainer = new VisualElement();
+                warningsContainer.AddToClassList("yucp-help-box");
+                warningsContainer.style.backgroundColor = new Color(0.7f, 0.65f, 0.1f, 0.3f); // Yellow warning color
+                warningsContainer.style.marginTop = 8;
+                warningsContainer.style.borderLeftWidth = 3;
+                warningsContainer.style.borderLeftColor = new Color(0.9f, 0.85f, 0.2f, 1f); // Yellow border
+                
+                var warningsLabel = new Label("Warnings:");
+                warningsLabel.AddToClassList("yucp-label");
+                warningsLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                warningsLabel.style.marginBottom = 4;
+                warningsContainer.Add(warningsLabel);
+                
+                foreach (var warning in warnings)
+                {
+                    var warningText = new Label($"• {warning}");
+                    warningText.AddToClassList("yucp-help-box-text");
+                    warningText.style.color = new StyleColor(new Color(0.9f, 0.9f, 0.9f, 1f));
+                    warningsContainer.Add(warningText);
+                }
+                
+                section.Add(warningsContainer);
+            }
+            
             return section;
+        }
+        
+        private List<string> CollectWarnings(ExportProfile profile)
+        {
+            var warnings = new List<string>();
+            
+            // Check for derived patches with missing origin files
+            if (profile.discoveredAssets != null)
+            {
+                foreach (var asset in profile.discoveredAssets)
+                {
+                    if (IsDerivedFbx(asset.assetPath, out DerivedSettings settings, out string basePath))
+                    {
+                        if (string.IsNullOrEmpty(basePath))
+                        {
+                            string assetName = Path.GetFileName(asset.assetPath);
+                            warnings.Add($"Derived patch '{assetName}' is missing its origin file");
+                        }
+                        else
+                        {
+                            // Check if the base file exists (basePath from AssetDatabase is relative)
+                            string baseAssetPath = basePath;
+                            if (!Path.IsPathRooted(baseAssetPath))
+                            {
+                                string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                                baseAssetPath = Path.GetFullPath(Path.Combine(projectPath, baseAssetPath));
+                            }
+                            
+                            if (!File.Exists(baseAssetPath))
+                            {
+                                string assetName = Path.GetFileName(asset.assetPath);
+                                warnings.Add($"Derived patch '{assetName}' origin file not found: {basePath}");
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Check for problematic dependencies
+            if (profile.dependencies != null)
+            {
+                foreach (var dep in profile.dependencies)
+                {
+                    if (dep.enabled)
+                    {
+                        string packageName = dep.packageName ?? "";
+                        string displayName = dep.displayName ?? "";
+                        string combinedName = (packageName + " " + displayName).ToLower();
+                        
+                        // Check for Temp/Temporary (but not template)
+                        bool hasTemp = (combinedName.Contains(" temp ") || combinedName.StartsWith("temp ") || 
+                                       combinedName.EndsWith(" temp") || combinedName == "temp" || 
+                                       combinedName.Contains("temporary")) && !combinedName.Contains("template");
+                        
+                        // Check for YUCP Dev tools
+                        bool hasDevTools = combinedName.Contains("yucp dev tools") || combinedName.Contains("yucp.devtools");
+                        
+                        if (hasTemp)
+                        {
+                            string depName = string.IsNullOrEmpty(displayName) ? packageName : displayName;
+                            warnings.Add($"Dependency '{depName}' contains 'Temp' or 'Temporary' - not recommended for general distribution");
+                        }
+                        
+                        if (hasDevTools)
+                        {
+                            string depName = string.IsNullOrEmpty(displayName) ? packageName : displayName;
+                            warnings.Add($"Dependency '{depName}' contains 'YUCP Dev tools' - not recommended for general distribution");
+                        }
+                    }
+                }
+            }
+            
+            return warnings;
         }
 
         private void UpdateValidationDisplay(ExportProfile profile)
@@ -2823,6 +3006,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Undo.RecordObject(profile, "Change Include Dependencies");
                     profile.includeDependencies = evt.newValue;
                     EditorUtility.SetDirty(profile);
+                    // Update the asset list to reflect the toggle change
+                    UpdateProfileDetails();
                 }
             });
             togglesContainer.Add(includeDepsToggle);
@@ -3269,6 +3454,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var section = new VisualElement();
             section.AddToClassList("yucp-section");
+            // Ensure section can grow without limits
+            section.style.flexGrow = 0; // Don't grow automatically, but allow manual sizing
+            section.style.flexShrink = 1; // Allow shrinking if needed
+            section.style.overflow = Overflow.Visible; // Allow content to extend beyond bounds if needed
             
             var header = new VisualElement();
             header.AddToClassList("yucp-inspector-header");
@@ -3576,11 +3765,165 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     var filteredList = filteredAssets.ToList();
                     
+                    // Removed top resize handle - only using bottom edge resizing
+                    
                     // Asset list container (wraps the scrollview for easy rebuilding)
                     var assetListContainer = new VisualElement();
                     assetListContainer.name = "asset-list-container";
+                    // Load inspector height from profile, or use default
+                    float profileHeight = profile != null ? profile.InspectorHeight : 500f;
+                    assetListContainer.style.height = new Length(profileHeight, LengthUnit.Pixel);
+                    assetListContainer.style.minHeight = 200;
+                    // Don't set maxHeight - let it grow unlimited
+                    assetListContainer.style.flexDirection = FlexDirection.Column; // Ensure children stack vertically
+                    assetListContainer.style.overflow = Overflow.Visible; // Allow content to extend
+                    assetListContainer.style.position = Position.Relative; // Ensure proper positioning
+                    assetListContainer.pickingMode = PickingMode.Position;
+                    
+                    // Make the bottom edge of the container resizable
+                    assetListContainer.RegisterCallback<MouseMoveEvent>(evt =>
+                    {
+                        if (!isResizingInspector)
+                        {
+                            // Check if mouse is near the bottom edge (within 10 pixels)
+                            var localPos = evt.localMousePosition;
+                            // Use layout.height if resolvedStyle.height is not available
+                            float containerHeight = assetListContainer.resolvedStyle.height;
+                            if (containerHeight <= 0)
+                            {
+                                containerHeight = assetListContainer.layout.height;
+                            }
+                            if (localPos.y >= containerHeight - 10 && localPos.y <= containerHeight + 5)
+                            {
+                                assetListContainer.style.borderBottomWidth = 2;
+                                assetListContainer.style.borderBottomColor = new Color(0.5f, 0.5f, 0.5f, 0.8f);
+                                currentResizableContainer = assetListContainer;
+                                
+                                // Calculate the resize rect in window coordinates for cursor
+                                var worldBounds = assetListContainer.worldBound;
+                                currentResizeRect = new Rect(worldBounds.x, worldBounds.yMax - 10, worldBounds.width, 10);
+                            }
+                            else
+                            {
+                                assetListContainer.style.borderBottomWidth = 0;
+                                if (currentResizableContainer == assetListContainer)
+                                {
+                                    currentResizableContainer = null;
+                                    currentResizeRect = Rect.zero;
+                                }
+                            }
+                        }
+                    });
+                    
+                    assetListContainer.RegisterCallback<MouseLeaveEvent>(evt =>
+                    {
+                        if (!isResizingInspector)
+                        {
+                            assetListContainer.style.borderBottomWidth = 0;
+                        }
+                    });
+                    
+                    // Allow resizing from the bottom edge of the container
+                    assetListContainer.RegisterCallback<MouseDownEvent>(evt =>
+                    {
+                        if (evt.button == 0)
+                        {
+                            var localPos = evt.localMousePosition;
+                            // Use layout.height if resolvedStyle.height is not available
+                            float containerHeight = assetListContainer.resolvedStyle.height;
+                            if (containerHeight <= 0)
+                            {
+                                containerHeight = assetListContainer.layout.height;
+                            }
+                            // Check if click is near bottom edge (within 10 pixels)
+                            if (localPos.y >= containerHeight - 10 && localPos.y <= containerHeight + 5)
+                            {
+                                isResizingInspector = true;
+                                resizeStartY = evt.mousePosition.y;
+                                float currentHeight = assetListContainer.resolvedStyle.height;
+                                if (currentHeight <= 0)
+                                {
+                                    currentHeight = assetListContainer.layout.height;
+                                }
+                                resizeStartHeight = currentHeight;
+                                assetListContainer.CaptureMouse();
+                                evt.StopPropagation();
+                            }
+                        }
+                    });
+                    
+                    assetListContainer.RegisterCallback<MouseMoveEvent>(evt =>
+                    {
+                        if (isResizingInspector && assetListContainer.HasMouseCapture())
+                        {
+                            // Fix inverted direction: dragging down (mousePosition.y increases) should increase height
+                            float deltaY = evt.mousePosition.y - resizeStartY;
+                            float newHeight = resizeStartHeight + deltaY;
+                            // Allow very large sizes - no upper limit
+                            newHeight = Mathf.Max(newHeight, 200f); // Only enforce minimum
+                            
+                            // Force the height using Length with pixels
+                            assetListContainer.style.height = new Length(newHeight, LengthUnit.Pixel);
+                            
+                            // Update resize rect for cursor
+                            var worldBounds = assetListContainer.worldBound;
+                            currentResizeRect = new Rect(worldBounds.x, worldBounds.yMax - 10, worldBounds.width, 10);
+                            // Explicitly remove maxHeight constraint
+                            assetListContainer.style.maxHeight = new StyleLength(StyleKeyword.None);
+                            assetListContainer.style.flexGrow = 0;
+                            assetListContainer.style.flexShrink = 0;
+                            assetListContainer.style.overflow = Overflow.Visible;
+                            
+                            // Force a layout update
+                            assetListContainer.MarkDirtyRepaint();
+                            evt.StopPropagation();
+                        }
+                    });
+                    
+                    assetListContainer.RegisterCallback<MouseUpEvent>(evt =>
+                    {
+                        if (evt.button == 0 && isResizingInspector)
+                        {
+                            isResizingInspector = false;
+                            assetListContainer.ReleaseMouse();
+                            assetListContainer.style.borderBottomWidth = 0;
+                            
+                            // Save the new height to the profile
+                            if (profile != null)
+                            {
+                                float finalHeight = assetListContainer.resolvedStyle.height;
+                                if (finalHeight <= 0)
+                                {
+                                    finalHeight = assetListContainer.layout.height;
+                                }
+                                if (finalHeight > 0)
+                                {
+                                    Undo.RecordObject(profile, "Resize Inspector");
+                                    profile.InspectorHeight = finalHeight;
+                                    EditorUtility.SetDirty(profile);
+                                }
+                            }
+                            
+                            evt.StopPropagation();
+                        }
+                    });
+                    
                     RebuildAssetList(profile, assetListContainer);
+                    
+                    // Store reference to container for resize updates
+                    assetListContainer.userData = "asset-list-container-ref";
+                    
                     section.Add(assetListContainer);
+                    
+                    // After adding to section, ensure ScrollView max-height is overridden
+                    EditorApplication.delayCall += () =>
+                    {
+                        var scrollView = assetListContainer.Q<ScrollView>(className: "yucp-inspector-list");
+                        if (scrollView != null)
+                        {
+                            scrollView.style.maxHeight = new StyleLength(StyleKeyword.None);
+                        }
+                    };
                     
                     // Permanent ignore list
                     var ignoreLabel = new Label("Permanent Ignore List");
@@ -3630,8 +3973,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         string selectedFolder = EditorUtility.OpenFolderPanel("Select Folder to Ignore", Application.dataPath, "");
                         if (!string.IsNullOrEmpty(selectedFolder))
                         {
-                            string relativePath = GetRelativePath(selectedFolder);
-                            AddFolderToIgnoreList(profile, relativePath);
+                            // Use full absolute path instead of relative path
+                            AddFolderToIgnoreList(profile, selectedFolder);
                         }
                     }) { text = "+ Add Folder to Ignore List" };
                     addIgnoreButton.AddToClassList("yucp-button");
@@ -3647,6 +3990,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             // Filter assets
             var filteredAssets = profile.discoveredAssets.AsEnumerable();
+            
+            // Respect the Include Dependencies toggle - filter out dependencies if toggle is off
+            if (!profile.includeDependencies)
+            {
+                filteredAssets = filteredAssets.Where(a => !a.isDependency);
+            }
             
             if (!string.IsNullOrWhiteSpace(inspectorSearchFilter))
             {
@@ -3665,9 +4014,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             var filteredList = filteredAssets.ToList();
             
-            // Asset list scrollview
+            // Asset list scrollview - make it fill the container
             var assetListScroll = new ScrollView();
             assetListScroll.AddToClassList("yucp-inspector-list");
+            assetListScroll.style.flexGrow = 1; // Fill available space
+            assetListScroll.style.flexShrink = 1; // Allow shrinking
+            assetListScroll.style.width = Length.Percent(100); // Full width
+            assetListScroll.style.height = Length.Percent(100); // Full height of container
+            assetListScroll.style.overflow = Overflow.Hidden; // Prevent horizontal scrolling
+            assetListScroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden; // Hide horizontal scrollbar
+            // Override CSS max-height constraint to allow unlimited resizing
+            assetListScroll.style.maxHeight = new StyleLength(StyleKeyword.None);
             
             if (filteredList.Count == 0)
             {
@@ -3809,13 +4166,26 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 folderExpandedStates[node.FullPath] = node.IsExpanded;
                 
                 VisualElement scrollView = folderHeader.parent;
-                if (scrollView != null)
+                if (scrollView != null && scrollView is ScrollView)
                 {
+                    // Store current scroll position
+                    float scrollValue = (scrollView as ScrollView).verticalScroller.value;
+                    
                     VisualElement container = scrollView.parent;
                     if (container != null && container.name == "asset-list-container")
                     {
                         container.Clear();
                         RebuildAssetList(profile, container);
+                        
+                        // Restore scroll position after layout update
+                        EditorApplication.delayCall += () =>
+                        {
+                            var newScrollView = container.Q<ScrollView>();
+                            if (newScrollView != null)
+                            {
+                                newScrollView.verticalScroller.value = scrollValue;
+                            }
+                        };
                     }
                 }
             });
@@ -4371,6 +4741,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
             helpBox.Add(helpText);
             section.Add(helpBox);
             
+            // Disclaimer about automatic installation
+            var disclaimerBox = new VisualElement();
+            disclaimerBox.AddToClassList("yucp-help-box");
+            disclaimerBox.style.marginTop = 8;
+            disclaimerBox.style.backgroundColor = new Color(0.2f, 0.4f, 0.6f, 0.2f);
+            var disclaimerText = new Label("Everything you select here will be asked for the user to install when importing the package, and will be installed automatically if clicked \"Install\" on their end");
+            disclaimerText.AddToClassList("yucp-help-box-text");
+            disclaimerText.style.unityFontStyleAndWeight = FontStyle.Bold;
+            disclaimerBox.Add(disclaimerText);
+            section.Add(disclaimerBox);
+            
             // Search/Filter for dependencies
             if (profile.dependencies.Count > 0)
             {
@@ -4563,6 +4944,51 @@ namespace YUCP.DevTools.Editor.PackageExporter
             headerRow.Add(removeButton);
             
             card.Add(headerRow);
+            
+            // Warning box for problematic dependencies
+            string packageName = dep.packageName ?? "";
+            string displayName = dep.displayName ?? "";
+            string combinedName = (packageName + " " + displayName).ToLower();
+            
+            // Check for "temp" or "temporary" but NOT "template"
+            bool hasTempWarning = (combinedName.Contains(" temp ") || combinedName.StartsWith("temp ") || combinedName.EndsWith(" temp") || 
+                                   combinedName == "temp" || combinedName.Contains("temporary")) && 
+                                   !combinedName.Contains("template");
+            bool hasDevToolsWarning = combinedName.Contains("yucp dev tools") || combinedName.Contains("yucp.devtools");
+            
+            if (hasTempWarning || hasDevToolsWarning)
+            {
+                string warningMessage = "";
+                if (hasTempWarning && hasDevToolsWarning)
+                {
+                    warningMessage = "'Temp' or 'Temporary' folders are usually unique to your project and are not recommended to be included for the general public.\n\n" +
+                                   "'YUCP Dev tools' is for creators and is not recommended to be included for the general public.";
+                }
+                else if (hasTempWarning)
+                {
+                    warningMessage = "'Temp' or 'Temporary' folders are usually unique to your project and are not recommended to be included for the general public.";
+                }
+                else if (hasDevToolsWarning)
+                {
+                    warningMessage = "'YUCP Dev tools' is for creators and is not recommended to be included for the general public.";
+                }
+                
+                var warningBox = new VisualElement();
+                warningBox.name = "dependency-warning-box";
+                warningBox.AddToClassList("yucp-help-box");
+                warningBox.style.marginTop = 8;
+                warningBox.style.marginBottom = 8;
+                warningBox.style.backgroundColor = new Color(0.7f, 0.65f, 0.1f, 0.3f); // Yellow warning color (more yellow, less green)
+                warningBox.style.borderLeftWidth = 3;
+                warningBox.style.borderLeftColor = new Color(0.9f, 0.85f, 0.2f, 1f); // Yellow border
+                
+                var warningText = new Label(warningMessage);
+                warningText.AddToClassList("yucp-help-box-text");
+                warningText.style.color = new StyleColor(new Color(0.9f, 0.9f, 0.9f, 1f)); // Light gray/white text to match design
+                warningBox.Add(warningText);
+                
+                card.Add(warningBox);
+            }
             
             // Content area - only show if enabled
             if (dep.enabled)
@@ -4996,7 +5422,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void BrowseForIcon(ExportProfile profile)
         {
-            string iconPath = EditorUtility.OpenFilePanel("Select Package Icon", "", "png,jpg,jpeg");
+            string iconPath = EditorUtility.OpenFilePanel("Select Package Icon", "", "png,jpg,jpeg,gif");
             if (!string.IsNullOrEmpty(iconPath))
             {
                 string projectPath = "Assets/YUCP/ExportProfiles/Icons/";
@@ -5026,7 +5452,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void BrowseForProductLinkIcon(ExportProfile profile, ProductLink link, Image iconImage)
         {
-            string iconPath = EditorUtility.OpenFilePanel("Select Custom Icon for Link", "", "png,jpg,jpeg");
+            string iconPath = EditorUtility.OpenFilePanel("Select Custom Icon for Link", "", "png,jpg,jpeg,gif");
             if (!string.IsNullOrEmpty(iconPath))
             {
                 string projectPath = "Assets/YUCP/ExportProfiles/LinkIcons/";
@@ -5118,6 +5544,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             AssetDatabase.SaveAssets();
             UpdateProfileDetails();
         }
+        
 
         // Profile CRUD operations
         private void LoadProfiles()
@@ -5568,6 +5995,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     profile.dependencies.Add(dep);
                 }
                 
+                // Always ensure @com.yucp.devtools is included as a dependency
+                if (!profile.dependencies.Any(d => d.packageName == "com.yucp.devtools"))
+                {
+                    var devtoolsDep = new PackageDependency("com.yucp.devtools", "*", "YUCP Dev Tools", false);
+                    devtoolsDep.enabled = true;
+                    profile.dependencies.Add(devtoolsDep);
+                }
+                
                 if (!silent)
                 {
                     EditorUtility.DisplayProgressBar("Scanning Dependencies", "Auto-detecting usage...", 0.8f);
@@ -5723,18 +6158,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 ignoreFolders.Add(folderPath);
                 EditorUtility.SetDirty(profile);
                 
-                if (EditorUtility.DisplayDialog(
-                    "Added to Ignore List",
-                    $"Added '{folderPath}' to ignore list.\n\nRescan assets now to apply changes?",
-                    "Rescan",
-                    "Later"))
-                {
-                    ScanAssetsForInspector(profile);
-                }
-                else
-                {
-                    UpdateProfileDetails();
-                }
+                // Automatically rescan without popup
+                ScanAssetsForInspector(profile, silent: true);
             }
             else
             {
@@ -7674,6 +8099,191 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     _overlayBackdrop.style.visibility = Visibility.Hidden;
                 }
             }).StartingIn(300);
+        }
+        
+        // Animated GIF support
+        private class AnimatedGifData
+        {
+            public List<Texture2D> frames = new List<Texture2D>();
+            public List<float> frameDelays = new List<float>(); // Delay in seconds
+            public int currentFrame = 0;
+            public float timeSinceLastFrame = 0f;
+            public VisualElement targetElement;
+            public string gifPath;
+            public bool isAnimating = false;
+        }
+        
+        private void StartGifAnimation(VisualElement element, string gifPath)
+        {
+            if (string.IsNullOrEmpty(gifPath) || element == null)
+                return;
+                
+            // Stop any existing animation for this element
+            if (animatedGifs.ContainsKey(gifPath))
+            {
+                var existing = animatedGifs[gifPath];
+                if (existing.targetElement == element && existing.isAnimating)
+                {
+                    return; // Already animating
+                }
+                else
+                {
+                    // Clean up old animation
+                    existing.isAnimating = false;
+                    animatedGifs.Remove(gifPath);
+                }
+            }
+            
+            // Try to extract frames from GIF file
+            // Note: Unity's Texture2D.LoadImage only loads the first frame
+            // For full animation, we need to parse the GIF file manually
+            try
+            {
+                byte[] gifData = File.ReadAllBytes(gifPath);
+                var frames = ExtractGifFrames(gifData);
+                
+                if (frames != null && frames.Count > 1)
+                {
+                    var gifData_obj = new AnimatedGifData
+                    {
+                        frames = frames,
+                        frameDelays = ExtractGifDelays(gifData),
+                        currentFrame = 0,
+                        timeSinceLastFrame = 0f,
+                        targetElement = element,
+                        gifPath = gifPath,
+                        isAnimating = true
+                    };
+                    
+                    // Default delay if extraction fails
+                    if (gifData_obj.frameDelays.Count == 0)
+                    {
+                        for (int i = 0; i < frames.Count; i++)
+                        {
+                            gifData_obj.frameDelays.Add(0.1f); // 100ms default
+                        }
+                    }
+                    
+                    animatedGifs[gifPath] = gifData_obj;
+                    element.style.backgroundImage = new StyleBackground(frames[0]);
+                    
+                    // Start animation update loop
+                    if (!EditorApplication.update.GetInvocationList().Contains(new System.Action(UpdateGifAnimations)))
+                    {
+                        EditorApplication.update += UpdateGifAnimations;
+                    }
+                }
+                else
+                {
+                    // Single frame or extraction failed, just display first frame
+                    Texture2D firstFrame = AssetDatabase.LoadAssetAtPath<Texture2D>(gifPath);
+                    if (firstFrame != null)
+                    {
+                        element.style.backgroundImage = new StyleBackground(firstFrame);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Package Exporter] Failed to load animated GIF at {gifPath}: {ex.Message}");
+                // Fallback to first frame
+                Texture2D firstFrame = AssetDatabase.LoadAssetAtPath<Texture2D>(gifPath);
+                if (firstFrame != null)
+                {
+                    element.style.backgroundImage = new StyleBackground(firstFrame);
+                }
+            }
+        }
+        
+        private void UpdateGifAnimations()
+        {
+            if (animatedGifs.Count == 0)
+            {
+                EditorApplication.update -= UpdateGifAnimations;
+                return;
+            }
+            
+            float currentTime = (float)EditorApplication.timeSinceStartup;
+            float deltaTime = currentTime - (lastGifUpdateTime > 0 ? lastGifUpdateTime : currentTime);
+            lastGifUpdateTime = currentTime;
+            
+            var keysToRemove = new List<string>();
+            foreach (var kvp in animatedGifs.ToList())
+            {
+                var gif = kvp.Value;
+                if (!gif.isAnimating || gif.targetElement == null || gif.frames.Count == 0)
+                {
+                    keysToRemove.Add(kvp.Key);
+                    continue;
+                }
+                
+                gif.timeSinceLastFrame += deltaTime;
+                
+                if (gif.timeSinceLastFrame >= gif.frameDelays[gif.currentFrame])
+                {
+                    gif.currentFrame = (gif.currentFrame + 1) % gif.frames.Count;
+                    gif.timeSinceLastFrame = 0f;
+                    
+                    if (gif.targetElement != null && gif.frames[gif.currentFrame] != null)
+                    {
+                        gif.targetElement.style.backgroundImage = new StyleBackground(gif.frames[gif.currentFrame]);
+                    }
+                }
+            }
+            
+            foreach (var key in keysToRemove)
+            {
+                animatedGifs.Remove(key);
+            }
+        }
+        
+        private float lastGifUpdateTime = 0f;
+        
+        // Basic GIF frame extraction (simplified - handles common cases)
+        private List<Texture2D> ExtractGifFrames(byte[] gifData)
+        {
+            var frames = new List<Texture2D>();
+            
+            // Unity's Texture2D.LoadImage can only load the first frame
+            // For full GIF support, you would need a proper GIF decoder library
+            // This is a basic implementation that attempts to extract frames
+            
+            try
+            {
+                // Try to load first frame using Unity's built-in loader
+                Texture2D firstFrame = new Texture2D(2, 2);
+                if (firstFrame.LoadImage(gifData))
+                {
+                    frames.Add(firstFrame);
+                }
+                
+                // For additional frames, we would need to parse the GIF file structure
+                // This requires implementing a GIF decoder or using a library
+                // For now, we'll return just the first frame
+                // A proper implementation would:
+                // 1. Parse GIF header
+                // 2. Extract each frame's image data
+                // 3. Decompress using LZW
+                // 4. Convert to Texture2D
+                
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Package Exporter] Failed to extract GIF frames: {ex.Message}");
+            }
+            
+            return frames;
+        }
+        
+        private List<float> ExtractGifDelays(byte[] gifData)
+        {
+            var delays = new List<float>();
+            
+            // Extract frame delays from GIF file
+            // This requires parsing the GIF file structure
+            // For now, return empty list (will use default delays)
+            
+            return delays;
         }
     }
 }

@@ -35,7 +35,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
     private bool showOnlyExcluded = false;
     
     private string lastFoldersHash = "";
-    private bool wasExportInspectorOpen = false;
         
         private void OnEnable()
         {
@@ -515,6 +514,43 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 EditorGUILayout.HelpBox("Profile is valid and ready to export", MessageType.Info);
             }
             
+            // Package ID Management
+            EditorGUILayout.Space(10);
+            EditorGUILayout.LabelField("Package ID Management", EditorStyles.boldLabel);
+            
+            EditorGUI.BeginDisabledGroup(true);
+            EditorGUILayout.TextField("Package ID", string.IsNullOrEmpty(profile.packageId) ? "(Not assigned)" : profile.packageId);
+            EditorGUI.EndDisabledGroup();
+
+            if (!string.IsNullOrEmpty(profile.packageId))
+            {
+                EditorGUILayout.HelpBox(
+                    "Package ID is used to track this package across exports. " +
+                    "Unlinking will generate a new ID on the next export.",
+                    MessageType.Info);
+
+                if (GUILayout.Button("Unlink Package ID", GUILayout.Height(30)))
+                {
+                    if (EditorUtility.DisplayDialog(
+                        "Unlink Package ID",
+                        "Are you sure you want to unlink the Package ID?\n\n" +
+                        "This will clear the current Package ID. A new one will be generated on the next export.",
+                        "Unlink",
+                        "Cancel"))
+                    {
+                        profile.UnlinkPackageId();
+                        EditorUtility.SetDirty(profile);
+                        AssetDatabase.SaveAssets();
+                    }
+                }
+            }
+            else
+            {
+                EditorGUILayout.HelpBox(
+                    "Package ID will be automatically generated on the next export.",
+                    MessageType.Info);
+            }
+
             // Quick Export Button
             EditorGUILayout.Space(10);
             GUI.backgroundColor = new Color(0.3f, 0.7f, 0.9f);
@@ -1090,7 +1126,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             if (showExportInspector && !wasOpen)
             {
-                wasExportInspectorOpen = true;
                 // Scan when section is opened
                 EditorApplication.delayCall += () =>
                 {
@@ -1099,11 +1134,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         ScanAssetsForInspector(profile, silent: true);
                     }
                 };
-            }
-            
-            if (!showExportInspector)
-            {
-                wasExportInspectorOpen = false;
             }
             
             // Always check if scan is needed when section is visible

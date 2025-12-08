@@ -39,7 +39,7 @@
     border-radius: 8px;
     padding: 8px;
     min-height: 200px;
-    max-height: 400px;
+    /* max-height removed to allow resizing - controlled by code */
     overflow: hidden;
 }
 

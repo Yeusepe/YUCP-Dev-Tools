@@ -27,6 +27,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Package ID (assigned by server when signed, can be used to revoke/remove package)")]
         public string packageId = "";
         
+        [Tooltip("Gumroad Product ID (for Gumroad integration)")]
+        public string gumroadProductId = "";
+        
+        [Tooltip("Jinxxy Product ID (for Jinxxy integration)")]
+        public string jinxxyProductId = "";
+        
         [Tooltip("Author name(s) - separate multiple authors with commas")]
         public string author = "";
         
@@ -54,6 +60,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Discovered assets from export folders (populated by scanning)")]
         public List<DiscoveredAsset> discoveredAssets = new List<DiscoveredAsset>();
         
+        [Tooltip("Inspector height in pixels (per-profile preference)")]
+        [SerializeField] private float inspectorHeight = 500f;
+        
+        public float InspectorHeight
+        {
+            get => inspectorHeight > 0 ? inspectorHeight : 500f; // Default to 500 if not set
+            set
+            {
+                if (inspectorHeight != value)
+                {
+                    inspectorHeight = Mathf.Max(200f, value); // Enforce minimum
+                    UnityEditor.EditorUtility.SetDirty(this);
+                }
+            }
+        }
+        
         [Tooltip("Folders to permanently ignore from all exports (like .gitignore)")]
         [SerializeField] private List<string> permanentIgnoreFolders = new List<string>();
         
@@ -77,7 +99,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         [Header("Unity Export Options")]
         [Tooltip("Include dependencies of selected assets")]
-        public bool includeDependencies = true;
+        public bool includeDependencies = false;
         
         [Tooltip("Recursively include all files in selected folders")]
         public bool recurseFolders = true;
@@ -144,6 +166,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// <summary>
         /// Update statistics after successful export
         /// </summary>
+        /// <summary>
+        /// Unlink (clear) the packageId
+        /// Next export will generate a new one
+        /// </summary>
+        public void UnlinkPackageId()
+        {
+            packageId = "";
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+
         public void RecordExport()
         {
             lastExportTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");

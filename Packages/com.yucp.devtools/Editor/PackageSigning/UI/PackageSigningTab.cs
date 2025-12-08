@@ -259,6 +259,80 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             }
 
             section.Add(packageInfoRow);
+            
+            // Product ID fields
+            YUCPUIToolkitHelper.AddSpacing(section, 12);
+            
+            var productIdsSection = new VisualElement();
+            productIdsSection.style.marginTop = 8;
+            
+            var productIdsTitle = new Label("Product IDs");
+            productIdsTitle.style.fontSize = 11;
+            productIdsTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+            productIdsTitle.style.marginBottom = 6;
+            productIdsSection.Add(productIdsTitle);
+            
+            // Gumroad Product ID
+            var gumroadRow = new VisualElement();
+            gumroadRow.style.flexDirection = FlexDirection.Row;
+            gumroadRow.style.alignItems = Align.Center;
+            gumroadRow.style.marginBottom = 6;
+            
+            var gumroadLabel = new Label("Gumroad:");
+            gumroadLabel.style.fontSize = 10;
+            gumroadLabel.AddToClassList("yucp-label-secondary");
+            gumroadLabel.style.width = 80;
+            gumroadLabel.style.flexShrink = 0;
+            gumroadRow.Add(gumroadLabel);
+            
+            var gumroadField = new TextField { value = _profile.gumroadProductId ?? "" };
+            gumroadField.AddToClassList("yucp-input");
+            gumroadField.style.fontSize = 11;
+            gumroadField.style.flexGrow = 1;
+            gumroadField.tooltip = "Enter your Gumroad Product ID";
+            gumroadField.RegisterValueChangedCallback(evt =>
+            {
+                if (_profile != null)
+                {
+                    UnityEditor.Undo.RecordObject(_profile, "Change Gumroad Product ID");
+                    _profile.gumroadProductId = evt.newValue;
+                    UnityEditor.EditorUtility.SetDirty(_profile);
+                }
+            });
+            gumroadRow.Add(gumroadField);
+            productIdsSection.Add(gumroadRow);
+            
+            // Jinxxy Product ID
+            var jinxxyRow = new VisualElement();
+            jinxxyRow.style.flexDirection = FlexDirection.Row;
+            jinxxyRow.style.alignItems = Align.Center;
+            jinxxyRow.style.marginBottom = 6;
+            
+            var jinxxyLabel = new Label("Jinxxy:");
+            jinxxyLabel.style.fontSize = 10;
+            jinxxyLabel.AddToClassList("yucp-label-secondary");
+            jinxxyLabel.style.width = 80;
+            jinxxyLabel.style.flexShrink = 0;
+            jinxxyRow.Add(jinxxyLabel);
+            
+            var jinxxyField = new TextField { value = _profile.jinxxyProductId ?? "" };
+            jinxxyField.AddToClassList("yucp-input");
+            jinxxyField.style.fontSize = 11;
+            jinxxyField.style.flexGrow = 1;
+            jinxxyField.tooltip = "Enter your Jinxxy Product ID";
+            jinxxyField.RegisterValueChangedCallback(evt =>
+            {
+                if (_profile != null)
+                {
+                    UnityEditor.Undo.RecordObject(_profile, "Change Jinxxy Product ID");
+                    _profile.jinxxyProductId = evt.newValue;
+                    UnityEditor.EditorUtility.SetDirty(_profile);
+                }
+            });
+            jinxxyRow.Add(jinxxyField);
+            productIdsSection.Add(jinxxyRow);
+            
+            section.Add(productIdsSection);
 
             // If package has been signed, show status from server
             if (!string.IsNullOrEmpty(_profile.packageId))

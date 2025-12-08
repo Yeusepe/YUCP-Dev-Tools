@@ -503,7 +503,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // We'll produce the final signed package at this path:
                 string contentPackagePath = tempPackagePath;
                 
-                bool iconAdded = false;
                 if (profile.icon != null && !IsDefaultGridPlaceholder(profile.icon))
                 {
                     progressCallback?.Invoke(0.8f, "Adding package icon...");
@@ -518,7 +517,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         
                         if (PackageIconInjector.AddIconToPackage(tempPackagePath, fullIconPath, iconTempPath))
                         {
-                            iconAdded = true;
                             contentPackagePath = iconTempPath;
                         }
                         else
@@ -532,6 +530,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
                 
+                // Assign packageId if not already assigned (before signing)
+                progressCallback?.Invoke(0.81f, "Assigning package ID...");
+                string packageId = PackageIdManager.AssignPackageId(profile);
+                if (string.IsNullOrEmpty(packageId))
+                {
+                    Debug.LogWarning("[PackageBuilder] Failed to assign packageId, continuing without it");
+                }
+                else
+                {
+                    Debug.Log($"[PackageBuilder] Using packageId: {packageId}");
+                }
+
                 // Sign package if certificate is available, using the fully-prepared contentPackagePath
                 bool packageSigned = false;
                 try
@@ -685,6 +695,48 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 result.outputPath = finalOutputPath;
                 result.buildTimeSeconds = (float)(DateTime.Now - startTime).TotalSeconds;
                 
+                // Register exported package in ExportedPackageRegistry
+                if (!string.IsNullOrEmpty(packageId))
+                {
+                    try
+                    {
+                        progressCallback?.Invoke(0.99f, "Registering export...");
+                        var exportedRegistry = ExportedPackageRegistry.GetOrCreate();
+                        var signingSettings = GetSigningSettings();
+                        string publisherId = signingSettings?.publisherId ?? "";
+                        
+                        // Compute archive hash for registration
+                        string archiveSha256 = "";
+                        try
+                        {
+                            using (var sha256 = System.Security.Cryptography.SHA256.Create())
+                            using (var stream = File.OpenRead(finalOutputPath))
+                            {
+                                byte[] hash = sha256.ComputeHash(stream);
+                                archiveSha256 = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning($"[PackageBuilder] Failed to compute archive hash for registry: {ex.Message}");
+                        }
+                        
+                        exportedRegistry.RegisterExport(
+                            packageId,
+                            profile.packageName,
+                            publisherId,
+                            profile.version,
+                            archiveSha256,
+                            finalOutputPath
+                        );
+                        
+                        Debug.Log($"[PackageBuilder] Registered export: {packageId} v{profile.version}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[PackageBuilder] Failed to register export: {ex.Message}");
+                    }
+                }
                 
                 return result;
             }
@@ -2580,10 +2632,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 progressCallback?.Invoke(0.722f, "Building manifest...");
 
-                // Build manifest
+                // Build manifest (use packageId if available, otherwise fallback to packageName)
+                string manifestPackageId = !string.IsNullOrEmpty(profile.packageId) ? profile.packageId : profile.packageName;
                 var manifest = YUCP.DevTools.Editor.PackageSigning.Core.ManifestBuilder.BuildManifest(
                     packagePath,
-                    profile.packageName,
+                    manifestPackageId,
                     profile.version,
                     settings.publisherId,
                     settings.vrchatUserId
