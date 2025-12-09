@@ -131,8 +131,26 @@ namespace YUCP.DirectVpmInstaller
                     return;
                 }
                 
+                // Seed repository list from the bundled package
                 var repositories = vpmRepositories.Properties().ToDictionary(p => p.Name, p => p.Value.ToString());
+
+                // Always ensure VRChat Official / Curated repos are available for resolution
+                const string vrchatOfficialName = "VRChat Official";
+                const string vrchatCuratedName = "VRChat Curated";
+                const string vrchatOfficialUrl = "https://vrchat.github.io/packages/index.json";
+                const string vrchatCuratedUrl = "https://vrchat-community.github.io/vpm-listing-curated/index.json";
+
+                if (!repositories.ContainsKey(vrchatOfficialName))
+                    repositories[vrchatOfficialName] = vrchatOfficialUrl;
+                if (!repositories.ContainsKey(vrchatCuratedName))
+                    repositories[vrchatCuratedName] = vrchatCuratedUrl;
+
+                // Direct (top-level) dependencies for the UI prompt
                 var packagesToInstall = new List<Tuple<string, string>>();
+
+                // Work queue + set to install dependencies recursively (transitive closure)
+                var installQueue = new Queue<Tuple<string, string>>();
+                var plannedPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 
                 foreach (var dep in vpmDependencies.Properties())
                 {
@@ -140,7 +158,14 @@ namespace YUCP.DirectVpmInstaller
                     string versionRequirement = dep.Value.ToString();
                     
                     if (!IsPackageInstalled(packageName, versionRequirement))
-                        packagesToInstall.Add(new Tuple<string, string>(packageName, versionRequirement));
+                    {
+                        var tuple = new Tuple<string, string>(packageName, versionRequirement);
+                        packagesToInstall.Add(tuple);
+                        if (plannedPackages.Add(packageName))
+                        {
+                            installQueue.Enqueue(tuple);
+                        }
+                    }
                 }
                 
                 if (packagesToInstall.Count == 0)
@@ -171,14 +196,33 @@ namespace YUCP.DirectVpmInstaller
                 
                 try
                 {
-                    Debug.Log("[DirectVpmInstaller] Installing dependencies with compilation locked...");
+                    Debug.Log("[DirectVpmInstaller] Installing dependencies with compilation locked (including transitive vpmDependencies)...");
                     
-                    // Install all packages
+                    // Install all requested packages, then recursively install their vpmDependencies
                     bool allSucceeded = true;
-                    foreach (var package in packagesToInstall)
+                    while (installQueue.Count > 0)
                     {
+                        var package = installQueue.Dequeue();
+                        
+                        // Double-check we still need this package (it may have been installed as a transitive dependency)
+                        if (IsPackageInstalled(package.Item1, package.Item2))
+                            continue;
+                        
                         if (!InstallPackage(package.Item1, package.Item2, repositories))
+                        {
                             allSucceeded = false;
+                            continue;
+                        }
+                        
+                        // After successful install, read its package.json and enqueue its own vpmDependencies
+                        try
+                        {
+                            EnqueueTransitiveDependencies(package.Item1, repositories, installQueue, plannedPackages);
+                        }
+                        catch (Exception exDeps)
+                        {
+                            Debug.LogWarning($"[DirectVpmInstaller] Failed to resolve transitive dependencies for {package.Item1}: {exDeps.Message}");
+                        }
                     }
                     
                 if (allSucceeded)
@@ -922,6 +966,67 @@ namespace YUCP.DirectVpmInstaller
             catch (Exception ex)
             {
                 Debug.LogWarning($"[DirectVpmInstaller] Error during installer script cleanup: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// After installing a package, read its package.json and enqueue any vpmDependencies
+        /// that are not yet installed, so that dependencies-of-dependencies are pulled in.
+        /// Also merges any vpmRepositories from the installed package into the shared repository list.
+        /// </summary>
+        private static void EnqueueTransitiveDependencies(
+            string packageName,
+            Dictionary<string, string> repositories,
+            Queue<Tuple<string, string>> installQueue,
+            HashSet<string> plannedPackages)
+        {
+            if (string.IsNullOrEmpty(packageName))
+                return;
+
+            try
+            {
+                // Resolve Packages/<packageName>/package.json relative to project root
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string packageJsonPath = Path.Combine(projectRoot, "Packages", packageName, "package.json");
+
+                if (!File.Exists(packageJsonPath))
+                    return;
+
+                var json = JObject.Parse(File.ReadAllText(packageJsonPath));
+                var vpmDependencies = json["vpmDependencies"] as JObject;
+                var vpmRepositories = json["vpmRepositories"] as JObject;
+
+                // Merge any new repositories from this package
+                if (vpmRepositories != null)
+                {
+                    foreach (var repo in vpmRepositories.Properties())
+                    {
+                        repositories[repo.Name] = repo.Value.ToString();
+                    }
+                }
+
+                if (vpmDependencies == null || vpmDependencies.Count == 0)
+                    return;
+
+                foreach (var dep in vpmDependencies.Properties())
+                {
+                    string depName = dep.Name;
+                    string versionRequirement = dep.Value.ToString();
+
+                    // Skip if already installed at a satisfying version
+                    if (IsPackageInstalled(depName, versionRequirement))
+                        continue;
+
+                    // Skip if we've already planned to install this package
+                    if (!plannedPackages.Add(depName))
+                        continue;
+
+                    installQueue.Enqueue(new Tuple<string, string>(depName, versionRequirement));
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[DirectVpmInstaller] Failed to read transitive vpmDependencies for {packageName}: {ex.Message}");
             }
         }
         

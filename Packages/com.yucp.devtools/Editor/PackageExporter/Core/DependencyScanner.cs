@@ -492,6 +492,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 Debug.LogError($"[DependencyScanner] Failed to get required repositories: {ex.Message}");
             }
             
+            // Always include VRChat Official / Curated in the final repository list so that
+            // packages with transitive VRC dependencies (like com.vrchat.core.vpm-resolver)
+            // can be resolved even if they are not direct vpmDependencies of the exported package.
+            if (!repositories.ContainsKey("VRChat Official"))
+                repositories["VRChat Official"] = "https://vrchat.github.io/packages/index.json";
+            if (!repositories.ContainsKey("VRChat Curated"))
+                repositories["VRChat Curated"] = "https://vrchat-community.github.io/vpm-listing-curated/index.json";
+            
             return repositories;
         }
     }
