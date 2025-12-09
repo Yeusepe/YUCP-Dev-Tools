@@ -623,11 +623,21 @@ namespace YUCP.DirectVpmInstaller
                         // Ensure parent exists
                         Directory.CreateDirectory(Path.GetDirectoryName(targetMetadataDiskPath) ?? packageFolderDiskPath);
 
+                        // Delete existing target if it exists
+                        if (File.Exists(targetMetadataDiskPath))
+                        {
+                            File.Delete(targetMetadataDiskPath);
+                        }
+                        string dstMeta = targetMetadataDiskPath + ".meta";
+                        if (File.Exists(dstMeta))
+                        {
+                            File.Delete(dstMeta);
+                        }
+
                         // Move JSON
                         File.Move(metadataDiskPath, targetMetadataDiskPath);
                         // Move .meta if present
                         string srcMeta = metadataDiskPath + ".meta";
-                        string dstMeta = targetMetadataDiskPath + ".meta";
                         if (File.Exists(srcMeta))
                         {
                             File.Move(srcMeta, dstMeta);
@@ -651,6 +661,19 @@ namespace YUCP.DirectVpmInstaller
                     try
                     {
                         Directory.CreateDirectory(targetProfilesDiskParent);
+                        
+                        // Delete existing target directory if it exists
+                        if (Directory.Exists(targetProfilesDiskPath))
+                        {
+                            Directory.Delete(targetProfilesDiskPath, true);
+                        }
+                        // Also delete .meta if present
+                        string targetMeta = targetProfilesDiskPath + ".meta";
+                        if (File.Exists(targetMeta))
+                        {
+                            File.Delete(targetMeta);
+                        }
+                        
                         Directory.Move(exportProfilesDiskPath, targetProfilesDiskPath);
 
                         Debug.Log($"[DirectVpmInstaller] Moved ExportProfiles folder to '{targetProfilesDiskPath}'");
