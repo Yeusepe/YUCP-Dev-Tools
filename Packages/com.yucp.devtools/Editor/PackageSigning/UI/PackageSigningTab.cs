@@ -259,7 +259,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             }
 
             section.Add(packageInfoRow);
-            
+
             // Product ID fields
             YUCPUIToolkitHelper.AddSpacing(section, 12);
             

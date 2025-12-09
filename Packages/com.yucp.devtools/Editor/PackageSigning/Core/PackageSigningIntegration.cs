@@ -24,7 +24,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             string packageId,
             string version,
             Action<float, string> progressCallback,
-            Action<bool, string> onComplete)
+            Action<bool, string> onComplete,
+            string gumroadProductId = null,
+            string jinxxyProductId = null)
         {
             // Check prerequisites
             var settings = GetSigningSettings();
@@ -57,7 +59,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 packageId,
                 version,
                 settings.publisherId,
-                settings.vrchatUserId
+                settings.vrchatUserId,
+                gumroadProductId,
+                jinxxyProductId
             );
 
             progressCallback?.Invoke(0.4f, "Creating signing request...");

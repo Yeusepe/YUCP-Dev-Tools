@@ -16,5 +16,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         public string vrchatAuthorUserId;
         public Dictionary<string, string> fileHashes; // file path -> SHA256 hash
         public CertificateData[] certificateChain; // Certificate chain: [Publisher, Intermediate?, Root]
+        public string gumroadProductId; // Gumroad product ID
+        public string jinxxyProductId; // Jinxxy product ID
     }
 }

@@ -508,13 +508,157 @@ namespace YUCP.DirectVpmInstaller
                     }
                 }
                 
-                // Refresh AssetDatabase to remove deleted files from Unity
+                // Organize YUCP-generated artifacts (e.g. YUCP_PackageInfo.json) into a local package
+                OrganizeYucpArtifacts();
+
+                // Refresh AssetDatabase to reflect file deletions and moves
                 AssetDatabase.Refresh();
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[DirectVpmInstaller] Failed to cleanup temporary files: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Move YUCP-generated artifacts (metadata and helper assets) out of Assets/
+        /// into a dedicated local package under Packages/yucp.installed-packages.
+        /// This runs regardless of whether com.yucp.components is installed.
+        /// </summary>
+        private static void OrganizeYucpArtifacts()
+        {
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string packagesRoot = Path.Combine(projectRoot, "Packages");
+                string installedRoot = Path.Combine(packagesRoot, "yucp.installed-packages");
+
+                if (!Directory.Exists(packagesRoot))
+                    Directory.CreateDirectory(packagesRoot);
+                if (!Directory.Exists(installedRoot))
+                    Directory.CreateDirectory(installedRoot);
+
+                // Read package name from YUCP_PackageInfo.json if present
+                string metadataDiskPath = Path.Combine(Application.dataPath, "YUCP_PackageInfo.json");
+                string packageFolderName = null;
+
+                if (File.Exists(metadataDiskPath))
+                {
+                    try
+                    {
+                        string json = File.ReadAllText(metadataDiskPath);
+                        var meta = JsonUtility.FromJson<YucpPackageMetadata>(json);
+                        if (meta != null && !string.IsNullOrEmpty(meta.packageName))
+                        {
+                            packageFolderName = MakeSafeFolderName(meta.packageName);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[DirectVpmInstaller] Failed to read YUCP_PackageInfo.json metadata: {ex.Message}");
+                    }
+                }
+
+                if (string.IsNullOrEmpty(packageFolderName))
+                {
+                    packageFolderName = "package-" + Guid.NewGuid().ToString("N");
+                }
+
+                string packageFolderDiskPath = Path.Combine(installedRoot, packageFolderName);
+                if (!Directory.Exists(packageFolderDiskPath))
+                {
+                    Directory.CreateDirectory(packageFolderDiskPath);
+                }
+
+                // Move YUCP_PackageInfo.json into the installed-packages container if it exists (disk-level move)
+                if (File.Exists(metadataDiskPath))
+                {
+                    string targetMetadataDiskPath = Path.Combine(packageFolderDiskPath, "YUCP_PackageInfo.json");
+                    try
+                    {
+                        // Ensure parent exists
+                        Directory.CreateDirectory(Path.GetDirectoryName(targetMetadataDiskPath) ?? packageFolderDiskPath);
+
+                        // Move JSON
+                        File.Move(metadataDiskPath, targetMetadataDiskPath);
+                        // Move .meta if present
+                        string srcMeta = metadataDiskPath + ".meta";
+                        string dstMeta = targetMetadataDiskPath + ".meta";
+                        if (File.Exists(srcMeta))
+                        {
+                            File.Move(srcMeta, dstMeta);
+                        }
+
+                        Debug.Log($"[DirectVpmInstaller] Moved YUCP_PackageInfo.json to '{targetMetadataDiskPath}'");
+                    }
+                    catch (Exception moveEx)
+                    {
+                        Debug.LogWarning($"[DirectVpmInstaller] Failed to move YUCP_PackageInfo.json to installed-packages: {moveEx.Message}");
+                    }
+                }
+
+                // Optionally move YUCP/ExportProfiles into the same container if present (disk-level move).
+                // This keeps exporter profiles from cluttering the Assets root.
+                string exportProfilesDiskPath = Path.Combine(Application.dataPath, "YUCP", "ExportProfiles");
+                if (Directory.Exists(exportProfilesDiskPath))
+                {
+                    string targetProfilesDiskParent = Path.Combine(packageFolderDiskPath, "YUCP");
+                    string targetProfilesDiskPath = Path.Combine(targetProfilesDiskParent, "ExportProfiles");
+                    try
+                    {
+                        Directory.CreateDirectory(targetProfilesDiskParent);
+                        Directory.Move(exportProfilesDiskPath, targetProfilesDiskPath);
+
+                        Debug.Log($"[DirectVpmInstaller] Moved ExportProfiles folder to '{targetProfilesDiskPath}'");
+                    }
+                    catch (Exception moveEx)
+                    {
+                        Debug.LogWarning($"[DirectVpmInstaller] Failed to move ExportProfiles folder to installed-packages: {moveEx.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[DirectVpmInstaller] OrganizeYucpArtifacts failed: {ex.Message}");
+            }
+        }
+
+        [Serializable]
+        private class YucpPackageMetadata
+        {
+            public string packageName;
+            public string version;
+            public string author;
+            public string description;
+        }
+
+        /// <summary>
+        /// Generate a filesystem-safe folder name from a package name.
+        /// </summary>
+        private static string MakeSafeFolderName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return "package-" + Guid.NewGuid().ToString("N");
+
+            char[] invalid = Path.GetInvalidFileNameChars();
+            var safeChars = new char[name.Length];
+            for (int i = 0; i < name.Length; i++)
+            {
+                char c = name[i];
+                if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
+                    c = '-';
+                else if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '\"' || c == '<' || c == '>' || c == '|')
+                    c = '-';
+                else if (Array.IndexOf(invalid, c) >= 0)
+                    c = '-';
+
+                safeChars[i] = c;
+            }
+
+            string safe = new string(safeChars).Trim('-');
+            if (string.IsNullOrEmpty(safe))
+                safe = "package-" + Guid.NewGuid().ToString("N");
+            return safe;
         }
         
         private static bool IsPackageInstalled(string packageName, string versionRequirement)

@@ -21,7 +21,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             string packageId,
             string version,
             string publisherId,
-            string vrchatUserId)
+            string vrchatUserId,
+            string gumroadProductId = null,
+            string jinxxyProductId = null)
         {
             // Compute archive SHA-256
             string archiveSha256 = ComputeFileHash(packagePath);
@@ -39,7 +41,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 version = version,
                 archiveSha256 = archiveSha256,
                 vrchatAuthorUserId = vrchatUserId,
-                fileHashes = fileHashes
+                fileHashes = fileHashes,
+                gumroadProductId = gumroadProductId ?? "",
+                jinxxyProductId = jinxxyProductId ?? ""
             };
 
             return manifest;
@@ -78,6 +82,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 first = false;
             }
             sb.Append($"}},");
+            sb.Append($"\"gumroadProductId\":\"{manifest.gumroadProductId ?? ""}\",");
+            sb.Append($"\"jinxxyProductId\":\"{manifest.jinxxyProductId ?? ""}\",");
             sb.Append($"\"keyId\":\"{manifest.keyId}\",");
             sb.Append($"\"packageId\":\"{manifest.packageId}\",");
             sb.Append($"\"publisherId\":\"{manifest.publisherId}\",");

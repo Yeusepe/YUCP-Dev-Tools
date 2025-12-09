@@ -13,7 +13,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
     /// </summary>
     public static class CertificateManager
     {
-        private static readonly string AuthorityId = "unitysign.yucp";
+        // Note: AuthorityId reserved for future use
+        // private static readonly string AuthorityId = "unitysign.yucp";
 
         /// <summary>
         /// Import and verify yucp_cert certificate

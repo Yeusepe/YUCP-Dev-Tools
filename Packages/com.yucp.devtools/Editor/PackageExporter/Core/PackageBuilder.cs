@@ -2639,7 +2639,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     manifestPackageId,
                     profile.version,
                     settings.publisherId,
-                    settings.vrchatUserId
+                    settings.vrchatUserId,
+                    profile.gumroadProductId,
+                    profile.jinxxyProductId
                 );
                 
                 // Override the hash computed by BuildManifest (which also computes it from packagePath)
