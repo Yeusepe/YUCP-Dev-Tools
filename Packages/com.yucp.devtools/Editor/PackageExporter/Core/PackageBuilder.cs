@@ -992,8 +992,27 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     if (File.Exists(physicalAssetPath))
                     {
                         // Find the DerivedFbxAsset.cs script GUID in the temp package
+                        // Note: The script may not exist yet (it gets injected into the package later),
+                        // so we need to generate a GUID that will match the one used during injection
                         string derivedFbxAssetScriptPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs";
                         string derivedFbxAssetScriptGuid = AssetDatabase.AssetPathToGUID(derivedFbxAssetScriptPath);
+                        
+                        // If script doesn't exist yet, we need to use the GUID that will be generated during injection
+                        // The injection code generates a new GUID for each script, so we can't predict it.
+                        // Instead, we'll store a placeholder and fix it during import.
+                        // However, we can try to get the GUID from the source script and use a deterministic mapping
+                        if (string.IsNullOrEmpty(derivedFbxAssetScriptGuid))
+                        {
+                            // Try to get GUID from source script in devtools package
+                            string sourceScriptPath = "Packages/com.yucp.devtools/Editor/PackageExporter/Data/DerivedFbxAsset.cs";
+                            string sourceScriptGuid = AssetDatabase.AssetPathToGUID(sourceScriptPath);
+                            
+                            // We'll use a placeholder that will be fixed during import
+                            // For now, generate a stable GUID based on the target path
+                            // This won't match the injected script's GUID, but TryApplyPatch will fix it
+                            derivedFbxAssetScriptGuid = System.Guid.NewGuid().ToString("N");
+                            Debug.Log($"[PackageBuilder] Generated placeholder GUID for DerivedFbxAsset.cs script (will be fixed during import): {derivedFbxAssetScriptGuid}");
+                        }
                         
                         if (!string.IsNullOrEmpty(derivedFbxAssetScriptGuid))
                         {
@@ -2403,33 +2422,41 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             }
                             
                             // GUID handling strategy:
-                            // - For .yucp_disabled files: Generate NEW GUID
+                            // - For .yucp_disabled files: Generate NEW GUID, but store original GUID in userData for restoration
                             // - For normal files: Preserve original GUID to maintain references
                             string fileGuid = null;
                             string metaContent = null;
                             string originalMetaPath = filePath + ".meta";
+                            string originalGuid = null;
+                            
+                            // Try to read original GUID from meta file if it exists
+                            if (File.Exists(originalMetaPath))
+                            {
+                                string originalMeta = File.ReadAllText(originalMetaPath);
+                                var guidMatch = System.Text.RegularExpressions.Regex.Match(originalMeta, @"guid:\s*([a-f0-9]{32})");
+                                if (guidMatch.Success)
+                                {
+                                    originalGuid = guidMatch.Groups[1].Value;
+                                }
+                            }
                             
                             if (isCompilableScript)
                             {
                                 // Generate new GUID for disabled files (prevents GUID conflicts on re-import)
                                 fileGuid = Guid.NewGuid().ToString("N");
-                                metaContent = GenerateMetaForFile(filePath, fileGuid);
+                                // Store original GUID in userData so we can restore it when re-enabling
+                                metaContent = GenerateMetaForFileWithOriginalGuid(filePath, fileGuid, originalGuid);
                             }
-                            else if (File.Exists(originalMetaPath))
+                            else if (!string.IsNullOrEmpty(originalGuid))
                             {
                                 // Preserve original GUID for non-script files (safe, no renaming occurs)
                                 string originalMeta = File.ReadAllText(originalMetaPath);
-                                var guidMatch = System.Text.RegularExpressions.Regex.Match(originalMeta, @"guid:\s*([a-f0-9]{32})");
-                                if (guidMatch.Success)
-                                {
-                                    fileGuid = guidMatch.Groups[1].Value;
-                                    metaContent = originalMeta;
-                                }
+                                fileGuid = originalGuid;
+                                metaContent = originalMeta;
                             }
-                            
-                            // If no GUID found, generate new one
-                            if (string.IsNullOrEmpty(fileGuid))
+                            else
                             {
+                                // If no GUID found, generate new one
                                 fileGuid = Guid.NewGuid().ToString("N");
                                 metaContent = GenerateMetaForFile(filePath, fileGuid);
                             }
@@ -2523,6 +2550,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
 #else
             Debug.LogError("[PackageBuilder] ICSharpCode.SharpZipLib not available. Please install the ICSharpCode.SharpZipLib package.");
 #endif
+        }
+        
+        /// <summary>
+        /// Generate appropriate .meta file content using file extension, storing original GUID in userData for restoration
+        /// </summary>
+        private static string GenerateMetaForFileWithOriginalGuid(string filePath, string guid, string originalGuid)
+        {
+            string baseMeta = GenerateMetaForFile(filePath, guid);
+            
+            // If we have an original GUID, store it in userData as JSON for later restoration
+            if (!string.IsNullOrEmpty(originalGuid))
+            {
+                // Store as simple JSON in userData: {"originalGuid":"..."}
+                string userDataJson = $"{{\"originalGuid\":\"{originalGuid}\"}}";
+                // Replace the empty userData line with our JSON (handle both formats: "userData:\n" and "  userData:\n")
+                baseMeta = System.Text.RegularExpressions.Regex.Replace(
+                    baseMeta, 
+                    @"(\s+)userData:\s*\n", 
+                    $"$1userData: {userDataJson}\n",
+                    System.Text.RegularExpressions.RegexOptions.Multiline
+                );
+            }
+            
+            return baseMeta;
         }
         
         /// <summary>

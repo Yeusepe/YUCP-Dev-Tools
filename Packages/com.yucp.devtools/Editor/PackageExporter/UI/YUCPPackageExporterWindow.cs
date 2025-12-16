@@ -5987,11 +5987,27 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     EditorUtility.DisplayProgressBar("Scanning Dependencies", "Processing packages...", 0.6f);
                 }
                 
+                // Preserve existing dependency settings (enabled state and exportMode) before clearing
+                var existingSettings = new Dictionary<string, (bool enabled, DependencyExportMode exportMode)>();
+                foreach (var existingDep in profile.dependencies)
+                {
+                    if (!string.IsNullOrEmpty(existingDep.packageName))
+                    {
+                        existingSettings[existingDep.packageName] = (existingDep.enabled, existingDep.exportMode);
+                    }
+                }
+                
                 profile.dependencies.Clear();
                 
                 var dependencies = DependencyScanner.ConvertToPackageDependencies(foundPackages);
                 foreach (var dep in dependencies)
                 {
+                    // Restore preserved settings if they exist
+                    if (existingSettings.TryGetValue(dep.packageName, out var settings))
+                    {
+                        dep.enabled = settings.enabled;
+                        dep.exportMode = settings.exportMode;
+                    }
                     profile.dependencies.Add(dep);
                 }
                 

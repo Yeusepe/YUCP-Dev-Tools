@@ -132,8 +132,12 @@ namespace YUCP.DirectVpmInstaller
             string disabledMeta = disabledFile + ".meta";
             string enabledMeta = enabledFile + ".meta";
 
+            // Track if enabled file already exists (to preserve its GUID)
+            bool enabledFileExisted = File.Exists(enabledFile);
+            bool enabledMetaExisted = File.Exists(enabledMeta);
+
             // If destination exists, compare hashes; if identical, delete disabled variant
-            if (File.Exists(enabledFile))
+            if (enabledFileExisted)
             {
                 bool identical = false;
                 try
@@ -150,6 +154,15 @@ namespace YUCP.DirectVpmInstaller
                     string backupPath = Path.Combine(qdir, Path.GetFileName(enabledFile));
                     SafeMove(enabledFile, backupPath, overwrite: true);
                     Record("backup", backupPath, enabledFile);
+                    
+                    // Note: We backup the meta file but will restore it to preserve the original GUID
+                    // This maintains references from prefabs and other assets
+                    if (enabledMetaExisted)
+                    {
+                        string backupMetaPath = backupPath + ".meta";
+                        SafeMove(enabledMeta, backupMetaPath, overwrite: true);
+                        Record("backup", backupMetaPath, enabledMeta);
+                    }
                 }
 
                 if (!identical)
@@ -161,6 +174,13 @@ namespace YUCP.DirectVpmInstaller
                 {
                     TryDelete(disabledFile);
                     Record("delete", disabledFile, null);
+                    // If files are identical and enabled file existed, preserve its meta and delete disabled meta
+                    if (File.Exists(disabledMeta))
+                    {
+                        TryDelete(disabledMeta);
+                        Record("delete", disabledMeta, null);
+                    }
+                    return; // Early return - nothing more to do
                 }
             }
             else
@@ -169,11 +189,69 @@ namespace YUCP.DirectVpmInstaller
                 Record("move", disabledFile, enabledFile);
             }
 
-            // meta handling
-            if (File.Exists(disabledMeta))
+            // meta handling:
+            // - If enabled file already existed and had a meta, restore it from backup to preserve the original GUID
+            //   This ensures GUIDs remain consistent and prefabs/references don't break
+            // - If enabled file didn't exist, extract original GUID from disabled meta's userData and restore it
+            if (enabledFileExisted && enabledMetaExisted)
             {
-                SafeMove(disabledMeta, enabledMeta, overwrite: true);
-                Record("move", disabledMeta, enabledMeta);
+                // Restore the original enabled meta file from backup to preserve the original GUID
+                // This maintains references from prefabs and other assets that reference this file
+                string qdir = Path.Combine(QuarantineRoot, _current.id);
+                string backupPath = Path.Combine(qdir, Path.GetFileName(enabledFile));
+                string backupMetaPath = backupPath + ".meta";
+                
+                if (File.Exists(backupMetaPath))
+                {
+                    SafeMove(backupMetaPath, enabledMeta, overwrite: true);
+                    Record("move", backupMetaPath, enabledMeta);
+                }
+                
+                // Delete the disabled meta since we're using the original enabled meta
+                if (File.Exists(disabledMeta))
+                {
+                    TryDelete(disabledMeta);
+                    Record("delete", disabledMeta, null);
+                }
+            }
+            else if (File.Exists(disabledMeta))
+            {
+                // No existing enabled meta, so we need to restore the original GUID from userData
+                string originalGuid = ExtractOriginalGuidFromMeta(disabledMeta);
+                
+                if (!string.IsNullOrEmpty(originalGuid))
+                {
+                    // Read the disabled meta file
+                    string metaContent = File.ReadAllText(disabledMeta);
+                    // Replace the GUID with the original GUID (preserve the format: "guid: GUID_VALUE")
+                    metaContent = System.Text.RegularExpressions.Regex.Replace(
+                        metaContent, 
+                        @"guid:\s*([a-f0-9]{32})", 
+                        $"guid: {originalGuid}",
+                        System.Text.RegularExpressions.RegexOptions.Multiline
+                    );
+                    // Remove the original GUID from userData (clean it up, handle with or without newline)
+                    metaContent = System.Text.RegularExpressions.Regex.Replace(
+                        metaContent,
+                        @"(\s+)userData:\s*\{\""originalGuid\"":\""[a-f0-9]{32}\""\}\s*\n",
+                        "$1userData:\n",
+                        System.Text.RegularExpressions.RegexOptions.Multiline
+                    );
+                    
+                    // Write the restored meta file (ensure directory exists)
+                    Directory.CreateDirectory(Path.GetDirectoryName(enabledMeta));
+                    File.WriteAllText(enabledMeta, metaContent);
+                    Record("move", disabledMeta, enabledMeta);
+                    
+                    // Delete the disabled meta
+                    TryDelete(disabledMeta);
+                }
+                else
+                {
+                    // No original GUID stored, just move the disabled meta to enabled (fallback)
+                    SafeMove(disabledMeta, enabledMeta, overwrite: true);
+                    Record("move", disabledMeta, enabledMeta);
+                }
             }
 
             // Update manifest entry for this file
@@ -395,6 +473,37 @@ namespace YUCP.DirectVpmInstaller
                 File.AppendAllText(LogPath, DateTime.UtcNow.ToString("o") + " " + msg + "\n");
             }
             catch { }
+        }
+        
+        /// <summary>
+        /// Extract the original GUID from a .meta file's userData field (stored when bundling .yucp_disabled files)
+        /// </summary>
+        private static string ExtractOriginalGuidFromMeta(string metaPath)
+        {
+            try
+            {
+                if (!File.Exists(metaPath))
+                    return null;
+                
+                string metaContent = File.ReadAllText(metaPath);
+                
+                // Look for userData with original GUID: userData: {"originalGuid":"..."}
+                var userDataMatch = System.Text.RegularExpressions.Regex.Match(
+                    metaContent, 
+                    @"userData:\s*\{\""originalGuid\"":\""([a-f0-9]{32})\""\}"
+                );
+                
+                if (userDataMatch.Success && userDataMatch.Groups.Count > 1)
+                {
+                    return userDataMatch.Groups[1].Value;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"ExtractOriginalGuidFromMeta error: {ex.Message}");
+            }
+            
+            return null;
         }
     }
 }

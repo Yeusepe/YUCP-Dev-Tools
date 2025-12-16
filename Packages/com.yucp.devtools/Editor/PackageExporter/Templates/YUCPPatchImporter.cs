@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace YUCP.PatchCleanup
 {
@@ -461,7 +462,39 @@ namespace YUCP.PatchCleanup
                     patchCount++;
                     WriteLog($"  FOUND PATCH: {path}");
                     processedPatches.Add(path);
-                    TryApplyPatch(path);
+                    
+                    // Check if scripts were just imported - if so, wait for compilation
+                    bool scriptsJustImported = false;
+                    foreach (var importedPath in importedAssets ?? new string[0])
+                    {
+                        if (importedPath.Contains("com.yucp.temp/Editor") && 
+                            (importedPath.EndsWith(".cs") || importedPath.EndsWith(".asmdef")))
+                        {
+                            scriptsJustImported = true;
+                            WriteLog($"  Scripts were just imported, waiting for compilation before applying patch...");
+                            break;
+                        }
+                    }
+                    
+                    if (scriptsJustImported)
+                    {
+                        // Wait for compilation with nested delayCall
+                        EditorApplication.delayCall += () =>
+                        {
+                            EditorApplication.delayCall += () =>
+                            {
+                                EditorApplication.delayCall += () =>
+                                {
+                                    WriteLog($"  Retrying patch application after script compilation: {path}");
+                                    TryApplyPatch(path);
+                                };
+                            };
+                        };
+                    }
+                    else
+                    {
+                        TryApplyPatch(path);
+                    }
                 }
             }
             
@@ -473,36 +506,7 @@ namespace YUCP.PatchCleanup
             WriteLog($"TryApplyPatch called for: {patchPath}");
             try
             {
-                // Find DerivedFbxAsset type
-                var derivedFbxAssetType = System.Type.GetType("YUCP.PatchRuntime.DerivedFbxAsset, YUCP.PatchRuntime");
-                if (derivedFbxAssetType == null)
-                {
-                    var assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
-                    foreach (var asm in assemblies)
-                    {
-                        try
-                        {
-                            derivedFbxAssetType = asm.GetType("YUCP.PatchRuntime.DerivedFbxAsset");
-                            if (derivedFbxAssetType != null)
-                            {
-                                WriteLog($"  Found DerivedFbxAsset type in assembly: {asm.FullName}");
-                                break;
-                            }
-                        }
-                        catch { }
-                    }
-                }
-                
-                if (derivedFbxAssetType == null)
-                {
-                    WriteLog("  ERROR: DerivedFbxAsset type not found");
-                    // Only log as info since this may be expected when patches aren't actively being used
-                    // The patch will be skipped, which is acceptable behavior
-                    Debug.Log($"[YUCP PatchImporter] DerivedFbxAsset type not found for patch {patchPath}. Patch will be skipped. Ensure patch scripts are in temp package if patches are needed.");
-                    return;
-                }
-                
-                // Fix script GUID and namespace references if needed
+                // First, fix script GUID and namespace references if needed (must happen before type lookup)
                 string derivedFbxAssetScriptPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs";
                 string derivedFbxAssetScriptGuid = AssetDatabase.AssetPathToGUID(derivedFbxAssetScriptPath);
                 
@@ -587,11 +591,136 @@ namespace YUCP.PatchCleanup
                             File.WriteAllText(physicalAssetPath, assetContent);
                             AssetDatabase.ImportAsset(patchPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
                             WriteLog($"  Reimported asset after fixing references");
+                            
+                            // Wait a moment for Unity to process the reimport before continuing
+                            EditorApplication.delayCall += () =>
+                            {
+                                TryApplyPatchInternal(patchPath);
+                            };
+                            return;
                         }
                     }
                 }
                 
-                // Force import
+                // Continue with type lookup
+                TryApplyPatchInternal(patchPath);
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"  ERROR in TryApplyPatch: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogWarning($"[YUCP PatchImporter] Error processing patch {patchPath}: {ex.Message}");
+            }
+        }
+        
+        private static void TryApplyPatchInternal(string patchPath)
+        {
+            try
+            {
+                // Find DerivedFbxAsset type
+                // Try multiple approaches since assembly loading can be timing-sensitive
+                System.Type derivedFbxAssetType = null;
+                
+                // First, try direct type lookup with assembly name
+                try
+                {
+                    derivedFbxAssetType = System.Type.GetType("YUCP.PatchRuntime.DerivedFbxAsset, YUCP.PatchRuntime");
+                    if (derivedFbxAssetType != null)
+                    {
+                        WriteLog($"  Found DerivedFbxAsset type via direct lookup: {derivedFbxAssetType.Assembly.FullName}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteLog($"  Direct type lookup failed: {ex.Message}");
+                }
+                
+                // If not found, search all loaded assemblies
+                if (derivedFbxAssetType == null)
+                {
+                    var assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
+                    WriteLog($"  Searching {assemblies.Length} loaded assemblies for DerivedFbxAsset type...");
+                    
+                    foreach (var asm in assemblies)
+                    {
+                        try
+                        {
+                            // Check if this assembly is likely to contain the type
+                            if (asm.FullName.Contains("YUCP.PatchRuntime") || 
+                                asm.GetName().Name == "YUCP.PatchRuntime" ||
+                                asm.FullName.Contains("PatchRuntime"))
+                            {
+                                WriteLog($"  Checking assembly: {asm.FullName}");
+                                derivedFbxAssetType = asm.GetType("YUCP.PatchRuntime.DerivedFbxAsset");
+                                if (derivedFbxAssetType != null)
+                                {
+                                    WriteLog($"  Found DerivedFbxAsset type in assembly: {asm.FullName}");
+                                    break;
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // Ignore exceptions during type lookup
+                            WriteLog($"  Exception checking assembly {asm.FullName}: {ex.Message}");
+                        }
+                    }
+                    
+                    // If still not found, do a broader search
+                    if (derivedFbxAssetType == null)
+                    {
+                        WriteLog("  Broad search: checking all assemblies for DerivedFbxAsset...");
+                        foreach (var asm in assemblies)
+                        {
+                            try
+                            {
+                                derivedFbxAssetType = asm.GetType("YUCP.PatchRuntime.DerivedFbxAsset");
+                                if (derivedFbxAssetType != null)
+                                {
+                                    WriteLog($"  Found DerivedFbxAsset type in assembly: {asm.FullName}");
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                }
+                
+                if (derivedFbxAssetType == null)
+                {
+                    WriteLog("  WARNING: DerivedFbxAsset type not found - assembly may not be compiled yet, will retry");
+                    
+                    // Check if the script file exists but assembly hasn't compiled yet
+                    string derivedFbxAssetScriptPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs";
+                    if (File.Exists(Path.Combine(Application.dataPath, "..", derivedFbxAssetScriptPath.Replace('/', Path.DirectorySeparatorChar))))
+                    {
+                        // Script exists but type not found - assembly needs to compile
+                        // Retry after a delay to allow compilation
+                        WriteLog("  Script file exists, waiting for assembly compilation...");
+                        EditorApplication.delayCall += () =>
+                        {
+                            EditorApplication.delayCall += () =>
+                            {
+                                // Retry after compilation
+                                if (processedPatches != null && processedPatches.Contains(patchPath))
+                                {
+                                    processedPatches.Remove(patchPath);
+                                }
+                                WriteLog($"  Retrying patch application after compilation delay: {patchPath}");
+                                TryApplyPatch(patchPath);
+                            };
+                        };
+                        return;
+                    }
+                    else
+                    {
+                        // Script doesn't exist - this is a real error
+                        WriteLog("  ERROR: DerivedFbxAsset script file not found");
+                        Debug.LogWarning($"[YUCP PatchImporter] DerivedFbxAsset type not found for patch {patchPath}. Script file missing. Ensure patch scripts are in temp package if patches are needed.");
+                        return;
+                    }
+                }
+                
+                // Force import to ensure asset is up to date
                 AssetDatabase.ImportAsset(patchPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
                 
                 // Load the asset
@@ -731,15 +860,377 @@ namespace YUCP.PatchCleanup
                     return;
                 }
                 
+                // Refresh AssetDatabase to ensure all assets are indexed
+                AssetDatabase.Refresh();
+                
                 string baseFbxPath = AssetDatabase.GUIDToAssetPath(baseFbxGuid);
+                
+                // If GUID doesn't resolve, try refreshing and waiting for import to complete
                 if (string.IsNullOrEmpty(baseFbxPath) || !baseFbxPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
                 {
-                    WriteLog($"  ERROR: baseFbxGuid {baseFbxGuid} does not resolve to a valid FBX");
-                    Debug.LogWarning($"[YUCP PatchImporter] baseFbxGuid {baseFbxGuid} does not resolve to a valid FBX");
-                    return;
+                    WriteLog($"  WARNING: baseFbxGuid {baseFbxGuid} does not resolve immediately (path: '{baseFbxPath ?? "null"}'), waiting for AssetDatabase refresh...");
+                    Debug.LogWarning($"[YUCP PatchImporter] baseFbxGuid {baseFbxGuid} does not resolve immediately. Running diagnostics...");
+                    
+                    // ========== COMPREHENSIVE DIAGNOSTICS ==========
+                    
+                    // Diagnostic 1: Validate GUID format
+                    WriteLog($"  [DIAG] GUID Format Check:");
+                    WriteLog($"    GUID: {baseFbxGuid}");
+                    WriteLog($"    Length: {baseFbxGuid?.Length ?? 0} (expected: 32)");
+                    WriteLog($"    Is Valid Format: {!string.IsNullOrEmpty(baseFbxGuid) && baseFbxGuid.Length == 32 && Regex.IsMatch(baseFbxGuid, @"^[0-9a-f]{32}$", RegexOptions.IgnoreCase)}");
+                    
+                    // Diagnostic 2: Check if GUID exists in AssetDatabase at all (any asset type)
+                    WriteLog($"  [DIAG] AssetDatabase GUID Lookup:");
+                    string anyAssetPath = AssetDatabase.GUIDToAssetPath(baseFbxGuid);
+                    WriteLog($"    GUID resolves to: {(string.IsNullOrEmpty(anyAssetPath) ? "NOTHING" : anyAssetPath)}");
+                    if (!string.IsNullOrEmpty(anyAssetPath))
+                    {
+                        WriteLog($"    Asset Type: {AssetDatabase.GetMainAssetTypeAtPath(anyAssetPath)?.Name ?? "Unknown"}");
+                        WriteLog($"    Is FBX: {anyAssetPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase)}");
+                    }
+                    
+                    // Diagnostic 3: Search all FBX files in AssetDatabase
+                    WriteLog($"  [DIAG] FBX Files in AssetDatabase:");
+                    try
+                    {
+                        string[] allFbxGuids = AssetDatabase.FindAssets("t:GameObject", new[] { "Assets" });
+                        WriteLog($"    Found {allFbxGuids.Length} GameObject assets (potential FBX files)");
+                        
+                        // Also search for ModelImporter assets
+                        string[] modelGuids = AssetDatabase.FindAssets("t:Model", new[] { "Assets" });
+                        WriteLog($"    Found {modelGuids.Length} Model assets");
+                        
+                        // Check first 50 assets for FBX extension
+                        int fbxCount = 0;
+                        var fbxGuidMap = new Dictionary<string, string>();
+                        foreach (var guid in allFbxGuids.Take(50))
+                        {
+                            try
+                            {
+                                string path = AssetDatabase.GUIDToAssetPath(guid);
+                                if (!string.IsNullOrEmpty(path) && path.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    fbxCount++;
+                                    fbxGuidMap[guid] = path;
+                                    if (guid == baseFbxGuid)
+                                    {
+                                        WriteLog($"    *** MATCH FOUND! GUID {guid} -> {path}");
+                                        baseFbxPath = path;
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+                        WriteLog($"    Found {fbxCount} actual .fbx files in first 50 assets");
+                        
+                        // Check if our GUID is in the list
+                        if (fbxGuidMap.ContainsKey(baseFbxGuid))
+                        {
+                            WriteLog($"    *** baseFbxGuid found in AssetDatabase! Path: {fbxGuidMap[baseFbxGuid]}");
+                            baseFbxPath = fbxGuidMap[baseFbxGuid];
+                        }
+                    }
+                    catch (Exception diagEx)
+                    {
+                        WriteLog($"    Error searching AssetDatabase: {diagEx.Message}");
+                    }
+                    
+                    // Diagnostic 4: Search for .fbx files on disk and check their GUIDs
+                    WriteLog($"  [DIAG] FBX Files on Disk:");
+                    try
+                    {
+                        string[] fbxFiles = Directory.GetFiles(Application.dataPath, "*.fbx", SearchOption.AllDirectories);
+                        WriteLog($"    Found {fbxFiles.Length} .fbx files on disk");
+                        
+                        int checkedCount = 0;
+                        int matchingCount = 0;
+                        var guidMatches = new List<string>();
+                        
+                        // Check all FBX files (not just first 20)
+                        foreach (var fbxFile in fbxFiles)
+                        {
+                            try
+                            {
+                                string relativePath = fbxFile.Replace(Application.dataPath, "Assets").Replace('\\', '/');
+                                string guid = AssetDatabase.AssetPathToGUID(relativePath);
+                                checkedCount++;
+                                
+                                if (guid == baseFbxGuid)
+                                {
+                                    WriteLog($"    *** MATCH FOUND on disk! File: {relativePath}, GUID: {guid}");
+                                    guidMatches.Add(relativePath);
+                                    if (string.IsNullOrEmpty(baseFbxPath))
+                                    {
+                                        baseFbxPath = relativePath;
+                                    }
+                                    matchingCount++;
+                                }
+                                
+                                // Also check for partial GUID matches (first 8 chars)
+                                if (guid.Length >= 8 && baseFbxGuid.Length >= 8 && 
+                                    guid.Substring(0, 8).Equals(baseFbxGuid.Substring(0, 8), StringComparison.OrdinalIgnoreCase) &&
+                                    guid != baseFbxGuid)
+                                {
+                                    WriteLog($"    Partial GUID match (first 8 chars): {relativePath} -> {guid}");
+                                }
+                            }
+                            catch (Exception fileEx)
+                            {
+                                // Silently continue - some files might not be importable
+                            }
+                        }
+                        
+                        WriteLog($"    Checked {checkedCount} files, found {matchingCount} exact GUID matches");
+                        if (matchingCount > 0)
+                        {
+                            WriteLog($"    Matching files: {string.Join(", ", guidMatches)}");
+                        }
+                    }
+                    catch (Exception diagEx)
+                    {
+                        WriteLog($"    Error searching disk: {diagEx.Message}");
+                        WriteLog($"    Stack trace: {diagEx.StackTrace}");
+                    }
+                    
+                    // Diagnostic 5: Search for GUID in .meta files directly
+                    WriteLog($"  [DIAG] Searching .meta files for GUID:");
+                    try
+                    {
+                        string[] metaFiles = Directory.GetFiles(Application.dataPath, "*.meta", SearchOption.AllDirectories);
+                        WriteLog($"    Found {metaFiles.Length} .meta files");
+                        
+                        int metaMatches = 0;
+                        var matchingMetaFiles = new List<string>();
+                        
+                        foreach (var metaFile in metaFiles.Take(1000)) // Limit to first 1000 for performance
+                        {
+                            try
+                            {
+                                string metaContent = File.ReadAllText(metaFile);
+                                if (metaContent.Contains(baseFbxGuid))
+                                {
+                                    string assetFile = metaFile.Substring(0, metaFile.Length - 5); // Remove .meta
+                                    string relativePath = assetFile.Replace(Application.dataPath, "Assets").Replace('\\', '/');
+                                    
+                                    // Check if it's actually an FBX file
+                                    if (File.Exists(assetFile) && assetFile.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        metaMatches++;
+                                        matchingMetaFiles.Add(relativePath);
+                                        WriteLog($"    *** Found GUID in .meta file: {relativePath}");
+                                        
+                                        // Verify the GUID in the meta file
+                                        var guidMatch = Regex.Match(metaContent, @"guid:\s*([0-9a-f]{32})", RegexOptions.IgnoreCase);
+                                        if (guidMatch.Success)
+                                        {
+                                            string metaGuid = guidMatch.Groups[1].Value;
+                                            if (metaGuid.Equals(baseFbxGuid, StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                WriteLog($"      Confirmed: .meta file contains exact GUID match!");
+                                                if (string.IsNullOrEmpty(baseFbxPath))
+                                                {
+                                                    baseFbxPath = relativePath;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                WriteLog($"      WARNING: .meta file GUID mismatch! Expected: {baseFbxGuid}, Found: {metaGuid}");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch (Exception metaEx)
+                            {
+                                // Continue searching
+                            }
+                        }
+                        
+                        WriteLog($"    Found {metaMatches} .meta files containing the GUID");
+                        if (metaMatches > 0)
+                        {
+                            WriteLog($"    Matching .meta files: {string.Join(", ", matchingMetaFiles)}");
+                        }
+                    }
+                    catch (Exception diagEx)
+                    {
+                        WriteLog($"    Error searching .meta files: {diagEx.Message}");
+                    }
+                    
+                    // Diagnostic 6: Check for similar GUIDs (typos, case differences)
+                    WriteLog($"  [DIAG] Checking for similar GUIDs:");
+                    try
+                    {
+                        string guidLower = baseFbxGuid.ToLowerInvariant();
+                        string[] allGuids = AssetDatabase.FindAssets("", new[] { "Assets" });
+                        WriteLog($"    Searching through {allGuids.Length} assets for similar GUIDs...");
+                        
+                        var similarGuids = new List<string>();
+                        foreach (var guid in allGuids.Take(1000))
+                        {
+                            if (guid.ToLowerInvariant() == guidLower && guid != baseFbxGuid)
+                            {
+                                string path = AssetDatabase.GUIDToAssetPath(guid);
+                                if (!string.IsNullOrEmpty(path) && path.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    similarGuids.Add($"{guid} -> {path}");
+                                }
+                            }
+                        }
+                        
+                        if (similarGuids.Count > 0)
+                        {
+                            WriteLog($"    Found {similarGuids.Count} similar GUIDs (case difference?):");
+                            foreach (var similar in similarGuids)
+                            {
+                                WriteLog($"      {similar}");
+                            }
+                        }
+                        else
+                        {
+                            WriteLog($"    No similar GUIDs found");
+                        }
+                    }
+                    catch (Exception diagEx)
+                    {
+                        WriteLog($"    Error checking similar GUIDs: {diagEx.Message}");
+                    }
+                    
+                    // Diagnostic 7: Check AssetDatabase state
+                    WriteLog($"  [DIAG] AssetDatabase State:");
+                    WriteLog($"    Application data path: {Application.dataPath}");
+                    WriteLog($"    Unity version: {Application.unityVersion}");
+                    WriteLog($"    Is playing: {Application.isPlaying}");
+                    WriteLog($"    Is editor: {Application.isEditor}");
+                    
+                    // Diagnostic 8: List all FBX files with their GUIDs (sample)
+                    WriteLog($"  [DIAG] Sample FBX Files and GUIDs (first 10):");
+                    try
+                    {
+                        string[] sampleFbx = Directory.GetFiles(Application.dataPath, "*.fbx", SearchOption.AllDirectories).Take(10).ToArray();
+                        foreach (var fbx in sampleFbx)
+                        {
+                            try
+                            {
+                                string relPath = fbx.Replace(Application.dataPath, "Assets").Replace('\\', '/');
+                                string guid = AssetDatabase.AssetPathToGUID(relPath);
+                                WriteLog($"      {Path.GetFileName(fbx)} -> GUID: {guid}");
+                            }
+                            catch { }
+                        }
+                    }
+                    catch (Exception diagEx)
+                    {
+                        WriteLog($"    Error listing sample FBX files: {diagEx.Message}");
+                    }
+                    
+                    WriteLog($"  [DIAG] Diagnostics complete. baseFbxPath resolved to: {(string.IsNullOrEmpty(baseFbxPath) ? "NULL" : baseFbxPath)}");
+                    
+                    // If still not found, retry with delays
+                    if (string.IsNullOrEmpty(baseFbxPath) || !baseFbxPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
+                    {
+                        WriteLog($"  Scheduling retry after AssetDatabase refresh...");
+                        
+                        // Retry after delay to allow AssetDatabase to finish indexing
+                        EditorApplication.delayCall += () =>
+                        {
+                            EditorApplication.delayCall += () =>
+                            {
+                                AssetDatabase.Refresh();
+                                string retryBaseFbxPath = AssetDatabase.GUIDToAssetPath(baseFbxGuid);
+                                
+                                if (string.IsNullOrEmpty(retryBaseFbxPath) || !retryBaseFbxPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    // Try one more time with a longer delay
+                                    WriteLog($"  [RETRY 1] First retry failed. Resolved path: '{retryBaseFbxPath ?? "null"}'. Trying again with longer delay...");
+                                    Debug.LogWarning($"[YUCP PatchImporter] First retry failed for baseFbxGuid {baseFbxGuid}. Path resolved to: '{retryBaseFbxPath ?? "null"}'");
+                                    
+                                    EditorApplication.delayCall += () =>
+                                    {
+                                        AssetDatabase.Refresh();
+                                        string finalBaseFbxPath = AssetDatabase.GUIDToAssetPath(baseFbxGuid);
+                                        
+                                        if (string.IsNullOrEmpty(finalBaseFbxPath) || !finalBaseFbxPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            WriteLog($"  [RETRY 2] Final retry failed. Resolved path: '{finalBaseFbxPath ?? "null"}'");
+                                            
+                                            // Final diagnostic summary
+                                            WriteLog($"  [FINAL DIAG] Summary of failure:");
+                                            WriteLog($"    - baseFbxGuid: {baseFbxGuid}");
+                                            WriteLog($"    - Attempted 3 times (initial + 2 retries)");
+                                            WriteLog($"    - Final resolved path: {(string.IsNullOrEmpty(finalBaseFbxPath) ? "NULL" : finalBaseFbxPath)}");
+                                            
+                                            // Quick check: Is the GUID in any .meta file?
+                                            try
+                                            {
+                                                string[] allMetaFiles = Directory.GetFiles(Application.dataPath, "*.meta", SearchOption.AllDirectories);
+                                                int guidInMetaCount = 0;
+                                                foreach (var meta in allMetaFiles.Take(500))
+                                                {
+                                                    try
+                                                    {
+                                                        if (File.ReadAllText(meta).Contains(baseFbxGuid))
+                                                        {
+                                                            guidInMetaCount++;
+                                                            string assetFile = meta.Substring(0, meta.Length - 5);
+                                                            string relPath = assetFile.Replace(Application.dataPath, "Assets").Replace('\\', '/');
+                                                            WriteLog($"    - GUID found in .meta file: {relPath}");
+                                                            if (guidInMetaCount >= 5) break; // Limit output
+                                                        }
+                                                    }
+                                                    catch { }
+                                                }
+                                                WriteLog($"    - GUID found in {guidInMetaCount} .meta file(s)");
+                                            }
+                                            catch (Exception finalDiagEx)
+                                            {
+                                                WriteLog($"    - Error in final diagnostic: {finalDiagEx.Message}");
+                                            }
+                                            
+                                            WriteLog($"  ERROR: baseFbxGuid {baseFbxGuid} still does not resolve after retries. " +
+                                                $"GUID may be incorrect or base FBX is not in the project.");
+                                            Debug.LogError($"[YUCP PatchImporter] baseFbxGuid {baseFbxGuid} does not resolve to a valid FBX after retries. " +
+                                                $"The base FBX with this GUID may not be in the project, or the GUID is incorrect. " +
+                                                $"Please ensure the base FBX is imported before importing the patch package. " +
+                                                $"Check the log file for detailed diagnostics.");
+                                            return;
+                                        }
+                                        
+                                        // Success on final retry - continue with patching
+                                        WriteLog($"  [RETRY 2] Successfully resolved baseFbxGuid on final retry: {finalBaseFbxPath}");
+                                        Debug.Log($"[YUCP PatchImporter] Successfully resolved baseFbxGuid {baseFbxGuid} on final retry: {finalBaseFbxPath}");
+                                        ApplyPatchWithBasePath(patchObj, patchPath, finalBaseFbxPath, baseFbxGuid, derivedFbxGuid, targetFbxName, originalDerivedFbxPath);
+                                    };
+                                }
+                                else
+                                {
+                                    // Success on first retry
+                                    WriteLog($"  [RETRY 1] Successfully resolved baseFbxGuid on first retry: {retryBaseFbxPath}");
+                                    Debug.Log($"[YUCP PatchImporter] Successfully resolved baseFbxGuid {baseFbxGuid} on first retry: {retryBaseFbxPath}");
+                                    ApplyPatchWithBasePath(patchObj, patchPath, retryBaseFbxPath, baseFbxGuid, derivedFbxGuid, targetFbxName, originalDerivedFbxPath);
+                                }
+                            };
+                        };
+                        return;
+                    }
                 }
                 
                 WriteLog($"  Using direct targeting: baseFbxGuid={baseFbxGuid} -> {baseFbxPath}");
+                ApplyPatchWithBasePath(patchObj, patchPath, baseFbxPath, baseFbxGuid, derivedFbxGuid, targetFbxName, originalDerivedFbxPath);
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"  ERROR in ApplyPatch: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogError($"[YUCP PatchImporter] Error applying patch: {ex.Message}");
+            }
+        }
+        
+        private static void ApplyPatchWithBasePath(UnityEngine.Object patchObj, string patchPath, string baseFbxPath, string baseFbxGuid, string derivedFbxGuid, string targetFbxName, string originalDerivedFbxPath)
+        {
+            try
+            {
+                // Delete DLLs from Plugins BEFORE patching
+                DeleteDllsFromPluginsBeforePatching();
                 
                 // Get DerivedFbxBuilder type
                 var derivedFbxBuilderType = System.Type.GetType("YUCP.PatchRuntime.DerivedFbxBuilder, YUCP.PatchRuntime");
@@ -989,8 +1480,8 @@ namespace YUCP.PatchCleanup
             }
             catch (Exception ex)
             {
-                WriteLog($"  ERROR in ApplyPatch: {ex.Message}\n{ex.StackTrace}");
-                Debug.LogError($"[YUCP PatchImporter] Error applying patch: {ex.Message}");
+                WriteLog($"  ERROR in ApplyPatchWithBasePath: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogError($"[YUCP PatchImporter] Error applying patch with base path: {ex.Message}");
             }
         }
         

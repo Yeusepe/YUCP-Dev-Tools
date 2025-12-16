@@ -623,6 +623,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
             
+            // Preserve existing dependency settings (enabled state and exportMode) before clearing
+            var existingSettings = new Dictionary<string, (bool enabled, DependencyExportMode exportMode)>();
+            foreach (var existingDep in profile.dependencies)
+            {
+                if (!string.IsNullOrEmpty(existingDep.packageName))
+                {
+                    existingSettings[existingDep.packageName] = (existingDep.enabled, existingDep.exportMode);
+                }
+            }
+            
             // Clear existing dependencies
             profile.dependencies.Clear();
             
@@ -631,6 +641,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             foreach (var dep in dependencies)
             {
+                // Restore preserved settings if they exist
+                if (existingSettings.TryGetValue(dep.packageName, out var settings))
+                {
+                    dep.enabled = settings.enabled;
+                    dep.exportMode = settings.exportMode;
+                }
                 profile.dependencies.Add(dep);
             }
             
