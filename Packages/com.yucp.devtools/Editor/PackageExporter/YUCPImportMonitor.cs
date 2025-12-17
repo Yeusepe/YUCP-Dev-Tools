@@ -34,8 +34,33 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 if (Directory.Exists(standaloneGuardianPath))
                 {
+                    // Only remove the standalone guardian when the integrated guardian is enabled.
+                    // If Package Guardian is disabled in settings, removing the standalone guardian breaks
+                    // .yucp_disabled resolution in projects that rely on it.
+                    bool integratedEnabled = true;
+                    try
+                    {
+                        // Resolve via reflection to avoid a hard dependency from devtools -> components.
+                        var type = Type.GetType("YUCP.Components.PackageGuardian.Editor.Settings.PackageGuardianSettings, YUCP.Components.Editor");
+                        var isEnabled = type?.GetMethod("IsEnabled", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                        if (isEnabled != null)
+                        {
+                            integratedEnabled = (bool)isEnabled.Invoke(null, null);
+                        }
+                    }
+                    catch
+                    {
+                        // If we can't read settings, err on the side of not deleting user content.
+                        integratedEnabled = false;
+                    }
+
+                    if (!integratedEnabled)
+                    {
+                        Debug.LogWarning("[YUCP ImportMonitor] Found standalone guardian, but Package Guardian is disabled. Keeping standalone guardian so .yucp_disabled resolution still works.");
+                        return;
+                    }
+
                     Debug.Log("[YUCP ImportMonitor] Found standalone guardian - removing (com.yucp.components provides protection)...");
-                    
                     try
                     {
                         Directory.Delete(standaloneGuardianPath, true);
@@ -346,11 +371,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 if (detectionResult == "DUPLICATE")
                 {
-                    // Same version already installed - delete the incoming .yucp_disabled files
+                    // Same version already installed - DO NOT delete incoming .yucp_disabled files automatically.
+                    // Deleting is destructive and makes it impossible to inspect/repair imports.
                     Debug.LogWarning($"[YUCP ImportMonitor] DUPLICATE IMPORT DETECTED!");
-                    Debug.LogWarning($"[YUCP ImportMonitor] Package is already installed. Removing {conflictingFiles.Count} conflicting files...");
-                    
-                    DeleteConflictingDisabledFiles(conflictingFiles);
+                    Debug.LogWarning($"[YUCP ImportMonitor] Package is already installed. Leaving {conflictingFiles.Count} conflicting .yucp_disabled file(s) in place.");
                 }
                 else if (detectionResult == "UPDATE")
                 {
@@ -368,8 +392,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     if (conflictPercentage > 0.9f)
                     {
-                        Debug.LogWarning($"[YUCP ImportMonitor] {conflictPercentage:P0} of files conflict - assuming DUPLICATE");
-                        DeleteConflictingDisabledFiles(conflictingFiles);
+                        Debug.LogWarning($"[YUCP ImportMonitor] {conflictPercentage:P0} of files conflict - assuming DUPLICATE (non-destructive).");
+                        Debug.LogWarning($"[YUCP ImportMonitor] Leaving incoming .yucp_disabled file(s) in place. If this is truly a duplicate, you can delete them manually.");
                     }
                     else
                     {

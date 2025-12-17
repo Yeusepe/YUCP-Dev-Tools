@@ -366,6 +366,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				return null;
 			}
 			
+			// Generate .meta file for .hdiff file so Unity recognizes it as an exportable asset
+			string hdiffMetaPath = hdiffOutputPath + ".meta";
+			if (!File.Exists(hdiffMetaPath))
+			{
+				try
+				{
+					string metaGuid = System.Guid.NewGuid().ToString("N");
+					string metaContent = "fileFormatVersion: 2\n" +
+					                     $"guid: {metaGuid}\n" +
+					                     "DefaultImporter:\n" +
+					                     "  externalObjects: {}\n" +
+					                     "  userData:\n" +
+					                     "  assetBundleName:\n" +
+					                     "  assetBundleVariant:\n";
+					File.WriteAllText(hdiffMetaPath, metaContent);
+					Debug.Log($"[PatchBuilder] Created .meta file for .hdiff: {hdiffMetaPath}");
+				}
+				catch (System.Exception ex)
+				{
+					Debug.LogWarning($"[PatchBuilder] Could not create .meta file for .hdiff: {ex.Message}");
+				}
+			}
+			
 			// Store relative path to .hdiff file
 			string hdiffRelativePath = Path.Combine(hdiffDir, hdiffFileName).Replace(Path.DirectorySeparatorChar, '/');
 			asset.hdiffFilePath = hdiffRelativePath;

@@ -327,10 +327,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                              string physicalPath = Path.Combine(projectPath, unityPath.Replace('/', Path.DirectorySeparatorChar));
                              if (File.Exists(physicalPath) || Directory.Exists(physicalPath))
                              {
-                                 // For .asset and .cs files in Packages, allow them if file exists
+                                 // For .asset, .cs, and .hdiff files in Packages, allow them if file exists
                                  // Unity will export the file itself even if not fully imported
                                  if (unityPath.EndsWith(".asset", StringComparison.OrdinalIgnoreCase) || 
-                                     unityPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+                                     unityPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+                                     unityPath.EndsWith(".hdiff", StringComparison.OrdinalIgnoreCase))
                                  {
                                      // File exists, add it - Unity will export it
                                      validAssets.Add(unityPath);
