@@ -132,6 +132,10 @@ namespace YUCP.DirectVpmInstaller
             string disabledMeta = disabledFile + ".meta";
             string enabledMeta = enabledFile + ".meta";
 
+            // Capture expected content hash BEFORE we move/delete the disabled file.
+            // (At the end of this method, disabledFile commonly no longer exists.)
+            string expectedHash = SafeHash(disabledFile);
+
             // Track if enabled file already exists (to preserve its GUID)
             bool enabledFileExisted = File.Exists(enabledFile);
             bool enabledMetaExisted = File.Exists(enabledMeta);
@@ -237,6 +241,13 @@ namespace YUCP.DirectVpmInstaller
                         "$1userData:\n",
                         System.Text.RegularExpressions.RegexOptions.Multiline
                     );
+                    // Also remove the newer token format if present
+                    metaContent = System.Text.RegularExpressions.Regex.Replace(
+                        metaContent,
+                        @"(\s+)userData:\s*(?:['""])?YUCP_ORIGINAL_GUID=[a-f0-9]{32}(?:['""])?\s*\r?\n",
+                        "$1userData:\n",
+                        System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                    );
                     
                     // Write the restored meta file (ensure directory exists)
                     Directory.CreateDirectory(Path.GetDirectoryName(enabledMeta));
@@ -261,7 +272,7 @@ namespace YUCP.DirectVpmInstaller
                 {
                     disabledPath = disabledFile.Replace('\\', '/'),
                     enabledPath = enabledFile.Replace('\\', '/'),
-                    sha256 = SafeHash(disabledFile)
+                    sha256 = expectedHash
                 });
                 Persist();
             }
@@ -476,7 +487,12 @@ namespace YUCP.DirectVpmInstaller
         }
         
         /// <summary>
-        /// Extract the original GUID from a .meta file's userData field (stored when bundling .yucp_disabled files)
+        /// Extract the original GUID from a .meta file's userData field (stored when bundling .yucp_disabled files).
+        ///
+        /// Supports multiple formats for backwards compatibility:
+        /// - userData: YUCP_ORIGINAL_GUID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx   (preferred)
+        /// - userData: {"originalGuid":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}   (legacy; may be dropped by Unity)
+        /// - userData: '{"originalGuid":"..."}' or "..."
         /// </summary>
         private static string ExtractOriginalGuidFromMeta(string metaPath)
         {
@@ -487,16 +503,33 @@ namespace YUCP.DirectVpmInstaller
                 
                 string metaContent = File.ReadAllText(metaPath);
                 
-                // Look for userData with original GUID: userData: {"originalGuid":"..."}
-                var userDataMatch = System.Text.RegularExpressions.Regex.Match(
-                    metaContent, 
-                    @"userData:\s*\{\""originalGuid\"":\""([a-f0-9]{32})\""\}"
+                // Preferred: userData: YUCP_ORIGINAL_GUID=<guid>
+                var tokenMatch = System.Text.RegularExpressions.Regex.Match(
+                    metaContent,
+                    @"userData:\s*(?:['""])?YUCP_ORIGINAL_GUID=([a-f0-9]{32})(?:['""])?\s*$",
+                    System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase
                 );
-                
-                if (userDataMatch.Success && userDataMatch.Groups.Count > 1)
-                {
-                    return userDataMatch.Groups[1].Value;
-                }
+                if (tokenMatch.Success && tokenMatch.Groups.Count > 1)
+                    return tokenMatch.Groups[1].Value;
+
+                // Legacy: userData: {"originalGuid":"..."} (inline YAML map)
+                // Note: Unity may reserialize this away; still support for packages where it survives.
+                var legacyInlineMatch = System.Text.RegularExpressions.Regex.Match(
+                    metaContent,
+                    @"userData:\s*\{\s*""originalGuid""\s*:\s*""([a-f0-9]{32})""\s*\}\s*$",
+                    System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                );
+                if (legacyInlineMatch.Success && legacyInlineMatch.Groups.Count > 1)
+                    return legacyInlineMatch.Groups[1].Value;
+
+                // Legacy quoted string variants (Unity often quotes userData when it contains braces)
+                var legacyQuotedMatch = System.Text.RegularExpressions.Regex.Match(
+                    metaContent,
+                    @"userData:\s*(?:['""])\s*\{\s*""originalGuid""\s*:\s*""([a-f0-9]{32})""\s*\}\s*(?:['""])\s*$",
+                    System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                );
+                if (legacyQuotedMatch.Success && legacyQuotedMatch.Groups.Count > 1)
+                    return legacyQuotedMatch.Groups[1].Value;
             }
             catch (Exception ex)
             {
