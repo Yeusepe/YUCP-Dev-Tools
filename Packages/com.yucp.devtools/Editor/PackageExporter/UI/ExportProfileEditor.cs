@@ -641,7 +641,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             foreach (var dep in dependencies)
             {
-                // Restore preserved settings if they exist
                 if (existingSettings.TryGetValue(dep.packageName, out var settings))
                 {
                     dep.enabled = settings.enabled;
@@ -650,18 +649,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 profile.dependencies.Add(dep);
             }
             
+            if (profile.foldersToExport.Count > 0)
+            {
+                DependencyScanner.AutoDetectUsedDependencies(profile);
+            }
+            
             EditorUtility.SetDirty(profile);
             
             int vpmCount = dependencies.Count(d => d.isVpmDependency);
             int regularCount = dependencies.Count - vpmCount;
+            int autoEnabled = profile.dependencies.Count(d => d.enabled);
             
             string message = $"Found {dependencies.Count} packages:\n\n" +
                            $"• {vpmCount} VRChat (VPM) packages\n" +
-                           $"• {regularCount} Unity packages\n\n" +
-                           "Configure export mode for each dependency:\n" +
-                           "• Bundle: Include files in export\n" +
-                           "• Dependency: Auto-download when installed\n\n" +
-                           "Tip: Use 'Auto-Detect Used' to automatically enable packages used in your export folders.";
+                           $"• {regularCount} Unity packages\n" +
+                           $"• {autoEnabled} auto-enabled (detected in use)\n\n" +
+                           "Dependencies detected in your export folders have been automatically enabled.";
             
             EditorUtility.DisplayDialog("Scan Complete", message, "OK");
             

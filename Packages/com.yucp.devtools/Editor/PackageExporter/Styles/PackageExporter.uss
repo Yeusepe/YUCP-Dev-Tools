@@ -261,28 +261,44 @@
     min-width: 120px;
 }
 
-/* Search row responsive */
 .yucp-inspector-search-row {
     flex-direction: row;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .yucp-window-narrow .yucp-inspector-search-row {
     flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 0;
+    padding-right: 0;
 }
 
 .yucp-window-narrow .yucp-inspector-search-row .yucp-input {
     width: 100%;
+    max-width: 100%;
     margin-right: 0;
     margin-bottom: 8px;
+    margin-left: 0;
     flex-grow: 1;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .yucp-window-narrow .yucp-inspector-search-row Button {
     width: 100%;
+    max-width: 100%;
     margin-top: 0;
     margin-bottom: 8px;
     margin-left: 0;
     margin-right: 0;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .yucp-window-medium .yucp-inspector-search-row .yucp-input {
@@ -290,20 +306,38 @@
     min-width: 200px;
 }
 
-/* Filter toggles row */
 .yucp-inspector-filter-toggles {
     flex-direction: row;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .yucp-window-narrow .yucp-inspector-filter-toggles {
     flex-direction: column;
     align-items: flex-start;
+    width: 100%;
+    max-width: 100%;
+    margin-right: 0;
+    margin-left: 0;
+    padding-left: 0;
+    padding-right: 0;
 }
 
 .yucp-window-narrow .yucp-inspector-filter-toggles .yucp-toggle {
     width: 100%;
+    max-width: 100%;
     margin-bottom: 8px;
     margin-right: 0;
+    margin-left: 0;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.yucp-window-narrow .yucp-inspector-filter-toggles .unity-toggle {
+    width: 100%;
+    max-width: 100%;
 }
 
 .yucp-window-medium .yucp-inspector-filter-toggles {
@@ -315,10 +349,26 @@
     margin-bottom: 8px;
 }
 
-/* List header with actions (Include All, Exclude All) */
+.yucp-window-narrow .yucp-section {
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.yucp-window-narrow .yucp-section > * {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
 .yucp-inspector-list-header {
     flex-direction: row;
     justify-content: space-between;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .yucp-window-narrow .yucp-inspector-list-header {
@@ -333,16 +383,26 @@
 
 .yucp-inspector-list-actions {
     flex-direction: row;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .yucp-window-narrow .yucp-inspector-list-actions {
     width: 100%;
+    max-width: 100%;
     flex-direction: column;
+    margin-left: 0;
+    margin-right: 0;
 }
 
 .yucp-window-narrow .yucp-inspector-list-actions Button {
     width: 100%;
+    max-width: 100%;
     margin: 4px 0;
+    margin-left: 0;
+    margin-right: 0;
+    box-sizing: border-box;
 }
 
 /* Dependencies list container */

@@ -1151,9 +1151,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _emptyState = CreateEmptyState();
             _rightPaneScrollView.Add(_emptyState);
             
-            // Profile details container (initially empty)
             _profileDetailsContainer = new VisualElement();
             _profileDetailsContainer.style.display = DisplayStyle.None;
+            _profileDetailsContainer.style.flexGrow = 0;
+            _profileDetailsContainer.style.flexShrink = 1;
+            _profileDetailsContainer.style.flexBasis = StyleKeyword.Auto;
             _rightPaneScrollView.Add(_profileDetailsContainer);
             
             rightPane.Add(_rightPaneScrollView);
@@ -1560,6 +1562,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 contentWrapper.style.paddingTop = 0;
                 contentWrapper.style.paddingBottom = 20;
                 contentWrapper.style.marginTop = -400;
+                contentWrapper.style.flexGrow = 0;
+                contentWrapper.style.flexShrink = 1;
+                contentWrapper.style.flexBasis = StyleKeyword.Auto;
                 
                 // Make contentWrapper ignore pointer events in the banner area so hover works
                 // But we can't easily do this, so we'll handle hover on the banner section itself
@@ -3454,10 +3459,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var section = new VisualElement();
             section.AddToClassList("yucp-section");
-            // Ensure section can grow without limits
-            section.style.flexGrow = 0; // Don't grow automatically, but allow manual sizing
-            section.style.flexShrink = 1; // Allow shrinking if needed
-            section.style.overflow = Overflow.Visible; // Allow content to extend beyond bounds if needed
+            section.style.flexGrow = 0;
+            section.style.flexShrink = 1;
+            section.style.minWidth = 0;
+            section.style.maxWidth = Length.Percent(100);
+            section.style.width = Length.Percent(100);
+            section.style.overflow = Overflow.Hidden;
             
             var header = new VisualElement();
             header.AddToClassList("yucp-inspector-header");
@@ -3607,7 +3614,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     var searchRow = new VisualElement();
                     searchRow.AddToClassList("yucp-inspector-search-row");
-                    searchRow.style.flexDirection = FlexDirection.Row;
                     searchRow.style.marginBottom = 4;
                     
                     var searchField = new TextField { value = inspectorSearchFilter };
@@ -3618,8 +3624,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     searchField.RegisterValueChangedCallback(evt =>
                     {
                         inspectorSearchFilter = evt.newValue;
-                        // Skip UpdateProfileDetails() - it recreates the entire UI
-                        // Instead, find and update the asset list container only
                         var assetListContainer = section.Q<VisualElement>("asset-list-container");
                         if (assetListContainer != null)
                         {
@@ -3652,7 +3656,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     var filterToggles = new VisualElement();
                     filterToggles.AddToClassList("yucp-inspector-filter-toggles");
-                    filterToggles.style.flexDirection = FlexDirection.Row;
                     filterToggles.style.marginBottom = 8;
                     
                     var includedToggle = new Toggle("Show Only Included") { value = showOnlyIncluded };
@@ -3705,8 +3708,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     // Asset list header with actions
                     var listHeader = new VisualElement();
                     listHeader.AddToClassList("yucp-inspector-list-header");
-                    listHeader.style.flexDirection = FlexDirection.Row;
-                    listHeader.style.justifyContent = Justify.SpaceBetween;
                     listHeader.style.marginBottom = 4;
                     
                     var listTitle = new Label("Discovered Assets");
@@ -3715,7 +3716,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     var listActions = new VisualElement();
                     listActions.AddToClassList("yucp-inspector-list-actions");
-                    listActions.style.flexDirection = FlexDirection.Row;
                     
                     var includeAllButton = new Button(() => 
                     {
@@ -4623,7 +4623,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void RebuildDependencyList(ExportProfile profile, VisualElement section, VisualElement container)
         {
-            // Filter dependencies using search
+            var scrollView = container.GetFirstAncestorOfType<ScrollView>();
+            float? sectionTopRelativeToViewport = null;
+            
+            if (scrollView != null && section != null)
+            {
+                var sectionWorldBounds = section.worldBound;
+                var scrollViewWorldBounds = scrollView.worldBound;
+                
+                if (sectionWorldBounds.height > 0 && scrollViewWorldBounds.height > 0)
+                {
+                    float sectionTopInViewport = sectionWorldBounds.y - scrollViewWorldBounds.y;
+                    sectionTopRelativeToViewport = sectionTopInViewport;
+                }
+            }
+            
             var filteredDependencies = profile.dependencies.AsEnumerable();
             
             if (!string.IsNullOrWhiteSpace(dependenciesSearchFilter))
@@ -4715,6 +4729,31 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 selectButtons.Add(deselectAllButton);
                 
                 container.Add(selectButtons);
+            }
+            
+            if (scrollView != null && sectionTopRelativeToViewport.HasValue)
+            {
+                scrollView.schedule.Execute(() =>
+                {
+                    if (scrollView != null && section != null)
+                    {
+                        var sectionWorldBounds = section.worldBound;
+                        var scrollViewWorldBounds = scrollView.worldBound;
+                        
+                        if (sectionWorldBounds.height > 0)
+                        {
+                            float currentSectionTop = sectionWorldBounds.y - scrollViewWorldBounds.y;
+                            float targetSectionTop = sectionTopRelativeToViewport.Value;
+                            float scrollAdjustment = currentSectionTop - targetSectionTop;
+                            
+                            if (Mathf.Abs(scrollAdjustment) > 1f)
+                            {
+                                float newScrollValue = Mathf.Max(0, scrollView.verticalScroller.value + scrollAdjustment);
+                                scrollView.verticalScroller.value = newScrollValue;
+                            }
+                        }
+                    }
+                });
             }
         }
 
@@ -6002,7 +6041,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 var dependencies = DependencyScanner.ConvertToPackageDependencies(foundPackages);
                 foreach (var dep in dependencies)
                 {
-                    // Restore preserved settings if they exist
                     if (existingSettings.TryGetValue(dep.packageName, out var settings))
                     {
                         dep.enabled = settings.enabled;
@@ -6011,11 +6049,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     profile.dependencies.Add(dep);
                 }
                 
-                // Always ensure @com.yucp.devtools is included as a dependency
                 if (!profile.dependencies.Any(d => d.packageName == "com.yucp.devtools"))
                 {
                     var devtoolsDep = new PackageDependency("com.yucp.devtools", "*", "YUCP Dev Tools", false);
-                    devtoolsDep.enabled = true;
                     profile.dependencies.Add(devtoolsDep);
                 }
                 

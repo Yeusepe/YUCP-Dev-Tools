@@ -24,7 +24,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
     [Serializable]
     public class PackageDependency
     {
-        public bool enabled = true;
+        public bool enabled = false;
         public string packageName = "";
         public string packageVersion = "";
         public string displayName = "";
@@ -41,7 +41,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             this.packageVersion = version;
             this.displayName = displayName;
             this.isVpmDependency = isVpm;
-            this.enabled = true;
+            this.enabled = false;
             this.exportMode = DependencyExportMode.Dependency;
         }
     }
