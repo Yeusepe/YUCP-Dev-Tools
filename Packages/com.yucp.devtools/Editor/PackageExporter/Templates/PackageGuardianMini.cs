@@ -80,11 +80,18 @@ namespace YUCP.PackageGuardian.Mini
         /// </summary>
         private static void HandleDisabledFiles()
         {
-            string packagesPath = Path.Combine(Application.dataPath, "..", "Packages");
-            if (!Directory.Exists(packagesPath))
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string packagesPath = Path.Combine(projectRoot, "Packages");
+            string assetsPath = Path.Combine(projectRoot, "Assets");
+
+            var roots = new[] { packagesPath, assetsPath }.Where(Directory.Exists).ToArray();
+            if (roots.Length == 0)
                 return;
 
-            var disabledFiles = Directory.GetFiles(packagesPath, "*.yucp_disabled", SearchOption.AllDirectories);
+            var disabledFiles = roots
+                .SelectMany(r => Directory.GetFiles(r, "*.yucp_disabled", SearchOption.AllDirectories))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
             if (disabledFiles.Length == 0)
                 return;
 
@@ -166,11 +173,15 @@ namespace YUCP.PackageGuardian.Mini
         {
             try
             {
-                string packagesPath = Path.Combine(Application.dataPath, "..", "Packages");
-                if (!Directory.Exists(packagesPath))
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string packagesPath = Path.Combine(projectRoot, "Packages");
+                string assetsPath = Path.Combine(projectRoot, "Assets");
+
+                var roots = new[] { packagesPath, assetsPath }.Where(Directory.Exists).ToArray();
+                if (roots.Length == 0)
                     return;
 
-                foreach (var meta in Directory.GetFiles(packagesPath, "*.yucp_disabled.meta", SearchOption.AllDirectories))
+                foreach (var meta in roots.SelectMany(r => Directory.GetFiles(r, "*.yucp_disabled.meta", SearchOption.AllDirectories)))
                 {
                     var disabled = meta.Substring(0, meta.Length - ".meta".Length);
                     if (!File.Exists(disabled))

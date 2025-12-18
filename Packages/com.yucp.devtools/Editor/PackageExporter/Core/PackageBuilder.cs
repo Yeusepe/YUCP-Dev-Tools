@@ -1859,83 +1859,71 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 
                 // 2a. Inject Mini Package Guardian (permanent protection layer)
-                // Only inject if com.yucp.components is NOT already a dependency
-                bool hasYucpComponentsDependency = profile.dependencies != null && 
+                //
+                // Requirements:
+                // - Must be fully self-contained (must NOT reference YUCP.Components.*), because it is bundled for projects
+                //   that don't have com.yucp.components installed.
+                // - Must NOT be injected if the exported package.json will install com.yucp.components (avoids conflicts).
+                bool hasYucpComponentsDependency = profile.dependencies != null &&
                     profile.dependencies.Any(d => d.enabled && d.packageName == "com.yucp.components");
-                
-                if (!hasYucpComponentsDependency)
+
+                bool packageJsonWillInstallYucpComponents =
+                    !string.IsNullOrEmpty(packageJsonContent) &&
+                    packageJsonContent.IndexOf("\"com.yucp.components\"", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if (!hasYucpComponentsDependency && !packageJsonWillInstallYucpComponents)
                 {
-                    // Find the Mini Guardian
-                    string guardianScriptPath = null;
-                    string[] foundGuardians = AssetDatabase.FindAssets("PackageGuardianMini t:Script");
-                    
-                    if (foundGuardians.Length > 0)
+                    string guardianTemplatePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Templates/PackageGuardianMini.cs";
+                    string transactionTemplatePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Templates/GuardianTransaction.cs";
+
+                    if (!File.Exists(guardianTemplatePath) || !File.Exists(transactionTemplatePath))
                     {
-                        guardianScriptPath = AssetDatabase.GUIDToAssetPath(foundGuardians[0]);
+                        Debug.LogWarning("[PackageBuilder] Mini Guardian templates missing in com.yucp.devtools. Skipping yucp.packageguardian injection.");
                     }
-                    
-                    if (!string.IsNullOrEmpty(guardianScriptPath) && File.Exists(guardianScriptPath))
+                    else
                     {
-                        // Get the guardian directory to find dependencies
-                        string guardianDir = Path.GetDirectoryName(guardianScriptPath);
-                        string packageGuardianDir = Directory.GetParent(guardianDir).FullName;
-                        
                         // 1. Inject GuardianTransaction.cs (core dependency)
-                        string transactionPath = Path.Combine(packageGuardianDir, "Core", "Transactions", "GuardianTransaction.cs");
-                        if (File.Exists(transactionPath))
-                        {
-                            string transactionGuid = Guid.NewGuid().ToString("N");
-                            string transactionFolder = Path.Combine(tempExtractDir, transactionGuid);
-                            Directory.CreateDirectory(transactionFolder);
-                            
-                            string transactionContent = File.ReadAllText(transactionPath);
-                            File.WriteAllText(Path.Combine(transactionFolder, "asset"), transactionContent);
-                            File.WriteAllText(Path.Combine(transactionFolder, "pathname"), "Packages/yucp.packageguardian/Editor/Core/Transactions/GuardianTransaction.cs");
-                            
-                            string transactionMeta = "fileFormatVersion: 2\nguid: " + transactionGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
-                            File.WriteAllText(Path.Combine(transactionFolder, "asset.meta"), transactionMeta);
-                            
-                        }
-                        
-                        // 2. Inject PackageGuardianMini.cs
+                        string transactionGuid = Guid.NewGuid().ToString("N");
+                        string transactionFolder = Path.Combine(tempExtractDir, transactionGuid);
+                        Directory.CreateDirectory(transactionFolder);
+
+                        string transactionContent = File.ReadAllText(transactionTemplatePath);
+                        File.WriteAllText(Path.Combine(transactionFolder, "asset"), transactionContent);
+                        File.WriteAllText(Path.Combine(transactionFolder, "pathname"), "Packages/yucp.packageguardian/Editor/Core/Transactions/GuardianTransaction.cs");
+
+                        string transactionMeta = "fileFormatVersion: 2\nguid: " + transactionGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+                        File.WriteAllText(Path.Combine(transactionFolder, "asset.meta"), transactionMeta);
+
+                        // 2. Inject PackageGuardianMini.cs (self-contained implementation)
                         string guardianGuid = Guid.NewGuid().ToString("N");
                         string guardianFolder = Path.Combine(tempExtractDir, guardianGuid);
                         Directory.CreateDirectory(guardianFolder);
-                        
-                        string guardianContent = File.ReadAllText(guardianScriptPath);
+
+                        string guardianContent = File.ReadAllText(guardianTemplatePath);
                         File.WriteAllText(Path.Combine(guardianFolder, "asset"), guardianContent);
                         File.WriteAllText(Path.Combine(guardianFolder, "pathname"), "Packages/yucp.packageguardian/Editor/PackageGuardianMini.cs");
-                        
+
                         string guardianMeta = "fileFormatVersion: 2\nguid: " + guardianGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                         File.WriteAllText(Path.Combine(guardianFolder, "asset.meta"), guardianMeta);
-                        
+
                         // 3. Create package.json for the guardian package
                         string guardianPackageJsonGuid = Guid.NewGuid().ToString("N");
                         string guardianPackageJsonFolder = Path.Combine(tempExtractDir, guardianPackageJsonGuid);
                         Directory.CreateDirectory(guardianPackageJsonFolder);
-                        
+
                         string guardianPackageJson = @"{
   ""name"": ""yucp.packageguardian"",
   ""displayName"": ""YUCP Package Guardian (Mini)"",
   ""version"": ""2.0.0"",
-  ""description"": ""Lightweight import protection for YUCP packages. Detects duplicates, reverts failed imports, and ensures error-free installation."",
+  ""description"": ""Lightweight import protection for YUCP packages. Resolves .yucp_disabled files and preserves meta GUIDs."",
   ""unity"": ""2019.4""
 }";
                         File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "asset"), guardianPackageJson);
                         File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "pathname"), "Packages/yucp.packageguardian/package.json");
-                        
+
                         string guardianPackageJsonMeta = "fileFormatVersion: 2\nguid: " + guardianPackageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                         File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "asset.meta"), guardianPackageJsonMeta);
-                        
                     }
-                    else
-                    {
-                        Debug.LogWarning("[PackageBuilder] Could not find PackageGuardianMini.cs - package will have no import protection!");
-                        Debug.LogWarning("[PackageBuilder] Install com.yucp.components to enable Mini Guardian bundling");
-                    }
-                }
-                else
-                {
                 }
                 
                 // 2b. Inject DirectVpmInstaller.cs
@@ -2403,17 +2391,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             }
                             
                             // GUID handling strategy:
-                            // - For .yucp_disabled files: Generate NEW GUID
+                            // - For .yucp_disabled files: Generate NEW GUID, but store ORIGINAL GUID in meta userData for restoration
                             // - For normal files: Preserve original GUID to maintain references
                             string fileGuid = null;
                             string metaContent = null;
                             string originalMetaPath = filePath + ".meta";
+                            string originalGuid = null;
+                            try
+                            {
+                                if (File.Exists(originalMetaPath))
+                                {
+                                    string originalMeta = File.ReadAllText(originalMetaPath);
+                                    var guidMatch = System.Text.RegularExpressions.Regex.Match(originalMeta, @"guid:\s*([a-f0-9]{32})");
+                                    if (guidMatch.Success)
+                                        originalGuid = guidMatch.Groups[1].Value;
+                                }
+                            }
+                            catch { /* best-effort */ }
                             
                             if (isCompilableScript)
                             {
                                 // Generate new GUID for disabled files (prevents GUID conflicts on re-import)
                                 fileGuid = Guid.NewGuid().ToString("N");
-                                metaContent = GenerateMetaForFile(filePath, fileGuid);
+                                // Store original GUID token so the installer/resolver can restore GUID on enable.
+                                metaContent = GenerateMetaForFileWithOriginalGuid(filePath, fileGuid, originalGuid);
                             }
                             else if (File.Exists(originalMetaPath))
                             {
@@ -2525,6 +2526,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
 #endif
         }
         
+        /// <summary>
+        /// Generate appropriate .meta file content using file extension
+        /// </summary>
+        private static string GenerateMetaForFileWithOriginalGuid(string filePath, string guid, string originalGuid)
+        {
+            string baseMeta = GenerateMetaForFile(filePath, guid);
+
+            if (string.IsNullOrEmpty(originalGuid))
+                return baseMeta;
+
+            // Store original GUID in a Unity-stable string format.
+            // Unity expects userData to be a string; inline YAML objects may be dropped.
+            string token = $"YUCP_ORIGINAL_GUID={originalGuid}";
+
+            baseMeta = System.Text.RegularExpressions.Regex.Replace(
+                baseMeta,
+                @"(\s+)userData:\s*\r?\n",
+                $"$1userData: {token}\n",
+                System.Text.RegularExpressions.RegexOptions.Multiline
+            );
+
+            return baseMeta;
+        }
+
         /// <summary>
         /// Generate appropriate .meta file content using file extension
         /// </summary>

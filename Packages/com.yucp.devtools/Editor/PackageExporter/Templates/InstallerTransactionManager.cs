@@ -35,6 +35,8 @@ namespace YUCP.DirectVpmInstaller
         }
 
         private static TxnState _current;
+        // Snapshot of the last transaction manifest so VerifyManifest can run after Commit() clears _current.
+        private static List<ManifestEntry> _lastManifest;
         private static string TxnFolder => Path.Combine(Application.dataPath, "..", "Library", TxnDirName);
         private static string TxnPath => Path.Combine(TxnFolder, TxnPrefix + _current.id + ".json");
         private static string LogPath => Path.Combine(Application.dataPath, "..", "Library", TxnDirName, "installer.log");
@@ -81,6 +83,7 @@ namespace YUCP.DirectVpmInstaller
         {
             Directory.CreateDirectory(TxnFolder);
             _current = new TxnState { id = Guid.NewGuid().ToString("N"), status = "started" };
+            _lastManifest = null;
             Persist();
             return _current.id;
         }
@@ -90,6 +93,8 @@ namespace YUCP.DirectVpmInstaller
             if (_current == null) return;
             _current.status = "committed";
             Persist();
+            // Keep a snapshot for verification after commit.
+            _lastManifest = _current.manifest != null ? new List<ManifestEntry>(_current.manifest) : null;
             TryDelete(TxnPath);
             _current = null;
         }
@@ -416,7 +421,11 @@ namespace YUCP.DirectVpmInstaller
         {
             try
             {
-                foreach (var m in _current.manifest)
+                var manifest = _current != null ? _current.manifest : _lastManifest;
+                if (manifest == null || manifest.Count == 0)
+                    return true; // Nothing to verify
+
+                foreach (var m in manifest)
                 {
                     if (!File.Exists(m.enabledPath)) return false;
                     var h = HashOf(m.enabledPath);

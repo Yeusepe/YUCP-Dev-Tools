@@ -248,10 +248,10 @@ namespace YUCP.DirectVpmInstaller
                     {
                         if (enableOk)
                         {
-                            InstallerTxn.Commit();
-                            // Verify enabled files match expected hashes
+                            // Verify enabled files match expected hashes BEFORE clearing transaction state
                             if (!InstallerTxn.VerifyManifest())
                                 throw new Exception("Post-install manifest verification failed");
+                            InstallerTxn.Commit();
                         }
                     }
                     
