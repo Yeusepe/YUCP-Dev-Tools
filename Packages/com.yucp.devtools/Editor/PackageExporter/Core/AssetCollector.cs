@@ -28,7 +28,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// <summary>
         /// Scan all export folders and collect discovered assets with dependencies
         /// </summary>
-        public static List<DiscoveredAsset> ScanExportFolders(ExportProfile profile, bool includeDependencies = true)
+        public static List<DiscoveredAsset> ScanExportFolders(ExportProfile profile, bool includeDependencies = true, string sourceProfileName = null)
         {
             var discoveredAssets = new List<DiscoveredAsset>();
             var processedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -55,13 +55,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     continue;
                 }
                 
-                ScanFolder(fullPath, folder, profile, discoveredAssets, processedPaths);
+                ScanFolder(fullPath, folder, profile, discoveredAssets, processedPaths, sourceProfileName);
             }
             
             // Second pass: collect dependencies if requested
             if (includeDependencies && profile.includeDependencies)
             {
-                CollectDependencies(discoveredAssets, profile, processedPaths);
+                CollectDependencies(discoveredAssets, profile, processedPaths, sourceProfileName);
             }
             
             // Third pass: Post-process to remove any excluded items that might have slipped through
@@ -98,7 +98,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// Recursively scan a folder and add all assets
         /// </summary>
         private static void ScanFolder(string folderPath, string sourceFolder, ExportProfile profile, 
-            List<DiscoveredAsset> discoveredAssets, HashSet<string> processedPaths)
+            List<DiscoveredAsset> discoveredAssets, HashSet<string> processedPaths, string sourceProfileName = null)
         {
             // Check if this folder should be ignored
             string folderName = Path.GetFileName(folderPath);
@@ -111,7 +111,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (!processedPaths.Contains(folderPath))
             {
                 processedPaths.Add(folderPath);
-                discoveredAssets.Add(new DiscoveredAsset(folderPath, sourceFolder, isDir: true));
+                var asset = new DiscoveredAsset(folderPath, sourceFolder, isDir: true);
+                if (!string.IsNullOrEmpty(sourceProfileName))
+                    asset.sourceProfileName = sourceProfileName;
+                discoveredAssets.Add(asset);
             }
             
             try
@@ -126,7 +129,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     if (!processedPaths.Contains(file))
                     {
                         processedPaths.Add(file);
-                        discoveredAssets.Add(new DiscoveredAsset(file, sourceFolder, isDir: false));
+                        var asset = new DiscoveredAsset(file, sourceFolder, isDir: false);
+                        if (!string.IsNullOrEmpty(sourceProfileName))
+                            asset.sourceProfileName = sourceProfileName;
+                        discoveredAssets.Add(asset);
                     }
                 }
                 
@@ -136,7 +142,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     string[] subdirs = Directory.GetDirectories(folderPath);
                     foreach (string subdir in subdirs)
                     {
-                        ScanFolder(subdir, sourceFolder, profile, discoveredAssets, processedPaths);
+                        ScanFolder(subdir, sourceFolder, profile, discoveredAssets, processedPaths, sourceProfileName);
                     }
                 }
             }
@@ -150,7 +156,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// Collect dependencies for all discovered assets
         /// </summary>
         private static void CollectDependencies(List<DiscoveredAsset> discoveredAssets, ExportProfile profile, 
-            HashSet<string> processedPaths)
+            HashSet<string> processedPaths, string sourceProfileName = null)
         {
             // Get list of direct assets (not folders, not already marked as dependencies)
             var directAssets = discoveredAssets
@@ -220,13 +226,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Add dependencies to discovered assets
             foreach (string depPath in allDependencies)
             {
-                if (!processedPaths.Contains(depPath))
-                {
-                    processedPaths.Add(depPath);
-                    var depAsset = new DiscoveredAsset(depPath, "[Dependency]", isDir: false);
-                    depAsset.isDependency = true;
-                    discoveredAssets.Add(depAsset);
-                }
+                    if (!processedPaths.Contains(depPath))
+                    {
+                        processedPaths.Add(depPath);
+                        var depAsset = new DiscoveredAsset(depPath, "[Dependency]", isDir: false);
+                        depAsset.isDependency = true;
+                        if (!string.IsNullOrEmpty(sourceProfileName))
+                            depAsset.sourceProfileName = sourceProfileName;
+                        discoveredAssets.Add(depAsset);
+                    }
             }
             
         }

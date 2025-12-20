@@ -70,6 +70,60 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     return result;
                 }
                 
+                // Check if this is a composite profile and resolve bundled profiles
+                List<ExportProfile> includedProfiles = null;
+                Dictionary<string, string> assetSourceMap = null;
+                
+                if (profile.HasIncludedProfiles())
+                {
+                    progressCallback?.Invoke(0.06f, "Resolving bundled profiles...");
+                    
+                    List<string> cycles;
+                    bool resolved = CompositeProfileResolver.ResolveIncludedProfiles(
+                        profile, out includedProfiles, out cycles);
+                    
+                    if (!resolved || cycles.Count > 0)
+                    {
+                        result.success = false;
+                        result.errorMessage = $"Cycle detected in bundled profiles: {string.Join("; ", cycles)}";
+                        return result;
+                    }
+                    
+                    if (includedProfiles == null)
+                        includedProfiles = new List<ExportProfile>();
+                    
+                    // Export bundled profiles separately if requested
+                    if (profile.alsoExportIncludedSeparately && includedProfiles.Count > 0)
+                    {
+                        progressCallback?.Invoke(0.07f, $"Exporting {includedProfiles.Count} bundled profiles separately...");
+                        
+                        for (int i = 0; i < includedProfiles.Count; i++)
+                        {
+                            var bundledProfile = includedProfiles[i];
+                            if (bundledProfile == null)
+                                continue;
+                            
+                            float bundledProgress = 0.07f + (i / (float)includedProfiles.Count) * 0.01f;
+                            progressCallback?.Invoke(bundledProgress, $"Exporting bundled profile: {bundledProfile.packageName}...");
+                            
+                            // Export the bundled profile
+                            var bundledResult = ExportPackage(bundledProfile, (p, s) =>
+                            {
+                                // Scale progress to fit in the allocated range
+                                float scaledProgress = bundledProgress + (p * 0.01f / includedProfiles.Count);
+                                progressCallback?.Invoke(scaledProgress, $"[{i + 1}/{includedProfiles.Count}] {s}");
+                            });
+                            
+                            if (!bundledResult.success)
+                            {
+                                Debug.LogWarning($"[PackageBuilder] Failed to export bundled profile '{bundledProfile.packageName}': {bundledResult.errorMessage}");
+                            }
+                        }
+                    }
+                    
+                    progressCallback?.Invoke(0.08f, $"Merging assets from {includedProfiles.Count} bundled profiles...");
+                }
+                
                 // Handle obfuscation if enabled
                 if (profile.enableObfuscation)
                 {
@@ -113,10 +167,26 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 
                 // Build list of assets to export
-                progressCallback?.Invoke(0.5f, $"Collecting assets from {profile.foldersToExport.Count} folders...");
+                List<string> assetsToExport;
                 
-                // Collect all assets, then filter out obfuscated assembly files
-                List<string> assetsToExport = CollectAssetsToExport(profile);
+                if (profile.HasIncludedProfiles() && includedProfiles != null && includedProfiles.Count > 0)
+                {
+                    // Merge asset lists from composite profile
+                    progressCallback?.Invoke(0.5f, $"Merging assets from bundled profiles...");
+                    assetsToExport = CompositeProfileResolver.MergeAssetLists(
+                        profile, includedProfiles, out assetSourceMap);
+                    
+                    if (assetSourceMap == null)
+                        assetSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    
+                    progressCallback?.Invoke(0.52f, $"Merged {assetsToExport.Count} assets from {includedProfiles.Count} bundled profiles");
+                }
+                else
+                {
+                    // Original behavior: collect from folders only
+                    progressCallback?.Invoke(0.5f, $"Collecting assets from {profile.foldersToExport.Count} folders...");
+                    assetsToExport = CollectAssetsToExport(profile);
+                }
                 
                 // Transform derived FBXs (ModelImporter) into PatchPackages and authoring sidecars
                 progressCallback?.Invoke(0.505f, "Scanning for derived FBXs to convert into PatchPackages...");
@@ -1526,7 +1596,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// <summary>
         /// Collect all assets to export using profile settings
         /// </summary>
-        private static List<string> CollectAssetsToExport(ExportProfile profile)
+        internal static List<string> CollectAssetsToExport(ExportProfile profile)
         {
             var assets = new HashSet<string>();
             
@@ -1644,7 +1714,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// <summary>
         /// Check if an asset should be excluded using filters
         /// </summary>
-        private static bool ShouldExcludeAsset(string assetPath, ExportProfile profile)
+        internal static bool ShouldExcludeAsset(string assetPath, ExportProfile profile)
         {
             // Convert to full path for comprehensive exclusion checking
             string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
@@ -2001,6 +2071,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     else
                     {
                         Debug.LogWarning("[PackageBuilder] Could not find InstallerTransactionManager.cs template - installer will fail to compile!");
+                    }
+                    
+                    // 2c. Inject InstallerHealthTools.cs (includes fix for self-referential dependencies)
+                    string healthToolsScriptPath = Path.Combine(installerDir, "InstallerHealthTools.cs");
+                    if (File.Exists(healthToolsScriptPath))
+                    {
+                        string healthToolsGuid = Guid.NewGuid().ToString("N");
+                        string healthToolsFolder = Path.Combine(tempExtractDir, healthToolsGuid);
+                        Directory.CreateDirectory(healthToolsFolder);
+                        
+                        string healthToolsContent = File.ReadAllText(healthToolsScriptPath);
+                        File.WriteAllText(Path.Combine(healthToolsFolder, "asset"), healthToolsContent);
+                        File.WriteAllText(Path.Combine(healthToolsFolder, "pathname"), $"Assets/Editor/YUCP_InstallerHealthTools_{installerGuid}.cs");
+                        
+                        string healthToolsMeta = "fileFormatVersion: 2\nguid: " + healthToolsGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+                        File.WriteAllText(Path.Combine(healthToolsFolder, "asset.meta"), healthToolsMeta);
                     }
                 }
                 else

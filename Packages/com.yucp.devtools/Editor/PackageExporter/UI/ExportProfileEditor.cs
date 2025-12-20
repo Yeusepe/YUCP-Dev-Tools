@@ -636,11 +636,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Clear existing dependencies
             profile.dependencies.Clear();
             
+            // Normalize package name for comparison (same normalization as in GeneratePackageJson)
+            string normalizedPackageName = profile.packageName.ToLower().Replace(" ", ".");
+            
             // Convert to PackageDependencies
             var dependencies = DependencyScanner.ConvertToPackageDependencies(foundPackages);
             
             foreach (var dep in dependencies)
             {
+                // Skip the package itself - prevent self-referential dependencies
+                if (string.Equals(dep.packageName, normalizedPackageName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                
                 if (existingSettings.TryGetValue(dep.packageName, out var settings))
                 {
                     dep.enabled = settings.enabled;

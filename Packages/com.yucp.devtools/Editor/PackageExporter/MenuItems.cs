@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEngine;
+using System;
 using System.IO;
 using System.Linq;
 
@@ -140,7 +141,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             
             // Select the folder in Unity
-            var obj = AssetDatabase.LoadAssetAtPath<Object>(profilesDir);
+            var obj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(profilesDir);
             Selection.activeObject = obj;
             EditorGUIUtility.PingObject(obj);
         }

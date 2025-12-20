@@ -120,6 +120,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private bool showOnlyExcluded = false;
         private bool showExportInspector = true;
 		private bool showOnlyDerived = false;
+        private string sourceProfileFilter = "All";
         private Dictionary<string, bool> folderExpandedStates = new Dictionary<string, bool>();
         
         // Exclusion Filters state
@@ -1469,7 +1470,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             CloseOverlay();
         }
 
-        private void UpdateProfileDetails()
+        public void UpdateProfileDetails()
         {
             if (selectedProfile == null)
             {
@@ -1590,6 +1591,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 var foldersSection = CreateFoldersSection(selectedProfile);
                 contentWrapper.Add(foldersSection);
+                
+                // Bundled Profiles Section (for composite profiles)
+                var bundledProfilesSection = BundledProfilesSection.CreateBundledProfilesSection(selectedProfile, () => UpdateProfileDetails());
+                contentWrapper.Add(bundledProfilesSection);
                 
                 // Export Inspector Section
                 var inspectorSection = CreateExportInspectorSection(selectedProfile);
@@ -2791,6 +2796,41 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             AddStatItem(statsContainer, "Folders to Export", profile.foldersToExport.Count.ToString());
             
+            // Bundled Profiles
+            if (profile.HasIncludedProfiles())
+            {
+                var bundledProfiles = profile.GetIncludedProfiles();
+                AddStatItem(statsContainer, "Bundled Profiles", bundledProfiles.Count.ToString());
+                
+                // Show breakdown if we have discovered assets with source info
+                if (profile.discoveredAssets != null && profile.discoveredAssets.Count > 0)
+                {
+                    var sourceBreakdown = profile.discoveredAssets
+                        .Where(a => !string.IsNullOrEmpty(a.sourceProfileName))
+                        .GroupBy(a => a.sourceProfileName)
+                        .Select(g => $"{g.Key}: {g.Count()}")
+                        .ToList();
+                    
+                    if (sourceBreakdown.Count > 0)
+                    {
+                        // Add parent assets count
+                        int parentAssets = profile.discoveredAssets.Count(a => 
+                            string.IsNullOrEmpty(a.sourceProfileName) || a.sourceProfileName == profile.packageName);
+                        if (parentAssets > 0)
+                        {
+                            sourceBreakdown.Insert(0, $"{profile.packageName}: {parentAssets}");
+                        }
+                        
+                        string breakdownText = string.Join(", ", sourceBreakdown);
+                        if (breakdownText.Length > 60)
+                        {
+                            breakdownText = breakdownText.Substring(0, 57) + "...";
+                        }
+                        AddStatItem(statsContainer, "Assets by Source", breakdownText);
+                    }
+                }
+            }
+            
             // Dependencies
             if (profile.dependencies.Count > 0)
             {
@@ -2959,6 +2999,111 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         {
                             string depName = string.IsNullOrEmpty(displayName) ? packageName : displayName;
                             warnings.Add($"Dependency '{depName}' contains 'YUCP Dev tools' - not recommended for general distribution");
+                        }
+                    }
+                }
+            }
+            
+            // Check for composite profile issues
+            if (profile.HasIncludedProfiles())
+            {
+                List<ExportProfile> resolved;
+                List<string> cycles;
+                CompositeProfileResolver.ResolveIncludedProfiles(profile, out resolved, out cycles);
+                
+                // Cycle warnings
+                if (cycles.Count > 0)
+                {
+                    foreach (string cycle in cycles)
+                    {
+                        warnings.Add($"Cycle detected in bundled profiles: {cycle}");
+                    }
+                }
+                
+                // Missing profile warnings
+                var bundledProfiles = profile.GetIncludedProfiles();
+                var allGuids = new List<string>();
+                var profileType = typeof(ExportProfile);
+                var guidField = profileType.GetField("includedProfileGuids", 
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                
+                if (guidField != null)
+                {
+                    var guids = guidField.GetValue(profile) as List<string>;
+                    if (guids != null)
+                    {
+                        allGuids = guids;
+                    }
+                }
+                
+                var resolvedGuids = new HashSet<string>();
+                foreach (var resolvedProfile in resolved)
+                {
+                    if (resolvedProfile != null)
+                    {
+                        string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(resolvedProfile));
+                        if (!string.IsNullOrEmpty(guid))
+                        {
+                            resolvedGuids.Add(guid);
+                        }
+                    }
+                }
+                
+                int missingCount = 0;
+                foreach (string guid in allGuids)
+                {
+                    if (!string.IsNullOrEmpty(guid) && !resolvedGuids.Contains(guid))
+                    {
+                        missingCount++;
+                    }
+                }
+                
+                if (missingCount > 0)
+                {
+                    warnings.Add($"{missingCount} bundled profile(s) are missing or deleted");
+                }
+                
+                // Bundled profile validation errors
+                foreach (var bundledProfile in bundledProfiles)
+                {
+                    if (bundledProfile != null)
+                    {
+                        if (!bundledProfile.Validate(out string validationError))
+                        {
+                            warnings.Add($"Bundled profile '{bundledProfile.packageName}' has errors: {validationError}");
+                        }
+                    }
+                }
+                
+                // Asset conflict warnings (if we have discovered assets)
+                if (profile.discoveredAssets != null && profile.discoveredAssets.Count > 0)
+                {
+                    var assetSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    var assetCounts = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                    
+                    foreach (var asset in profile.discoveredAssets)
+                    {
+                        if (!string.IsNullOrEmpty(asset.sourceProfileName))
+                        {
+                            string normalizedPath = asset.assetPath.Replace('\\', '/');
+                            if (!assetCounts.ContainsKey(normalizedPath))
+                            {
+                                assetCounts[normalizedPath] = new List<string>();
+                            }
+                            assetCounts[normalizedPath].Add(asset.sourceProfileName);
+                        }
+                    }
+                    
+                    foreach (var kvp in assetCounts)
+                    {
+                        if (kvp.Value.Count > 1)
+                        {
+                            var uniqueSources = kvp.Value.Distinct().ToList();
+                            if (uniqueSources.Count > 1)
+                            {
+                                string assetName = Path.GetFileName(kvp.Key);
+                                warnings.Add($"Asset '{assetName}' appears in multiple bundled profiles: {string.Join(", ", uniqueSources)}");
+                            }
                         }
                     }
                 }
@@ -3654,6 +3799,50 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     section.Add(searchRow);
                     
+                    // Source profile filter (for composite profiles)
+                    if (profile.HasIncludedProfiles())
+                    {
+                        var sourceFilterRow = new VisualElement();
+                        sourceFilterRow.style.flexDirection = FlexDirection.Row;
+                        sourceFilterRow.style.alignItems = Align.Center;
+                        sourceFilterRow.style.marginBottom = 8;
+                        
+                        var sourceFilterLabel = new Label("Source:");
+                        sourceFilterLabel.AddToClassList("yucp-label");
+                        sourceFilterLabel.style.marginRight = 8;
+                        sourceFilterRow.Add(sourceFilterLabel);
+                        
+                        // Get unique source profiles
+                        var sourceProfiles = new List<string> { "All" };
+                        sourceProfiles.Add(profile.packageName); // Parent
+                        var includedProfiles = profile.GetIncludedProfiles();
+                        foreach (var included in includedProfiles)
+                        {
+                            if (included != null && !sourceProfiles.Contains(included.packageName))
+                            {
+                                sourceProfiles.Add(included.packageName);
+                            }
+                        }
+                        
+                        var sourceFilterDropdown = new DropdownField(sourceProfiles, 0);
+                        sourceFilterDropdown.AddToClassList("yucp-input");
+                        sourceFilterDropdown.style.flexGrow = 1;
+                        sourceFilterDropdown.name = "source-filter-dropdown";
+                        sourceFilterDropdown.SetValueWithoutNotify(sourceProfileFilter);
+                        sourceFilterDropdown.RegisterValueChangedCallback(evt =>
+                        {
+                            sourceProfileFilter = evt.newValue;
+                            var assetListContainer = section.Q<VisualElement>("asset-list-container");
+                            if (assetListContainer != null)
+                            {
+                                assetListContainer.Clear();
+                                RebuildAssetList(profile, assetListContainer);
+                            }
+                        });
+                        sourceFilterRow.Add(sourceFilterDropdown);
+                        section.Add(sourceFilterRow);
+                    }
+                    
                     var filterToggles = new VisualElement();
                     filterToggles.AddToClassList("yucp-inspector-filter-toggles");
                     filterToggles.style.marginBottom = 8;
@@ -3762,6 +3951,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     if (showOnlyExcluded)
                         filteredAssets = filteredAssets.Where(a => !a.included);
+                    
+                    // Filter by source profile (for composite profiles)
+                    if (!string.IsNullOrEmpty(sourceProfileFilter) && sourceProfileFilter != "All")
+                    {
+                        filteredAssets = filteredAssets.Where(a =>
+                        {
+                            // If asset has source profile, match it
+                            if (!string.IsNullOrEmpty(a.sourceProfileName))
+                            {
+                                return a.sourceProfileName == sourceProfileFilter;
+                            }
+                            // If no source profile, it's from parent
+                            return sourceProfileFilter == profile.packageName;
+                        });
+                    }
                     
                     var filteredList = filteredAssets.ToList();
                     
@@ -4011,6 +4215,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			
 			if (showOnlyDerived)
 				filteredAssets = filteredAssets.Where(a => IsDerivedFbx(a.assetPath, out _, out _));
+            
+            // Filter by source profile (for composite profiles)
+            if (!string.IsNullOrEmpty(sourceProfileFilter) && sourceProfileFilter != "All")
+            {
+                filteredAssets = filteredAssets.Where(a =>
+                {
+                    // If asset has source profile, match it
+                    if (!string.IsNullOrEmpty(a.sourceProfileName))
+                    {
+                        return a.sourceProfileName == sourceProfileFilter;
+                    }
+                    // If no source profile, it's from parent
+                    return sourceProfileFilter == profile.packageName;
+                });
+            }
             
             var filteredList = filteredAssets.ToList();
             
@@ -4430,6 +4649,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 var sizeLabel = new Label(FormatBytes(asset.fileSize));
                 sizeLabel.AddToClassList("yucp-asset-item-size");
                 assetItem.Add(sizeLabel);
+            }
+            
+            // Source profile badge (for composite profiles)
+            if (!string.IsNullOrEmpty(asset.sourceProfileName))
+            {
+                var sourceBadge = new Label($"[{asset.sourceProfileName}]");
+                sourceBadge.AddToClassList("yucp-label-secondary");
+                sourceBadge.style.marginLeft = 6;
+                sourceBadge.style.fontSize = 10;
+                sourceBadge.style.color = new Color(0.6f, 0.8f, 0.9f);
+                assetItem.Add(sourceBadge);
             }
             
             // Derived patch badge and quick actions for FBX
@@ -5969,7 +6199,31 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             try
             {
-                profile.discoveredAssets = AssetCollector.ScanExportFolders(profile, profile.includeDependencies);
+                var allAssets = new List<DiscoveredAsset>();
+                
+                // Scan parent profile assets
+                var parentAssets = AssetCollector.ScanExportFolders(profile, profile.includeDependencies, profile.packageName);
+                allAssets.AddRange(parentAssets);
+                
+                // Scan bundled profiles if this is a composite profile
+                if (profile.HasIncludedProfiles())
+                {
+                    List<ExportProfile> resolved;
+                    List<string> cycles;
+                    CompositeProfileResolver.ResolveIncludedProfiles(profile, out resolved, out cycles);
+                    
+                    foreach (var bundledProfile in resolved)
+                    {
+                        if (bundledProfile != null)
+                        {
+                            EditorUtility.DisplayProgressBar("Scanning Assets", $"Scanning bundled profile: {bundledProfile.packageName}...", 0.5f);
+                            var bundledAssets = AssetCollector.ScanExportFolders(bundledProfile, bundledProfile.includeDependencies, bundledProfile.packageName);
+                            allAssets.AddRange(bundledAssets);
+                        }
+                    }
+                }
+                
+                profile.discoveredAssets = allAssets;
                 profile.MarkScanned();
                 EditorUtility.SetDirty(profile);
                 
@@ -6038,9 +6292,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 profile.dependencies.Clear();
                 
+                // Normalize package name for comparison (same normalization as in GeneratePackageJson)
+                string normalizedPackageName = profile.packageName.ToLower().Replace(" ", ".");
+                
                 var dependencies = DependencyScanner.ConvertToPackageDependencies(foundPackages);
                 foreach (var dep in dependencies)
                 {
+                    // Skip the package itself - prevent self-referential dependencies
+                    if (string.Equals(dep.packageName, normalizedPackageName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                    
                     if (existingSettings.TryGetValue(dep.packageName, out var settings))
                     {
                         dep.enabled = settings.enabled;

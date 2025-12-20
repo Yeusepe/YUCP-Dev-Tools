@@ -27,6 +27,9 @@ namespace YUCP.DirectVpmInstaller
             // Clear stale lock if present (crash recovery)
             try { if (InstallerTxn.HasMarker("lock") && InstallerTxn.IsMarkerStale("lock", TimeSpan.FromMinutes(10))) InstallerTxn.ClearMarker("lock"); } catch { }
 
+            // Clean up any old installer scripts first to prevent duplicate class definitions on re-import
+            CleanupInstallerScript();
+
             // Find any YUCP temp install JSON files
             string[] tempJsonFiles = Directory.GetFiles(Application.dataPath, "YUCP_TempInstall_*.json", SearchOption.TopDirectoryOnly);
             
@@ -255,11 +258,93 @@ namespace YUCP.DirectVpmInstaller
                         }
                     }
                     
-                    // Add bundled package to vpm-manifest so it shows in Creator Companion
-                    if (!string.IsNullOrEmpty(bundledPackageName) && !string.IsNullOrEmpty(bundledPackageVersion))
+                    // NOTE: Do NOT add bundled packages to vpm-manifest.json - they are local packages, not from repositories
+                    // Adding them causes VPM Resolver to try to resolve them from repos, resulting in "package not found" errors
+                    
+                    // Fix self-references in the installed package's package.json (if it exists)
+                    if (!string.IsNullOrEmpty(bundledPackageName))
                     {
-                        AddToVpmManifest(bundledPackageName, bundledPackageVersion);
-                        Debug.Log($"[DirectVpmInstaller] Added bundled package {bundledPackageName}@{bundledPackageVersion} to vpm-manifest.json");
+                        string installedPackagePath = Path.Combine(Application.dataPath, "..", "Packages", bundledPackageName);
+                        string installedPackageJson = Path.Combine(installedPackagePath, "package.json");
+                        if (File.Exists(installedPackageJson))
+                        {
+                            try
+                            {
+                                string packageJsonContent = File.ReadAllText(installedPackageJson);
+                                var packageJson = JObject.Parse(packageJsonContent);
+                                bool modified = false;
+                                
+                                string normalizedPackageName = bundledPackageName.ToLower().Replace(" ", ".");
+                                
+                                // Check vpmDependencies
+                                var vpmDeps = packageJson["vpmDependencies"] as JObject;
+                                if (vpmDeps != null)
+                                {
+                                    var toRemove = new List<string>();
+                                    foreach (var dep in vpmDeps.Properties())
+                                    {
+                                        string depName = dep.Name;
+                                        string normalizedDepName = depName.ToLower().Replace(" ", ".");
+                                        if (string.Equals(normalizedDepName, normalizedPackageName, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            toRemove.Add(depName);
+                                        }
+                                    }
+                                    
+                                    foreach (var depName in toRemove)
+                                    {
+                                        vpmDeps.Remove(depName);
+                                        modified = true;
+                                        Debug.Log($"[DirectVpmInstaller] Removed self-referential vpmDependency: {depName} from installed package.json");
+                                    }
+                                    
+                                    if (vpmDeps.Count == 0)
+                                    {
+                                        packageJson.Remove("vpmDependencies");
+                                        modified = true;
+                                    }
+                                }
+                                
+                                // Check dependencies
+                                var deps = packageJson["dependencies"] as JObject;
+                                if (deps != null)
+                                {
+                                    var toRemove = new List<string>();
+                                    foreach (var dep in deps.Properties())
+                                    {
+                                        string depName = dep.Name;
+                                        string normalizedDepName = depName.ToLower().Replace(" ", ".");
+                                        if (string.Equals(normalizedDepName, normalizedPackageName, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            toRemove.Add(depName);
+                                        }
+                                    }
+                                    
+                                    foreach (var depName in toRemove)
+                                    {
+                                        deps.Remove(depName);
+                                        modified = true;
+                                        Debug.Log($"[DirectVpmInstaller] Removed self-referential dependency: {depName} from installed package.json");
+                                    }
+                                    
+                                    if (deps.Count == 0)
+                                    {
+                                        packageJson.Remove("dependencies");
+                                        modified = true;
+                                    }
+                                }
+                                
+                                if (modified)
+                                {
+                                    File.WriteAllText(installedPackageJson, packageJson.ToString(Newtonsoft.Json.Formatting.Indented));
+                                    Debug.Log($"[DirectVpmInstaller] Fixed self-references in installed package.json: {installedPackageJson}");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.LogWarning($"[DirectVpmInstaller] Failed to fix self-references in installed package.json: {ex.Message}");
+                            }
+                        }
                     }
                     
                     // Clean up temporary files
@@ -527,6 +612,18 @@ namespace YUCP.DirectVpmInstaller
                         
                         Debug.Log($"[DirectVpmInstaller] Deleted FullDomainReload script: {reloadPath}");
                     }
+                    
+                    // Also delete the InstallerHealthTools script
+                    string[] healthToolsScripts = Directory.GetFiles(editorPath, "YUCP_InstallerHealthTools_*.cs", SearchOption.TopDirectoryOnly);
+                    foreach (string healthToolsPath in healthToolsScripts)
+                    {
+                        File.Delete(healthToolsPath);
+                        string metaPath = healthToolsPath + ".meta";
+                        if (File.Exists(metaPath))
+                            File.Delete(metaPath);
+                        
+                        Debug.Log($"[DirectVpmInstaller] Deleted InstallerHealthTools script: {healthToolsPath}");
+                    }
                 }
                 
                 // Delete all .yucp_disabled files from bundled packages (orphaned after enabling)
@@ -554,6 +651,24 @@ namespace YUCP.DirectVpmInstaller
                 
                 // Organize YUCP-generated artifacts (e.g. YUCP_PackageInfo.json) into a local package
                 OrganizeYucpArtifacts();
+                
+                // Clean up signing folder if it exists (from signed package imports)
+                string signingFolder = Path.Combine(Application.dataPath, "_Signing");
+                if (Directory.Exists(signingFolder))
+                {
+                    try
+                    {
+                        Directory.Delete(signingFolder, true);
+                        string signingMeta = signingFolder + ".meta";
+                        if (File.Exists(signingMeta))
+                            File.Delete(signingMeta);
+                        Debug.Log($"[DirectVpmInstaller] Cleaned up signing folder: {signingFolder}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[DirectVpmInstaller] Failed to cleanup signing folder: {ex.Message}");
+                    }
+                }
 
                 // Refresh AssetDatabase to reflect file deletions and moves
                 AssetDatabase.Refresh();
@@ -820,7 +935,8 @@ namespace YUCP.DirectVpmInstaller
                 File.Delete(tempZipPath);
                 
                 // Add to VPM manifest so VCC recognizes it as installed
-                AddToVpmManifest(packageName, resolvedVersion);
+                // VPM packages from repositories should be in both dependencies and locked
+                AddToVpmManifest(packageName, resolvedVersion, addToDependencies: true);
                 
                 Debug.Log($"[DirectVpmInstaller] Installed {packageName}@{resolvedVersion}");
                 return true;
@@ -832,7 +948,7 @@ namespace YUCP.DirectVpmInstaller
             }
         }
         
-        private static void AddToVpmManifest(string packageName, string version)
+        private static void AddToVpmManifest(string packageName, string version, bool addToDependencies = true)
         {
             try
             {
@@ -851,19 +967,32 @@ namespace YUCP.DirectVpmInstaller
                     manifest["locked"] = new JObject();
                 }
                 
-                // Add to dependencies section
-                var dependencies = manifest["dependencies"] as JObject;
-                if (dependencies == null)
+                // Add to dependencies section only if this is a VPM package from a repository
+                // Bundled packages (local imports) should NOT be in dependencies
+                if (addToDependencies)
                 {
-                    dependencies = new JObject();
-                    manifest["dependencies"] = dependencies;
+                    var dependencies = manifest["dependencies"] as JObject;
+                    if (dependencies == null)
+                    {
+                        dependencies = new JObject();
+                        manifest["dependencies"] = dependencies;
+                    }
+                    dependencies[packageName] = new JObject
+                    {
+                        ["version"] = version
+                    };
                 }
-                dependencies[packageName] = new JObject
+                else
                 {
-                    ["version"] = version
-                };
+                    // Remove from dependencies if it exists (bundled packages shouldn't be there)
+                    var dependencies = manifest["dependencies"] as JObject;
+                    if (dependencies != null && dependencies[packageName] != null)
+                    {
+                        dependencies.Remove(packageName);
+                    }
+                }
                 
-                // Add to locked section
+                // Always add to locked section (both VPM and bundled packages are installed)
                 var locked = manifest["locked"] as JObject;
                 if (locked == null)
                 {
@@ -877,7 +1006,7 @@ namespace YUCP.DirectVpmInstaller
                 
                 // Save manifest
                 File.WriteAllText(manifestPath, manifest.ToString(Newtonsoft.Json.Formatting.Indented));
-                Debug.Log($"[DirectVpmInstaller] Added {packageName}@{version} to vpm-manifest.json");
+                Debug.Log($"[DirectVpmInstaller] Added {packageName}@{version} to vpm-manifest.json (locked{(addToDependencies ? " + dependencies" : " only")})");
             }
             catch (Exception ex)
             {
@@ -959,11 +1088,12 @@ namespace YUCP.DirectVpmInstaller
                 // Find all YUCP installer files (NOT guardian - guardian stays permanently)
                 string[] installerFiles = Directory.GetFiles(editorPath, "YUCP_Installer_*.cs", SearchOption.TopDirectoryOnly);
                 string[] installerTxnFiles = Directory.GetFiles(editorPath, "YUCP_InstallerTxn_*.cs", SearchOption.TopDirectoryOnly);
+                string[] installerHealthToolsFiles = Directory.GetFiles(editorPath, "YUCP_InstallerHealthTools_*.cs", SearchOption.TopDirectoryOnly);
                 string[] installerAsmDefs = Directory.GetFiles(editorPath, "YUCP_Installer_*.asmdef", SearchOption.TopDirectoryOnly);
                 
                 int deletedCount = 0;
                 
-                foreach (string file in installerFiles.Concat(installerTxnFiles).Concat(installerAsmDefs))
+                foreach (string file in installerFiles.Concat(installerTxnFiles).Concat(installerHealthToolsFiles).Concat(installerAsmDefs))
                 {
                     try
                     {

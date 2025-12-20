@@ -56,6 +56,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("List of folder paths to include in the package (relative to project root)")]
         public List<string> foldersToExport = new List<string>();
         
+        [Header("Bundled Profiles")]
+        [Tooltip("Other export profiles whose assets will be bundled into this package when exported")]
+        [SerializeField] private List<string> includedProfileGuids = new List<string>();
+        
+        [Tooltip("Bundle all assets from bundled profiles into one package")]
+        public bool bundleIncludedProfiles = true;
+        
+        [Tooltip("Also export each bundled profile separately (in addition to the composite package)")]
+        public bool alsoExportIncludedSeparately = false;
+        
         [Header("Export Inspector")]
         [Tooltip("Discovered assets from export folders (populated by scanning)")]
         public List<DiscoveredAsset> discoveredAssets = new List<DiscoveredAsset>();
@@ -288,9 +298,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return false;
             }
             
-            if (foldersToExport == null || foldersToExport.Count == 0)
+            // Allow composite profiles without folders (they get assets from bundled profiles)
+            if ((foldersToExport == null || foldersToExport.Count == 0) && !HasIncludedProfiles())
             {
-                errorMessage = "At least one folder must be selected for export";
+                errorMessage = "At least one folder must be selected for export, or bundle other profiles";
                 return false;
             }
             
@@ -310,7 +321,101 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return false;
             }
             
+            // Validate composite profile (bundled profiles)
+            if (HasIncludedProfiles())
+            {
+                List<string> compositeErrors;
+                if (!CompositeProfileResolver.ValidateIncludedProfiles(this, out compositeErrors))
+                {
+                    errorMessage = "Bundled profiles validation failed: " + string.Join("; ", compositeErrors);
+                    return false;
+                }
+            }
+            
             return true;
+        }
+        
+        /// <summary>
+        /// Get all included profiles (resolves GUIDs to ExportProfile objects)
+        /// </summary>
+        public List<ExportProfile> GetIncludedProfiles()
+        {
+            var profiles = new List<ExportProfile>();
+            
+            if (includedProfileGuids == null || includedProfileGuids.Count == 0)
+                return profiles;
+            
+            foreach (string guid in includedProfileGuids)
+            {
+                if (string.IsNullOrEmpty(guid))
+                    continue;
+                
+                string assetPath = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                if (string.IsNullOrEmpty(assetPath))
+                    continue;
+                
+                var profile = UnityEditor.AssetDatabase.LoadAssetAtPath<ExportProfile>(assetPath);
+                if (profile != null)
+                {
+                    profiles.Add(profile);
+                }
+            }
+            
+            return profiles;
+        }
+        
+        /// <summary>
+        /// Add an included profile (prevents duplicates)
+        /// </summary>
+        public void AddIncludedProfile(ExportProfile profile)
+        {
+            if (profile == null)
+                return;
+            
+            if (includedProfileGuids == null)
+                includedProfileGuids = new List<string>();
+            
+            string guid = UnityEditor.AssetDatabase.AssetPathToGUID(UnityEditor.AssetDatabase.GetAssetPath(profile));
+            if (string.IsNullOrEmpty(guid))
+                return;
+            
+            // Prevent adding self
+            string selfGuid = UnityEditor.AssetDatabase.AssetPathToGUID(UnityEditor.AssetDatabase.GetAssetPath(this));
+            if (guid == selfGuid)
+                return;
+            
+            // Prevent duplicates
+            if (!includedProfileGuids.Contains(guid))
+            {
+                includedProfileGuids.Add(guid);
+                UnityEditor.EditorUtility.SetDirty(this);
+            }
+        }
+        
+        /// <summary>
+        /// Remove an included profile
+        /// </summary>
+        public void RemoveIncludedProfile(ExportProfile profile)
+        {
+            if (profile == null || includedProfileGuids == null)
+                return;
+            
+            string guid = UnityEditor.AssetDatabase.AssetPathToGUID(UnityEditor.AssetDatabase.GetAssetPath(profile));
+            if (string.IsNullOrEmpty(guid))
+                return;
+            
+            if (includedProfileGuids.Remove(guid))
+            {
+                UnityEditor.EditorUtility.SetDirty(this);
+            }
+        }
+        
+        /// <summary>
+        /// Check if this profile has any included profiles
+        /// </summary>
+        public bool HasIncludedProfiles()
+        {
+            return includedProfileGuids != null && includedProfileGuids.Count > 0;
         }
     }
     
@@ -367,6 +472,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         [Tooltip("Is this asset a dependency of a directly exported asset")]
         public bool isDependency;
+        
+        [Tooltip("Source profile name for composite profiles")]
+        public string sourceProfileName = "";
         
         public DiscoveredAsset()
         {
