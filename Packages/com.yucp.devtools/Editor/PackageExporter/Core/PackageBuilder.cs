@@ -188,9 +188,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     assetsToExport = CollectAssetsToExport(profile);
                 }
                 
-                // Transform derived FBXs (ModelImporter) into PatchPackages and authoring sidecars
-                progressCallback?.Invoke(0.505f, "Scanning for derived FBXs to convert into PatchPackages...");
-                bool hasPatchAssets = ConvertDerivedFbxToPatchAssets(assetsToExport, progressCallback);
+                // Note: Derived FBX conversion happens after dependency collection so derived FBXs that are
+                // only pulled in as dependencies still get converted into patch assets.
+                bool hasPatchAssets = false;
                 
                 // Exclude .cs and .asmdef files from obfuscated assemblies (DLL will be included instead)
                 if (profile.assembliesToObfuscate != null && profile.assembliesToObfuscate.Count > 0)
@@ -325,6 +325,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Manually collect dependencies if enabled (respects ignore list)
                 CollectFilteredDependencies(assetsToExport, profile, progressCallback);
                 
+                // Convert derived FBXs after dependencies are collected so derived FBXs referenced only by exported
+                // assets (i.e., not directly in export folders) still get converted into patch artifacts.
+                hasPatchAssets = ConvertDerivedFbxToPatchAssets(assetsToExport, progressCallback, progress: 0.535f);
+                
                 progressCallback?.Invoke(0.54f, $"Total assets after dependency collection: {assetsToExport.Count}");
                 
                 // Track bundled dependencies to inject later (AssetDatabase.ExportPackage can't handle files without .meta)
@@ -400,7 +404,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                  // For .asset and .cs files in Packages, allow them if file exists
                                  // Unity will export the file itself even if not fully imported
                                  if (unityPath.EndsWith(".asset", StringComparison.OrdinalIgnoreCase) || 
-                                     unityPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+                                     unityPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+                                     unityPath.EndsWith(".hdiff", StringComparison.OrdinalIgnoreCase))
                                  {
                                      // File exists, add it - Unity will export it
                                      validAssets.Add(unityPath);
@@ -442,30 +447,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 progressCallback?.Invoke(0.63f, $"Validated {validAssets.Count} assets from export folders");
                 
-                 var finalValidAssets = validAssets;
-                 
-                 // Safety check: Remove any derived FBXs that might have slipped through
-                 int safetyRemoved = finalValidAssets.RemoveAll(assetPath =>
-                 {
-                     if (!assetPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase)) return false;
-                     var importer = AssetImporter.GetAtPath(assetPath) as ModelImporter;
-                     if (importer == null) return false;
-                     try
-                     {
-                         var settings = string.IsNullOrEmpty(importer.userData) ? null : JsonUtility.FromJson<DerivedSettings>(importer.userData);
-                         if (settings != null && settings.isDerived)
-                         {
-                             Debug.LogWarning($"[PackageBuilder] Safety check: Removing derived FBX that was still in export list: {assetPath}");
-                             return true;
-                         }
-                     }
-                     catch { /* ignore */ }
-                     return false;
-                 });
-                if (safetyRemoved > 0)
+                if (hasPatchAssets)
                 {
-                    Debug.LogWarning($"[PackageBuilder] Safety check removed {safetyRemoved} derived FBX(s) that were still in the export list");
+                    bool hasDerivedFbxAsset = validAssets.Any(p =>
+                        p.StartsWith("Packages/com.yucp.temp/Patches/", StringComparison.OrdinalIgnoreCase) &&
+                        p.EndsWith(".asset", StringComparison.OrdinalIgnoreCase));
+                    bool hasHdiff = validAssets.Any(p =>
+                        p.StartsWith("Packages/com.yucp.temp/Patches/", StringComparison.OrdinalIgnoreCase) &&
+                        p.EndsWith(".hdiff", StringComparison.OrdinalIgnoreCase));
+                    
+                    if (!hasDerivedFbxAsset || !hasHdiff)
+                    {
+                        Debug.LogWarning("[PackageBuilder] Derived FBX patching is enabled, but expected patch artifacts were not validated for export. " +
+                                         "This may result in derived FBXs not being recreated on import.");
+                    }
                 }
+                
+                 var finalValidAssets = validAssets;
                 
                 progressCallback?.Invoke(0.64f, "Performing final ignore list check...");
                 int ignoredRemoved = finalValidAssets.RemoveAll(assetPath =>
@@ -846,7 +844,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// Stores settings in the FBX importer userData JSON.
         /// Returns true if any patch assets were created.
         /// </summary>
-        private static bool ConvertDerivedFbxToPatchAssets(List<string> assetsToExport, Action<float, string> progressCallback)
+        private static bool ConvertDerivedFbxToPatchAssets(List<string> assetsToExport, Action<float, string> progressCallback, float progress)
         {
             if (assetsToExport == null || assetsToExport.Count == 0) return false;
             
@@ -944,7 +942,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             if (derivedFbxPaths.Count == 0) return false;
             
-            progressCallback?.Invoke(0.51f, $"Converting {derivedFbxPaths.Count} derived FBX file(s) into PatchPackages...");
+            progressCallback?.Invoke(progress, $"Converting {derivedFbxPaths.Count} derived FBX file(s) into PatchPackages...");
             
             EnsureAuthoringFolder();
             
@@ -1716,6 +1714,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// </summary>
         internal static bool ShouldExcludeAsset(string assetPath, ExportProfile profile)
         {
+            // Always allow internal patch artifacts; these are required for derived FBX support even if the
+            // user excludes most of `Packages/` from export.
+            string unityLikePath = GetRelativePackagePath(assetPath)?.Replace('\\', '/');
+            if (!string.IsNullOrEmpty(unityLikePath) &&
+                unityLikePath.StartsWith("Packages/com.yucp.temp/", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            
             // Convert to full path for comprehensive exclusion checking
             string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             string fullPath;
@@ -3393,5 +3400,3 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
     }
 }
-
-
