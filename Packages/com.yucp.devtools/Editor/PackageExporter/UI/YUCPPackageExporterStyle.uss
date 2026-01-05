@@ -55,6 +55,8 @@
     border-left-color: transparent;
     padding: 8px 12px;
     margin-bottom: 2px;
+    transition-duration: 0.2s;
+    transition-property: transform, opacity, background-color;
 }
 
 .profile-item:hover {
@@ -64,6 +66,36 @@
 .profile-item-selected {
     background-color: #2a2a2a;  /* Solid selected, no transparency */
     border-left-color: #36BFB1; /* Teal accent border only */
+}
+
+.yucp-profile-item {
+    flex-direction: row;
+    align-items: center;
+    transition-duration: 0.25s;
+    transition-property: opacity, background-color, margin-top, margin-bottom, translate;
+    transition-timing-function: ease-out;
+}
+
+/* Dragging state - original item becomes semi-transparent */
+.yucp-profile-item-dragging {
+    opacity: 0.4;
+    transition-duration: 0.2s;
+    transition-property: opacity, scale;
+}
+
+/* Drag ghost - follows mouse with smooth animation */
+.yucp-profile-item-drag-ghost {
+    opacity: 0.8;
+    transition-duration: 0.1s;
+    transition-property: opacity, scale;
+}
+
+/* Drop target indicator */
+.yucp-profile-item-drop-target {
+    border-top-width: 2px;
+    border-top-color: #36BFB1;
+    margin-top: 2px;
+    transition-duration: 0.15s;
 }
 
 .section-header {

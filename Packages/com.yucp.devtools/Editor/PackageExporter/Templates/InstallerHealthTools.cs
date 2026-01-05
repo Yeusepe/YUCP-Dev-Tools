@@ -226,7 +226,10 @@ namespace YUCP.DirectVpmInstaller
                                 bool isLocalPackage = Directory.Exists(packageDir);
                                 
                                 // Also check for YUCP metadata indicating it's a YUCP-imported package
+                                // Note: isYucpPackage is currently unused but kept for potential future use
+#pragma warning disable CS0219 // Variable is assigned but never used
                                 bool isYucpPackage = false;
+#pragma warning restore CS0219
                                 if (isLocalPackage)
                                 {
                                     // Check for YUCP_PackageInfo.json in the package or in yucp.installed-packages

@@ -104,6 +104,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private float currentProgress = 0f;
         private string currentStatus = "";
         
+        // Drag-and-drop state
+        private int draggingIndex = -1;
+        private VisualElement draggingElement = null;
+        private VisualElement draggingGhost = null;
+        private Vector2 dragOffset = Vector2.zero;
+        private Vector2 dragStartPosition = Vector2.zero;
+        private bool hasDragged = false;
+        private const float DRAG_THRESHOLD = 5f; // Pixels to move before considering it a drag
+        private int potentialDropIndex = -1; // Where the item would be dropped
+        private Dictionary<VisualElement, float> originalHeights = new Dictionary<VisualElement, float>();
+        private Dictionary<VisualElement, float> currentOffsets = new Dictionary<VisualElement, float>(); // Track current offsets
+        
         // Delayed rename tracking
         private double lastPackageNameChangeTime = 0;
         private const double RENAME_DELAY_SECONDS = 1.5;
@@ -156,6 +168,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private const string SupportPrefCounterKey = "com.yucp.devtools.support.counter";
         private const string SupportPrefCadenceKey = "com.yucp.devtools.support.cadence"; // optional override
         private const string SupportSessionDismissKey = "com.yucp.devtools.support.dismissed.session";
+        
+        // Package reordering prefs
+        private const string PackageOrderKey = "com.yucp.devtools.packageexporter.order";
 
         private void OnEnable()
         {
@@ -1263,6 +1278,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var item = new VisualElement();
             item.AddToClassList("yucp-profile-item");
+            item.userData = index; // Store index for drag-and-drop
             
             bool isSelected = selectedProfileIndices.Contains(index);
             if (isSelected)
@@ -1308,12 +1324,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             item.Add(contentColumn);
             
-            // Click handler with multi-selection support
+            // Drag-and-drop handlers - entire item is draggable
             item.RegisterCallback<MouseDownEvent>(evt =>
             {
                 if (evt.button == 0) // Left click
                 {
-                    HandleProfileSelection(index, evt);
+                    // Initialize drag state
+                    draggingIndex = index;
+                    draggingElement = item;
+                    dragOffset = evt.localMousePosition;
+                    dragStartPosition = evt.mousePosition;
+                    hasDragged = false;
+                    
+                    item.CaptureMouse();
                     evt.StopPropagation();
                 }
                 else if (evt.button == 1) // Right click
@@ -1323,7 +1346,567 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             });
             
+            
+            // Drag handlers on the item
+            item.RegisterCallback<MouseMoveEvent>(evt =>
+            {
+                if (draggingIndex == index && item.HasMouseCapture())
+                {
+                    // Check if we've moved enough to consider it a drag
+                    float dragDistance = Vector2.Distance(evt.mousePosition, dragStartPosition);
+                    if (dragDistance > DRAG_THRESHOLD && !hasDragged)
+                    {
+                        // Start the drag - create ghost and apply dragging style
+                        hasDragged = true;
+                        CreateDragGhost(item, evt.mousePosition);
+                        item.AddToClassList("yucp-profile-item-dragging");
+                        // Apply scale using style (Unity UI Toolkit supports scale property)
+                        item.style.scale = new Scale(new Vector2(0.95f, 0.95f));
+                    }
+                    
+                    if (hasDragged)
+                    {
+                        // Update ghost position with slight delay/offset for smooth following
+                        if (draggingGhost != null)
+                        {
+                            // Calculate target position with offset from mouse
+                            Vector2 targetPos = evt.mousePosition - dragOffset;
+                            
+                            // Get current position
+                            float currentX = draggingGhost.style.left.value.value;
+                            float currentY = draggingGhost.style.top.value.value;
+                            Vector2 currentPos = new Vector2(currentX, currentY);
+                            
+                            // Smooth interpolation (0.25 gives nice lag effect)
+                            Vector2 newPos = Vector2.Lerp(currentPos, targetPos, 0.25f);
+                            draggingGhost.style.left = newPos.x;
+                            draggingGhost.style.top = newPos.y;
+                        }
+                        
+                        // Find the element under the mouse cursor and calculate drop position
+                        var listContainer = item.parent;
+                        if (listContainer != null)
+                        {
+                            Vector2 mousePos = evt.mousePosition;
+                            int newDropIndex = CalculateDropIndex(listContainer, mousePos, index);
+                            
+                            // Always update animation smoothly, even if index hasn't changed
+                            // This ensures smooth continuous movement
+                            if (newDropIndex != potentialDropIndex)
+                            {
+                                potentialDropIndex = newDropIndex;
+                            }
+                            
+                            // Continuously animate items for smooth movement
+                            AnimateItemsForDrop(listContainer, index, potentialDropIndex);
+                            
+                            // Update visual feedback for drop targets
+                            UpdateDropTargets(listContainer, potentialDropIndex, item);
+                        }
+                    }
+                    
+                    evt.StopPropagation();
+                }
+            });
+            
+            item.RegisterCallback<MouseUpEvent>(evt =>
+            {
+                if (draggingIndex == index && item.HasMouseCapture())
+                {
+                    item.ReleaseMouse();
+                    
+                    if (hasDragged)
+                    {
+                        // We were dragging - handle drop
+                        item.RemoveFromClassList("yucp-profile-item-dragging");
+                        // Reset scale
+                        item.style.scale = new Scale(Vector2.one);
+                        
+                        // Find the target item
+                        var listContainer = item.parent;
+                        if (listContainer != null)
+                        {
+                            // Use the calculated drop index
+                            int targetIndex = potentialDropIndex >= 0 ? potentialDropIndex : index;
+                            
+                            // Clear all visual feedback and reset animations
+                            ClearDropTargets(listContainer);
+                            originalHeights.Clear();
+                            
+                            // Perform reorder if valid target
+                            if (targetIndex >= 0 && targetIndex != index)
+                            {
+                                ReorderProfiles(index, targetIndex);
+                            }
+                        }
+                        
+                        // Clean up drag ghost
+                        if (draggingGhost != null)
+                        {
+                            draggingGhost.RemoveFromHierarchy();
+                            draggingGhost = null;
+                        }
+                    }
+                    else
+                    {
+                        // It was just a click, not a drag - handle selection
+                        // Create a MouseDownEvent-like event for HandleProfileSelection
+                        // We'll handle selection directly here since we know it's a click
+                        if (evt.ctrlKey || evt.commandKey)
+                        {
+                            // Toggle selection
+                            if (selectedProfileIndices.Contains(index))
+                            {
+                                selectedProfileIndices.Remove(index);
+                                if (selectedProfile == profile)
+                                {
+                                    selectedProfile = null;
+                                }
+                            }
+                            else
+                            {
+                                selectedProfileIndices.Add(index);
+                                selectedProfile = profile;
+                            }
+                            lastClickedProfileIndex = index;
+                        }
+                        else if (evt.shiftKey)
+                        {
+                            // Range selection
+                            if (lastClickedProfileIndex >= 0 && lastClickedProfileIndex < allProfiles.Count)
+                            {
+                                int start = Math.Min(lastClickedProfileIndex, index);
+                                int end = Math.Max(lastClickedProfileIndex, index);
+                                selectedProfileIndices.Clear();
+                                for (int i = start; i <= end; i++)
+                                {
+                                    selectedProfileIndices.Add(i);
+                                }
+                                selectedProfile = profile;
+                            }
+                            else
+                            {
+                                selectedProfileIndices.Clear();
+                                selectedProfileIndices.Add(index);
+                                selectedProfile = profile;
+                            }
+                            lastClickedProfileIndex = index;
+                        }
+                        else
+                        {
+                            // Single selection
+                            selectedProfileIndices.Clear();
+                            selectedProfileIndices.Add(index);
+                            selectedProfile = profile;
+                            lastClickedProfileIndex = index;
+                        }
+                        
+                        UpdateProfileList();
+                        UpdateProfileDetails();
+                        UpdateBottomBar();
+                    }
+                    
+                    draggingIndex = -1;
+                    draggingElement = null;
+                    hasDragged = false;
+                    potentialDropIndex = -1;
+                    originalHeights.Clear();
+                    evt.StopPropagation();
+                }
+            });
+            
+            // Click handler with multi-selection support (only if not dragging)
+            // We'll handle selection in MouseDownEvent, but only if we're not starting a drag
+            // The drag logic will prevent selection when dragging starts
+            
             return item;
+        }
+        
+        /// <summary>
+        /// Creates a ghost element that follows the mouse during drag
+        /// </summary>
+        private void CreateDragGhost(VisualElement sourceItem, Vector2 initialPosition)
+        {
+            if (draggingGhost != null)
+            {
+                draggingGhost.RemoveFromHierarchy();
+            }
+            
+            draggingGhost = CloneVisualElement(sourceItem);
+            draggingGhost.AddToClassList("yucp-profile-item-drag-ghost");
+            draggingGhost.RemoveFromClassList("yucp-profile-item-dragging");
+            
+            // Get source item's world position
+            Rect sourceWorldBound = sourceItem.worldBound;
+            
+            // Position ghost at source location initially
+            draggingGhost.style.position = Position.Absolute;
+            draggingGhost.style.left = sourceWorldBound.x;
+            draggingGhost.style.top = sourceWorldBound.y;
+            draggingGhost.style.width = sourceItem.resolvedStyle.width;
+            // Ghost element doesn't need to handle pointer events - it's just visual
+            draggingGhost.pickingMode = PickingMode.Ignore;
+            // Apply scale to ghost (slightly larger)
+            draggingGhost.style.scale = new Scale(new Vector2(1.05f, 1.05f));
+            // Ensure ghost is on top
+            draggingGhost.BringToFront();
+            
+            // Add to root to overlay everything
+            rootVisualElement.Add(draggingGhost);
+        }
+        
+        /// <summary>
+        /// Recursively clones a visual element and its children
+        /// </summary>
+        private VisualElement CloneVisualElement(VisualElement source)
+        {
+            var clone = new VisualElement();
+            
+            // Copy all classes
+            foreach (var className in source.GetClasses())
+            {
+                clone.AddToClassList(className);
+            }
+            
+            // Copy style properties
+            clone.style.width = source.resolvedStyle.width;
+            clone.style.height = source.resolvedStyle.height;
+            clone.style.backgroundColor = source.resolvedStyle.backgroundColor;
+            clone.style.marginLeft = source.resolvedStyle.marginLeft;
+            clone.style.marginRight = source.resolvedStyle.marginRight;
+            clone.style.marginTop = source.resolvedStyle.marginTop;
+            clone.style.marginBottom = source.resolvedStyle.marginBottom;
+            clone.style.paddingLeft = source.resolvedStyle.paddingLeft;
+            clone.style.paddingRight = source.resolvedStyle.paddingRight;
+            clone.style.paddingTop = source.resolvedStyle.paddingTop;
+            clone.style.paddingBottom = source.resolvedStyle.paddingBottom;
+            clone.style.flexGrow = source.resolvedStyle.flexGrow;
+            clone.style.flexShrink = source.resolvedStyle.flexShrink;
+            clone.style.flexDirection = source.resolvedStyle.flexDirection;
+            clone.style.alignItems = source.resolvedStyle.alignItems;
+            
+            // Clone children
+            foreach (var child in source.Children())
+            {
+                if (child is Label label)
+                {
+                    var labelClone = new Label(label.text);
+                    foreach (var className in label.GetClasses())
+                    {
+                        labelClone.AddToClassList(className);
+                    }
+                    labelClone.style.fontSize = label.resolvedStyle.fontSize;
+                    labelClone.style.color = label.resolvedStyle.color;
+                    labelClone.style.unityFontStyleAndWeight = label.resolvedStyle.unityFontStyleAndWeight;
+                    clone.Add(labelClone);
+                }
+                else if (child is Image img)
+                {
+                    var imgClone = new Image();
+                    imgClone.image = img.image;
+                    foreach (var className in img.GetClasses())
+                    {
+                        imgClone.AddToClassList(className);
+                    }
+                    imgClone.style.width = img.resolvedStyle.width;
+                    imgClone.style.height = img.resolvedStyle.height;
+                    clone.Add(imgClone);
+                }
+                else
+                {
+                    // Recursively clone containers
+                    var containerClone = CloneVisualElement(child);
+                    clone.Add(containerClone);
+                }
+            }
+            
+            return clone;
+        }
+        
+        /// <summary>
+        /// Updates visual feedback for drop targets
+        /// </summary>
+        private void UpdateDropTargets(VisualElement listContainer, int targetIndex, VisualElement draggingItem)
+        {
+            foreach (var child in listContainer.Children())
+            {
+                if (child == draggingItem || child == draggingGhost) continue;
+                
+                if (child.userData is int idx)
+                {
+                    if (idx == targetIndex)
+                    {
+                        child.AddToClassList("yucp-profile-item-drop-target");
+                    }
+                    else
+                    {
+                        child.RemoveFromClassList("yucp-profile-item-drop-target");
+                    }
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Clears all drop target visual feedback
+        /// </summary>
+        private void ClearDropTargets(VisualElement listContainer)
+        {
+            foreach (var child in listContainer.Children())
+            {
+                child.RemoveFromClassList("yucp-profile-item-drop-target");
+                child.style.borderTopWidth = 0;
+                // Reset any transform offsets smoothly
+                child.style.translate = new StyleTranslate(new Translate(0, 0));
+                if (currentOffsets.ContainsKey(child))
+                {
+                    currentOffsets[child] = 0f;
+                }
+            }
+            potentialDropIndex = -1;
+            currentOffsets.Clear();
+        }
+        
+        /// <summary>
+        /// Calculates where the item should be dropped based on mouse position
+        /// </summary>
+        private int CalculateDropIndex(VisualElement listContainer, Vector2 mousePos, int draggingIdx)
+        {
+            int dropIndex = draggingIdx;
+            var sortedItems = new List<(int index, VisualElement element, float y)>();
+            
+            // Collect all items with their indices and Y positions
+            foreach (var child in listContainer.Children())
+            {
+                if (child == draggingElement || child == draggingGhost) continue;
+                
+                if (child.userData is int idx)
+                {
+                    Rect worldBound = child.worldBound;
+                    sortedItems.Add((idx, child, worldBound.y));
+                }
+            }
+            
+            // Sort by Y position
+            sortedItems.Sort((a, b) => a.y.CompareTo(b.y));
+            
+            // Find where the mouse is
+            for (int i = 0; i < sortedItems.Count; i++)
+            {
+                var item = sortedItems[i];
+                Rect worldBound = item.element.worldBound;
+                
+                if (worldBound.Contains(mousePos))
+                {
+                    // Mouse is over this item - check if it's in upper or lower half
+                    float relativeY = mousePos.y - worldBound.y;
+                    if (relativeY < worldBound.height * 0.5f)
+                    {
+                        // Insert before this item
+                        dropIndex = item.index;
+                    }
+                    else
+                    {
+                        // Insert after this item
+                        dropIndex = item.index + 1;
+                    }
+                    break;
+                }
+                else if (mousePos.y < worldBound.y)
+                {
+                    // Mouse is above this item - insert before it
+                    dropIndex = item.index;
+                    break;
+                }
+            }
+            
+            // If we didn't find a position, drop at the end
+            if (sortedItems.Count > 0 && mousePos.y > sortedItems[sortedItems.Count - 1].element.worldBound.yMax)
+            {
+                dropIndex = sortedItems[sortedItems.Count - 1].index + 1;
+            }
+            
+            // Clamp to valid range (accounting for the fact that draggingIdx will be removed)
+            int maxIndex = allProfiles.Count - 1;
+            dropIndex = Mathf.Clamp(dropIndex, 0, maxIndex);
+            
+            return dropIndex;
+        }
+        
+        /// <summary>
+        /// Animates items to make space for the dragged item at the drop position
+        /// </summary>
+        private void AnimateItemsForDrop(VisualElement listContainer, int draggingIdx, int dropIdx)
+        {
+            // Get item height from the dragging element
+            float itemHeight = draggingElement != null ? draggingElement.resolvedStyle.height : 60f;
+            if (itemHeight <= 0)
+            {
+                // Try to get height from another item
+                foreach (var child in listContainer.Children())
+                {
+                    if (child != draggingElement && child != draggingGhost && child.userData is int)
+                    {
+                        float h = child.resolvedStyle.height;
+                        if (h > 0)
+                        {
+                            itemHeight = h;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (itemHeight <= 0) itemHeight = 60f; // Fallback
+            
+            // Calculate the adjusted drop index (accounting for removal of dragging item)
+            int adjustedDropIdx = dropIdx;
+            if (dropIdx > draggingIdx)
+            {
+                adjustedDropIdx = dropIdx - 1;
+            }
+            
+            // Get margin between items
+            float itemMargin = 2f;
+            foreach (var child in listContainer.Children())
+            {
+                if (child != draggingElement && child != draggingGhost && child.userData is int)
+                {
+                    itemMargin = child.resolvedStyle.marginBottom;
+                    if (itemMargin <= 0)
+                    {
+                        itemMargin = 2f;
+                    }
+                    break;
+                }
+            }
+            
+            // Animate each item smoothly - only update if offset changed
+            foreach (var child in listContainer.Children())
+            {
+                if (child == draggingElement || child == draggingGhost) continue;
+                
+                if (child.userData is int idx)
+                {
+                    float targetOffsetY = 0f;
+                    
+                    if (draggingIdx < adjustedDropIdx)
+                    {
+                        // Dragging item is moving down
+                        // Items between draggingIdx and dropIdx move up to make space
+                        if (idx > draggingIdx && idx <= adjustedDropIdx)
+                        {
+                            targetOffsetY = -(itemHeight + itemMargin);
+                        }
+                    }
+                    else if (draggingIdx > adjustedDropIdx)
+                    {
+                        // Dragging item is moving up
+                        // Items between dropIdx and draggingIdx move down to make space
+                        if (idx >= adjustedDropIdx && idx < draggingIdx)
+                        {
+                            targetOffsetY = itemHeight + itemMargin;
+                        }
+                    }
+                    
+                    // Only update if the offset actually changed (prevents overriding CSS transitions)
+                    float currentOffset = currentOffsets.ContainsKey(child) ? currentOffsets[child] : 0f;
+                    if (Mathf.Abs(currentOffset - targetOffsetY) > 0.1f)
+                    {
+                        currentOffsets[child] = targetOffsetY;
+                        // Apply smooth translation - CSS transitions will handle the smooth movement
+                        child.style.translate = new StyleTranslate(new Translate(0, targetOffsetY));
+                    }
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Reorders profiles by moving sourceIndex to targetIndex
+        /// </summary>
+        private void ReorderProfiles(int sourceIndex, int targetIndex)
+        {
+            if (sourceIndex < 0 || sourceIndex >= allProfiles.Count ||
+                targetIndex < 0 || targetIndex >= allProfiles.Count ||
+                sourceIndex == targetIndex)
+            {
+                return;
+            }
+            
+            // Get the profile to move
+            var profileToMove = allProfiles[sourceIndex];
+            
+            // Remove from source position
+            allProfiles.RemoveAt(sourceIndex);
+            
+            // Adjust target index if source was before target
+            int adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+            
+            // Insert at target position
+            allProfiles.Insert(adjustedTargetIndex, profileToMove);
+            
+            // Save the new order
+            SaveCustomOrder();
+            
+            // Update selection indices
+            UpdateSelectionIndicesAfterReorder(sourceIndex, adjustedTargetIndex);
+            
+            // Refresh the UI
+            UpdateProfileList();
+        }
+        
+        /// <summary>
+        /// Updates selection indices after reordering
+        /// </summary>
+        private void UpdateSelectionIndicesAfterReorder(int oldIndex, int newIndex)
+        {
+            var newIndices = new HashSet<int>();
+            
+            foreach (int idx in selectedProfileIndices)
+            {
+                if (idx == oldIndex)
+                {
+                    // The moved item
+                    newIndices.Add(newIndex);
+                }
+                else if (oldIndex < newIndex)
+                {
+                    // Source was before target - items between move down
+                    if (idx > oldIndex && idx <= newIndex)
+                    {
+                        newIndices.Add(idx - 1);
+                    }
+                    else
+                    {
+                        newIndices.Add(idx);
+                    }
+                }
+                else
+                {
+                    // Source was after target - items between move up
+                    if (idx >= newIndex && idx < oldIndex)
+                    {
+                        newIndices.Add(idx + 1);
+                    }
+                    else
+                    {
+                        newIndices.Add(idx);
+                    }
+                }
+            }
+            
+            selectedProfileIndices = newIndices;
+            
+            // Update selectedProfile if it was moved
+            if (selectedProfile != null)
+            {
+                int currentIndex = allProfiles.IndexOf(selectedProfile);
+                if (currentIndex >= 0)
+                {
+                    selectedProfileIndices.Clear();
+                    selectedProfileIndices.Add(currentIndex);
+                    lastClickedProfileIndex = currentIndex;
+                }
+            }
         }
         
         private void ShowProfileContextMenu(ExportProfile profile, int index, MouseDownEvent evt)
@@ -5833,7 +6416,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
             
-            allProfiles = allProfiles.OrderBy(p => p.packageName).ToList();
+            // Apply custom order if available, otherwise sort alphabetically
+            allProfiles = ApplyCustomOrder(allProfiles);
             
             // Reselect if we had a selection
             if (selectedProfile != null)
@@ -5845,6 +6429,83 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     selectedProfileIndices.Clear();
                 }
             }
+        }
+        
+        /// <summary>
+        /// Applies custom order from EditorPrefs, or falls back to alphabetical sorting
+        /// </summary>
+        private List<ExportProfile> ApplyCustomOrder(List<ExportProfile> profiles)
+        {
+            string orderJson = EditorPrefs.GetString(PackageOrderKey, "");
+            
+            if (string.IsNullOrEmpty(orderJson))
+            {
+                // No custom order, sort alphabetically
+                return profiles.OrderBy(p => p.packageName).ToList();
+            }
+            
+            try
+            {
+                // Parse the stored order (list of GUIDs)
+                var orderedGuids = JsonUtility.FromJson<SerializableStringList>(orderJson);
+                if (orderedGuids == null || orderedGuids.items == null || orderedGuids.items.Count == 0)
+                {
+                    return profiles.OrderBy(p => p.packageName).ToList();
+                }
+                
+                // Create a dictionary for quick lookup
+                var profileDict = profiles.ToDictionary(p => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p)), p => p);
+                
+                // Build ordered list
+                var ordered = new List<ExportProfile>();
+                var usedGuids = new HashSet<string>();
+                
+                // Add profiles in stored order
+                foreach (string guid in orderedGuids.items)
+                {
+                    if (profileDict.TryGetValue(guid, out var profile))
+                    {
+                        ordered.Add(profile);
+                        usedGuids.Add(guid);
+                    }
+                }
+                
+                // Add any new profiles that weren't in the stored order (alphabetically)
+                var newProfiles = profiles.Where(p => 
+                {
+                    string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p));
+                    return !usedGuids.Contains(guid);
+                }).OrderBy(p => p.packageName).ToList();
+                
+                ordered.AddRange(newProfiles);
+                
+                return ordered;
+            }
+            catch
+            {
+                // If parsing fails, fall back to alphabetical
+                return profiles.OrderBy(p => p.packageName).ToList();
+            }
+        }
+        
+        /// <summary>
+        /// Saves the current profile order to EditorPrefs
+        /// </summary>
+        private void SaveCustomOrder()
+        {
+            var guids = allProfiles.Select(p => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p))).ToList();
+            var serializable = new SerializableStringList { items = guids };
+            string json = JsonUtility.ToJson(serializable);
+            EditorPrefs.SetString(PackageOrderKey, json);
+        }
+        
+        /// <summary>
+        /// Helper class for JSON serialization of string lists
+        /// </summary>
+        [Serializable]
+        private class SerializableStringList
+        {
+            public List<string> items = new List<string>();
         }
 
         private void RefreshProfiles()

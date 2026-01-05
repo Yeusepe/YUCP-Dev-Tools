@@ -974,7 +974,7 @@ namespace YUCP.PatchCleanup
                                     WriteLog($"    Partial GUID match (first 8 chars): {relativePath} -> {guid}");
                                 }
                             }
-                            catch (Exception fileEx)
+                            catch (Exception)
                             {
                                 // Silently continue - some files might not be importable
                             }
@@ -1040,7 +1040,7 @@ namespace YUCP.PatchCleanup
                                     }
                                 }
                             }
-                            catch (Exception metaEx)
+                            catch (Exception)
                             {
                                 // Continue searching
                             }
