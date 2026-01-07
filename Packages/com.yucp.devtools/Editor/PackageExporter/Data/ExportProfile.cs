@@ -16,6 +16,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Header("Profile Settings")]
         [Tooltip("Display name for this export profile")]
         public string profileName = "";
+
+        [Tooltip("Folder name for grouping in the package list")]
+        public string folderName = "";
         
         [Header("Package Metadata")]
         [Tooltip("Package file name (without .unitypackage extension)")]

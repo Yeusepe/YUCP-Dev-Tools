@@ -83,6 +83,12 @@
     transition-property: opacity, scale;
 }
 
+/* Folder Content - indented items */
+.yucp-folder-content {
+    margin-left: 0;
+    padding-left: 0;
+}
+
 /* Drag ghost - follows mouse with smooth animation */
 .yucp-profile-item-drag-ghost {
     opacity: 0.8;
@@ -97,6 +103,91 @@
     margin-top: 2px;
     transition-duration: 0.15s;
 }
+
+/* Folder Header - matches profile item styling */
+.yucp-folder-header {
+    flex-direction: row;
+    align-items: center;
+    cursor: arrow;
+    transition-duration: 0.2s;
+    transition-property: background-color, border-left-color, scale;
+    transition-timing-function: ease-out;
+}
+
+.yucp-folder-header:hover {
+    scale: 1.005 1.005;
+}
+
+/* Folder icon container overrides */
+.yucp-folder-icon-container {
+    background-color: rgba(54, 191, 177, 0.15);
+    border-color: rgba(54, 191, 177, 0.3);
+}
+
+.yucp-folder-icon {
+    width: 100%;
+    height: 100%;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+/* Folder chevron indicator */
+.yucp-folder-chevron {
+    width: 16px;
+    height: 16px;
+    opacity: 0.6;
+    margin-left: 8px;
+    transition-duration: 0.2s;
+    transition-property: opacity, rotate;
+    transition-timing-function: ease-out;
+}
+
+.yucp-folder-header:hover .yucp-folder-chevron {
+    opacity: 1;
+}
+
+/* Folder rename text field */
+.yucp-folder-rename-field {
+    flex-grow: 1;
+    margin-right: 8px;
+}
+
+/* Folder Content - smooth expand/collapse */
+.yucp-folder-content {
+    margin-left: 0;
+    padding-left: 0;
+    overflow: hidden;
+    transition-duration: 0.25s;
+    transition-property: opacity, max-height;
+    transition-timing-function: ease-out;
+    opacity: 1;
+}
+
+.yucp-folder-content-collapsed {
+    max-height: 0;
+    opacity: 0;
+}
+
+/* Drop target for folders */
+.yucp-folder-header-drop-target {
+    background-color: #3a3a3a;
+    border-left-color: #36BFB1;
+}
+
+/* Dragging over a folder to move into it */
+.yucp-folder-header-active-target {
+    background-color: rgba(54, 191, 177, 0.2);
+    border-left-color: #36BFB1;
+}
+
+/* Stack target - profile ready to be grouped into a folder */
+.yucp-profile-item-stack-target {
+    background-color: rgba(54, 191, 177, 0.15);
+    border-left-width: 3px;
+    border-left-color: #36BFB1;
+    transition-duration: 0.2s;
+    scale: 0.98 0.98;
+}
+
 
 .section-header {
     font-size: 11px;

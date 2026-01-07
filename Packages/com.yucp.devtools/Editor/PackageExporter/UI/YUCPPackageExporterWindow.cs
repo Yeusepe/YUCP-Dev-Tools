@@ -116,13 +116,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private Dictionary<VisualElement, float> originalHeights = new Dictionary<VisualElement, float>();
         private Dictionary<VisualElement, float> currentOffsets = new Dictionary<VisualElement, float>(); // Track current offsets
         
+        // Stack-to-create folder state
+        private VisualElement stackTargetElement = null;
+        private int stackTargetIndex = -1;
+        private double stackHoverStartTime = 0;
+        private const double STACK_HOVER_THRESHOLD = 0.5; // 500ms
+        private Vector2 stackHoverPosition = Vector2.zero;
+        private const float STACK_POSITION_TOLERANCE = 15f; // pixels
+        private bool isStackReady = false;
+        
         // Delayed rename tracking
         private double lastPackageNameChangeTime = 0;
         private const double RENAME_DELAY_SECONDS = 1.5;
         private ExportProfile pendingRenameProfile = null;
         private string pendingRenamePackageName = "";
         
-        // Brandfetch configuration (Logo API)
+        // Folder renaming state
+        private string folderBeingRenamed = null;
         // Client ID provided by the user for fetching official product icons
         private const string BrandfetchClientId = "1bxid64Mup7aczewSAYMX";
         
@@ -171,10 +181,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         // Package reordering prefs
         private const string PackageOrderKey = "com.yucp.devtools.packageexporter.order";
+        private const string PackageFoldersKey = "com.yucp.devtools.packageexporter.folders";
+        
+        // Folder state
+        private List<string> projectFolders = new List<string>();
+        private HashSet<string> collapsedFolders = new HashSet<string>();
+        private const string CollapsedFoldersKey = "com.yucp.devtools.packageexporter.collapsedfolders";
 
         private void OnEnable()
         {
             LoadProfiles();
+            LoadProjectFolders();
             LoadResources();
             
             // Refresh dependencies on domain reload
@@ -1261,17 +1278,416 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Update both normal and overlay sidebars
             if (_sidebar != null)
             {
-                _sidebar.UpdateList(allProfiles, 
-                    profile => CreateProfileItem(profile, allProfiles.IndexOf(profile)),
-                    profile => GetProfileDisplayName(profile));
+                // Custom rendering for folders - bypass default UpdateList to avoid NRE / double rendering
+                RenderProfileListWithFolders(_sidebar.ListContainer, _sidebar.GetSearchText());
             }
             
             if (_sidebarOverlay != null)
             {
-                _sidebarOverlay.UpdateList(allProfiles, 
-                    profile => CreateProfileItem(profile, allProfiles.IndexOf(profile)),
-                    profile => GetProfileDisplayName(profile));
+                RenderProfileListWithFolders(_sidebarOverlay.ListContainer, _sidebarOverlay.GetSearchText());
             }
+        }
+        
+        private void RenderProfileListWithFolders(VisualElement container, string searchText)
+        {
+            if (container == null) return;
+            container.Clear();
+            
+            bool hasFilter = !string.IsNullOrWhiteSpace(searchText);
+            var filteredProfiles = hasFilter 
+                ? allProfiles.Where(p => GetProfileDisplayName(p).ToLowerInvariant().Contains(searchText.ToLowerInvariant())).ToList()
+                : allProfiles;
+
+            if (filteredProfiles.Count == 0)
+            {
+                var emptyLabel = new Label(hasFilter ? "No items match your search" : "No profiles found");
+                emptyLabel.AddToClassList("yucp-label-secondary");
+                emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
+                emptyLabel.style.paddingTop = 20;
+                container.Add(emptyLabel);
+                return;
+            }
+
+            // 1. Render Folders
+            // Sort folders alphabetically
+            projectFolders.Sort();
+            
+            foreach (var folderName in projectFolders)
+            {
+                // Find profiles in this folder
+                var folderProfiles = filteredProfiles.Where(p => p.folderName == folderName).ToList();
+                
+                // Skip empty folders ONLY if searching (otherwise show empty folders)
+                if (hasFilter && folderProfiles.Count == 0) continue;
+                
+                // Create Folder Header
+                var folderHeader = CreateFolderHeader(folderName, folderProfiles.Count);
+                container.Add(folderHeader);
+                
+                // Render profiles if not collapsed
+                if (!collapsedFolders.Contains(folderName) || hasFilter) // Always expand when searching
+                {
+                    var folderContent = new VisualElement();
+                    folderContent.AddToClassList("yucp-folder-content");
+                    
+                    foreach (var profile in folderProfiles)
+                    {
+                        var item = CreateProfileItem(profile, allProfiles.IndexOf(profile));
+                        folderContent.Add(item);
+                    }
+                    container.Add(folderContent);
+                }
+            }
+            
+            // 2. Render Uncategorized Profiles (profiles with empty or unknown folderName)
+            var uncategorizedProfiles = filteredProfiles.Where(p => 
+                string.IsNullOrEmpty(p.folderName) || !projectFolders.Contains(p.folderName)).ToList();
+                
+            if (uncategorizedProfiles.Count > 0)
+            {
+                // Optional: valid separator if there are folders above
+                if (projectFolders.Count > 0 && !(hasFilter && container.childCount == 0))
+                {
+                   // Could add a "Uncategorized" header or just a spacer
+                   var spacer = new VisualElement();
+                   spacer.style.height = 16;
+                   container.Add(spacer);
+                }
+                
+                foreach (var profile in uncategorizedProfiles)
+                {
+                    var item = CreateProfileItem(profile, allProfiles.IndexOf(profile));
+                    container.Add(item);
+                }
+            }
+        }
+
+        private VisualElement CreateFolderHeader(string folderName, int count)
+        {
+            bool isCollapsed = collapsedFolders.Contains(folderName);
+            
+            var header = new VisualElement();
+            header.AddToClassList("yucp-folder-header");
+            header.AddToClassList("yucp-profile-item"); // Reuse profile item styling
+            header.userData = folderName; // Identifier for drag-drop targets
+            
+            // Check if renaming
+            if (folderName == folderBeingRenamed)
+            {
+                // Icon container with folder icon
+                var iconContainer = new VisualElement();
+                iconContainer.AddToClassList("yucp-profile-item-icon-container");
+                iconContainer.AddToClassList("yucp-folder-icon-container");
+                
+                var folderIcon = new Image();
+                folderIcon.image = EditorGUIUtility.IconContent("Folder Icon").image;
+                folderIcon.AddToClassList("yucp-folder-icon");
+                iconContainer.Add(folderIcon);
+                header.Add(iconContainer);
+                
+                // Render text field for renaming
+                var textField = new TextField();
+                textField.value = folderName;
+                textField.style.flexGrow = 1;
+                textField.style.marginRight = 8;
+                textField.AddToClassList("yucp-folder-rename-field");
+                
+                textField.RegisterCallback<KeyDownEvent>(evt => 
+                {
+                    if (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter)
+                    {
+                        EndRenameFolder(folderName, textField.value);
+                        evt.StopPropagation();
+                    }
+                    else if (evt.keyCode == KeyCode.Escape)
+                    {
+                        CancelRenameFolder();
+                        evt.StopPropagation();
+                    }
+                });
+                
+                textField.RegisterCallback<FocusOutEvent>(evt => 
+                {
+                    EndRenameFolder(folderName, textField.value);
+                });
+                
+                header.Add(textField);
+                
+                // Focus and select all
+                header.schedule.Execute(() => 
+                {
+                    textField.Focus();
+                    textField.SelectAll();
+                });
+                
+                return header;
+            }
+            
+            // Toggle collapse
+            header.RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.button == 0)
+                {
+                    if (isCollapsed)
+                        collapsedFolders.Remove(folderName);
+                    else
+                        collapsedFolders.Add(folderName);
+                        
+                    SaveCollapsedFolders();
+                    UpdateProfileList();
+                    evt.StopPropagation();
+                }
+                else if (evt.button == 1)
+                {
+                    ShowFolderContextMenu(folderName);
+                    evt.StopPropagation();
+                }
+            });
+            
+            // Icon container with folder icon (like profile item icon)
+            var mainIconContainer = new VisualElement();
+            mainIconContainer.AddToClassList("yucp-profile-item-icon-container");
+            mainIconContainer.AddToClassList("yucp-folder-icon-container");
+            
+            var mainFolderIcon = new Image();
+            mainFolderIcon.image = EditorGUIUtility.IconContent(isCollapsed ? "Folder Icon" : "FolderOpened Icon").image;
+            mainFolderIcon.AddToClassList("yucp-folder-icon");
+            mainIconContainer.Add(mainFolderIcon);
+            header.Add(mainIconContainer);
+            
+            // Content column (like profile item content)
+            var contentColumn = new VisualElement();
+            contentColumn.AddToClassList("yucp-profile-item-content");
+            contentColumn.style.flexGrow = 1;
+            
+            // Folder name
+            var nameLabel = new Label(folderName);
+            nameLabel.AddToClassList("yucp-profile-item-name");
+            contentColumn.Add(nameLabel);
+            
+            // Folder info
+            var infoText = $"{count} profile{(count != 1 ? "s" : "")}";
+            var infoLabel = new Label(infoText);
+            infoLabel.AddToClassList("yucp-profile-item-info");
+            contentColumn.Add(infoLabel);
+            
+            header.Add(contentColumn);
+            
+            // Chevron indicator
+            var chevron = new Image();
+            chevron.AddToClassList("yucp-folder-chevron");
+            var chevronIcon = AssetDatabase.LoadAssetAtPath<Texture2D>(
+                isCollapsed 
+                ? "Packages/com.yucp.components/Resources/Icons/Nucleo/chevron-right-small.png"
+                : "Packages/com.yucp.components/Resources/Icons/Nucleo/chevron-down-small.png");
+            if (chevronIcon != null)
+            {
+                chevron.image = chevronIcon;
+            }
+            else
+            {
+                // Fallback to built-in
+                chevron.image = EditorGUIUtility.IconContent(isCollapsed ? "d_forward" : "d_dropdown").image;
+            }
+            header.Add(chevron);
+            
+            return header;
+        }
+
+        private void LoadProjectFolders()
+        {
+            string foldersStr = EditorPrefs.GetString(PackageFoldersKey, "");
+            projectFolders = !string.IsNullOrEmpty(foldersStr) 
+                ? foldersStr.Split(';').Where(s => !string.IsNullOrEmpty(s)).ToList() 
+                : new List<string>();
+                
+            string collapsedStr = EditorPrefs.GetString(CollapsedFoldersKey, "");
+            collapsedFolders = !string.IsNullOrEmpty(collapsedStr)
+                ? new HashSet<string>(collapsedStr.Split(';'))
+                : new HashSet<string>();
+        }
+        
+        private void SaveProjectFolders()
+        {
+            EditorPrefs.SetString(PackageFoldersKey, string.Join(";", projectFolders));
+        }
+        
+        private void SaveCollapsedFolders()
+        {
+             EditorPrefs.SetString(CollapsedFoldersKey, string.Join(";", collapsedFolders));
+        }
+        
+        private void ShowFolderContextMenu(string folderName)
+        {
+            var menu = new GenericMenu();
+            menu.AddItem(new GUIContent("Rename Folder"), false, () => 
+            {
+                StartRenameFolder(folderName);
+            });
+            menu.AddItem(new GUIContent("Delete Folder"), false, () => 
+            {
+                if (EditorUtility.DisplayDialog("Delete Folder", 
+                    $"Are you sure you want to delete folder '{folderName}'? Profiles inside will be moved to root.", "Delete", "Cancel"))
+                {
+                    DeleteFolder(folderName);
+                }
+            });
+            menu.ShowAsContext();
+        }
+        
+        private void RenameFolder(string oldName, string newName)
+        {
+            if (string.IsNullOrWhiteSpace(newName) || oldName == newName) return;
+            if (projectFolders.Contains(newName))
+            {
+                EditorUtility.DisplayDialog("Error", "Folder already exists!", "OK");
+                return;
+            }
+            
+            // Update list
+            int index = projectFolders.IndexOf(oldName);
+            if (index >= 0) projectFolders[index] = newName;
+            
+            // Update profiles
+            bool dirty = false;
+            foreach (var p in allProfiles)
+            {
+                if (p.folderName == oldName)
+                {
+                    p.folderName = newName;
+                    EditorUtility.SetDirty(p);
+                    dirty = true;
+                }
+            }
+            if (dirty) AssetDatabase.SaveAssets();
+            
+            SaveProjectFolders();
+            UpdateProfileList();
+        }
+        
+        private void DeleteFolder(string folderName)
+        {
+            projectFolders.Remove(folderName);
+            
+            // Move profiles to root
+            bool dirty = false;
+            foreach (var p in allProfiles)
+            {
+                if (p.folderName == folderName)
+                {
+                    p.folderName = "";
+                    EditorUtility.SetDirty(p);
+                    dirty = true;
+                }
+            }
+            if (dirty) AssetDatabase.SaveAssets();
+            
+            SaveProjectFolders();
+            UpdateProfileList();
+        }
+        
+        private void CreateNewFolder()
+        {
+            string newName = GetUniqueNewFolderName();
+            projectFolders.Add(newName);
+            SaveProjectFolders();
+            StartRenameFolder(newName);
+        }
+        
+        private void MoveProfileToFolder(ExportProfile profile, string folderName)
+        {
+            if (profile.folderName == folderName) return;
+            
+            profile.folderName = folderName;
+            EditorUtility.SetDirty(profile);
+            AssetDatabase.SaveAssets();
+            UpdateProfileList();
+        }
+        
+        private void GroupSelectedProfilesIntoFolder()
+        {
+            if (selectedProfileIndices.Count < 2) return;
+            
+            string newName = GetUniqueNewFolderName();
+            projectFolders.Add(newName);
+            SaveProjectFolders();
+            
+            // Move profiles immediately
+            bool dirty = false;
+            foreach (int idx in selectedProfileIndices)
+            {
+                if (idx >= 0 && idx < allProfiles.Count)
+                {
+                    var p = allProfiles[idx];
+                    p.folderName = newName;
+                    EditorUtility.SetDirty(p);
+                    dirty = true;
+                }
+            }
+            if (dirty) AssetDatabase.SaveAssets();
+            
+            StartRenameFolder(newName);
+        }
+        
+        private void CreateFolderWithProfiles(ExportProfile profileA, ExportProfile profileB)
+        {
+            string newName = GetUniqueNewFolderName();
+            projectFolders.Add(newName);
+            SaveProjectFolders();
+            
+            profileA.folderName = newName;
+            profileB.folderName = newName;
+            EditorUtility.SetDirty(profileA);
+            EditorUtility.SetDirty(profileB);
+            AssetDatabase.SaveAssets();
+            
+            StartRenameFolder(newName);
+        }
+        
+        // Folder Renaming Helpers
+        
+        private string GetUniqueNewFolderName(string baseName = "New Folder")
+        {
+            if (!projectFolders.Contains(baseName)) return baseName;
+            
+            int i = 1;
+            while (projectFolders.Contains($"{baseName} {i}"))
+            {
+                i++;
+            }
+            return $"{baseName} {i}";
+        }
+        
+        private void StartRenameFolder(string folderName)
+        {
+            folderBeingRenamed = folderName;
+            UpdateProfileList();
+        }
+        
+        private void CancelRenameFolder()
+        {
+            folderBeingRenamed = null;
+            UpdateProfileList();
+        }
+        
+        private void EndRenameFolder(string oldName, string newName)
+        {
+            folderBeingRenamed = null;
+            
+            if (string.IsNullOrWhiteSpace(newName))
+            {
+                UpdateProfileList();
+                return;
+            }
+            
+            if (oldName == newName)
+            {
+                UpdateProfileList();
+                return;
+            }
+            
+            RenameFolder(oldName, newName);
+            UpdateProfileList();
         }
 
         private VisualElement CreateProfileItem(ExportProfile profile, int index)
@@ -1388,10 +1804,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         if (listContainer != null)
                         {
                             Vector2 mousePos = evt.mousePosition;
-                            int newDropIndex = CalculateDropIndex(listContainer, mousePos, index);
+                            // Find folder target if any
+                            VisualElement folderTarget = null;
+                            int newDropIndex = CalculateDropIndexWithFolders(listContainer, mousePos, index, out folderTarget);
                             
                             // Always update animation smoothly, even if index hasn't changed
-                            // This ensures smooth continuous movement
                             if (newDropIndex != potentialDropIndex)
                             {
                                 potentialDropIndex = newDropIndex;
@@ -1401,7 +1818,79 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             AnimateItemsForDrop(listContainer, index, potentialDropIndex);
                             
                             // Update visual feedback for drop targets
-                            UpdateDropTargets(listContainer, potentialDropIndex, item);
+                            if (folderTarget != null)
+                            {
+                                UpdateFolderDropTargets(listContainer, folderTarget);
+                                if (potentialDropIndex >= 0) ClearDropTargets(listContainer);
+                                // Reset stack state when hovering folder
+                                ResetStackState();
+                            }
+                            else
+                            {
+                                UpdateFolderDropTargets(listContainer, null);
+                                UpdateDropTargets(listContainer, potentialDropIndex, item);
+                                
+                                // Stack detection: find profile item under cursor
+                                VisualElement hitElement = listContainer.panel.Pick(mousePos);
+                                VisualElement targetItem = null;
+                                int targetIdx = -1;
+                                
+                                // Traverse up to find profile item
+                                var current = hitElement;
+                                while (current != null && current != listContainer)
+                                {
+                                    if (current.ClassListContains("yucp-profile-item") && current.userData is int idx && idx != index)
+                                    {
+                                        targetItem = current;
+                                        targetIdx = idx;
+                                        break;
+                                    }
+                                    current = current.parent;
+                                }
+                                
+                                if (targetItem != null && targetIdx >= 0)
+                                {
+                                    // Check if this is the same target
+                                    if (stackTargetElement == targetItem)
+                                    {
+                                        // Check distance tolerance
+                                        float dist = Vector2.Distance(mousePos, stackHoverPosition);
+                                        if (dist <= STACK_POSITION_TOLERANCE)
+                                        {
+                                            // Check time threshold
+                                            double elapsed = EditorApplication.timeSinceStartup - stackHoverStartTime;
+                                            if (elapsed >= STACK_HOVER_THRESHOLD && !isStackReady)
+                                            {
+                                                isStackReady = true;
+                                                // Visual feedback: add glow/pulse to target item
+                                                targetItem.AddToClassList("yucp-profile-item-stack-target");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // Moved too far, reset timer but keep target
+                                            stackHoverStartTime = EditorApplication.timeSinceStartup;
+                                            stackHoverPosition = mousePos;
+                                            isStackReady = false;
+                                            targetItem.RemoveFromClassList("yucp-profile-item-stack-target");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // New target
+                                        ResetStackState();
+                                        stackTargetElement = targetItem;
+                                        stackTargetIndex = targetIdx;
+                                        stackHoverStartTime = EditorApplication.timeSinceStartup;
+                                        stackHoverPosition = mousePos;
+                                    }
+                                }
+                                else
+                                {
+                                    // No target profile item
+                                    ResetStackState();
+                                }
+                            }
                         }
                     }
                     
@@ -1429,15 +1918,44 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             // Use the calculated drop index
                             int targetIndex = potentialDropIndex >= 0 ? potentialDropIndex : index;
                             
+                            // Check for folder drops
+                            VisualElement hitElement = listContainer.panel.Pick(evt.mousePosition);
+                             // Traverse up to find folder header
+                             VisualElement folderHeader = null;
+                             var current = hitElement;
+                             while(current != null && current != listContainer) {
+                                 if (current.ClassListContains("yucp-folder-header")) {
+                                     folderHeader = current;
+                                     break;
+                                 }
+                                 current = current.parent;
+                             }
+
+                            if (folderHeader != null && folderHeader.userData is string fName && fName != profile.folderName)
+                            {
+                                 // Dropped onto a different folder
+                                 MoveProfileToFolder(profile, fName);
+                            }
+                            else if (isStackReady && stackTargetIndex >= 0 && stackTargetIndex < allProfiles.Count)
+                            {
+                                // Stack-to-folder: create a new folder with both profiles
+                                var targetProfile = allProfiles[stackTargetIndex];
+                                CreateFolderWithProfiles(profile, targetProfile);
+                            }
+                            else
+                            {
+                                // Perform normal reorder if valid target
+                                if (targetIndex >= 0 && targetIndex != index)
+                                {
+                                    ReorderProfiles(index, targetIndex);
+                                }
+                            }
+                            
+                            // Reset stack state
+                            ResetStackState();
+                            
                             // Clear all visual feedback and reset animations
                             ClearDropTargets(listContainer);
-                            originalHeights.Clear();
-                            
-                            // Perform reorder if valid target
-                            if (targetIndex >= 0 && targetIndex != index)
-                            {
-                                ReorderProfiles(index, targetIndex);
-                            }
                         }
                         
                         // Clean up drag ghost
@@ -1821,6 +2339,70 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
         
         /// <summary>
+        /// Update visual feedback for folder drop targets
+        /// </summary>
+        private void UpdateFolderDropTargets(VisualElement listContainer, VisualElement dropTarget)
+        {
+            // Clear previous targets
+             foreach (var child in listContainer.Children())
+            {
+                child.RemoveFromClassList("yucp-folder-header-active-target");
+                
+                if (child == dropTarget && child.ClassListContains("yucp-folder-header"))
+                {
+                    child.AddToClassList("yucp-folder-header-active-target");
+                }
+            }
+        }
+        
+        private void ResetStackState()
+        {
+            if (stackTargetElement != null)
+            {
+                stackTargetElement.RemoveFromClassList("yucp-profile-item-stack-target");
+            }
+            stackTargetElement = null;
+            stackTargetIndex = -1;
+            stackHoverStartTime = 0;
+            stackHoverPosition = Vector2.zero;
+            isStackReady = false;
+        }
+
+        private int CalculateDropIndexWithFolders(VisualElement listContainer, Vector2 mousePosition, int draggingIdx, out VisualElement folderTarget)
+        {
+            folderTarget = null;
+            int dropIndex = -1;
+            float closestDistance = float.MaxValue;
+            
+            // Convert mouse position to local coordinates of the list container
+            Vector2 localMousePos = listContainer.WorldToLocal(mousePosition);
+            
+            // Iterate through all children to find the best drop position
+            for (int i = 0; i < listContainer.childCount; i++)
+            {
+                var child = listContainer[i];
+                if (child == draggingElement || child == draggingGhost) continue;
+                
+                // Check if hovering over a folder header
+                if (child.ClassListContains("yucp-folder-header"))
+                {
+                    if (child.worldBound.Contains(mousePosition))
+                    {
+                       folderTarget = child;
+                       // Return special index indicating folder drop
+                       return -2;
+                    }
+                }
+                
+                // Standard reordering logic (only valid if we are not hovering a closed folder that creates a gap)
+                 // ... (Simplified: stick to original CalcDropIndex logic, but we need to intercept folder drops)
+            }
+            
+            // Use existing logic for reordering if not dropping into a folder
+            return CalculateDropIndex(listContainer, mousePosition, draggingIdx);
+        }
+        
+        /// <summary>
         /// Reorders profiles by moving sourceIndex to targetIndex
         /// </summary>
         private void ReorderProfiles(int sourceIndex, int targetIndex)
@@ -1925,6 +2507,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             var menu = new GenericMenu();
             
+            // Multi-select: Group into Folder option
+            if (selectedProfileIndices.Count >= 2)
+            {
+                menu.AddItem(new GUIContent("Group into Folder..."), false, () => 
+                {
+                    GroupSelectedProfilesIntoFolder();
+                });
+                menu.AddSeparator("");
+            }
+            
             // Export option
             menu.AddItem(new GUIContent("Export"), false, () => 
             {
@@ -1974,6 +2566,37 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     EditorUtility.RevealInFinder(profile.profileSaveLocation);
                 });
+            }
+
+            menu.AddSeparator("");
+            
+            // Move to Folder option
+            if (projectFolders.Count > 0)
+            {
+                // Root folder option (if currently in a folder)
+                if (!string.IsNullOrEmpty(profile.folderName))
+                {
+                    menu.AddItem(new GUIContent("Move to Folder/_Root"), false, () => 
+                    {
+                        MoveProfileToFolder(profile, "");
+                    });
+                     menu.AddSeparator("Move to Folder/");
+                }
+                
+                foreach (var folder in projectFolders)
+                {
+                    // Skip current folder
+                    if (folder == profile.folderName) continue;
+                    
+                    menu.AddItem(new GUIContent($"Move to Folder/{folder}"), false, () => 
+                    {
+                        MoveProfileToFolder(profile, folder);
+                    });
+                }
+            }
+            else
+            {
+               menu.AddDisabledItem(new GUIContent("Move to Folder"));
             }
             
             menu.ShowAsContext();

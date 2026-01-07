@@ -1,7 +1,7 @@
 {
   "name": "com.yucp.devtools",
   "displayName": "YUCP DevTools",
-  "version": "0.2.27",
+  "version": "0.2.28",
   "unity": "2022.3",
   "description": "Development tools for YUCP packages including package exporter and model revision manager",
   "author": {
@@ -14,5 +14,3 @@
   },
   "legacyPackages": []
 }
-
-  
