@@ -1,0 +1,69 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="True">
+    <ui:VisualElement class="theme-container window-root">
+        
+        <!-- Main Card Container -->
+        <ui:VisualElement class="layers-card">
+            
+            <!-- Header -->
+            <ui:VisualElement class="header">
+                <ui:Label text="Kitbash Layers" class="title"/>
+                <ui:VisualElement style="flex-direction: row;">
+                    <ui:Button class="btn btn-ghost" tooltip="Options" style="width: 32px; padding: 0;">
+                        <ui:Label text="•••" style="font-size: 14px; margin-top: -4px;"/>
+                    </ui:Button>
+                </ui:VisualElement>
+            </ui:VisualElement>
+            
+            <!-- Search & Actions Toolbar -->
+            <ui:VisualElement class="toolbar-row">
+                <ui:TextField placeholder-text="Search..." class="input" style="flex-grow: 1; margin-right: 8px;"/>
+                <ui:Button text="Auto-Seed" class="btn btn-outline" style="margin-right: 8px; font-size: 11px;"/>
+                <ui:Button text="+" class="btn btn-primary" style="width: 32px; padding: 0;"/>
+            </ui:VisualElement>
+            
+            <!-- Layer List -->
+            <ui:ListView name="layer-list" class="layer-list" virtualized="true"/>
+            
+            <!-- Empty State (Conditional) -->
+            <ui:VisualElement name="empty-state" style="display: none; align-items: center; justify-content: center; flex-grow: 1; opacity: 0.5;">
+                <ui:Label text="No layers defined"/>
+            </ui:VisualElement>
+            
+            <!-- Footer: Selected Layer Properties -->
+            <ui:VisualElement name="footer" class="footer">
+                <ui:VisualElement id="props-container" style="display: none;">
+                    
+                    <ui:VisualElement style="flex-direction: row; margin-bottom: 8px;">
+                        <ui:VisualElement style="flex-grow: 1; margin-right: 8px;">
+                            <ui:Label text="LAYER NAME" class="field-label"/>
+                            <ui:TextField name="prop-name" class="input"/>
+                        </ui:VisualElement>
+                        <ui:VisualElement style="width: 80px;">
+                            <ui:Label text="OPACITY" class="field-label"/>
+                            <ui:Slider value="1" high-value="1" style="margin-top: 6px;"/>
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+                    
+                    <ui:Label text="SOURCE MESH" class="field-label"/>
+                    <ui:VisualElement style="flex-direction: row; margin-bottom: 12px;">
+                         <ui:Button text="Select Source..." class="btn btn-outline" style="flex-grow: 1; justify-content: flex-start;"/>
+                    </ui:VisualElement>
+                    
+                    <ui:VisualElement style="height: 1px; background-color: #27272a; margin-bottom: 12px;"/>
+                    
+                    <ui:VisualElement style="flex-direction: row;">
+                        <ui:Button text="Fill Connected" class="btn btn-outline" style="flex-grow: 1; margin-right: 4px;"/>
+                        <ui:Button text="Clear" class="btn btn-ghost" style="flex-grow: 0.5; color: #ef4444;"/>
+                    </ui:VisualElement>
+                    
+                </ui:VisualElement>
+                
+                <ui:VisualElement id="no-selection" style="align-items: center; padding: 10px;">
+                    <ui:Label text="Select a layer to edit properties" style="color: #52525b; font-size: 11px; font-style: italic;"/>
+                </ui:VisualElement>
+            </ui:VisualElement>
+            
+        </ui:VisualElement>
+        
+    </ui:VisualElement>
+</ui:UXML>

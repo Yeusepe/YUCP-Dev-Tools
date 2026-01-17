@@ -1,0 +1,127 @@
+/* TokenizedSearchField.uss */
+
+.yucp-tokenized-field {
+    flex-direction: row;
+    flex-wrap: wrap;
+    flex-grow: 1; /* Make it responsive/fill space */
+    background-color: #151515; /* Darker background */
+    border-width: 1px;
+    border-color: #454545; /* Visible grey by default */
+    border-radius: 6px; /* Smooth corners */
+    padding: 3px 6px;
+    min-height: 32px;
+    align-items: center;
+    transition: border-color 0.2s ease;
+}
+
+.yucp-tokenized-field.focused {
+    border-color: #36BFB1; /* Accent when active */
+    background-color: #1a1a1a;
+}
+
+.yucp-tokenized-field-input {
+    flex-grow: 1;
+    background-color: transparent;
+    border-width: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 50px;
+    height: 20px;
+}
+
+.yucp-tokenized-field-input > .unity-base-text-field__input {
+    background-color: transparent;
+    border-width: 0;
+    margin: 0;
+    padding: 0 4px;
+    color: #eeeeee;
+    -unity-text-align: middle-left;
+}
+
+.yucp-tokenized-field-input:focus > .unity-base-text-field__input {
+    border-width: 0;
+}
+
+/* Chips - Rectangles with curved corners */
+/* Chips - Rectangles with curved corners */
+.yucp-chip {
+    flex-direction: row;
+    align-items: center;
+    background-color: rgba(54, 191, 177, 0.12); /* Match PackageExporter.uss */
+    border-width: 1px;
+    border-color: rgba(54, 191, 177, 0.25);
+    border-radius: 12px; /* Pill shape */
+    margin: 2px 4px 2px 0;
+    padding: 1px 10px; /* More horizontal padding for pill */
+    height: 22px;
+    color: rgba(54, 191, 177, 0.95);
+}
+
+.yucp-chip-label {
+    font-size: 11px;
+    color: rgba(54, 191, 177, 0.95);
+    margin-right: 4px;
+    -unity-font-style: bold;
+}
+
+.yucp-chip-remove {
+    background-color: transparent;
+    border-width: 0;
+    color: rgba(54, 191, 177, 0.7);
+    font-size: 11px;
+    padding: 0;
+    margin: 0;
+    width: 14px;
+    height: 14px;
+    cursor: link;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%; /* Rounded remove button area */
+}
+
+.yucp-chip-remove:hover {
+    background-color: rgba(226, 74, 74, 0.2);
+    color: rgba(226, 74, 74, 1);
+}
+
+/* Autocomplete Overlay */
+.yucp-autocomplete-overlay {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: #303030; /* Solid dark grey background for visibility */
+    border-width: 1px;
+    border-color: #454545; /* Lighter border */
+    border-radius: 6px;
+    margin-top: 6px;
+    padding: 4px 0;
+}
+
+.yucp-autocomplete-item {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    color: #b0b0b0;
+    font-size: 12px;
+    border-bottom-width: 1px;
+    border-bottom-color: #252525;
+}
+
+.yucp-autocomplete-item:hover {
+    background-color: #2a2a2a;
+    color: #ffffff;
+}
+
+.yucp-autocomplete-item.selected {
+    background-color: #36BFB1;
+    color: #1a1a1a;
+}
+
+.yucp-autocomplete-item-type {
+    font-size: 10px;
+    opacity: 0.5;
+    margin-left: 8px;
+    -unity-font-style: italic;
+}

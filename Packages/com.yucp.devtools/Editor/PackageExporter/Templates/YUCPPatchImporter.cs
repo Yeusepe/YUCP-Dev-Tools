@@ -818,6 +818,26 @@ namespace YUCP.PatchCleanup
                 
                 var patchType = patchObj.GetType();
                 
+                // Check for kitbash mode (multi-source)
+                var modeField = patchType.GetField("mode");
+                int mode = 0; // Default: SingleBaseHdiff
+                if (modeField != null)
+                {
+                    var modeValue = modeField.GetValue(patchObj);
+                    if (modeValue != null)
+                    {
+                        mode = (int)modeValue;
+                    }
+                }
+                
+                // Mode 1 = KitbashRecipeHdiff (multi-source)
+                if (mode == 1)
+                {
+                    ApplyKitbashPatch(patchObj, patchPath);
+                    return;
+                }
+                
+                // Mode 0 = SingleBaseHdiff (original flow)
                 // Get patch properties using reflection
                 var baseFbxGuidField = patchType.GetField("baseFbxGuid");
                 var derivedFbxGuidField = patchType.GetField("derivedFbxGuid");
@@ -1508,9 +1528,21 @@ namespace YUCP.PatchCleanup
                         continue;
                     }
                     
-                    bool isInTempFolder = path.Contains("/Patches/") || path.Contains("\\Patches\\") ||
-                                         path.Contains("/Editor/") || path.Contains("\\Editor\\") ||
-                                         path.Contains("/Plugins/") || path.Contains("\\Plugins\\");
+                    // STRICT CHECK: Only delete files that are explicitly in Packages/com.yucp.temp
+                    // This prevents accidental deletion of user assets (like ExportProfile files)
+                    bool isInTempPackage = path.StartsWith("Packages/com.yucp.temp/", StringComparison.OrdinalIgnoreCase) ||
+                                          path.StartsWith("Packages\\com.yucp.temp\\", StringComparison.OrdinalIgnoreCase);
+                    
+                    if (!isInTempPackage)
+                    {
+                        WriteLog($"  Skipping file outside temp package (safety check): {path}");
+                        continue;
+                    }
+                    
+                    // Additional check: must be in specific temp package subfolders
+                    bool isInTempFolder = (path.Contains("/Patches/") || path.Contains("\\Patches\\")) ||
+                                         (path.Contains("/Editor/") || path.Contains("\\Editor\\")) ||
+                                         (path.Contains("/Plugins/") || path.Contains("\\Plugins\\"));
                     
                     bool isRootFile = path.Contains("com.yucp.temp/package.json") ||
                                      path.Contains("com.yucp.temp\\package.json") ||
@@ -1521,6 +1553,14 @@ namespace YUCP.PatchCleanup
                     if (!isInTempFolder && !isRootFile)
                     {
                         WriteLog($"  Skipping file outside cleanup folders: {path}");
+                        continue;
+                    }
+                    
+                    // FINAL SAFETY CHECK: Never delete anything in Assets folder
+                    if (path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ||
+                        path.StartsWith("Assets\\", StringComparison.OrdinalIgnoreCase))
+                    {
+                        WriteLog($"  SAFETY: Skipping file in Assets folder (should never be deleted): {path}");
                         continue;
                     }
                     
@@ -2079,6 +2119,383 @@ namespace YUCP.PatchCleanup
                 WriteLog($"ERROR in RevertGuidOverride: {ex.Message}\n{ex.StackTrace}");
                 Debug.LogError($"[YUCP PatchImporter] Error reverting GUID override: {ex.Message}");
             }
+        }
+        
+        /// <summary>
+        /// Applies a kitbash (multi-source) patch.
+        /// Builds a synthetic base from the recipe, then applies the hdiff.
+        /// </summary>
+        private static void ApplyKitbashPatch(UnityEngine.Object patchObj, string patchPath)
+        {
+            try
+            {
+                WriteLog($"ApplyKitbashPatch called for: {patchPath}");
+                
+                var patchType = patchObj.GetType();
+                
+                // Get kitbash-specific fields
+                var kitbashRecipeJsonField = patchType.GetField("kitbashRecipeJson");
+                var recipeHashField = patchType.GetField("recipeHash");
+                var requiredSourceGuidsField = patchType.GetField("requiredSourceGuids");
+                var hdiffFilePathField = patchType.GetField("hdiffFilePath");
+                var derivedFbxGuidField = patchType.GetField("derivedFbxGuid");
+                var originalDerivedFbxPathField = patchType.GetField("originalDerivedFbxPath");
+                var embeddedMetaField = patchType.GetField("embeddedMetaFileContent");
+                var uiHintsField = patchType.GetField("uiHints");
+                
+                string kitbashRecipeJson = kitbashRecipeJsonField?.GetValue(patchObj) as string;
+                string recipeHash = recipeHashField?.GetValue(patchObj) as string;
+                string[] requiredSourceGuids = requiredSourceGuidsField?.GetValue(patchObj) as string[];
+                string hdiffFilePath = hdiffFilePathField?.GetValue(patchObj) as string;
+                string derivedFbxGuid = derivedFbxGuidField?.GetValue(patchObj) as string;
+                string originalDerivedFbxPath = originalDerivedFbxPathField?.GetValue(patchObj) as string;
+                string embeddedMetaContent = embeddedMetaField?.GetValue(patchObj) as string;
+                
+                // Get friendly name from UIHints
+                string friendlyName = Path.GetFileNameWithoutExtension(patchPath);
+                if (uiHintsField != null)
+                {
+                    var uiHints = uiHintsField.GetValue(patchObj);
+                    if (uiHints != null)
+                    {
+                        var friendlyNameField = uiHints.GetType().GetField("friendlyName");
+                        if (friendlyNameField != null)
+                        {
+                            var fn = friendlyNameField.GetValue(uiHints) as string;
+                            if (!string.IsNullOrEmpty(fn))
+                                friendlyName = fn;
+                        }
+                    }
+                }
+                
+                // Validate required data
+                if (string.IsNullOrEmpty(kitbashRecipeJson))
+                {
+                    WriteLog("  ERROR: kitbashRecipeJson is missing from patch");
+                    Debug.LogError($"[YUCP PatchImporter] Kitbash patch missing recipe JSON: {patchPath}");
+                    return;
+                }
+                
+                if (requiredSourceGuids == null || requiredSourceGuids.Length == 0)
+                {
+                    WriteLog("  ERROR: requiredSourceGuids is missing from patch");
+                    Debug.LogError($"[YUCP PatchImporter] Kitbash patch missing source GUIDs: {patchPath}");
+                    return;
+                }
+                
+                // Verify all source FBXs are present
+                WriteLog($"  Verifying {requiredSourceGuids.Length} source FBX(s)...");
+                List<string> missingGuids = new List<string>();
+                foreach (var guid in requiredSourceGuids)
+                {
+                    string sourcePath = AssetDatabase.GUIDToAssetPath(guid);
+                    if (string.IsNullOrEmpty(sourcePath))
+                    {
+                        missingGuids.Add(guid);
+                        WriteLog($"    Missing source: {guid}");
+                    }
+                    else
+                    {
+                        WriteLog($"    Found source: {guid} -> {sourcePath}");
+                    }
+                }
+                
+                if (missingGuids.Count > 0)
+                {
+                    string missingList = string.Join(", ", missingGuids);
+                    Debug.LogError($"[YUCP PatchImporter] Kitbash patch requires missing source FBXs: {missingList}.\n" +
+                        "Please ensure all required source FBXs are present in the project.");
+                    WriteLog($"  ERROR: Missing {missingGuids.Count} source FBX(s)");
+                    return;
+                }
+                
+                // Build synthetic base from recipe
+                WriteLog($"  Building synthetic base from recipe (hash: {recipeHash})...");
+                string syntheticBasePath = BuildSyntheticBaseFromRecipe(kitbashRecipeJson, recipeHash);
+                
+                if (string.IsNullOrEmpty(syntheticBasePath))
+                {
+                    Debug.LogError($"[YUCP PatchImporter] Failed to build synthetic base for kitbash: {patchPath}");
+                    WriteLog("  ERROR: BuildSyntheticBaseFromRecipe returned null");
+                    return;
+                }
+                
+                WriteLog($"  Synthetic base built at: {syntheticBasePath}");
+                
+                // Now apply the patch using the synthetic base - same flow as single-base
+                // The synthetic base acts as the "base FBX" for patching
+                WriteLog($"  Applying patch with synthetic base...");
+                
+                // Since synthetic base is in Library (not Assets), we need to handle it differently
+                // The patch contains the hdiff that, when applied to the synthetic base, produces the derived FBX
+                // Use the same ApplyPatchWithBasePath but with the synthetic base
+                ApplyPatchWithBasePath(patchObj, patchPath, syntheticBasePath, 
+                    null, // No base GUID for synthetic base (it's generated)
+                    derivedFbxGuid,
+                    friendlyName,
+                    originalDerivedFbxPath);
+                
+                WriteLog($"  Kitbash patch applied successfully");
+                Debug.Log($"[YUCP PatchImporter] Kitbash patch applied: {patchPath}");
+                
+                CleanupDllsAfterPatchApplication();
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"  ERROR in ApplyKitbashPatch: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogError($"[YUCP PatchImporter] Error applying kitbash patch {patchPath}: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Builds a synthetic base FBX from a recipe JSON.
+        /// Uses caching by recipe hash.
+        /// </summary>
+        private static string BuildSyntheticBaseFromRecipe(string recipeJson, string recipeHash)
+        {
+            try
+            {
+                // Check cache first
+                string cacheDir = Path.Combine(Application.dataPath, "..", "Library", "YUCP", "KitbashCache");
+                Directory.CreateDirectory(cacheDir);
+                
+                string cachedPath = Path.Combine(cacheDir, $"{recipeHash}.fbx");
+                if (File.Exists(cachedPath))
+                {
+                    WriteLog($"    Using cached synthetic base: {cachedPath}");
+                    return cachedPath;
+                }
+                
+                // Check if FBX Exporter is available
+                var exporterType = System.Type.GetType("UnityEditor.Formats.Fbx.Exporter.ModelExporter, Unity.Formats.Fbx.Editor");
+                if (exporterType == null)
+                {
+                    Debug.LogError("[YUCP PatchImporter] Unity FBX Exporter package (com.unity.formats.fbx) is required for kitbash mode but not installed.\n" +
+                        "Please install it via Package Manager: Window > Package Manager > + > Add package by name > com.unity.formats.fbx");
+                    return null;
+                }
+                
+                // Get ExportObject method
+                var exportMethod = exporterType.GetMethod("ExportObject", 
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+                    null, new Type[] { typeof(string), typeof(UnityEngine.Object) }, null);
+                
+                if (exportMethod == null)
+                {
+                    Debug.LogError("[YUCP PatchImporter] FBX Exporter found but ExportObject method not accessible");
+                    return null;
+                }
+                
+                // Parse recipe JSON to get parts
+                var parts = ParseRecipeJsonParts(recipeJson);
+                if (parts == null || parts.Count == 0)
+                {
+                    WriteLog("    WARNING: Recipe has no valid parts");
+                    return null;
+                }
+                
+                WriteLog($"    Recipe has {parts.Count} parts");
+                
+                // Assemble GameObjects from parts
+                GameObject root = new GameObject("SyntheticBase");
+                try
+                {
+                    foreach (var part in parts)
+                    {
+                        if (string.IsNullOrEmpty(part.sourceFbxGuid))
+                        {
+                            WriteLog($"      Part '{part.displayName}' has no source GUID, skipping");
+                            continue;
+                        }
+                        
+                        string sourcePath = AssetDatabase.GUIDToAssetPath(part.sourceFbxGuid);
+                        if (string.IsNullOrEmpty(sourcePath))
+                        {
+                            WriteLog($"      Part '{part.displayName}' source not found: {part.sourceFbxGuid}");
+                            continue;
+                        }
+                        
+                        GameObject sourcePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(sourcePath);
+                        if (sourcePrefab == null)
+                        {
+                            WriteLog($"      Failed to load source: {sourcePath}");
+                            continue;
+                        }
+                        
+                        // Find specific mesh path if specified
+                        Transform sourceTransform = sourcePrefab.transform;
+                        if (!string.IsNullOrEmpty(part.meshPath))
+                        {
+                            var found = sourcePrefab.transform.Find(part.meshPath);
+                            if (found != null)
+                                sourceTransform = found;
+                        }
+                        
+                        // Instantiate the part
+                        GameObject partInstance = UnityEngine.Object.Instantiate(sourceTransform.gameObject);
+                        partInstance.name = !string.IsNullOrEmpty(part.displayName) ? part.displayName : sourceTransform.name;
+                        partInstance.transform.SetParent(root.transform);
+                        partInstance.transform.localPosition = part.positionOffset;
+                        partInstance.transform.localRotation = part.rotationOffset;
+                        partInstance.transform.localScale = Vector3.Scale(Vector3.one, part.scaleMultiplier);
+                        
+                        WriteLog($"      Added part: {partInstance.name} from {sourcePath}");
+                    }
+                    
+                    // Export to FBX
+                    object result = exportMethod.Invoke(null, new object[] { cachedPath, root });
+                    if (result == null || !File.Exists(cachedPath))
+                    {
+                        WriteLog("    ERROR: FBX export failed");
+                        return null;
+                    }
+                    
+                    WriteLog($"    Synthetic base exported to: {cachedPath}");
+                    return cachedPath;
+                }
+                finally
+                {
+                    // Cleanup
+                    UnityEngine.Object.DestroyImmediate(root);
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"    ERROR in BuildSyntheticBaseFromRecipe: {ex.Message}\n{ex.StackTrace}");
+                return null;
+            }
+        }
+        
+        /// <summary>
+        /// Simple part data for JSON parsing.
+        /// </summary>
+        private class KitbashPartData
+        {
+            public string sourceFbxGuid;
+            public string displayName;
+            public string meshPath;
+            public Vector3 positionOffset;
+            public Quaternion rotationOffset = Quaternion.identity;
+            public Vector3 scaleMultiplier = Vector3.one;
+        }
+        
+        /// <summary>
+        /// Parses the parts array from recipe JSON.
+        /// </summary>
+        private static List<KitbashPartData> ParseRecipeJsonParts(string recipeJson)
+        {
+            var parts = new List<KitbashPartData>();
+            
+            try
+            {
+                // Manual JSON parsing for parts array
+                // Format: {"parts":[{"sourceFbxGuid":"...","displayName":"...","meshPath":"...",...},...]}
+                
+                int partsStart = recipeJson.IndexOf("\"parts\"");
+                if (partsStart < 0) return parts;
+                
+                int arrayStart = recipeJson.IndexOf('[', partsStart);
+                if (arrayStart < 0) return parts;
+                
+                int arrayEnd = FindMatchingBracket(recipeJson, arrayStart, '[', ']');
+                if (arrayEnd < 0) return parts;
+                
+                string partsArrayJson = recipeJson.Substring(arrayStart, arrayEnd - arrayStart + 1);
+                
+                // Find each object in the array
+                int depth = 0;
+                int objStart = -1;
+                for (int i = 0; i < partsArrayJson.Length; i++)
+                {
+                    char c = partsArrayJson[i];
+                    if (c == '{')
+                    {
+                        if (depth == 0) objStart = i;
+                        depth++;
+                    }
+                    else if (c == '}')
+                    {
+                        depth--;
+                        if (depth == 0 && objStart >= 0)
+                        {
+                            string objJson = partsArrayJson.Substring(objStart, i - objStart + 1);
+                            var part = ParsePartObject(objJson);
+                            if (part != null) parts.Add(part);
+                            objStart = -1;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"      ERROR parsing recipe JSON: {ex.Message}");
+            }
+            
+            return parts;
+        }
+        
+        /// <summary>
+        /// Parses a single part object from JSON.
+        /// </summary>
+        private static KitbashPartData ParsePartObject(string json)
+        {
+            var part = new KitbashPartData();
+            
+            part.sourceFbxGuid = ExtractJsonString(json, "sourceFbxGuid");
+            part.displayName = ExtractJsonString(json, "displayName");
+            part.meshPath = ExtractJsonString(json, "meshPath");
+            
+            // Parse vectors (simplified - assumes default values if not found)
+            // positionOffset, rotationOffset as quaternion, scaleMultiplier
+            // For now, use defaults
+            part.positionOffset = Vector3.zero;
+            part.rotationOffset = Quaternion.identity;
+            part.scaleMultiplier = Vector3.one;
+            
+            return !string.IsNullOrEmpty(part.sourceFbxGuid) ? part : null;
+        }
+        
+        /// <summary>
+        /// Extracts a string value from JSON.
+        /// </summary>
+        private static string ExtractJsonString(string json, string key)
+        {
+            string searchKey = $"\"{key}\"";
+            int keyIndex = json.IndexOf(searchKey);
+            if (keyIndex < 0) return null;
+            
+            int colonIndex = json.IndexOf(':', keyIndex + searchKey.Length);
+            if (colonIndex < 0) return null;
+            
+            // Skip whitespace
+            int valueStart = colonIndex + 1;
+            while (valueStart < json.Length && char.IsWhiteSpace(json[valueStart])) valueStart++;
+            
+            if (valueStart >= json.Length || json[valueStart] != '"') return null;
+            
+            // Find end quote
+            int valueEnd = json.IndexOf('"', valueStart + 1);
+            if (valueEnd < 0) return null;
+            
+            return json.Substring(valueStart + 1, valueEnd - valueStart - 1);
+        }
+        
+        /// <summary>
+        /// Finds the matching closing bracket.
+        /// </summary>
+        private static int FindMatchingBracket(string s, int start, char open, char close)
+        {
+            int depth = 0;
+            for (int i = start; i < s.Length; i++)
+            {
+                if (s[i] == open) depth++;
+                else if (s[i] == close)
+                {
+                    depth--;
+                    if (depth == 0) return i;
+                }
+            }
+            return -1;
         }
     }
 }

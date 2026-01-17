@@ -967,7 +967,37 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 DerivedSettings settings = null;
                 try { settings = JsonUtility.FromJson<DerivedSettings>(importer.userData); } catch { /* ignore */ }
-                if (settings == null || string.IsNullOrEmpty(settings.baseGuid)) continue;
+                if (settings == null || !settings.isDerived) continue;
+                
+                // Check for kitbash mode (requires feature flag)
+                #if YUCP_KITBASH_ENABLED
+                if (settings.mode == DerivedMode.KitbashRecipeHdiff)
+                {
+                    // Try addon conversion for kitbash mode
+                    var ctx = new Addons.PackageBuilderContext
+                    {
+                        AssetsToExport = assetsToExport,
+                        ProgressCallback = progressCallback
+                    };
+                    
+                    if (Addons.AddonManager.TryConvertDerivedFbx(ctx, normalizedModifiedPath, settings, out string addonTempPath))
+                    {
+                        if (!string.IsNullOrEmpty(addonTempPath))
+                        {
+                            patchAssetsToAdd.Add(addonTempPath);
+                            fbxToRemove.Add(modifiedPath);
+                        }
+                        continue; // Addon handled it
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[PackageBuilder] No addon handled kitbash conversion for {modifiedPath}, falling back to single-base mode.");
+                    }
+                }
+                #endif
+                
+                // Single-base mode: require baseGuid
+                if (string.IsNullOrEmpty(settings.baseGuid)) continue;
                 
                 var basePath = AssetDatabase.GUIDToAssetPath(settings.baseGuid);
                 if (string.IsNullOrEmpty(basePath))
@@ -1238,15 +1268,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return false;
         }
         
-        [Serializable]
-        private class DerivedSettings
-        {
-            public bool isDerived;
-            public string baseGuid;
-            public string friendlyName;
-            public string category;
-            public bool overrideOriginalReferences = false;
-        }
+        // DerivedSettings is now defined in Data/DerivedSettings.cs
         
         private static void EnsureAuthoringFolder()
         {

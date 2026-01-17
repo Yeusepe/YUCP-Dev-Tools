@@ -21,6 +21,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
 	[SerializeField] public bool overrideOriginalReferences = false; // If true, replace all references to original FBX with new FBX
 	[SerializeField] public string embeddedMetaFileContent; // Embedded meta file content from original derived FBX (preserves humanoid Avatar mappings)
 		
+		// ============================================================
+		// Kitbash mode extensions (requires YUCP_KITBASH_ENABLED)
+		// ============================================================
+		
+		/// <summary>
+		/// Derived mode - determines how the base is resolved.
+		/// </summary>
+		[SerializeField] public DerivedMode mode = DerivedMode.SingleBaseHdiff;
+		
+		/// <summary>
+		/// Canonical JSON of the kitbash recipe (KitbashRecipeHdiff mode only).
+		/// </summary>
+		[SerializeField] public string kitbashRecipeJson;
+		
+		/// <summary>
+		/// Hash of the recipe for cache validation (KitbashRecipeHdiff mode only).
+		/// </summary>
+		[SerializeField] public string recipeHash;
+		
+		/// <summary>
+		/// GUIDs of source FBXs required for reconstruction (KitbashRecipeHdiff mode only).
+		/// </summary>
+		[SerializeField] public string[] requiredSourceGuids;
+		
 		[SerializeField] public Policy policy = new Policy();
 		[SerializeField] public UIHints uiHints = new UIHints();
 		[SerializeField] public SeedMaps seedMaps = new SeedMaps();

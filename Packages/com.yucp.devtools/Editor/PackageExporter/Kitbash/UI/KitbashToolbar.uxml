@@ -1,0 +1,49 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="True">
+    <ui:VisualElement class="theme-container overlay-root">
+        
+        <!-- Tools -->
+        <ui:VisualElement class="tool-group">
+            <ui:Button name="tool-brush" class="tool-btn selected" tooltip="Brush (B)">
+                <!-- Built-in Unity Icons: d_Brush (Dark), Brush (Light) -->
+                <!-- using style background-image with resource name -->
+                <ui:VisualElement class="icon icon-brush"/> 
+            </ui:Button>
+            <ui:Button name="tool-bucket" class="tool-btn" tooltip="Bucket (G)">
+                <ui:VisualElement class="icon icon-bucket"/>
+            </ui:Button>
+            <ui:Button name="tool-lasso" class="tool-btn" tooltip="Lasso (L)">
+                <ui:VisualElement class="icon icon-lasso"/>
+            </ui:Button>
+        </ui:VisualElement>
+        
+        <ui:VisualElement class="tool-divider"/>
+        
+        <!-- Brush Settings -->
+        <ui:VisualElement class="tool-group" style="padding-left: 4px; padding-right: 4px;">
+            <ui:Label text="Size" class="label-small" style="margin-right: 6px; color: #a1a1aa;"/>
+            <ui:Slider name="brush-size" low-value="0.01" high-value="1.0" class="slider-compact"/>
+        </ui:VisualElement>
+
+        <ui:VisualElement class="tool-divider"/>
+        
+        <!-- Symmetry -->
+        <ui:VisualElement class="tool-group">
+             <ui:Button name="sym-x" class="tool-btn" tooltip="Mirror X">
+                <ui:Label text="X" class="text-icon"/>
+            </ui:Button>
+            <ui:Button name="sym-y" class="tool-btn" tooltip="Mirror Y">
+               <ui:Label text="Y" class="text-icon"/>
+           </ui:Button>
+        </ui:VisualElement>
+        
+        <ui:VisualElement class="tool-divider"/>
+        
+        <!-- Visualization Toggles -->
+        <ui:VisualElement class="tool-group">
+            <ui:Button name="view-overlay" class="tool-btn selected" tooltip="Toggle Overlay">
+               <ui:VisualElement class="icon icon-eye"/>
+           </ui:Button>
+        </ui:VisualElement>
+        
+    </ui:VisualElement>
+</ui:UXML>

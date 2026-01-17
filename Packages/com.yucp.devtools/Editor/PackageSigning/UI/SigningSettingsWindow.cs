@@ -23,7 +23,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private VisualElement _certificateCard;
         private VisualElement _rootKeyCard;
 
-        [MenuItem("YUCP/Package Signing Settings", false, 100)]
+        [MenuItem("Tools/YUCP/Others/Development/Package Signing Settings", false, 100)]
         public static void ShowWindow()
         {
             // Redirect to Unity Preferences

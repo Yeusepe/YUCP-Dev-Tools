@@ -12,7 +12,10 @@
         "VRCFury-Editor",
         "VRCFury",
         "com.vrcfury.api",
-        "Autodesk.Fbx"
+        "Autodesk.Fbx",
+        "com.yucp.motion.Core",
+        "com.yucp.motion.Unity",
+        "com.yucp.motion.Editor"
     ],
     "includePlatforms": [
         "Editor"

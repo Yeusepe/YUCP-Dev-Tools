@@ -1,0 +1,19 @@
+{
+    "name": "com.yucp.motion.Editor",
+    "rootNamespace": "YUCP.Motion.Editor",
+    "references": [
+        "com.yucp.motion.Core",
+        "com.yucp.motion.Unity"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

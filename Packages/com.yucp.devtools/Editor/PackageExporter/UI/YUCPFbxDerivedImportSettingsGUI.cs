@@ -5,15 +5,7 @@ using UnityEngine;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
-	[Serializable]
-	internal class DerivedSettings
-	{
-		public bool isDerived;
-		public string baseGuid;
-		public string friendlyName;
-		public string category;
-		public bool overrideOriginalReferences = false;
-	}
+	// DerivedSettings is now defined in Data/DerivedSettings.cs
 
 	internal static class YUCPFbxDerivedImportSettingsGUI
 	{
@@ -64,6 +56,50 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				EditorGUILayout.HelpBox("Override Original References: After generating the derived FBX, replace all references to the original FBX with the new one. This can be reversed via Tools->YUCP->Revert GUID Override.", MessageType.Info);
 				settings.overrideOriginalReferences = EditorGUILayout.Toggle(new GUIContent("Override Original References"), settings.overrideOriginalReferences);
 				
+				// Kitbash Mode UI (only visible when feature is enabled)
+				#if YUCP_KITBASH_ENABLED
+				EditorGUILayout.Space(8);
+				EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
+				EditorGUILayout.Space(4);
+				
+				// Simple toggle like Humanoid/Generic rig selection
+				bool isKitbash = settings.mode == DerivedMode.KitbashRecipeHdiff;
+				EditorGUI.BeginChangeCheck();
+				isKitbash = EditorGUILayout.Toggle(
+					new GUIContent("Multi-Source (Kitbash)", 
+						"Enable if this mesh combines parts from multiple source FBXs"),
+					isKitbash
+				);
+				if (EditorGUI.EndChangeCheck())
+				{
+					settings.mode = isKitbash ? DerivedMode.KitbashRecipeHdiff : DerivedMode.SingleBaseHdiff;
+				}
+				
+				// Configure button - like Humanoid "Configure..." button
+				if (isKitbash)
+				{
+					EditorGUILayout.Space(4);
+					
+					// Status line
+					bool hasRecipe = !string.IsNullOrEmpty(settings.kitbashRecipeGuid);
+					string statusText = hasRecipe ? "✓ Configured" : "Not configured";
+					Color statusColor = hasRecipe ? new Color(0.3f, 0.8f, 0.3f) : new Color(0.9f, 0.6f, 0.2f);
+					
+					EditorGUILayout.BeginHorizontal();
+					var oldColor = GUI.color;
+					GUI.color = statusColor;
+					EditorGUILayout.LabelField(statusText, EditorStyles.boldLabel, GUILayout.Width(100));
+					GUI.color = oldColor;
+					
+					// Big Configure button
+					if (GUILayout.Button("Configure...", GUILayout.Height(24)))
+					{
+						OpenKitbashConfigurator(importer, settings);
+					}
+					EditorGUILayout.EndHorizontal();
+				}
+				#endif
+				
 				EditorGUILayout.Space(8);
 				EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
 				EditorGUILayout.Space(4);
@@ -82,6 +118,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				AssetDatabase.SaveAssets();
 			}
 		}
+		
+		#if YUCP_KITBASH_ENABLED
+		/// <summary>
+		/// Opens Kitbash Edit Mode for the specified FBX.
+		/// This is the main entry point - like clicking "Configure" on Humanoid.
+		/// </summary>
+		private static void OpenKitbashConfigurator(ModelImporter importer, DerivedSettings settings)
+		{
+			// Enter stage-based edit mode (full editor takeover)
+			Kitbash.UI.KitbashStage.Enter(importer, settings);
+		}
+		#endif
 		
 		/// <summary>
 		/// Regenerates the GUID for the current derived FBX and updates all references.

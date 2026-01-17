@@ -1,0 +1,78 @@
+// GPU-accelerated triangle picking for Kitbash painting
+// Single-ray intersection to find which triangle the mouse is over
+#pragma kernel CSFindTriangle
+
+struct Triangle
+{
+    float3 v0;
+    float3 v1;
+    float3 v2;
+};
+
+StructuredBuffer<Triangle> Triangles;
+RWStructuredBuffer<int> BestTriangle;  // [0] = triangle index, [1] = packed distance
+RWStructuredBuffer<float> BestDistance; // Separate buffer for atomic float comparison
+
+float3 RayOrigin;
+float3 RayDirection;
+int TriangleCount;
+float MaxDistance;
+
+// Möller–Trumbore intersection algorithm
+bool RayIntersectsTriangle(float3 origin, float3 direction, Triangle tri, out float t)
+{
+    const float EPSILON = 0.0000001;
+    float3 edge1 = tri.v1 - tri.v0;
+    float3 edge2 = tri.v2 - tri.v0;
+    
+    float3 h = cross(direction, edge2);
+    float a = dot(edge1, h);
+    
+    if (abs(a) < EPSILON)
+    {
+        t = 0.0;
+        return false;
+    }
+    
+    float f = 1.0 / a;
+    float3 s = origin - tri.v0;
+    float u = f * dot(s, h);
+    
+    if (u < 0.0 || u > 1.0)
+    {
+        t = 0.0;
+        return false;
+    }
+    
+    float3 q = cross(s, edge1);
+    float v = f * dot(direction, q);
+    
+    if (v < 0.0 || u + v > 1.0)
+    {
+        t = 0.0;
+        return false;
+    }
+    
+    t = f * dot(edge2, q);
+    return t > EPSILON && t < MaxDistance;
+}
+
+// Each thread tests one triangle - use atomic min on packed int for race-free closest hit
+[numthreads(64, 1, 1)]
+void CSFindTriangle(uint3 id : SV_DispatchThreadID)
+{
+    uint triIndex = id.x;
+    if (triIndex >= (uint)TriangleCount) return;
+    
+    float t;
+    if (RayIntersectsTriangle(RayOrigin, RayDirection, Triangles[triIndex], t))
+    {
+        // Pack distance as fixed-point integer (16 bits) + triangle index (16 bits)
+        // This allows atomic min to find closest hit
+        uint distPacked = (uint)(saturate(t / MaxDistance) * 65535.0);
+        uint indexPacked = triIndex & 0xFFFF;
+        int combined = (int)((distPacked << 16) | indexPacked);
+        
+        InterlockedMin(BestTriangle[0], combined);
+    }
+}

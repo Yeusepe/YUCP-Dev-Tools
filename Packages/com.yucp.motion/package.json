@@ -1,0 +1,14 @@
+{
+  "name": "com.yucp.motion",
+  "displayName": "YUCP Motion - UI Toolkit Core Infrastructure",
+  "version": "0.1.0",
+  "unity": "2021.3",
+  "description": "Allocation-free UI Toolkit infrastructure for Editor inspector UI, EditorWindow, and runtime UI. Core is Unity-free, single global tick drives all controllers.",
+  "author": {
+    "name": "YUCP Club",
+    "url": "http://vpm.yucp.club/"
+  },
+  "dependencies": {},
+  "vpmDependencies": {},
+  "legacyPackages": []
+}

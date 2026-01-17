@@ -8,6 +8,9 @@ using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UIElements;
 using YUCP.DevTools.Components;
+using YUCP.DevTools.Editor.PackageExporter.UI.Components;
+using YUCP.Motion;
+using YUCP.Motion.Core;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -95,6 +98,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private VisualElement currentResizableContainer = null; // Track which container is being resized
         private Rect currentResizeRect = Rect.zero; // Store the resize rect for cursor
         
+        // Resizable left pane state
+        private bool isResizingLeftPane = false;
+        private float resizeStartX = 0f;
+        private float resizeStartWidth = 0f;
+        private VisualElement _resizeHandle;
+        private Rect currentLeftPaneResizeRect = Rect.zero; // Store the resize rect for cursor
+        private const string LeftPaneWidthKey = "com.yucp.devtools.packageexporter.leftpanewidth";
+        private const float DefaultLeftPaneWidth = 270f;
+        private const float MinLeftPaneWidth = 150f;
+        private const float MaxLeftPaneWidth = 600f;
+        
         // State
         private List<ExportProfile> allProfiles = new List<ExportProfile>();
         private ExportProfile selectedProfile;
@@ -107,14 +121,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
         // Drag-and-drop state
         private int draggingIndex = -1;
         private VisualElement draggingElement = null;
-        private VisualElement draggingGhost = null;
         private Vector2 dragOffset = Vector2.zero;
         private Vector2 dragStartPosition = Vector2.zero;
         private bool hasDragged = false;
         private const float DRAG_THRESHOLD = 5f; // Pixels to move before considering it a drag
         private int potentialDropIndex = -1; // Where the item would be dropped
-        private Dictionary<VisualElement, float> originalHeights = new Dictionary<VisualElement, float>();
-        private Dictionary<VisualElement, float> currentOffsets = new Dictionary<VisualElement, float>(); // Track current offsets
+        private Dictionary<VisualElement, MotionHandle> motionHandles = new Dictionary<VisualElement, MotionHandle>(); // Motion handles for smooth animations
+        private Dictionary<int, float> rowGaps = new Dictionary<int, float>(); // Track gaps for smooth spacing animation (vFavorites approach)
+        private float draggedItemY = 0f; // Y position of dragged item (absolute)
+        private VisualElement draggedItemContainer = null; // Container for absolutely positioned dragged item
+        private int draggingItemFromPageAtIndex = -1; // Original index of dragged item (vFavorites approach)
+        private int insertDraggedItemAtIndex = -1; // Where item will be inserted (calculated from mouse position)
+        // private float draggedItemHoldOffset = 0f; // Offset from mouse to item center when drag started (vFavorites approach) - kept for potential future use
+        private int draggingVisualIndex = -1; // Visual index of dragged item in list
         
         // Stack-to-create folder state
         private VisualElement stackTargetElement = null;
@@ -151,6 +170,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
         // Dependencies filter state
         private string dependenciesSearchFilter = "";
         
+        // Profile list sort and filter state
+        private enum ProfileSortOption
+        {
+            Name,
+            Version,
+            LastExportDate
+        }
+        
+        private ProfileSortOption currentSortOption = ProfileSortOption.Name;
+        private List<string> selectedFilterTags = new List<string>();
+        private string selectedFilterFolder = null; // null means "All Folders"
+        private string _currentSearchText = "";
+        private YUCP.DevTools.Editor.PackageExporter.UI.Components.TokenizedSearchField _mainSearchField;
+        private YUCP.DevTools.Editor.PackageExporter.UI.Components.TokenizedSearchField _overlaySearchField;
+        
         // Collapsible section states
         private bool showExportOptions = true;
         private bool showFolders = true;
@@ -182,20 +216,41 @@ namespace YUCP.DevTools.Editor.PackageExporter
         // Package reordering prefs
         private const string PackageOrderKey = "com.yucp.devtools.packageexporter.order";
         private const string PackageFoldersKey = "com.yucp.devtools.packageexporter.folders";
+        private const string UnifiedOrderKey = "com.yucp.devtools.packageexporter.unifiedorder";
+        private const string UnifiedOrderMigratedKey = "com.yucp.devtools.packageexporter.unifiedorder.migrated";
         
         // Folder state
         private List<string> projectFolders = new List<string>();
         private HashSet<string> collapsedFolders = new HashSet<string>();
         private const string CollapsedFoldersKey = "com.yucp.devtools.packageexporter.collapsedfolders";
+        
+        // Unified order (profiles and folders mixed)
+        private List<UnifiedOrderItem> unifiedOrder = new List<UnifiedOrderItem>();
 
         private void OnEnable()
         {
+            // Initialize Motion system
+            global::YUCP.Motion.Motion.Initialize();
+            
             LoadProfiles();
             LoadProjectFolders();
             LoadResources();
             
+            // Migrate to unified order if needed
+            MigrateToUnifiedOrder();
+            LoadUnifiedOrder();
+            
             // Refresh dependencies on domain reload
             EditorApplication.delayCall += RefreshDependenciesOnDomainReload;
+            
+            // Register update for gap animation (vFavorites approach)
+            EditorApplication.update -= UpdateGapAnimations;
+            EditorApplication.update += UpdateGapAnimations;
+        }
+        
+        private void OnDisable()
+        {
+            EditorApplication.update -= UpdateGapAnimations;
         }
         
         private void RefreshDependenciesOnDomainReload()
@@ -306,6 +361,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 EditorGUIUtility.AddCursorRect(currentResizeRect, MouseCursor.ResizeVertical);
             }
+            
+            // Handle cursor for left pane resize handle
+            if (!currentLeftPaneResizeRect.Equals(Rect.zero) && !isResizingLeftPane)
+            {
+                EditorGUIUtility.AddCursorRect(currentLeftPaneResizeRect, MouseCursor.ResizeHorizontal);
+            }
         }
         
         private void CreateGUI()
@@ -348,16 +409,42 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _overlayBackdrop.style.visibility = Visibility.Hidden;
             _contentContainer.Add(_overlayBackdrop);
             
+            // Load saved width or use default (shared between overlay and normal pane)
+            float savedWidth = EditorPrefs.GetFloat(LeftPaneWidthKey, DefaultLeftPaneWidth);
+            savedWidth = Mathf.Clamp(savedWidth, MinLeftPaneWidth, MaxLeftPaneWidth);
+            
             // Create left pane overlay (for mobile)
             _leftPaneOverlay = CreateLeftPane(isOverlay: true);
             _leftPaneOverlay.AddToClassList("yucp-left-pane-overlay");
+            // Use the same width as the normal left pane
+            _leftPaneOverlay.style.width = new Length(savedWidth, LengthUnit.Pixel);
+            _leftPaneOverlay.style.minWidth = MinLeftPaneWidth;
+            _leftPaneOverlay.style.maxWidth = MaxLeftPaneWidth;
             _leftPaneOverlay.style.display = DisplayStyle.None;
             _leftPaneOverlay.style.visibility = Visibility.Hidden;
             _contentContainer.Add(_leftPaneOverlay);
             
             // Create normal left pane
             _leftPane = CreateLeftPane(isOverlay: false);
+            _leftPane.style.width = new Length(savedWidth, LengthUnit.Pixel);
+            _leftPane.style.minWidth = MinLeftPaneWidth;
+            _leftPane.style.maxWidth = MaxLeftPaneWidth;
+            _leftPane.style.flexShrink = 0;
+            _leftPane.style.flexGrow = 0;
             _contentContainer.Add(_leftPane);
+            
+            // Create resize handle between left and right panes
+            _resizeHandle = new VisualElement();
+            _resizeHandle.AddToClassList("yucp-resize-handle");
+            _resizeHandle.style.width = 4f;
+            _resizeHandle.style.flexShrink = 0;
+            _resizeHandle.style.cursor = new StyleCursor(StyleKeyword.None);
+            _resizeHandle.pickingMode = PickingMode.Position;
+            
+            // Setup resize handle mouse events
+            SetupLeftPaneResizeHandle();
+            
+            _contentContainer.Add(_resizeHandle);
             
             _contentContainer.Add(CreateRightPane());
             mainContainer.Add(_contentContainer);
@@ -567,6 +654,161 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 updateParallax(scrollY);
             }).Every(16); // Update approximately every frame (60fps = ~16ms per frame)
+        }
+        
+        private void EndResize()
+        {
+            if (!isResizingLeftPane) return;
+            
+            isResizingLeftPane = false;
+            if (_resizeHandle != null && _resizeHandle.HasMouseCapture())
+            {
+                _resizeHandle.ReleaseMouse();
+            }
+            
+            // Save the new width to EditorPrefs
+            if (_leftPane != null)
+            {
+                float finalWidth = _leftPane.resolvedStyle.width;
+                if (finalWidth <= 0)
+                {
+                    finalWidth = _leftPane.layout.width;
+                }
+                if (finalWidth > 0)
+                {
+                    EditorPrefs.SetFloat(LeftPaneWidthKey, finalWidth);
+                }
+            }
+            
+            currentLeftPaneResizeRect = Rect.zero;
+        }
+        
+        private void SetupLeftPaneResizeHandle()
+        {
+            if (_resizeHandle == null || _leftPane == null) return;
+            
+            // Update resize rect for cursor when mouse moves over handle
+            _resizeHandle.RegisterCallback<MouseEnterEvent>(evt =>
+            {
+                if (!isResizingLeftPane)
+                {
+                    var worldBounds = _resizeHandle.worldBound;
+                    currentLeftPaneResizeRect = worldBounds;
+                }
+            });
+            
+            _resizeHandle.RegisterCallback<MouseLeaveEvent>(evt =>
+            {
+                if (!isResizingLeftPane)
+                {
+                    currentLeftPaneResizeRect = Rect.zero;
+                }
+            });
+            
+            // Start resizing on mouse down
+            _resizeHandle.RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.button == 0) // Left mouse button
+                {
+                    isResizingLeftPane = true;
+                    // Use world position for consistent tracking
+                    var paneWorldBound = _leftPane.worldBound;
+                    resizeStartX = evt.mousePosition.x;
+                    float currentWidth = _leftPane.resolvedStyle.width;
+                    if (currentWidth <= 0)
+                    {
+                        currentWidth = _leftPane.layout.width;
+                    }
+                    if (currentWidth <= 0 && paneWorldBound.width > 0)
+                    {
+                        currentWidth = paneWorldBound.width;
+                    }
+                    resizeStartWidth = currentWidth;
+                    _resizeHandle.CaptureMouse();
+                    evt.StopPropagation();
+                }
+            });
+            
+            // Update resize width - helper method for responsiveness
+            System.Action<Vector2> updateResizeWidth = (mousePosition) =>
+            {
+                if (!isResizingLeftPane || !_resizeHandle.HasMouseCapture()) return;
+                
+                float deltaX = mousePosition.x - resizeStartX;
+                float newWidth = resizeStartWidth + deltaX;
+                newWidth = Mathf.Clamp(newWidth, MinLeftPaneWidth, MaxLeftPaneWidth);
+                
+                // Update left pane width immediately
+                _leftPane.style.width = new Length(newWidth, LengthUnit.Pixel);
+                _leftPane.style.flexShrink = 0;
+                _leftPane.style.flexGrow = 0;
+                
+                // Force immediate repaint updates (layout will be recalculated automatically)
+                _leftPane.MarkDirtyRepaint();
+                
+                // Also mark parent container for repaint
+                if (_contentContainer != null)
+                {
+                    _contentContainer.MarkDirtyRepaint();
+                }
+                
+                // Force immediate repaint of the window
+                Repaint();
+            };
+            
+            // Handle mouse move during resize - using both local and capture events for best tracking
+            _resizeHandle.RegisterCallback<MouseMoveEvent>(evt =>
+            {
+                if (isResizingLeftPane && _resizeHandle.HasMouseCapture())
+                {
+                    updateResizeWidth(evt.mousePosition);
+                    evt.StopPropagation();
+                }
+                else if (!isResizingLeftPane)
+                {
+                    // Update resize rect when hovering
+                    var worldBounds = _resizeHandle.worldBound;
+                    if (!worldBounds.Equals(Rect.zero))
+                    {
+                        currentLeftPaneResizeRect = worldBounds;
+                    }
+                }
+            });
+            
+            // Also register on root for better tracking when mouse leaves the handle
+            if (rootVisualElement != null)
+            {
+                rootVisualElement.RegisterCallback<MouseMoveEvent>(evt =>
+                {
+                    if (isResizingLeftPane && _resizeHandle.HasMouseCapture())
+                    {
+                        updateResizeWidth(evt.mousePosition);
+                        evt.StopPropagation();
+                    }
+                }, TrickleDown.TrickleDown);
+            }
+            
+            // End resizing on mouse up
+            _resizeHandle.RegisterCallback<MouseUpEvent>(evt =>
+            {
+                if (evt.button == 0 && isResizingLeftPane)
+                {
+                    EndResize();
+                    evt.StopPropagation();
+                }
+            });
+            
+            // Also handle mouse up on the root to ensure we release mouse capture even if mouse leaves handle
+            if (rootVisualElement != null)
+            {
+                rootVisualElement.RegisterCallback<MouseUpEvent>(evt =>
+                {
+                    if (evt.button == 0 && isResizingLeftPane)
+                    {
+                        EndResize();
+                    }
+                });
+            }
         }
         
         private void ForceBannerFullWidth()
@@ -1108,6 +1350,459 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return toast;
         }
 
+        // UI Helper Methods for Modern Design System
+        
+        /// <summary>
+        /// Build a chip/badge component for tags
+        /// </summary>
+        private VisualElement BuildChip(string text, Action onRemove = null, bool isSelected = false)
+        {
+            var chip = new VisualElement();
+            chip.AddToClassList("yucp-chip");
+            if (isSelected)
+                chip.AddToClassList("yucp-chip-selected");
+            
+            var label = new Label(text);
+            label.AddToClassList("yucp-chip-label");
+            chip.Add(label);
+            
+            if (onRemove != null)
+            {
+                var removeButton = new Button(onRemove) { text = "×" };
+                removeButton.AddToClassList("yucp-chip-remove");
+                chip.Add(removeButton);
+            }
+            
+            return chip;
+        }
+        
+        /// <summary>
+        /// Build an icon button with optional badge
+        /// </summary>
+        private Button BuildIconButton(string label, Texture2D icon, Action onClick, string variant = "outline", int badgeCount = 0)
+        {
+            var button = new Button(onClick);
+            button.AddToClassList("yucp-button");
+            button.AddToClassList("yucp-button-outline");
+            button.AddToClassList("yucp-button-icon-left");
+            
+            if (icon != null)
+            {
+                var iconImage = new Image { image = icon };
+                button.Add(iconImage);
+            }
+            
+            var labelElement = new Label(label);
+            button.Add(labelElement);
+            
+            if (badgeCount > 0)
+            {
+                var badge = new Label(badgeCount.ToString());
+                badge.AddToClassList("yucp-button-badge");
+                button.Add(badge);
+            }
+            
+            return button;
+        }
+        
+        // Popover state
+        private VisualElement _currentPopover = null;
+        private VisualElement _popoverBackdrop = null;
+        
+        /// <summary>
+        /// Show a popover as a floating panel
+        /// </summary>
+        private void ShowPopover(Rect position, VisualElement content, Action onClose = null)
+        {
+            // Close existing popover
+            ClosePopover();
+            
+            // Create backdrop
+            _popoverBackdrop = new VisualElement();
+            _popoverBackdrop.style.position = Position.Absolute;
+            _popoverBackdrop.style.left = 0;
+            _popoverBackdrop.style.top = 0;
+            _popoverBackdrop.style.right = 0;
+            _popoverBackdrop.style.bottom = 0;
+            _popoverBackdrop.style.backgroundColor = new Color(0, 0, 0, 0.1f);
+            _popoverBackdrop.RegisterCallback<MouseDownEvent>(evt =>
+            {
+                ClosePopover();
+                onClose?.Invoke();
+            });
+            rootVisualElement.Add(_popoverBackdrop);
+            
+            // Create popover panel
+            _currentPopover = new VisualElement();
+            _currentPopover.AddToClassList("yucp-popover");
+            _currentPopover.style.position = Position.Absolute;
+            _currentPopover.style.left = position.x;
+            _currentPopover.style.top = position.y;
+            _currentPopover.style.width = position.width;
+            _currentPopover.style.minHeight = position.height;
+            _currentPopover.style.maxHeight = 500;
+            _currentPopover.style.overflow = Overflow.Hidden;
+            
+            // Add content directly (content should handle its own scrolling if needed)
+            _currentPopover.Add(content);
+            
+            rootVisualElement.Add(_currentPopover);
+        }
+        
+        /// <summary>
+        /// Close the current popover
+        /// </summary>
+        private void ClosePopover()
+        {
+            if (_currentPopover != null)
+            {
+                _currentPopover.RemoveFromHierarchy();
+                _currentPopover = null;
+            }
+            if (_popoverBackdrop != null)
+            {
+                _popoverBackdrop.RemoveFromHierarchy();
+                _popoverBackdrop = null;
+            }
+        }
+        
+        /// <summary>
+        /// Replaces the default sidebar header with custom header containing Sort/Filter buttons and Search
+        /// </summary>
+        private void ReplaceSidebarHeader(VisualElement sidebarContainer, YucpSidebar sidebar, bool isOverlay)
+        {
+            // Find the existing header/search area - try common class names
+            var existingHeader = sidebarContainer.Q<VisualElement>(className: "yucp-sidebar-header");
+            if (existingHeader == null)
+            {
+                // Try finding by structure - look for search field parent
+                var searchField = sidebarContainer.Q<TextField>();
+                if (searchField != null)
+                {
+                    existingHeader = searchField.parent;
+                }
+            }
+            
+            // Create new custom header
+            var customHeader = CreateProfileListHeader(sidebar, isOverlay);
+            
+            if (existingHeader != null)
+            {
+                // Replace existing header
+                var parent = existingHeader.parent;
+                if (parent != null)
+                {
+                    int index = parent.IndexOf(existingHeader);
+                    existingHeader.RemoveFromHierarchy();
+                    parent.Insert(index, customHeader);
+                }
+                else
+                {
+                    // Fallback: add at top
+                    sidebarContainer.Insert(0, customHeader);
+                }
+            }
+            else
+            {
+                // No existing header found, add at top
+                sidebarContainer.Insert(0, customHeader);
+            }
+        }
+        
+        /// <summary>
+        /// Creates the custom header row with Sort button and TokenizedSearchField
+        /// </summary>
+        private VisualElement CreateProfileListHeader(YucpSidebar sidebar, bool isOverlay)
+        {
+            var headerRow = new VisualElement();
+            headerRow.AddToClassList("yucp-toolbar");
+            headerRow.style.backgroundColor = new StyleColor(Color.clear); // Remove grey background
+            // headerRow.style.zIndex = 100; // Removed: Not supported in this Unity version
+            headerRow.style.overflow = Overflow.Visible; // Allow dropdown to overflow
+            
+            // Ensure toolbar allows overlay to flow out if needed. 
+            // Note: UI Toolkit 'absolute' is relative to parent. 
+            // If z-index issues occur, might need to append overlay to root, but let's try this first.
+            
+            // Left group: Sort button only (Filter button removed)
+            var leftGroup = new VisualElement();
+            leftGroup.AddToClassList("yucp-toolbar-left");
+            
+            // Sort button with icon
+            string sortLabel = GetSortLabel(currentSortOption);
+            Button sortButton = null;
+            sortButton = new Button(() => ShowSortPopover(sortButton, isOverlay));
+            sortButton.AddToClassList("yucp-btn-outline");
+            if (currentSortOption != ProfileSortOption.Name)
+                sortButton.AddToClassList("active");
+            
+            // Add icon (using text as icon placeholder - can be replaced with actual icon texture)
+            var sortIcon = new Label("⇅");
+            sortIcon.AddToClassList("yucp-btn-icon");
+            sortButton.Add(sortIcon);
+            
+            var sortLabelElement = new Label(sortLabel);
+            sortLabelElement.AddToClassList("yucp-sort-label"); // Added class for easier finding
+            sortButton.Add(sortLabelElement);
+            leftGroup.Add(sortButton);
+            
+            headerRow.Add(leftGroup);
+            
+            // Right group: Search field (Tokenized)
+            var rightGroup = new VisualElement();
+            rightGroup.AddToClassList("yucp-toolbar-right");
+            rightGroup.style.flexGrow = 1;
+            // Ensure search container doesn't clip the dropdown
+            rightGroup.style.overflow = Overflow.Visible;
+            headerRow.style.overflow = Overflow.Visible;
+            
+            var searchField = new TokenizedSearchField();
+            if (isOverlay) _overlaySearchField = searchField;
+            else _mainSearchField = searchField;
+            
+            RefreshSearchOptions(searchField);
+            
+            // Initialize with current search text
+            string currentSearch = sidebar != null ? sidebar.GetSearchText() : "";
+            searchField.value = currentSearch;
+            
+            // Initialize with current tags
+            var currentTags = new List<string>(selectedFilterTags);
+            if (!string.IsNullOrEmpty(selectedFilterFolder))
+            {
+                currentTags.Add($"Folder: {selectedFilterFolder}");
+            }
+            searchField.SetActiveTags(currentTags);
+            
+            // Hook up events
+            searchField.OnSearchValueChanged += (newValue) => 
+            {
+                _currentSearchText = newValue ?? ""; // Store locally for reliable access
+                var setSearchMethod = sidebar?.GetType().GetMethod("SetSearchText", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (setSearchMethod != null)
+                {
+                    setSearchMethod.Invoke(sidebar, new object[] { newValue });
+                }
+                UpdateProfileList();
+            };
+            
+            searchField.OnTagAdded += (tag) => 
+            {
+                if (tag.StartsWith("Folder: "))
+                {
+                    string folderName = tag.Substring("Folder: ".Length);
+                    selectedFilterFolder = folderName;
+                }
+                else
+                {
+                    if (!selectedFilterTags.Contains(tag))
+                        selectedFilterTags.Add(tag);
+                }
+                UpdateProfileList();
+            };
+            
+            searchField.OnTagRemoved += (tag) => 
+            {
+                if (tag.StartsWith("Folder: "))
+                {
+                    selectedFilterFolder = null;
+                }
+                else
+                {
+                    selectedFilterTags.Remove(tag);
+                }
+                UpdateProfileList();
+            };
+            
+            rightGroup.Add(searchField);
+            
+            // Attach overlay to root to fix layering (dropdown appearing behind items)
+            searchField.AttachOverlayToRoot(rootVisualElement);
+            
+            headerRow.Add(rightGroup);
+            
+            headerRow.name = "profile-header-row";
+            
+            // Responsive layout: Collapse sort button text on small widths
+            headerRow.RegisterCallback<GeometryChangedEvent>(evt => 
+            {
+                if (sortLabelElement == null) return;
+                
+                // Threshold width for collapsing (approximate width of sidebar when minimal)
+                float collapseThreshold = 320f;
+                bool shouldCollapse = evt.newRect.width < collapseThreshold;
+                
+                if (shouldCollapse)
+                {
+                    sortLabelElement.style.display = DisplayStyle.None;
+                    // Ensure button didn't shrink too much
+                    sortButton.tooltip = sortLabel; // Move label to tooltip
+                }
+                else
+                {
+                    sortLabelElement.style.display = DisplayStyle.Flex;
+                    sortButton.tooltip = ""; 
+                }
+            });
+            
+            return headerRow;
+        }
+        
+        /// <summary>
+        /// Creates the active filters chips row
+        /// </summary>
+        // CreateActiveFiltersRow removed - tags are now inside TokenizedSearchField
+        
+        /// <summary>
+        /// Gets the display label for sort option
+        /// </summary>
+        private string GetSortLabel(ProfileSortOption option)
+        {
+            return option switch
+            {
+                ProfileSortOption.Name => "Sort: Name",
+                ProfileSortOption.Version => "Sort: Version",
+                ProfileSortOption.LastExportDate => "Sort: Date",
+                _ => "Sort"
+            };
+        }
+        
+        /// <summary>
+        /// Shows the sort popover
+        /// </summary>
+        private void ShowSortPopover(Button anchorButton, bool isOverlay)
+        {
+            var popoverContent = CreateSortPopoverContent(isOverlay);
+            
+            // Get button position for popover
+            var buttonRect = anchorButton.worldBound;
+            var popoverRect = new Rect(buttonRect.x, buttonRect.yMax + 4, 300, 120);
+            
+            ShowPopover(popoverRect, popoverContent);
+        }
+        
+
+        /// <summary>
+        /// Creates the sort popover content
+        /// </summary>
+        private VisualElement CreateSortPopoverContent(bool isOverlay)
+        {
+            var container = new VisualElement();
+            container.AddToClassList("yucp-popover");
+            container.style.overflow = Overflow.Hidden;
+            container.style.minWidth = 280;
+            container.style.maxWidth = 300;
+            
+            var content = new VisualElement();
+            content.AddToClassList("yucp-popover-content");
+            content.style.overflow = Overflow.Hidden;
+            content.style.minWidth = 0;
+            
+            // Sort options
+            var nameOption = CreateSortOption("Name", ProfileSortOption.Name, currentSortOption == ProfileSortOption.Name, () =>
+            {
+                currentSortOption = ProfileSortOption.Name;
+                UpdateProfileList();
+                ClosePopover();
+            });
+            content.Add(nameOption);
+            
+            var versionOption = CreateSortOption("Version", ProfileSortOption.Version, currentSortOption == ProfileSortOption.Version, () =>
+            {
+                currentSortOption = ProfileSortOption.Version;
+                UpdateProfileList();
+                ClosePopover();
+            });
+            content.Add(versionOption);
+            
+            var dateOption = CreateSortOption("Last Export Date", ProfileSortOption.LastExportDate, currentSortOption == ProfileSortOption.LastExportDate, () =>
+            {
+                currentSortOption = ProfileSortOption.LastExportDate;
+                UpdateProfileList();
+                ClosePopover();
+            });
+            content.Add(dateOption);
+            
+            container.Add(content);
+            return container;
+        }
+        
+        /// <summary>
+        /// Creates a sort option row
+        /// </summary>
+        private VisualElement CreateSortOption(string label, ProfileSortOption option, bool isSelected, Action onClick)
+        {
+            var optionRow = new VisualElement();
+            optionRow.AddToClassList("yucp-sort-option");
+            if (isSelected)
+                optionRow.AddToClassList("selected");
+            
+            // Indicator (dot for selected)
+            var indicator = new VisualElement();
+            indicator.AddToClassList("yucp-sort-indicator");
+            if (isSelected)
+            {
+                var dot = new VisualElement();
+                dot.AddToClassList("yucp-sort-indicator-dot");
+                indicator.Add(dot);
+            }
+            optionRow.Add(indicator);
+            
+            var labelElement = new Label(label);
+            labelElement.AddToClassList("yucp-sort-option-label");
+            optionRow.Add(labelElement);
+            
+            optionRow.RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.button == 0)
+                {
+                    onClick?.Invoke();
+                    evt.StopPropagation();
+                }
+            });
+            
+            return optionRow;
+        }
+
+        /// <summary>
+        /// Build a checkbox row with label - full row clickable
+        /// </summary>
+        private VisualElement BuildCheckboxRow(string id, string label, bool initial, Action<bool> onChanged)
+        {
+            var row = new VisualElement();
+            row.AddToClassList("yucp-row-item");
+            row.name = id;
+            if (initial)
+                row.AddToClassList("selected");
+            
+            var toggle = new Toggle { value = initial };
+            toggle.AddToClassList("yucp-toggle");
+            toggle.RegisterValueChangedCallback(evt =>
+            {
+                if (evt.newValue)
+                    row.AddToClassList("selected");
+                else
+                    row.RemoveFromClassList("selected");
+                onChanged?.Invoke(evt.newValue);
+            });
+            row.Add(toggle);
+            
+            var labelElement = new Label(label);
+            labelElement.AddToClassList("yucp-row-item-label");
+            row.Add(labelElement);
+            
+            // Make entire row clickable
+            row.RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.button == 0)
+                {
+                    toggle.value = !toggle.value;
+                    evt.StopPropagation();
+                }
+            });
+            
+            return row;
+        }
         private VisualElement CreateLeftPane(bool isOverlay)
         {
             var leftPane = new VisualElement();
@@ -1166,6 +1861,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 _profileListScrollView = sidebar.ScrollView;
                 _profileListContainer = sidebar.ListContainer;
             }
+            
+            // Replace the default header with our custom header that includes Sort/Filter + Search
+            ReplaceSidebarHeader(container, sidebar, isOverlay);
             
             leftPane.Add(container);
             return leftPane;
@@ -1275,90 +1973,348 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void UpdateProfileList()
         {
-            // Update both normal and overlay sidebars
+            // Update header buttons to reflect current state
+            UpdateHeaderButtons();
+            
+            // Refresh options in case tags changed
+            RefreshSearchOptions(_mainSearchField);
+            RefreshSearchOptions(_overlaySearchField);
+            
+            // Update both normal and overlay sidebars using local search text
             if (_sidebar != null)
             {
-                // Custom rendering for folders - bypass default UpdateList to avoid NRE / double rendering
-                RenderProfileListWithFolders(_sidebar.ListContainer, _sidebar.GetSearchText());
+                // Custom rendering for folders - use local _currentSearchText for reliable filtering
+                RenderProfileListWithFolders(_sidebar.ListContainer, _currentSearchText);
             }
             
             if (_sidebarOverlay != null)
             {
-                RenderProfileListWithFolders(_sidebarOverlay.ListContainer, _sidebarOverlay.GetSearchText());
+                RenderProfileListWithFolders(_sidebarOverlay.ListContainer, _currentSearchText);
             }
         }
         
+        /// <summary>
+        /// Updates header buttons to reflect current sort state
+        /// </summary>
+        private void UpdateHeaderButtons()
+        {
+            // Find and update sort button
+            var sortButton = rootVisualElement.Q<Button>(className: "yucp-btn-outline");
+            if (sortButton != null)
+            {
+                var label = sortButton.Q<Label>(className: "yucp-sort-label");
+                if (label != null)
+                {
+                    label.text = GetSortLabel(currentSortOption);
+                }
+                
+                if (currentSortOption != ProfileSortOption.Name)
+                    sortButton.AddToClassList("active");
+                else
+                    sortButton.RemoveFromClassList("active");
+            }
+        }
+
+        private void RefreshSearchOptions(YUCP.DevTools.Editor.PackageExporter.UI.Components.TokenizedSearchField field)
+        {
+            if (field == null) return;
+
+            var options = new List<YUCP.DevTools.Editor.PackageExporter.UI.Components.TokenizedSearchField.SearchProposal>();
+            var seenTags = new HashSet<string>();
+            
+            // 1. Preset tags
+            var presetTagsType = typeof(YUCP.DevTools.Editor.PackageExporter.ExportProfile);
+            var presetTagsField = presetTagsType.GetField("AvailablePresetTags", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            var presetTagsList = presetTagsField?.GetValue(null) as List<string>;
+            if (presetTagsList != null)
+            {
+                foreach(var t in presetTagsList) 
+                {
+                    if(seenTags.Add(t))
+                        options.Add(new YUCP.DevTools.Editor.PackageExporter.UI.Components.TokenizedSearchField.SearchProposal { Label = t, Value = t, IsTag = true });
+                }
+            }
+            
+            // 2. Global Custom Tags (EditorPrefs)
+            string rawGlobalTags = EditorPrefs.GetString("YUCP_GlobalCustomTags", "");
+            if (!string.IsNullOrEmpty(rawGlobalTags))
+            {
+                var splits = rawGlobalTags.Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach(var t in splits)
+                {
+                     if(seenTags.Add(t))
+                        options.Add(new YUCP.DevTools.Editor.PackageExporter.UI.Components.TokenizedSearchField.SearchProposal { Label = t, Value = t, IsTag = true });
+                }
+            }
+            
+            // 3. Custom tags from Profiles
+            foreach (var profile in allProfiles)
+            {
+                if (profile.customTags != null)
+                {
+                    foreach (var tag in profile.customTags)
+                    {
+                        if (!string.IsNullOrWhiteSpace(tag))
+                        {
+                            var tr = tag.Trim();
+                            if(seenTags.Add(tr))
+                                options.Add(new YUCP.DevTools.Editor.PackageExporter.UI.Components.TokenizedSearchField.SearchProposal { Label = tr, Value = tr, IsTag = true });
+                        }
+                    }
+                }
+                
+                // 4. Profile Names (as non-tags)
+                if (!string.IsNullOrWhiteSpace(profile.profileName))
+                {
+                    options.Add(new YUCP.DevTools.Editor.PackageExporter.UI.Components.TokenizedSearchField.SearchProposal { Label = profile.profileName, Value = profile.profileName, IsTag = false });
+                }
+            }
+            
+            // 5. Folders as tags
+             if (projectFolders != null)
+            {
+                foreach(var f in projectFolders) 
+                {
+                    string label = $"Folder: {f}";
+                    if(seenTags.Add(label))
+                        options.Add(new YUCP.DevTools.Editor.PackageExporter.UI.Components.TokenizedSearchField.SearchProposal { Label = label, Value = label, IsTag = true });
+                }
+            }
+            
+            field.SetAvailableOptions(options);
+        }
+        
+
+
         private void RenderProfileListWithFolders(VisualElement container, string searchText)
         {
             if (container == null) return;
             container.Clear();
             
-            bool hasFilter = !string.IsNullOrWhiteSpace(searchText);
-            var filteredProfiles = hasFilter 
-                ? allProfiles.Where(p => GetProfileDisplayName(p).ToLowerInvariant().Contains(searchText.ToLowerInvariant())).ToList()
-                : allProfiles;
-
-            if (filteredProfiles.Count == 0)
+            bool hasSearchFilter = !string.IsNullOrWhiteSpace(searchText);
+            
+            // Ensure unified order is up to date
+            ValidateAndCleanUnifiedOrder();
+            
+            // Apply filters and sorting to profiles
+            var filteredProfiles = allProfiles.AsEnumerable();
+            
+            // Apply search filter
+            if (hasSearchFilter)
             {
-                var emptyLabel = new Label(hasFilter ? "No items match your search" : "No profiles found");
+                filteredProfiles = filteredProfiles.Where(p => 
+                    GetProfileDisplayName(p).ToLowerInvariant().Contains(searchText.ToLowerInvariant()));
+            }
+            
+            // Apply tag filter
+            if (selectedFilterTags.Count > 0)
+            {
+                filteredProfiles = filteredProfiles.Where(p => 
+                {
+                    var profileTags = p.GetAllTags();
+                    return selectedFilterTags.Any(tag => profileTags.Contains(tag));
+                });
+            }
+            
+            // Apply folder filter
+            if (!string.IsNullOrEmpty(selectedFilterFolder))
+            {
+                filteredProfiles = filteredProfiles.Where(p => p.folderName == selectedFilterFolder);
+            }
+            
+            // Apply sorting
+            filteredProfiles = SortProfiles(filteredProfiles.ToList(), currentSortOption);
+            
+            // Rebuild folder structure with filtered and sorted profiles
+            var profileGuidToProfile = filteredProfiles.ToDictionary(
+                p => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p)),
+                p => p
+            );
+            
+            // If we are sorting by anything other than default Name/Manual, 
+            // OR if we have a search query, we should probably render a Flat List to respect the sort order/search results.
+            // UnifiedOrder enforces manual positioning which conflicts with dynamic sorting.
+            
+            bool isCustomSort = currentSortOption != ProfileSortOption.Name;
+            
+            if (isCustomSort)
+            {
+                // RENDER FLAT LIST (Respects Sort)
+                // Just render all filtered profiles in order
+                int index = 0;
+                foreach (var profile in filteredProfiles)
+                {
+                    var item = CreateProfileItem(profile, index); 
+                    if (item != null)
+                    {
+                        container.Add(item);
+                        
+                        // Add gap for drag and drop (though drag drop might be disabled in this mode)
+                        var gap = new VisualElement();
+                        gap.AddToClassList("yucp-list-gap");
+                        container.Add(gap);
+                    }
+                    index++;
+                }
+                
+                // If empty
+                if (!filteredProfiles.Any())
+                {
+                   // Container empty, maybe show 'No results' but empty state is handled by parent if needed, 
+                   // or we just leave it empty.
+                }
+                
+                return; // Done
+            }
+
+            // DEFAULT: Render Unified Order (Folders + Manual Sort)
+            
+            var folderToProfiles = filteredProfiles
+                .Where(p => !string.IsNullOrEmpty(p.folderName) && projectFolders.Contains(p.folderName))
+                .GroupBy(p => p.folderName)
+                .ToDictionary(g => g.Key, g => g.ToList());
+            
+            // Build filtered unified order
+            var filteredUnifiedOrder = new List<UnifiedOrderItem>();
+            foreach (var orderItem in unifiedOrder)
+            {
+                if (orderItem.isFolder)
+                {
+                    // Only include folder if it has filtered profiles
+                    if (folderToProfiles.ContainsKey(orderItem.identifier) && 
+                        folderToProfiles[orderItem.identifier].Count > 0)
+                    {
+                        filteredUnifiedOrder.Add(orderItem);
+                    }
+                }
+                else
+                {
+                    // Only include profile if it's in the filtered list
+                    if (profileGuidToProfile.ContainsKey(orderItem.identifier))
+                    {
+                        filteredUnifiedOrder.Add(orderItem);
+                    }
+                }
+            }
+            
+            // Track what we've rendered to avoid duplicates
+            var renderedProfiles = new HashSet<ExportProfile>();
+            var renderedFolders = new HashSet<string>();
+            
+            // Render items in filtered unified order
+            foreach (var orderItem in filteredUnifiedOrder)
+            {
+                if (orderItem.isFolder)
+                {
+                    // Render folder
+                    string folderName = orderItem.identifier;
+                    
+                    if (!projectFolders.Contains(folderName))
+                        continue; // Skip invalid folders
+                    
+                    // Get profiles in this folder (already filtered and sorted)
+                    var folderProfiles = folderToProfiles.TryGetValue(folderName, out var profiles) 
+                        ? profiles 
+                        : new List<ExportProfile>();
+                    
+                    // Skip if no matching profiles
+                    if (folderProfiles.Count == 0)
+                        continue;
+                    
+                    // Create folder header
+                    var folderHeader = CreateFolderHeader(folderName, folderProfiles.Count);
+                    container.Add(folderHeader);
+                    renderedFolders.Add(folderName);
+                    
+                    // Render profiles in folder if not collapsed (or if searching)
+                    if (!collapsedFolders.Contains(folderName) || hasSearchFilter)
+                    {
+                        var folderContent = new VisualElement();
+                        folderContent.AddToClassList("yucp-folder-content");
+                        
+                        foreach (var profile in folderProfiles)
+                        {
+                            var item = CreateProfileItem(profile, allProfiles.IndexOf(profile));
+                            folderContent.Add(item);
+                            renderedProfiles.Add(profile);
+                        }
+                        container.Add(folderContent);
+                    }
+                }
+                else
+                {
+                    // Render profile (only if not in a folder that's already rendered)
+                    if (profileGuidToProfile.TryGetValue(orderItem.identifier, out var profile))
+                    {
+                        // Skip if already rendered (in a folder)
+                        if (renderedProfiles.Contains(profile))
+                            continue;
+                        
+                        // Skip if in a folder (folders handle their own profiles)
+                        if (!string.IsNullOrEmpty(profile.folderName) && projectFolders.Contains(profile.folderName))
+                            continue;
+                        
+                        // Profile is already filtered, no need to check again
+                        
+                        var item = CreateProfileItem(profile, allProfiles.IndexOf(profile));
+                        container.Add(item);
+                        renderedProfiles.Add(profile);
+                    }
+                }
+            }
+            
+            // Check if we have any items to show
+            if (container.childCount == 0)
+            {
+                string emptyMessage = "No profiles found";
+                if (hasSearchFilter || selectedFilterTags.Count > 0 || !string.IsNullOrEmpty(selectedFilterFolder))
+                    emptyMessage = "No profiles match your filters";
+                
+                var emptyLabel = new Label(emptyMessage);
                 emptyLabel.AddToClassList("yucp-label-secondary");
                 emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
                 emptyLabel.style.paddingTop = 20;
                 container.Add(emptyLabel);
-                return;
             }
-
-            // 1. Render Folders
-            // Sort folders alphabetically
-            projectFolders.Sort();
-            
-            foreach (var folderName in projectFolders)
+        }
+        
+        /// <summary>
+        /// Sorts profiles by the specified option
+        /// </summary>
+        private List<ExportProfile> SortProfiles(List<ExportProfile> profiles, ProfileSortOption sortOption)
+        {
+            switch (sortOption)
             {
-                // Find profiles in this folder
-                var folderProfiles = filteredProfiles.Where(p => p.folderName == folderName).ToList();
-                
-                // Skip empty folders ONLY if searching (otherwise show empty folders)
-                if (hasFilter && folderProfiles.Count == 0) continue;
-                
-                // Create Folder Header
-                var folderHeader = CreateFolderHeader(folderName, folderProfiles.Count);
-                container.Add(folderHeader);
-                
-                // Render profiles if not collapsed
-                if (!collapsedFolders.Contains(folderName) || hasFilter) // Always expand when searching
-                {
-                    var folderContent = new VisualElement();
-                    folderContent.AddToClassList("yucp-folder-content");
+                case ProfileSortOption.Name:
+                    return profiles.OrderBy(p => GetProfileDisplayName(p)).ToList();
                     
-                    foreach (var profile in folderProfiles)
+                case ProfileSortOption.Version:
+                    return profiles.OrderByDescending(p => 
                     {
-                        var item = CreateProfileItem(profile, allProfiles.IndexOf(profile));
-                        folderContent.Add(item);
-                    }
-                    container.Add(folderContent);
-                }
-            }
-            
-            // 2. Render Uncategorized Profiles (profiles with empty or unknown folderName)
-            var uncategorizedProfiles = filteredProfiles.Where(p => 
-                string.IsNullOrEmpty(p.folderName) || !projectFolders.Contains(p.folderName)).ToList();
-                
-            if (uncategorizedProfiles.Count > 0)
-            {
-                // Optional: valid separator if there are folders above
-                if (projectFolders.Count > 0 && !(hasFilter && container.childCount == 0))
-                {
-                   // Could add a "Uncategorized" header or just a spacer
-                   var spacer = new VisualElement();
-                   spacer.style.height = 16;
-                   container.Add(spacer);
-                }
-                
-                foreach (var profile in uncategorizedProfiles)
-                {
-                    var item = CreateProfileItem(profile, allProfiles.IndexOf(profile));
-                    container.Add(item);
-                }
+                        // Try to parse version for proper semver sorting
+                        if (VersionUtility.TryParseVersion(p.version, out int major, out int minor, out int patch, out int? build, out string prerelease, out string metadata))
+                        {
+                            // Create a comparable value: major * 1000000 + minor * 1000 + patch + (build ?? 0)
+                            long versionValue = (long)major * 1000000L + (long)minor * 1000L + (long)patch;
+                            if (build.HasValue)
+                                versionValue += build.Value;
+                            return versionValue;
+                        }
+                        return 0L;
+                    }).ToList();
+                    
+                case ProfileSortOption.LastExportDate:
+                    return profiles.OrderByDescending(p => 
+                    {
+                        if (string.IsNullOrEmpty(p.LastExportTime))
+                            return DateTime.MinValue;
+                        if (DateTime.TryParse(p.LastExportTime, out var date))
+                            return date;
+                        return DateTime.MinValue;
+                    }).ToList();
+                    
+                default:
+                    return profiles;
             }
         }
 
@@ -1423,23 +2379,282 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return header;
             }
             
-            // Toggle collapse
+            // Drag-and-drop support for folders
             header.RegisterCallback<MouseDownEvent>(evt =>
             {
-                if (evt.button == 0)
+                if (evt.button == 0) // Left click
                 {
-                    if (isCollapsed)
-                        collapsedFolders.Remove(folderName);
-                    else
-                        collapsedFolders.Add(folderName);
-                        
-                    SaveCollapsedFolders();
-                    UpdateProfileList();
+                    // Initialize drag state for folder
+                    draggingIndex = -1; // Use -1 to indicate folder drag
+                    draggingElement = header;
+                    dragOffset = evt.localMousePosition;
+                    dragStartPosition = evt.mousePosition;
+                    hasDragged = false;
+                    
+                    header.CaptureMouse();
                     evt.StopPropagation();
                 }
-                else if (evt.button == 1)
+                else if (evt.button == 1) // Right click
                 {
                     ShowFolderContextMenu(folderName);
+                    evt.StopPropagation();
+                }
+            });
+            
+            // Drag handlers for folder - using vFavorites approach (same as profile items)
+            header.RegisterCallback<MouseMoveEvent>(evt =>
+            {
+                if (draggingIndex == -1 && draggingElement == header && header.HasMouseCapture())
+                {
+                    float dragDistance = Vector2.Distance(evt.mousePosition, dragStartPosition);
+                    if (dragDistance > DRAG_THRESHOLD && !hasDragged)
+                    {
+                        // Start the drag - vFavorites approach: remove from layout, position absolutely
+                        hasDragged = true;
+                        header.AddToClassList("yucp-profile-item-dragging");
+                        
+                        var listContainer = header.parent;
+                        if (listContainer != null)
+                        {
+                            // Store original position in world space
+                            Rect originalRect = header.worldBound;
+                            draggedItemY = originalRect.y;
+                            
+                            // Remove from hierarchy and create gap (vFavorites approach)
+                            float itemHeight = header.resolvedStyle.height;
+                            if (itemHeight <= 0) itemHeight = 60f;
+                            float itemMargin = header.resolvedStyle.marginBottom;
+                            if (itemMargin <= 0) itemMargin = 2f;
+                            
+                            // Store folder name for reordering
+                            draggingItemFromPageAtIndex = -1; // -1 indicates folder
+                            
+                            // draggedItemHoldOffset = 0f;
+                            
+                            // Remove from layout (vFavorites approach)
+                            header.RemoveFromHierarchy();
+                            
+                            // Determine visual index of the dragged folder
+                            // Get all items (profiles and folders) in visual order
+                            var allItems = new List<VisualElement>();
+                            foreach (var child in listContainer.Children())
+                            {
+                                if (child.ClassListContains("yucp-folder-content")) continue;
+                                if (child.ClassListContains("yucp-profile-item") || child.ClassListContains("yucp-folder-header"))
+                                {
+                                    allItems.Add(child);
+                                }
+                            }
+                            allItems = allItems.OrderBy(el => el.worldBound.y).ToList();
+                            
+                            draggingVisualIndex = allItems.IndexOf(header);
+                            if (draggingVisualIndex < 0) draggingVisualIndex = 0;
+                            
+                            // Set gap at original visual position
+                            float gapSize = itemHeight + itemMargin;
+                            rowGaps[draggingVisualIndex] = gapSize;
+                            
+                            // Initialize insert index to the original visual index
+                            insertDraggedItemAtIndex = draggingVisualIndex;
+                            
+                            // Reset all other items' transforms before starting drag
+                            foreach (var child in listContainer.Children())
+                            {
+                                if (motionHandles.ContainsKey(child))
+                                {
+                                    var handle = motionHandles[child];
+                                    handle.Animate(new MotionTargets
+                                    {
+                                        HasY = true,
+                                        Y = 0f
+                                    }, new Transition(0f, EasingType.Linear)); // Instant reset
+                                }
+                            }
+                            
+                            // Create container for absolutely positioned dragged folder
+                            draggedItemContainer = new VisualElement();
+                            draggedItemContainer.AddToClassList("yucp-profile-item-dragging-container");
+                            draggedItemContainer.style.position = Position.Absolute;
+                            draggedItemContainer.style.left = originalRect.x;
+                            draggedItemContainer.style.top = originalRect.y;
+                            draggedItemContainer.style.width = originalRect.width;
+                            draggedItemContainer.style.height = originalRect.height;
+                            draggedItemContainer.pickingMode = PickingMode.Ignore;
+                            
+                            header.style.position = Position.Absolute;
+                            header.style.left = 0;
+                            header.style.top = 0;
+                            header.style.width = Length.Percent(100);
+                            
+                            draggedItemContainer.Add(header);
+                            rootVisualElement.Add(draggedItemContainer);
+                            
+                            // Visual feedback
+                            header.style.scale = new Scale(new Vector2(0.95f, 0.95f));
+                        }
+                    }
+                    
+                    if (hasDragged)
+                    {
+                        Vector2 mousePos = evt.mousePosition;
+                        
+                        // Update dragged folder position to follow mouse
+                        if (draggedItemContainer != null)
+                        {
+                            draggedItemContainer.style.left = mousePos.x - dragOffset.x;
+                            draggedItemContainer.style.top = mousePos.y - dragOffset.y;
+                        }
+                        
+                        var listContainer = _profileListContainer;
+                        if (listContainer != null)
+                        {
+                            // Calculate insertDraggedItemAtIndex for folders (same logic as profiles)
+                            var allItems = new List<VisualElement>();
+                            foreach (var child in listContainer.Children())
+                            {
+                                if (child.ClassListContains("yucp-folder-content")) continue;
+                                if (child.ClassListContains("yucp-profile-item") || child.ClassListContains("yucp-folder-header"))
+                                {
+                                    if (child != header) // Exclude dragged folder
+                                    {
+                                        allItems.Add(child);
+                                    }
+                                }
+                            }
+                            allItems = allItems.OrderBy(el => el.worldBound.y).ToList();
+                            
+                            int newInsertIndex = allItems.Count; // Default to end
+                            
+                            if (allItems.Count > 0)
+                            {
+                                // Check if mouse is above the first item's top edge
+                                var firstItem = allItems[0];
+                                Rect firstWorld = firstItem.worldBound;
+                                
+                                if (mousePos.y < firstWorld.y)
+                                {
+                                    // Mouse is above first item - insert at position 0
+                                    newInsertIndex = 0;
+                                }
+                                else
+                                {
+                                    // Find insertion point by comparing with each item's center
+                                    for (int i = 0; i < allItems.Count; i++)
+                                    {
+                                        var child = allItems[i];
+                                        Rect childWorld = child.worldBound;
+                                        float childCenterY = childWorld.y + childWorld.height / 2f;
+                                        
+                                        // If mouse is above center of this child, insert before it
+                                        if (mousePos.y < childCenterY)
+                                        {
+                                            newInsertIndex = i;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // No items, insert at 0
+                                newInsertIndex = 0;
+                            }
+                            
+                            // Clamp to valid range
+                            newInsertIndex = Mathf.Clamp(newInsertIndex, 0, allItems.Count);
+                            
+                            if (newInsertIndex != insertDraggedItemAtIndex)
+                            {
+                                insertDraggedItemAtIndex = newInsertIndex;
+                            }
+                            
+                            // Calculate drop index for folder reordering
+                            int newDropIndex = CalculateDropIndexForFolder(listContainer, mousePos, folderName);
+                            
+                            if (newDropIndex != potentialDropIndex)
+                            {
+                                potentialDropIndex = newDropIndex;
+                            }
+                            
+                            UpdateDropTargets(listContainer, potentialDropIndex, header);
+                        }
+                        
+                        evt.StopPropagation();
+                    }
+                }
+            });
+            
+            header.RegisterCallback<MouseUpEvent>(evt =>
+            {
+                if (draggingIndex == -1 && draggingElement == header && header.HasMouseCapture())
+                {
+                    header.ReleaseMouse();
+                    
+                    if (hasDragged)
+                    {
+                        header.RemoveFromClassList("yucp-profile-item-dragging");
+                        header.style.scale = new Scale(Vector2.one);
+                        
+                        var listContainer = _profileListContainer;
+                        if (listContainer != null)
+                        {
+                            int targetIndex = potentialDropIndex >= 0 ? potentialDropIndex : -1;
+                            
+                            if (targetIndex >= 0)
+                            {
+                                ReorderFolder(folderName, targetIndex);
+                            }
+                            
+                            ClearDropTargets(listContainer);
+                        }
+                        
+                        // Clean up drag state (vFavorites approach)
+                        draggingItemFromPageAtIndex = -1;
+                        insertDraggedItemAtIndex = -1;
+                        // draggedItemHoldOffset = 0f;
+                        draggingVisualIndex = -1;
+                        
+                        // Remove dragged item container
+                        if (draggedItemContainer != null)
+                        {
+                            draggedItemContainer.RemoveFromHierarchy();
+                            draggedItemContainer = null;
+                        }
+                        
+                        // Clear gaps and reset transforms
+                        rowGaps.Clear();
+                        foreach (var child in listContainer.Children())
+                        {
+                            if (motionHandles.ContainsKey(child))
+                            {
+                                var handle = motionHandles[child];
+                                handle.Animate(new MotionTargets
+                                {
+                                    HasY = true,
+                                    Y = 0f
+                                }, new Transition(0.2f, EasingType.EaseOut));
+                            }
+                            child.style.marginTop = 0f;
+                        }
+                        
+                        UpdateProfileList();
+                    }
+                    else
+                    {
+                        // It was just a click - toggle collapse
+                        if (isCollapsed)
+                            collapsedFolders.Remove(folderName);
+                        else
+                            collapsedFolders.Add(folderName);
+                            
+                        SaveCollapsedFolders();
+                        UpdateProfileList();
+                    }
+                    
+                    draggingIndex = -1;
+                    draggingElement = null;
+                    hasDragged = false;
+                    potentialDropIndex = -1;
                     evt.StopPropagation();
                 }
             });
@@ -1548,6 +2763,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             int index = projectFolders.IndexOf(oldName);
             if (index >= 0) projectFolders[index] = newName;
             
+            // Update unified order
+            foreach (var item in unifiedOrder)
+            {
+                if (item.isFolder && item.identifier == oldName)
+                {
+                    item.identifier = newName;
+                }
+            }
+            
             // Update profiles
             bool dirty = false;
             foreach (var p in allProfiles)
@@ -1562,6 +2786,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (dirty) AssetDatabase.SaveAssets();
             
             SaveProjectFolders();
+            SaveUnifiedOrder();
             UpdateProfileList();
         }
         
@@ -1569,7 +2794,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             projectFolders.Remove(folderName);
             
-            // Move profiles to root
+            // Remove folder from unified order
+            unifiedOrder.RemoveAll(item => item.isFolder && item.identifier == folderName);
+            
+            // Move profiles to root and add them to unified order
             bool dirty = false;
             foreach (var p in allProfiles)
             {
@@ -1578,11 +2806,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     p.folderName = "";
                     EditorUtility.SetDirty(p);
                     dirty = true;
+                    
+                    // Add profile to unified order (at end for now)
+                    string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p));
+                    if (!unifiedOrder.Any(item => !item.isFolder && item.identifier == guid))
+                    {
+                        unifiedOrder.Add(new UnifiedOrderItem { isFolder = false, identifier = guid });
+                    }
                 }
             }
             if (dirty) AssetDatabase.SaveAssets();
             
             SaveProjectFolders();
+            SaveUnifiedOrder();
             UpdateProfileList();
         }
         
@@ -1591,6 +2827,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
             string newName = GetUniqueNewFolderName();
             projectFolders.Add(newName);
             SaveProjectFolders();
+            
+            // Add folder to unified order at the end (or at insertion point if dragging)
+            // For now, add at end - can be enhanced later to support insertion point
+            unifiedOrder.Add(new UnifiedOrderItem { isFolder = true, identifier = newName });
+            SaveUnifiedOrder();
+            
             StartRenameFolder(newName);
         }
         
@@ -1598,9 +2840,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (profile.folderName == folderName) return;
             
+            string profileGuid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(profile));
+            
+            // Remove profile from unified order (if it was there as uncategorized)
+            unifiedOrder.RemoveAll(item => !item.isFolder && item.identifier == profileGuid);
+            
             profile.folderName = folderName;
             EditorUtility.SetDirty(profile);
             AssetDatabase.SaveAssets();
+            
+            SaveUnifiedOrder();
             UpdateProfileList();
         }
         
@@ -1612,13 +2861,47 @@ namespace YUCP.DevTools.Editor.PackageExporter
             projectFolders.Add(newName);
             SaveProjectFolders();
             
-            // Move profiles immediately
+            // Add folder to unified order (at position of first selected profile if possible)
+            int insertIndex = -1;
+            if (selectedProfileIndices.Count > 0)
+            {
+                int firstIndex = selectedProfileIndices.Min();
+                var firstProfile = allProfiles[firstIndex];
+                string firstGuid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(firstProfile));
+                
+                // Find position in unified order
+                for (int i = 0; i < unifiedOrder.Count; i++)
+                {
+                    if (!unifiedOrder[i].isFolder && unifiedOrder[i].identifier == firstGuid)
+                    {
+                        insertIndex = i;
+                        break;
+                    }
+                }
+            }
+            
+            var folderItem = new UnifiedOrderItem { isFolder = true, identifier = newName };
+            if (insertIndex >= 0)
+            {
+                unifiedOrder.Insert(insertIndex, folderItem);
+            }
+            else
+            {
+                unifiedOrder.Add(folderItem);
+            }
+            
+            // Move profiles immediately and remove from unified order
             bool dirty = false;
             foreach (int idx in selectedProfileIndices)
             {
                 if (idx >= 0 && idx < allProfiles.Count)
                 {
                     var p = allProfiles[idx];
+                    string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p));
+                    
+                    // Remove from unified order
+                    unifiedOrder.RemoveAll(item => !item.isFolder && item.identifier == guid);
+                    
                     p.folderName = newName;
                     EditorUtility.SetDirty(p);
                     dirty = true;
@@ -1626,6 +2909,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             if (dirty) AssetDatabase.SaveAssets();
             
+            SaveUnifiedOrder();
             StartRenameFolder(newName);
         }
         
@@ -1635,12 +2919,55 @@ namespace YUCP.DevTools.Editor.PackageExporter
             projectFolders.Add(newName);
             SaveProjectFolders();
             
+            // Find position in unified order (between the two profiles)
+            string guidA = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(profileA));
+            string guidB = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(profileB));
+            
+            int insertIndex = -1;
+            int indexA = -1, indexB = -1;
+            for (int i = 0; i < unifiedOrder.Count; i++)
+            {
+                if (!unifiedOrder[i].isFolder)
+                {
+                    if (unifiedOrder[i].identifier == guidA) indexA = i;
+                    if (unifiedOrder[i].identifier == guidB) indexB = i;
+                }
+            }
+            
+            if (indexA >= 0 && indexB >= 0)
+            {
+                insertIndex = Math.Min(indexA, indexB);
+            }
+            else if (indexA >= 0)
+            {
+                insertIndex = indexA;
+            }
+            else if (indexB >= 0)
+            {
+                insertIndex = indexB;
+            }
+            
+            // Add folder to unified order
+            var folderItem = new UnifiedOrderItem { isFolder = true, identifier = newName };
+            if (insertIndex >= 0)
+            {
+                unifiedOrder.Insert(insertIndex, folderItem);
+            }
+            else
+            {
+                unifiedOrder.Add(folderItem);
+            }
+            
+            // Remove profiles from unified order
+            unifiedOrder.RemoveAll(item => !item.isFolder && (item.identifier == guidA || item.identifier == guidB));
+            
             profileA.folderName = newName;
             profileB.folderName = newName;
             EditorUtility.SetDirty(profileA);
             EditorUtility.SetDirty(profileB);
             AssetDatabase.SaveAssets();
             
+            SaveUnifiedOrder();
             StartRenameFolder(newName);
         }
         
@@ -1738,6 +3065,44 @@ namespace YUCP.DevTools.Editor.PackageExporter
             infoLabel.AddToClassList("yucp-profile-item-info");
             contentColumn.Add(infoLabel);
             
+            // Tags display - show as small chips
+            var allTags = profile.GetAllTags();
+            if (allTags.Count > 0)
+            {
+                var tagsContainer = new VisualElement();
+                tagsContainer.style.flexDirection = FlexDirection.Row;
+                tagsContainer.style.flexWrap = Wrap.Wrap;
+                tagsContainer.style.marginTop = 4;
+                tagsContainer.style.marginBottom = 2;
+                
+                // Show up to 3 tags, then "+X more" if there are more
+                int maxVisibleTags = 3;
+                var tagsToShow = allTags.Take(maxVisibleTags).ToList();
+                
+                foreach (var tag in tagsToShow)
+                {
+                    var tagChip = BuildChip(tag, null, false);
+                    tagChip.AddToClassList("yucp-profile-tag-chip");
+                    // Remove remove button for list display
+                    var removeBtn = tagChip.Q<Button>(className: "yucp-chip-remove");
+                    if (removeBtn != null)
+                        removeBtn.RemoveFromHierarchy();
+                    tagsContainer.Add(tagChip);
+                }
+                
+                if (allTags.Count > maxVisibleTags)
+                {
+                    var moreLabel = new Label($"+{allTags.Count - maxVisibleTags} more");
+                    moreLabel.style.fontSize = 9;
+                    moreLabel.style.color = new Color(0.6f, 0.6f, 0.6f, 1f);
+                    moreLabel.style.marginLeft = 4;
+                    moreLabel.style.marginTop = 2;
+                    tagsContainer.Add(moreLabel);
+                }
+                
+                contentColumn.Add(tagsContainer);
+            }
+            
             item.Add(contentColumn);
             
             // Drag-and-drop handlers - entire item is draggable
@@ -1751,6 +3116,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     dragOffset = evt.localMousePosition;
                     dragStartPosition = evt.mousePosition;
                     hasDragged = false;
+                    
+                    // Clean state - no gaps, no transforms
+                    var listContainer = item.parent;
+                    if (listContainer != null)
+                    {
+                        // Clear any existing gaps
+                        rowGaps.Clear();
+                    }
                     
                     item.CaptureMouse();
                     evt.StopPropagation();
@@ -1772,123 +3145,247 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     float dragDistance = Vector2.Distance(evt.mousePosition, dragStartPosition);
                     if (dragDistance > DRAG_THRESHOLD && !hasDragged)
                     {
-                        // Start the drag - create ghost and apply dragging style
+                        // Start the drag - vFavorites approach: remove from layout, position absolutely
                         hasDragged = true;
-                        CreateDragGhost(item, evt.mousePosition);
                         item.AddToClassList("yucp-profile-item-dragging");
-                        // Apply scale using style (Unity UI Toolkit supports scale property)
-                        item.style.scale = new Scale(new Vector2(0.95f, 0.95f));
+                        
+                        var listContainer = item.parent;
+                        if (listContainer != null)
+                        {
+                            // Store original position in world space
+                            Rect originalRect = item.worldBound;
+                            draggedItemY = originalRect.y;
+                            
+                            // Remove from hierarchy and create gap (vFavorites approach)
+                            float itemHeight = item.resolvedStyle.height;
+                            if (itemHeight <= 0) itemHeight = 60f;
+                            float itemMargin = item.resolvedStyle.marginBottom;
+                            if (itemMargin <= 0) itemMargin = 2f;
+                            
+                            // Store original index (vFavorites initFromPage approach)
+                            draggingItemFromPageAtIndex = index;
+                            
+                            // Calculate draggedItemHoldOffset - no longer needed with element-based calculation
+                            // But keeping for potential future use
+                            // draggedItemHoldOffset = 0f;
+                            
+                            // Remove from layout (vFavorites approach)
+                            item.RemoveFromHierarchy();
+                            
+                            // Determine visual index of the dragged item
+                            var profileItems = listContainer.Query<VisualElement>(className: "yucp-profile-item").ToList()
+                                .Where(el => el.userData is int)
+                                .ToList();
+                            draggingVisualIndex = profileItems.IndexOf(item);
+                            if (draggingVisualIndex < 0) draggingVisualIndex = 0;
+                            
+                            // Set gap at original visual position
+                            float gapSize = itemHeight + itemMargin;
+                            rowGaps[draggingVisualIndex] = gapSize;
+                            
+                            // Initialize insert index to the original visual index
+                            insertDraggedItemAtIndex = draggingVisualIndex;
+                            
+                            // Reset all other items' transforms before starting drag
+                            foreach (var child in listContainer.Children())
+                            {
+                                if (motionHandles.ContainsKey(child))
+                                {
+                                    var handle = motionHandles[child];
+                                    handle.Animate(new MotionTargets
+                                    {
+                                        HasY = true,
+                                        Y = 0f
+                                    }, new Transition(0f, EasingType.Linear)); // Instant reset
+                                }
+                            }
+                            
+                            // Create container for absolutely positioned dragged item
+                            draggedItemContainer = new VisualElement();
+                            draggedItemContainer.AddToClassList("yucp-profile-item-dragging-container");
+                            draggedItemContainer.style.position = Position.Absolute;
+                            draggedItemContainer.style.left = originalRect.x;
+                            draggedItemContainer.style.top = originalRect.y;
+                            draggedItemContainer.style.width = originalRect.width;
+                            draggedItemContainer.style.height = originalRect.height;
+                            draggedItemContainer.pickingMode = PickingMode.Ignore;
+                            
+                            // Add item to container
+                            draggedItemContainer.Add(item);
+                            
+                            // Add container to root (overlay everything)
+                            rootVisualElement.Add(draggedItemContainer);
+                            
+                            // Apply scale for visual feedback
+                            item.style.scale = new Scale(new Vector2(0.95f, 0.95f));
+                        }
                     }
                     
                     if (hasDragged)
                     {
-                        // Update ghost position with slight delay/offset for smooth following
-                        if (draggingGhost != null)
+                        // Move the dragged item absolutely (vFavorites approach)
+                        if (draggedItemContainer != null)
                         {
-                            // Calculate target position with offset from mouse
+                            // Calculate target position from mouse (screen space)
                             Vector2 targetPos = evt.mousePosition - dragOffset;
+                            draggedItemY = targetPos.y;
                             
-                            // Get current position
-                            float currentX = draggingGhost.style.left.value.value;
-                            float currentY = draggingGhost.style.top.value.value;
-                            Vector2 currentPos = new Vector2(currentX, currentY);
+                            // Update container position (absolute positioning)
+                            draggedItemContainer.style.top = draggedItemY;
+                            draggedItemContainer.style.left = targetPos.x;
                             
-                            // Smooth interpolation (0.25 gives nice lag effect)
-                            Vector2 newPos = Vector2.Lerp(currentPos, targetPos, 0.25f);
-                            draggingGhost.style.left = newPos.x;
-                            draggingGhost.style.top = newPos.y;
-                        }
-                        
-                        // Find the element under the mouse cursor and calculate drop position
-                        var listContainer = item.parent;
-                        if (listContainer != null)
-                        {
                             Vector2 mousePos = evt.mousePosition;
-                            // Find folder target if any
-                            VisualElement folderTarget = null;
-                            int newDropIndex = CalculateDropIndexWithFolders(listContainer, mousePos, index, out folderTarget);
                             
-                            // Always update animation smoothly, even if index hasn't changed
-                            if (newDropIndex != potentialDropIndex)
+                            // Get list container
+                            var listContainer = _profileListContainer;
+                            if (listContainer == null)
                             {
-                                potentialDropIndex = newDropIndex;
+                                // Try to find it from root
+                                listContainer = rootVisualElement.Q<VisualElement>(className: "yucp-profile-list-container");
                             }
                             
-                            // Continuously animate items for smooth movement
-                            AnimateItemsForDrop(listContainer, index, potentialDropIndex);
-                            
-                            // Update visual feedback for drop targets
-                            if (folderTarget != null)
+                            if (listContainer != null)
                             {
-                                UpdateFolderDropTargets(listContainer, folderTarget);
-                                if (potentialDropIndex >= 0) ClearDropTargets(listContainer);
-                                // Reset stack state when hovering folder
-                                ResetStackState();
-                            }
-                            else
-                            {
-                                UpdateFolderDropTargets(listContainer, null);
-                                UpdateDropTargets(listContainer, potentialDropIndex, item);
-                                
-                                // Stack detection: find profile item under cursor
-                                VisualElement hitElement = listContainer.panel.Pick(mousePos);
-                                VisualElement targetItem = null;
-                                int targetIdx = -1;
-                                
-                                // Traverse up to find profile item
-                                var current = hitElement;
-                                while (current != null && current != listContainer)
+                                // Calculate insertDraggedItemAtIndex using visual order (vFavorites-style)
+                                // Get all visible root-level profile items (excluding dragged item and folder items) in visual order
+                                var profileItems = new List<VisualElement>();
+                                foreach (var child in listContainer.Children())
                                 {
-                                    if (current.ClassListContains("yucp-profile-item") && current.userData is int idx && idx != index)
+                                    // Skip folders and folder content
+                                    if (child.ClassListContains("yucp-folder-header") || child.ClassListContains("yucp-folder-content"))
+                                        continue;
+                                    
+                                    // Only include root-level profile items
+                                    if (child.ClassListContains("yucp-profile-item") && child.userData is int && child != draggingElement)
                                     {
-                                        targetItem = current;
-                                        targetIdx = idx;
-                                        break;
+                                        profileItems.Add(child);
                                     }
-                                    current = current.parent;
                                 }
                                 
-                                if (targetItem != null && targetIdx >= 0)
+                                // Sort by visual Y position
+                                profileItems = profileItems.OrderBy(el => el.worldBound.y).ToList();
+                                
+                                int newInsertIndex = profileItems.Count; // Default to end
+                                
+                                if (profileItems.Count > 0)
                                 {
-                                    // Check if this is the same target
-                                    if (stackTargetElement == targetItem)
+                                    // Check if mouse is above the first item's top edge
+                                    var firstItem = profileItems[0];
+                                    Rect firstWorld = firstItem.worldBound;
+                                    
+                                    if (mousePos.y < firstWorld.y)
                                     {
-                                        // Check distance tolerance
-                                        float dist = Vector2.Distance(mousePos, stackHoverPosition);
-                                        if (dist <= STACK_POSITION_TOLERANCE)
-                                        {
-                                            // Check time threshold
-                                            double elapsed = EditorApplication.timeSinceStartup - stackHoverStartTime;
-                                            if (elapsed >= STACK_HOVER_THRESHOLD && !isStackReady)
-                                            {
-                                                isStackReady = true;
-                                                // Visual feedback: add glow/pulse to target item
-                                                targetItem.AddToClassList("yucp-profile-item-stack-target");
-                                            }
-                                        }
-                                        else
-                                        {
-                                            // Moved too far, reset timer but keep target
-                                            stackHoverStartTime = EditorApplication.timeSinceStartup;
-                                            stackHoverPosition = mousePos;
-                                            isStackReady = false;
-                                            targetItem.RemoveFromClassList("yucp-profile-item-stack-target");
-                                        }
+                                        // Mouse is above first item - insert at position 0
+                                        newInsertIndex = 0;
                                     }
                                     else
                                     {
-                                        // New target
-                                        ResetStackState();
-                                        stackTargetElement = targetItem;
-                                        stackTargetIndex = targetIdx;
-                                        stackHoverStartTime = EditorApplication.timeSinceStartup;
-                                        stackHoverPosition = mousePos;
+                                        // Find insertion point by comparing with each item's center
+                                        for (int i = 0; i < profileItems.Count; i++)
+                                        {
+                                            var child = profileItems[i];
+                                            Rect childWorld = child.worldBound;
+                                            float childCenterY = childWorld.y + childWorld.height / 2f;
+                                            
+                                            // If mouse is above center of this child, insert before it
+                                            if (mousePos.y < childCenterY)
+                                            {
+                                                newInsertIndex = i;
+                                                break;
+                                            }
+                                        }
+                                        
+                                        // If we didn't find a position (mouse is below all items), insert at end
+                                        // newInsertIndex already defaults to profileItems.Count
                                     }
                                 }
                                 else
                                 {
-                                    // No target profile item
+                                    // No items, insert at 0
+                                    newInsertIndex = 0;
+                                }
+                                
+                                // Clamp to valid range (0 to profileItems.Count inclusive)
+                                newInsertIndex = Mathf.Clamp(newInsertIndex, 0, profileItems.Count);
+                                
+                                if (newInsertIndex != insertDraggedItemAtIndex)
+                                {
+                                    insertDraggedItemAtIndex = newInsertIndex;
+                                }
+                                
+                                // Find folder target if any
+                                VisualElement folderTarget = null;
+                                int newDropIndex = CalculateDropIndexWithFolders(listContainer, mousePos, index, out folderTarget);
+                                
+                                if (newDropIndex != potentialDropIndex)
+                                {
+                                    potentialDropIndex = newDropIndex;
+                                }
+                                
+                                // Update visual feedback for drop targets
+                                if (folderTarget != null)
+                                {
+                                    UpdateFolderDropTargets(listContainer, folderTarget);
+                                    if (potentialDropIndex >= 0) ClearDropTargets(listContainer);
                                     ResetStackState();
+                                }
+                                else
+                                {
+                                    UpdateFolderDropTargets(listContainer, null);
+                                    UpdateDropTargets(listContainer, potentialDropIndex, item);
+                                    
+                                    // Stack detection: find profile item under cursor
+                                    VisualElement hitElement = listContainer.panel.Pick(mousePos);
+                                    VisualElement targetItem = null;
+                                    int targetIdx = -1;
+                                    
+                                    var current = hitElement;
+                                    while (current != null && current != listContainer)
+                                    {
+                                        if (current.ClassListContains("yucp-profile-item") && current.userData is int idx && idx != index)
+                                        {
+                                            targetItem = current;
+                                            targetIdx = idx;
+                                            break;
+                                        }
+                                        current = current.parent;
+                                    }
+                                    
+                                    if (targetItem != null && targetIdx >= 0)
+                                    {
+                                        if (stackTargetElement == targetItem)
+                                        {
+                                            float dist = Vector2.Distance(mousePos, stackHoverPosition);
+                                            if (dist <= STACK_POSITION_TOLERANCE)
+                                            {
+                                                double elapsed = EditorApplication.timeSinceStartup - stackHoverStartTime;
+                                                if (elapsed >= STACK_HOVER_THRESHOLD && !isStackReady)
+                                                {
+                                                    isStackReady = true;
+                                                    targetItem.AddToClassList("yucp-profile-item-stack-target");
+                                                }
+                                            }
+                                            else
+                                            {
+                                                stackHoverStartTime = EditorApplication.timeSinceStartup;
+                                                stackHoverPosition = mousePos;
+                                                isStackReady = false;
+                                                targetItem.RemoveFromClassList("yucp-profile-item-stack-target");
+                                            }
+                                        }
+                                        else
+                                        {
+                                            ResetStackState();
+                                            stackTargetElement = targetItem;
+                                            stackTargetIndex = targetIdx;
+                                            stackHoverStartTime = EditorApplication.timeSinceStartup;
+                                            stackHoverPosition = mousePos;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        ResetStackState();
+                                    }
                                 }
                             }
                         }
@@ -1906,17 +3403,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     if (hasDragged)
                     {
-                        // We were dragging - handle drop
+                        // We were dragging - handle drop (vFavorites approach)
                         item.RemoveFromClassList("yucp-profile-item-dragging");
-                        // Reset scale
-                        item.style.scale = new Scale(Vector2.one);
                         
-                        // Find the target item
-                        var listContainer = item.parent;
+                        // Get list container
+                        var listContainer = _profileListContainer;
+                        if (listContainer == null)
+                        {
+                            listContainer = rootVisualElement.Q<VisualElement>(className: "yucp-profile-list-container");
+                        }
+                        
                         if (listContainer != null)
                         {
-                            // Use the calculated drop index
-                            int targetIndex = potentialDropIndex >= 0 ? potentialDropIndex : index;
+                            // Use insertDraggedItemAtIndex (vFavorites AcceptDragging approach)
+                            int targetIndex = insertDraggedItemAtIndex >= 0 ? insertDraggedItemAtIndex : index;
                             
                             // Check for folder drops
                             VisualElement hitElement = listContainer.panel.Pick(evt.mousePosition);
@@ -1944,25 +3444,92 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             }
                             else
                             {
-                                // Perform normal reorder if valid target
-                                if (targetIndex >= 0 && targetIndex != index)
+                                // Perform reorder on drop (vFavorites AcceptDragging: insert at insertDraggedItemAtIndex)
+                                // insertDraggedItemAtIndex is the visual index (0-based position in visible list excluding dragged item)
+                                // In vFavorites: data.curPage.items.AddAt(draggedItem, insertDraggedItemAtIndex)
+                                // The items list already has the dragged item removed, so insertDraggedItemAtIndex is the position in that list
+                                
+                                // Get all visible root-level profile items (excluding dragged item) in visual order
+                                var profileItems = new List<VisualElement>();
+                                foreach (var child in listContainer.Children())
                                 {
-                                    ReorderProfiles(index, targetIndex);
+                                    // Skip folders and folder content
+                                    if (child.ClassListContains("yucp-folder-header") || child.ClassListContains("yucp-folder-content"))
+                                        continue;
+                                    
+                                    // Only include root-level profile items
+                                    if (child.ClassListContains("yucp-profile-item") && child.userData is int && child != draggingElement)
+                                    {
+                                        profileItems.Add(child);
+                                    }
                                 }
+                                
+                                // Sort by visual Y position to match how insertDraggedItemAtIndex was calculated during drag
+                                profileItems = profileItems.OrderBy(el => el.worldBound.y).ToList();
+                                
+                                // insertDraggedItemAtIndex is the VISUAL index where we want to insert
+                                // ReorderProfiles expects: sourceProfileIndex (from allProfiles) and targetVisualIndex
+                                // The CalculateUnifiedOrderPositionFromVisualIndex inside ReorderProfiles 
+                                // interprets targetIndex as a visual position, so we pass insertDraggedItemAtIndex directly
+                                
+                                if (insertDraggedItemAtIndex >= 0 && insertDraggedItemAtIndex != draggingVisualIndex)
+                                {
+                                    ReorderProfiles(draggingItemFromPageAtIndex, insertDraggedItemAtIndex);
+                                }
+                            }
+                            
+                            // Adjust rowGaps (vFavorites: data.curPage.rowGaps[insertDraggedItemAtIndex] -= rowHeight; data.curPage.rowGaps.AddAt(0, insertDraggedItemAtIndex))
+                            if (rowGaps.ContainsKey(targetIndex))
+                            {
+                                float rowHeight = draggingElement != null ? draggingElement.resolvedStyle.height : 60f;
+                                if (rowHeight <= 0) rowHeight = 60f;
+                                rowGaps[targetIndex] = Mathf.Max(0f, rowGaps[targetIndex] - rowHeight);
                             }
                             
                             // Reset stack state
                             ResetStackState();
                             
-                            // Clear all visual feedback and reset animations
+                            // Clear all visual feedback
                             ClearDropTargets(listContainer);
                         }
                         
-                        // Clean up drag ghost
-                        if (draggingGhost != null)
+                        // Clean up dragged item container (vFavorites approach)
+                        if (draggedItemContainer != null)
                         {
-                            draggingGhost.RemoveFromHierarchy();
-                            draggingGhost = null;
+                            // Remove item from container
+                            item.RemoveFromHierarchy();
+                            draggedItemContainer.RemoveFromHierarchy();
+                            draggedItemContainer = null;
+                            
+                            // Reset scale
+                            item.style.scale = new Scale(Vector2.one);
+                            
+                            // Clear gaps and reset all transforms
+                            rowGaps.Clear();
+                            draggingVisualIndex = -1;
+                            draggingItemFromPageAtIndex = -1;
+                            insertDraggedItemAtIndex = -1;
+                            // draggedItemHoldOffset = 0f;
+                            
+                            // Reset all item transforms before refreshing
+                            if (listContainer != null)
+                            {
+                                foreach (var child in listContainer.Children())
+                                {
+                                    if (motionHandles.ContainsKey(child))
+                                    {
+                                        var handle = motionHandles[child];
+                                        handle.Animate(new MotionTargets
+                                        {
+                                            HasY = true,
+                                            Y = 0f
+                                        }, new Transition(0.2f, EasingType.EaseOut));
+                                    }
+                                }
+                            }
+                            
+                            // Refresh list to show item in new position
+                            UpdateProfileList();
                         }
                     }
                     else
@@ -2024,11 +3591,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         UpdateBottomBar();
                     }
                     
+                    // Clean up drag state
+                    if (draggedItemContainer != null)
+                    {
+                        draggedItemContainer.RemoveFromHierarchy();
+                        draggedItemContainer = null;
+                    }
+                    
+                            // Clear gaps and drag state (vFavorites CancelDragging approach)
+                            rowGaps.Clear();
+                            draggingItemFromPageAtIndex = -1;
+                            insertDraggedItemAtIndex = -1;
+                            // draggedItemHoldOffset = 0f;
+                            draggingVisualIndex = -1;
+                    
                     draggingIndex = -1;
                     draggingElement = null;
                     hasDragged = false;
                     potentialDropIndex = -1;
-                    originalHeights.Clear();
                     evt.StopPropagation();
                 }
             });
@@ -2040,38 +3620,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return item;
         }
         
-        /// <summary>
-        /// Creates a ghost element that follows the mouse during drag
-        /// </summary>
-        private void CreateDragGhost(VisualElement sourceItem, Vector2 initialPosition)
-        {
-            if (draggingGhost != null)
-            {
-                draggingGhost.RemoveFromHierarchy();
-            }
-            
-            draggingGhost = CloneVisualElement(sourceItem);
-            draggingGhost.AddToClassList("yucp-profile-item-drag-ghost");
-            draggingGhost.RemoveFromClassList("yucp-profile-item-dragging");
-            
-            // Get source item's world position
-            Rect sourceWorldBound = sourceItem.worldBound;
-            
-            // Position ghost at source location initially
-            draggingGhost.style.position = Position.Absolute;
-            draggingGhost.style.left = sourceWorldBound.x;
-            draggingGhost.style.top = sourceWorldBound.y;
-            draggingGhost.style.width = sourceItem.resolvedStyle.width;
-            // Ghost element doesn't need to handle pointer events - it's just visual
-            draggingGhost.pickingMode = PickingMode.Ignore;
-            // Apply scale to ghost (slightly larger)
-            draggingGhost.style.scale = new Scale(new Vector2(1.05f, 1.05f));
-            // Ensure ghost is on top
-            draggingGhost.BringToFront();
-            
-            // Add to root to overlay everything
-            rootVisualElement.Add(draggingGhost);
-        }
+        // CreateDragGhost removed - we now move the actual element with Motion transforms
         
         /// <summary>
         /// Recursively clones a visual element and its children
@@ -2148,7 +3697,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             foreach (var child in listContainer.Children())
             {
-                if (child == draggingItem || child == draggingGhost) continue;
+                if (child == draggingItem) continue;
                 
                 if (child.userData is int idx)
                 {
@@ -2173,16 +3722,100 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 child.RemoveFromClassList("yucp-profile-item-drop-target");
                 child.style.borderTopWidth = 0;
-                // Reset any transform offsets smoothly
-                child.style.translate = new StyleTranslate(new Translate(0, 0));
-                if (currentOffsets.ContainsKey(child))
-                {
-                    currentOffsets[child] = 0f;
-                }
             }
             potentialDropIndex = -1;
-            currentOffsets.Clear();
         }
+        
+        // UpdateGapAnimation removed - gaps are now animated in UpdateGapAnimations using Lerp (vFavorites approach)
+        
+        /// <summary>
+        /// Updates gap animations smoothly using Lerp (vFavorites rowGaps animation approach)
+        /// </summary>
+        private void UpdateGapAnimations()
+        {
+            if (!hasDragged)
+            {
+                // Clear gaps when not dragging
+                if (rowGaps.Count > 0)
+                {
+                    rowGaps.Clear();
+                }
+                return;
+            }
+            
+            var listContainer = _profileListContainer;
+            if (listContainer == null) return;
+            
+            // Calculate deltaTime (vFavorites approach)
+            double currentTime = EditorApplication.timeSinceStartup;
+            float deltaTime = (float)(currentTime - (lastGapUpdateTime > 0 ? lastGapUpdateTime : currentTime));
+            if (deltaTime > 0.05f) deltaTime = 0.0166f;
+            lastGapUpdateTime = currentTime;
+            
+            float lerpSpeed = 10f; // vFavorites uses lerpSpeed = 10
+            float rowHeight = draggingElement != null ? draggingElement.resolvedStyle.height : 60f;
+            if (rowHeight <= 0) rowHeight = 60f;
+            
+            // Get all items (profiles and folders) in visual order, excluding dragged element
+            var allItems = new List<VisualElement>();
+            foreach (var child in listContainer.Children())
+            {
+                if (child.ClassListContains("yucp-folder-content")) continue;
+                if (child == draggingElement) continue;
+                
+                // Include both profile items and folder headers
+                if (child.ClassListContains("yucp-profile-item") || child.ClassListContains("yucp-folder-header"))
+                {
+                    allItems.Add(child);
+                }
+            }
+            
+            // Sort by visual Y position
+            allItems = allItems.OrderBy(el => el.worldBound.y).ToList();
+            
+            // Ensure rowGaps has entries for all visual indices
+            for (int i = 0; i < allItems.Count; i++)
+            {
+                if (!rowGaps.ContainsKey(i))
+                {
+                    rowGaps[i] = 0f;
+                }
+            }
+            
+            // Animate gaps using Lerp (vFavorites: rowGaps[i] -> rowHeight when i == insertDraggedItemAtIndex)
+            bool needsRepaint = false;
+            var keysToUpdate = rowGaps.Keys.ToList();
+            
+            foreach (var idx in keysToUpdate)
+            {
+                float currentGap = rowGaps[idx];
+                // Gap should be rowHeight at insertDraggedItemAtIndex, 0 everywhere else
+                float targetGap = (hasDragged && idx == insertDraggedItemAtIndex) ? rowHeight : 0f;
+                
+                // Lerp towards target
+                float newGap = Mathf.Lerp(currentGap, targetGap, lerpSpeed * deltaTime);
+                
+                // Apply gap using marginTop on the corresponding element by visual index
+                if (idx >= 0 && idx < allItems.Count)
+                {
+                    var child = allItems[idx];
+                    child.style.marginTop = newGap;
+                    rowGaps[idx] = newGap;
+                    
+                    if (Mathf.Abs(currentGap - newGap) > 0.1f)
+                    {
+                        needsRepaint = true;
+                    }
+                }
+            }
+            
+            if (needsRepaint)
+            {
+                Repaint();
+            }
+        }
+        
+        private double lastGapUpdateTime = 0;
         
         /// <summary>
         /// Calculates where the item should be dropped based on mouse position
@@ -2191,16 +3824,25 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             int dropIndex = draggingIdx;
             var sortedItems = new List<(int index, VisualElement element, float y)>();
+            Vector2 localMousePos = listContainer.WorldToLocal(mousePos);
             
             // Collect all items with their indices and Y positions
+            // Account for gaps (vFavorites approach)
+            float accumulatedGap = 0f;
             foreach (var child in listContainer.Children())
             {
-                if (child == draggingElement || child == draggingGhost) continue;
+                if (child == draggingElement) continue;
                 
                 if (child.userData is int idx)
                 {
-                    Rect worldBound = child.worldBound;
-                    sortedItems.Add((idx, child, worldBound.y));
+                    Rect layout = child.layout;
+                    // Add accumulated gap offset
+                    float visualY = layout.y + accumulatedGap;
+                    if (rowGaps.ContainsKey(idx))
+                    {
+                        accumulatedGap += rowGaps[idx];
+                    }
+                    sortedItems.Add((idx, child, visualY));
                 }
             }
             
@@ -2211,13 +3853,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             for (int i = 0; i < sortedItems.Count; i++)
             {
                 var item = sortedItems[i];
-                Rect worldBound = item.element.worldBound;
-                
-                if (worldBound.Contains(mousePos))
+                Rect layout = item.element.layout;
+                float yMin = layout.y;
+                float yMax = layout.y + layout.height;
+
+                if (localMousePos.y >= yMin && localMousePos.y <= yMax)
                 {
                     // Mouse is over this item - check if it's in upper or lower half
-                    float relativeY = mousePos.y - worldBound.y;
-                    if (relativeY < worldBound.height * 0.5f)
+                    float relativeY = localMousePos.y - yMin;
+                    if (relativeY < layout.height * 0.5f)
                     {
                         // Insert before this item
                         dropIndex = item.index;
@@ -2229,7 +3873,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                     break;
                 }
-                else if (mousePos.y < worldBound.y)
+                else if (localMousePos.y < yMin)
                 {
                     // Mouse is above this item - insert before it
                     dropIndex = item.index;
@@ -2238,9 +3882,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             
             // If we didn't find a position, drop at the end
-            if (sortedItems.Count > 0 && mousePos.y > sortedItems[sortedItems.Count - 1].element.worldBound.yMax)
+            if (sortedItems.Count > 0)
             {
-                dropIndex = sortedItems[sortedItems.Count - 1].index + 1;
+                var last = sortedItems[sortedItems.Count - 1].element.layout;
+                float lastMaxY = last.y + last.height;
+                if (localMousePos.y > lastMaxY)
+                {
+                    dropIndex = sortedItems[sortedItems.Count - 1].index + 1;
+                }
             }
             
             // Clamp to valid range (accounting for the fact that draggingIdx will be removed)
@@ -2250,93 +3899,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return dropIndex;
         }
         
-        /// <summary>
-        /// Animates items to make space for the dragged item at the drop position
-        /// </summary>
-        private void AnimateItemsForDrop(VisualElement listContainer, int draggingIdx, int dropIdx)
-        {
-            // Get item height from the dragging element
-            float itemHeight = draggingElement != null ? draggingElement.resolvedStyle.height : 60f;
-            if (itemHeight <= 0)
-            {
-                // Try to get height from another item
-                foreach (var child in listContainer.Children())
-                {
-                    if (child != draggingElement && child != draggingGhost && child.userData is int)
-                    {
-                        float h = child.resolvedStyle.height;
-                        if (h > 0)
-                        {
-                            itemHeight = h;
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            if (itemHeight <= 0) itemHeight = 60f; // Fallback
-            
-            // Calculate the adjusted drop index (accounting for removal of dragging item)
-            int adjustedDropIdx = dropIdx;
-            if (dropIdx > draggingIdx)
-            {
-                adjustedDropIdx = dropIdx - 1;
-            }
-            
-            // Get margin between items
-            float itemMargin = 2f;
-            foreach (var child in listContainer.Children())
-            {
-                if (child != draggingElement && child != draggingGhost && child.userData is int)
-                {
-                    itemMargin = child.resolvedStyle.marginBottom;
-                    if (itemMargin <= 0)
-                    {
-                        itemMargin = 2f;
-                    }
-                    break;
-                }
-            }
-            
-            // Animate each item smoothly - only update if offset changed
-            foreach (var child in listContainer.Children())
-            {
-                if (child == draggingElement || child == draggingGhost) continue;
-                
-                if (child.userData is int idx)
-                {
-                    float targetOffsetY = 0f;
-                    
-                    if (draggingIdx < adjustedDropIdx)
-                    {
-                        // Dragging item is moving down
-                        // Items between draggingIdx and dropIdx move up to make space
-                        if (idx > draggingIdx && idx <= adjustedDropIdx)
-                        {
-                            targetOffsetY = -(itemHeight + itemMargin);
-                        }
-                    }
-                    else if (draggingIdx > adjustedDropIdx)
-                    {
-                        // Dragging item is moving up
-                        // Items between dropIdx and draggingIdx move down to make space
-                        if (idx >= adjustedDropIdx && idx < draggingIdx)
-                        {
-                            targetOffsetY = itemHeight + itemMargin;
-                        }
-                    }
-                    
-                    // Only update if the offset actually changed (prevents overriding CSS transitions)
-                    float currentOffset = currentOffsets.ContainsKey(child) ? currentOffsets[child] : 0f;
-                    if (Mathf.Abs(currentOffset - targetOffsetY) > 0.1f)
-                    {
-                        currentOffsets[child] = targetOffsetY;
-                        // Apply smooth translation - CSS transitions will handle the smooth movement
-                        child.style.translate = new StyleTranslate(new Translate(0, targetOffsetY));
-                    }
-                }
-            }
-        }
+        // AnimateItemsForDrop removed - following Motion approach: only move dragged item, reorder immediately when crossing
         
         /// <summary>
         /// Update visual feedback for folder drop targets
@@ -2371,8 +3934,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private int CalculateDropIndexWithFolders(VisualElement listContainer, Vector2 mousePosition, int draggingIdx, out VisualElement folderTarget)
         {
             folderTarget = null;
-            int dropIndex = -1;
-            float closestDistance = float.MaxValue;
             
             // Convert mouse position to local coordinates of the list container
             Vector2 localMousePos = listContainer.WorldToLocal(mousePosition);
@@ -2381,16 +3942,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
             for (int i = 0; i < listContainer.childCount; i++)
             {
                 var child = listContainer[i];
-                if (child == draggingElement || child == draggingGhost) continue;
+                if (child == draggingElement) continue;
                 
                 // Check if hovering over a folder header
                 if (child.ClassListContains("yucp-folder-header"))
                 {
-                    if (child.worldBound.Contains(mousePosition))
+                    Rect layout = child.layout;
+                    float xMin = layout.x;
+                    float xMax = layout.x + layout.width;
+                    float yMin = layout.y;
+                    float yMax = layout.y + layout.height;
+                    if (localMousePos.x >= xMin && localMousePos.x <= xMax &&
+                        localMousePos.y >= yMin && localMousePos.y <= yMax)
                     {
-                       folderTarget = child;
-                       // Return special index indicating folder drop
-                       return -2;
+                        folderTarget = child;
+                        // Return special index indicating folder drop
+                        return -2;
                     }
                 }
                 
@@ -2403,37 +3970,233 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
         
         /// <summary>
-        /// Reorders profiles by moving sourceIndex to targetIndex
+        /// Reorders profiles by moving source profile to target visual position in unified order
         /// </summary>
-        private void ReorderProfiles(int sourceIndex, int targetIndex)
+        /// <param name="sourceProfileIndex">Index of the profile in allProfiles to move</param>
+        /// <param name="targetVisualIndex">Visual position (0-based) where the item should be inserted</param>
+        private void ReorderProfiles(int sourceProfileIndex, int targetVisualIndex)
         {
-            if (sourceIndex < 0 || sourceIndex >= allProfiles.Count ||
-                targetIndex < 0 || targetIndex >= allProfiles.Count ||
-                sourceIndex == targetIndex)
+            if (sourceProfileIndex < 0 || sourceProfileIndex >= allProfiles.Count ||
+                targetVisualIndex < 0)
             {
                 return;
             }
             
             // Get the profile to move
-            var profileToMove = allProfiles[sourceIndex];
+            var profileToMove = allProfiles[sourceProfileIndex];
+            string profileGuid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(profileToMove));
             
-            // Remove from source position
-            allProfiles.RemoveAt(sourceIndex);
+            // Skip if profile is in a folder (folders handle their own profiles)
+            if (!string.IsNullOrEmpty(profileToMove.folderName) && projectFolders.Contains(profileToMove.folderName))
+            {
+                return;
+            }
             
-            // Adjust target index if source was before target
-            int adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+            // Find the profile in unified order
+            int unifiedSourceIndex = -1;
+            for (int i = 0; i < unifiedOrder.Count; i++)
+            {
+                if (!unifiedOrder[i].isFolder && unifiedOrder[i].identifier == profileGuid)
+                {
+                    unifiedSourceIndex = i;
+                    break;
+                }
+            }
             
-            // Insert at target position
-            allProfiles.Insert(adjustedTargetIndex, profileToMove);
+            if (unifiedSourceIndex < 0)
+            {
+                // Profile not in unified order, add it
+                unifiedOrder.Add(new UnifiedOrderItem { isFolder = false, identifier = profileGuid });
+                unifiedSourceIndex = unifiedOrder.Count - 1;
+            }
             
-            // Save the new order
-            SaveCustomOrder();
+            // Calculate target position in unified order based on visual position
+            // We need to map the visual targetIndex to a unified order position
+            int unifiedTargetIndex = CalculateUnifiedOrderPositionFromVisualIndex(targetVisualIndex, unifiedSourceIndex);
+            
+            if (unifiedTargetIndex >= 0 && unifiedTargetIndex != unifiedSourceIndex)
+            {
+                // Remove from source position
+                var item = unifiedOrder[unifiedSourceIndex];
+                unifiedOrder.RemoveAt(unifiedSourceIndex);
+                
+                // Adjust target index if source was before target
+                int adjustedTargetIndex = unifiedSourceIndex < unifiedTargetIndex ? unifiedTargetIndex - 1 : unifiedTargetIndex;
+                
+                // Insert at target position
+                unifiedOrder.Insert(adjustedTargetIndex, item);
+                
+                // Save the new order
+                SaveCustomOrder();
+            }
             
             // Update selection indices
-            UpdateSelectionIndicesAfterReorder(sourceIndex, adjustedTargetIndex);
+            // Note: Selection indices update is based on old profile indices, skip for now
+            // TODO: Consider if this needs updating for visual indices
+            // UpdateSelectionIndicesAfterReorder(sourceProfileIndex, targetVisualIndex);
             
             // Refresh the UI
             UpdateProfileList();
+        }
+        
+        /// <summary>
+        /// Calculates unified order position from visual index
+        /// </summary>
+        private int CalculateUnifiedOrderPositionFromVisualIndex(int visualTargetIndex, int excludeUnifiedIndex)
+        {
+            // Build a map of visual positions to unified order indices
+            var visualToUnified = new List<int>();
+            var profileGuidToIndex = allProfiles
+                .Select((p, idx) => new { Profile = p, Index = idx })
+                .ToDictionary(x => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(x.Profile)), x => x.Index);
+            
+            for (int i = 0; i < unifiedOrder.Count; i++)
+            {
+                if (i == excludeUnifiedIndex)
+                    continue;
+                    
+                if (unifiedOrder[i].isFolder)
+                {
+                    // Folders take one visual position
+                    visualToUnified.Add(i);
+                }
+                else
+                {
+                    // Profiles take one visual position (only if not in a folder)
+                    if (profileGuidToIndex.TryGetValue(unifiedOrder[i].identifier, out int profileIndex))
+                    {
+                        var profile = allProfiles[profileIndex];
+                        if (string.IsNullOrEmpty(profile.folderName) || !projectFolders.Contains(profile.folderName))
+                        {
+                            visualToUnified.Add(i);
+                        }
+                    }
+                }
+            }
+            
+            // Find the unified order index for the target visual position
+            if (visualTargetIndex >= 0 && visualTargetIndex < visualToUnified.Count)
+            {
+                return visualToUnified[visualTargetIndex];
+            }
+            
+            // Default to end
+            return unifiedOrder.Count;
+        }
+        
+        /// <summary>
+        /// Reorders a folder in unified order
+        /// </summary>
+        private void ReorderFolder(string folderName, int targetVisualIndex)
+        {
+            // Find the folder in unified order
+            int unifiedSourceIndex = -1;
+            for (int i = 0; i < unifiedOrder.Count; i++)
+            {
+                if (unifiedOrder[i].isFolder && unifiedOrder[i].identifier == folderName)
+                {
+                    unifiedSourceIndex = i;
+                    break;
+                }
+            }
+            
+            if (unifiedSourceIndex < 0)
+            {
+                // Folder not in unified order, add it
+                unifiedOrder.Add(new UnifiedOrderItem { isFolder = true, identifier = folderName });
+                unifiedSourceIndex = unifiedOrder.Count - 1;
+            }
+            
+            // Calculate target position in unified order
+            int unifiedTargetIndex = CalculateUnifiedOrderPositionFromVisualIndex(targetVisualIndex, unifiedSourceIndex);
+            
+            if (unifiedTargetIndex >= 0 && unifiedTargetIndex != unifiedSourceIndex)
+            {
+                // Remove from source position
+                var item = unifiedOrder[unifiedSourceIndex];
+                unifiedOrder.RemoveAt(unifiedSourceIndex);
+                
+                // Adjust target index if source was before target
+                int adjustedTargetIndex = unifiedSourceIndex < unifiedTargetIndex ? unifiedTargetIndex - 1 : unifiedTargetIndex;
+                
+                // Insert at target position
+                unifiedOrder.Insert(adjustedTargetIndex, item);
+                
+                // Save the new order
+                SaveCustomOrder();
+                
+                // Refresh the UI
+                UpdateProfileList();
+            }
+        }
+        
+        /// <summary>
+        /// Calculates drop index for folder reordering
+        /// </summary>
+        private int CalculateDropIndexForFolder(VisualElement listContainer, Vector2 mousePos, string draggingFolderName)
+        {
+            var sortedItems = new List<(int visualIndex, VisualElement element, float y, bool isFolder, string identifier)>();
+            int visualIndex = 0;
+            
+            // Collect all visible items (folders and uncategorized profiles) with their positions
+            foreach (var child in listContainer.Children())
+            {
+                if (child == draggingElement) continue;
+                
+                if (child.ClassListContains("yucp-folder-header"))
+                {
+                    if (child.userData is string folderName && folderName != draggingFolderName)
+                    {
+                        Rect worldBound = child.worldBound;
+                        sortedItems.Add((visualIndex++, child, worldBound.y, true, folderName));
+                    }
+                }
+                else if (child.userData is int profileIdx)
+                {
+                    // Only count uncategorized profiles (those not in folders)
+                    var profile = allProfiles[profileIdx];
+                    if (string.IsNullOrEmpty(profile.folderName) || !projectFolders.Contains(profile.folderName))
+                    {
+                        Rect worldBound = child.worldBound;
+                        sortedItems.Add((visualIndex++, child, worldBound.y, false, profileIdx.ToString()));
+                    }
+                }
+            }
+            
+            // Sort by Y position
+            sortedItems.Sort((a, b) => a.y.CompareTo(b.y));
+            
+            // Find where the mouse is
+            for (int i = 0; i < sortedItems.Count; i++)
+            {
+                var item = sortedItems[i];
+                Rect worldBound = item.element.worldBound;
+                
+                if (worldBound.Contains(mousePos))
+                {
+                    float relativeY = mousePos.y - worldBound.y;
+                    if (relativeY < worldBound.height * 0.5f)
+                    {
+                        return item.visualIndex;
+                    }
+                    else
+                    {
+                        return item.visualIndex + 1;
+                    }
+                }
+                else if (mousePos.y < worldBound.y)
+                {
+                    return item.visualIndex;
+                }
+            }
+            
+            // If we didn't find a position, drop at the end
+            if (sortedItems.Count > 0)
+            {
+                return sortedItems[sortedItems.Count - 1].visualIndex + 1;
+            }
+            
+            return 0;
         }
         
         /// <summary>
@@ -3061,6 +4824,84 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             });
             section.Add(authorField);
+            
+            // Tags section - Modern design
+            var tagsSection = new VisualElement();
+            tagsSection.AddToClassList("yucp-tags-section");
+            
+            var tagsLabel = new Label("Tags");
+            tagsLabel.AddToClassList("yucp-label");
+            tagsLabel.style.marginTop = 16;
+            tagsLabel.style.marginBottom = 8;
+            tagsSection.Add(tagsLabel);
+            
+            // Tokenized Tag Input
+            var tokenizedTags = new YUCP.DevTools.Editor.PackageExporter.UI.Components.TokenizedTagInput();
+            
+            // Collect available tags (Presets + Global Custom from EditorPrefs)
+            var presetTagsType2 = typeof(YUCP.DevTools.Editor.PackageExporter.ExportProfile);
+            var presetTagsField2 = presetTagsType2.GetField("AvailablePresetTags", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            var availablePresets = presetTagsField2?.GetValue(null) as List<string> ?? new List<string>();
+            
+            string rawGlobalTags = EditorPrefs.GetString("YUCP_GlobalCustomTags", "");
+            var globalTags = !string.IsNullOrEmpty(rawGlobalTags) 
+                ? rawGlobalTags.Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries).ToList() 
+                : new List<string>();
+
+            var allAvailable = availablePresets.Union(globalTags).Distinct().ToList();
+            tokenizedTags.SetAvailableTags(allAvailable);
+            
+            tokenizedTags.SetSelectedTags(profile.GetAllTags());
+            
+            tokenizedTags.OnTagsChanged += (newTags) => {
+                 if (profile != null) 
+                 {
+                    Undo.RecordObject(profile, "Change Tags");
+                    
+                    var newPresets = new List<string>();
+                    var newCustoms = new List<string>();
+                    var newlyCreated = new List<string>();
+                    
+                    foreach(var tag in newTags)
+                    {
+                        if (availablePresets.Contains(tag))
+                        {
+                            newPresets.Add(tag);
+                        }
+                        else
+                        {
+                            newCustoms.Add(tag);
+                            if (!globalTags.Contains(tag))
+                            {
+                                newlyCreated.Add(tag);
+                            }
+                        }
+                    }
+                    
+                    profile.presetTags = newPresets;
+                    profile.customTags = newCustoms;
+                    EditorUtility.SetDirty(profile);
+                    
+                    // Persist new tags globally
+                    if (newlyCreated.Count > 0)
+                    {
+                        globalTags.AddRange(newlyCreated);
+                        EditorPrefs.SetString("YUCP_GlobalCustomTags", string.Join("|", globalTags));
+                        
+                        // Update available options
+                        allAvailable = availablePresets.Union(globalTags).Distinct().ToList();
+                        tokenizedTags.SetAvailableTags(allAvailable);
+                    }
+                    
+                    UpdateProfileList(); // Refresh sidebar filters
+                 }
+            };
+            
+            tagsSection.Add(tokenizedTags);
+            
+            // Allow layout pass then attach overlay
+            tagsSection.schedule.Execute(() => tokenizedTags.AttachOverlayToRoot(rootVisualElement));
+            section.Add(tagsSection);
             
             // Official Product Links section
             var linksLabel = new Label("Official Product Links");
@@ -5190,6 +7031,38 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     assetListContainer.style.position = Position.Relative; // Ensure proper positioning
                     assetListContainer.pickingMode = PickingMode.Position;
                     
+                    // Helper method for updating inspector resize height - similar to left pane resize
+                    System.Action<Vector2> updateInspectorResizeHeight = (mousePosition) =>
+                    {
+                        if (!isResizingInspector || !assetListContainer.HasMouseCapture()) return;
+                        
+                        // Dragging down (mousePosition.y increases) should increase height
+                        float deltaY = mousePosition.y - resizeStartY;
+                        float newHeight = resizeStartHeight + deltaY;
+                        // Allow very large sizes - no upper limit, only enforce minimum
+                        newHeight = Mathf.Max(newHeight, 200f);
+                        
+                        // Update height immediately
+                        assetListContainer.style.height = new Length(newHeight, LengthUnit.Pixel);
+                        assetListContainer.style.maxHeight = new StyleLength(StyleKeyword.None);
+                        assetListContainer.style.flexGrow = 0;
+                        assetListContainer.style.flexShrink = 0;
+                        assetListContainer.style.overflow = Overflow.Visible;
+                        
+                        // Force immediate repaint updates
+                        assetListContainer.MarkDirtyRepaint();
+                        
+                        // Update resize rect for cursor
+                        var worldBounds = assetListContainer.worldBound;
+                        if (!worldBounds.Equals(Rect.zero))
+                        {
+                            currentResizeRect = new Rect(worldBounds.x, worldBounds.yMax - 10, worldBounds.width, 10);
+                        }
+                        
+                        // Force immediate repaint of the window
+                        Repaint();
+                    };
+                    
                     // Make the bottom edge of the container resizable
                     assetListContainer.RegisterCallback<MouseMoveEvent>(evt =>
                     {
@@ -5197,7 +7070,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         {
                             // Check if mouse is near the bottom edge (within 10 pixels)
                             var localPos = evt.localMousePosition;
-                            // Use layout.height if resolvedStyle.height is not available
                             float containerHeight = assetListContainer.resolvedStyle.height;
                             if (containerHeight <= 0)
                             {
@@ -5211,7 +7083,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                 
                                 // Calculate the resize rect in window coordinates for cursor
                                 var worldBounds = assetListContainer.worldBound;
-                                currentResizeRect = new Rect(worldBounds.x, worldBounds.yMax - 10, worldBounds.width, 10);
+                                if (!worldBounds.Equals(Rect.zero))
+                                {
+                                    currentResizeRect = new Rect(worldBounds.x, worldBounds.yMax - 10, worldBounds.width, 10);
+                                }
                             }
                             else
                             {
@@ -5239,7 +7114,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         if (evt.button == 0)
                         {
                             var localPos = evt.localMousePosition;
-                            // Use layout.height if resolvedStyle.height is not available
                             float containerHeight = assetListContainer.resolvedStyle.height;
                             if (containerHeight <= 0)
                             {
@@ -5262,33 +7136,28 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                     });
                     
+                    // Handle mouse move during resize
                     assetListContainer.RegisterCallback<MouseMoveEvent>(evt =>
                     {
                         if (isResizingInspector && assetListContainer.HasMouseCapture())
                         {
-                            // Fix inverted direction: dragging down (mousePosition.y increases) should increase height
-                            float deltaY = evt.mousePosition.y - resizeStartY;
-                            float newHeight = resizeStartHeight + deltaY;
-                            // Allow very large sizes - no upper limit
-                            newHeight = Mathf.Max(newHeight, 200f); // Only enforce minimum
-                            
-                            // Force the height using Length with pixels
-                            assetListContainer.style.height = new Length(newHeight, LengthUnit.Pixel);
-                            
-                            // Update resize rect for cursor
-                            var worldBounds = assetListContainer.worldBound;
-                            currentResizeRect = new Rect(worldBounds.x, worldBounds.yMax - 10, worldBounds.width, 10);
-                            // Explicitly remove maxHeight constraint
-                            assetListContainer.style.maxHeight = new StyleLength(StyleKeyword.None);
-                            assetListContainer.style.flexGrow = 0;
-                            assetListContainer.style.flexShrink = 0;
-                            assetListContainer.style.overflow = Overflow.Visible;
-                            
-                            // Force a layout update
-                            assetListContainer.MarkDirtyRepaint();
+                            updateInspectorResizeHeight(evt.mousePosition);
                             evt.StopPropagation();
                         }
                     });
+                    
+                    // Also register on root for better tracking when mouse leaves the container
+                    if (rootVisualElement != null)
+                    {
+                        rootVisualElement.RegisterCallback<MouseMoveEvent>(evt =>
+                        {
+                            if (isResizingInspector && assetListContainer.HasMouseCapture())
+                            {
+                                updateInspectorResizeHeight(evt.mousePosition);
+                                evt.StopPropagation();
+                            }
+                        }, TrickleDown.TrickleDown);
+                    }
                     
                     assetListContainer.RegisterCallback<MouseUpEvent>(evt =>
                     {
@@ -5314,9 +7183,45 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                 }
                             }
                             
+                            currentResizeRect = Rect.zero;
                             evt.StopPropagation();
                         }
                     });
+                    
+                    // Also handle mouse up on root to ensure we release mouse capture
+                    if (rootVisualElement != null)
+                    {
+                        rootVisualElement.RegisterCallback<MouseUpEvent>(evt =>
+                        {
+                            if (evt.button == 0 && isResizingInspector)
+                            {
+                                isResizingInspector = false;
+                                if (assetListContainer.HasMouseCapture())
+                                {
+                                    assetListContainer.ReleaseMouse();
+                                }
+                                assetListContainer.style.borderBottomWidth = 0;
+                                
+                                // Save the new height to the profile
+                                if (profile != null)
+                                {
+                                    float finalHeight = assetListContainer.resolvedStyle.height;
+                                    if (finalHeight <= 0)
+                                    {
+                                        finalHeight = assetListContainer.layout.height;
+                                    }
+                                    if (finalHeight > 0)
+                                    {
+                                        Undo.RecordObject(profile, "Resize Inspector");
+                                        profile.InspectorHeight = finalHeight;
+                                        EditorUtility.SetDirty(profile);
+                                    }
+                                }
+                                
+                                currentResizeRect = Rect.zero;
+                            }
+                        });
+                    }
                     
                     RebuildAssetList(profile, assetListContainer);
                     
@@ -7120,6 +9025,223 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var serializable = new SerializableStringList { items = guids };
             string json = JsonUtility.ToJson(serializable);
             EditorPrefs.SetString(PackageOrderKey, json);
+            
+            // Also save unified order
+            SaveUnifiedOrder();
+        }
+        
+        /// <summary>
+        /// Migrates existing order and folders to unified order format
+        /// </summary>
+        private void MigrateToUnifiedOrder()
+        {
+            // Check if already migrated
+            if (EditorPrefs.GetBool(UnifiedOrderMigratedKey, false))
+                return;
+            
+            unifiedOrder.Clear();
+            
+            // Load existing order
+            string orderJson = EditorPrefs.GetString(PackageOrderKey, "");
+            List<string> orderedGuids = new List<string>();
+            
+            if (!string.IsNullOrEmpty(orderJson))
+            {
+                try
+                {
+                    var orderedGuidsObj = JsonUtility.FromJson<SerializableStringList>(orderJson);
+                    if (orderedGuidsObj != null && orderedGuidsObj.items != null)
+                    {
+                        orderedGuids = orderedGuidsObj.items;
+                    }
+                }
+                catch
+                {
+                    // If parsing fails, start fresh
+                }
+            }
+            
+            // Build unified order from existing data
+            // First, add folders in their current order (alphabetically sorted)
+            var folders = new List<string>(projectFolders);
+            folders.Sort();
+            
+            foreach (var folderName in folders)
+            {
+                unifiedOrder.Add(new UnifiedOrderItem { isFolder = true, identifier = folderName });
+            }
+            
+            // Then add profiles in their stored order (only those not in folders)
+            foreach (string guid in orderedGuids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                var profile = AssetDatabase.LoadAssetAtPath<ExportProfile>(path);
+                if (profile != null && string.IsNullOrEmpty(profile.folderName))
+                {
+                    unifiedOrder.Add(new UnifiedOrderItem { isFolder = false, identifier = guid });
+                }
+            }
+            
+            // Add any new profiles not in order (alphabetically)
+            var allProfileGuids = allProfiles.Select(p => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p))).ToHashSet();
+            var orderedProfileGuids = orderedGuids.ToHashSet();
+            var newProfiles = allProfiles.Where(p =>
+            {
+                string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p));
+                return !orderedProfileGuids.Contains(guid) && string.IsNullOrEmpty(p.folderName);
+            }).OrderBy(p => p.packageName).ToList();
+            
+            foreach (var profile in newProfiles)
+            {
+                string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(profile));
+                unifiedOrder.Add(new UnifiedOrderItem { isFolder = false, identifier = guid });
+            }
+            
+            // Save unified order
+            SaveUnifiedOrder();
+            
+            // Mark as migrated
+            EditorPrefs.SetBool(UnifiedOrderMigratedKey, true);
+        }
+        
+        /// <summary>
+        /// Loads unified order from EditorPrefs
+        /// </summary>
+        private void LoadUnifiedOrder()
+        {
+            string orderJson = EditorPrefs.GetString(UnifiedOrderKey, "");
+            
+            if (string.IsNullOrEmpty(orderJson))
+            {
+                // If no unified order exists, build it from current state
+                BuildUnifiedOrderFromCurrentState();
+                return;
+            }
+            
+            try
+            {
+                var orderList = JsonUtility.FromJson<UnifiedOrderList>(orderJson);
+                if (orderList != null && orderList.items != null)
+                {
+                    unifiedOrder = orderList.items;
+                    // Validate and clean up order (remove invalid items)
+                    ValidateAndCleanUnifiedOrder();
+                }
+                else
+                {
+                    BuildUnifiedOrderFromCurrentState();
+                }
+            }
+            catch
+            {
+                // If parsing fails, rebuild from current state
+                BuildUnifiedOrderFromCurrentState();
+            }
+        }
+        
+        /// <summary>
+        /// Builds unified order from current profiles and folders state
+        /// </summary>
+        private void BuildUnifiedOrderFromCurrentState()
+        {
+            unifiedOrder.Clear();
+            
+            // Add folders first (sorted)
+            var folders = new List<string>(projectFolders);
+            folders.Sort();
+            foreach (var folderName in folders)
+            {
+                unifiedOrder.Add(new UnifiedOrderItem { isFolder = true, identifier = folderName });
+            }
+            
+            // Add uncategorized profiles (sorted alphabetically)
+            var uncategorizedProfiles = allProfiles
+                .Where(p => string.IsNullOrEmpty(p.folderName) || !projectFolders.Contains(p.folderName))
+                .OrderBy(p => p.packageName)
+                .ToList();
+            
+            foreach (var profile in uncategorizedProfiles)
+            {
+                string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(profile));
+                unifiedOrder.Add(new UnifiedOrderItem { isFolder = false, identifier = guid });
+            }
+        }
+        
+        /// <summary>
+        /// Validates unified order and removes invalid items
+        /// </summary>
+        private void ValidateAndCleanUnifiedOrder()
+        {
+            var validOrder = new List<UnifiedOrderItem>();
+            var seenFolders = new HashSet<string>();
+            var seenProfiles = new HashSet<string>();
+            
+            // Get all valid folders and profiles
+            var validFolders = projectFolders.ToHashSet();
+            var validProfileGuids = allProfiles.ToDictionary(
+                p => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p)),
+                p => p
+            );
+            
+            foreach (var item in unifiedOrder)
+            {
+                if (item.isFolder)
+                {
+                    // Validate folder exists
+                    if (validFolders.Contains(item.identifier) && !seenFolders.Contains(item.identifier))
+                    {
+                        validOrder.Add(item);
+                        seenFolders.Add(item.identifier);
+                    }
+                }
+                else
+                {
+                    // Validate profile exists and is not in a folder
+                    if (validProfileGuids.TryGetValue(item.identifier, out var profile))
+                    {
+                        // Only add if not in a folder (folders handle their own profiles)
+                        if (string.IsNullOrEmpty(profile.folderName) && !seenProfiles.Contains(item.identifier))
+                        {
+                            validOrder.Add(item);
+                            seenProfiles.Add(item.identifier);
+                        }
+                    }
+                }
+            }
+            
+            // Add any missing folders
+            foreach (var folder in validFolders)
+            {
+                if (!seenFolders.Contains(folder))
+                {
+                    validOrder.Add(new UnifiedOrderItem { isFolder = true, identifier = folder });
+                }
+            }
+            
+            // Add any missing uncategorized profiles
+            foreach (var profile in allProfiles)
+            {
+                if (string.IsNullOrEmpty(profile.folderName))
+                {
+                    string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(profile));
+                    if (!seenProfiles.Contains(guid))
+                    {
+                        validOrder.Add(new UnifiedOrderItem { isFolder = false, identifier = guid });
+                    }
+                }
+            }
+            
+            unifiedOrder = validOrder;
+        }
+        
+        /// <summary>
+        /// Saves unified order to EditorPrefs
+        /// </summary>
+        private void SaveUnifiedOrder()
+        {
+            var orderList = new UnifiedOrderList { items = unifiedOrder };
+            string json = JsonUtility.ToJson(orderList);
+            EditorPrefs.SetString(UnifiedOrderKey, json);
         }
         
         /// <summary>
@@ -7129,6 +9251,25 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private class SerializableStringList
         {
             public List<string> items = new List<string>();
+        }
+        
+        /// <summary>
+        /// Represents an item in the unified order (either a profile or a folder)
+        /// </summary>
+        [Serializable]
+        private class UnifiedOrderItem
+        {
+            public bool isFolder;
+            public string identifier; // GUID for profiles, folder name for folders
+        }
+        
+        /// <summary>
+        /// Helper class for JSON serialization of unified order
+        /// </summary>
+        [Serializable]
+        private class UnifiedOrderList
+        {
+            public List<UnifiedOrderItem> items = new List<UnifiedOrderItem>();
         }
 
         private void RefreshProfiles()
@@ -7183,6 +9324,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             LoadProfiles();
             
+            // Add new profile to unified order if not in a folder
+            string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(profile));
+            if (string.IsNullOrEmpty(profile.folderName))
+            {
+                if (!unifiedOrder.Any(item => !item.isFolder && item.identifier == guid))
+                {
+                    unifiedOrder.Add(new UnifiedOrderItem { isFolder = false, identifier = guid });
+                    SaveUnifiedOrder();
+                }
+            }
+            
             selectedProfile = profile;
             int index = allProfiles.IndexOf(profile);
             selectedProfileIndices.Clear();
@@ -7217,6 +9369,37 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             LoadProfiles();
             
+            // Add cloned profile to unified order if not in a folder
+            string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(clone));
+            if (string.IsNullOrEmpty(clone.folderName))
+            {
+                if (!unifiedOrder.Any(item => !item.isFolder && item.identifier == guid))
+                {
+                    // Add after the source profile if possible
+                    string sourceGuid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(source));
+                    int insertIndex = -1;
+                    for (int i = 0; i < unifiedOrder.Count; i++)
+                    {
+                        if (!unifiedOrder[i].isFolder && unifiedOrder[i].identifier == sourceGuid)
+                        {
+                            insertIndex = i + 1;
+                            break;
+                        }
+                    }
+                    
+                    var newItem = new UnifiedOrderItem { isFolder = false, identifier = guid };
+                    if (insertIndex >= 0 && insertIndex <= unifiedOrder.Count)
+                    {
+                        unifiedOrder.Insert(insertIndex, newItem);
+                    }
+                    else
+                    {
+                        unifiedOrder.Add(newItem);
+                    }
+                    SaveUnifiedOrder();
+                }
+            }
+            
             selectedProfile = clone;
             int index = allProfiles.IndexOf(clone);
             selectedProfileIndices.Clear();
@@ -7244,6 +9427,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             
             string assetPath = AssetDatabase.GetAssetPath(profile);
+            string guid = AssetDatabase.AssetPathToGUID(assetPath);
+            
+            // Remove from unified order
+            unifiedOrder.RemoveAll(item => !item.isFolder && item.identifier == guid);
             
             if (selectedProfile == profile)
             {
@@ -7253,6 +9440,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             AssetDatabase.DeleteAsset(assetPath);
             AssetDatabase.SaveAssets();
+            
+            SaveUnifiedOrder();
             
             // Update profile count for milestones
             try

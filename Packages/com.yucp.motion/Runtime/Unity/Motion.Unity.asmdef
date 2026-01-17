@@ -1,0 +1,16 @@
+{
+    "name": "com.yucp.motion.Unity",
+    "rootNamespace": "YUCP.Motion",
+    "references": [
+        "com.yucp.motion.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

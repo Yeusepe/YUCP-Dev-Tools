@@ -166,6 +166,28 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Custom version rule to use (leave empty to use default semver)")]
         public CustomVersionRule customVersionRule;
         
+        [Header("Tags")]
+        [Tooltip("Preset tags selected for this profile")]
+        public List<string> presetTags = new List<string>();
+        
+        [Tooltip("Custom tags added to this profile")]
+        public List<string> customTags = new List<string>();
+        
+        /// <summary>
+        /// Available preset tag options
+        /// </summary>
+        public static readonly List<string> AvailablePresetTags = new List<string>
+        {
+            "Production",
+            "Beta",
+            "Archived",
+            "Active",
+            "Deprecated",
+            "Experimental",
+            "Stable",
+            "WIP"
+        };
+        
         [Header("Statistics (Read-only)")]
         [Tooltip("Last successful export timestamp")]
         [SerializeField] private string lastExportTime = "";
@@ -419,6 +441,78 @@ namespace YUCP.DevTools.Editor.PackageExporter
         public bool HasIncludedProfiles()
         {
             return includedProfileGuids != null && includedProfileGuids.Count > 0;
+        }
+        
+        /// <summary>
+        /// Get all tags (preset + custom)
+        /// </summary>
+        public List<string> GetAllTags()
+        {
+            var allTags = new List<string>();
+            if (presetTags != null) allTags.AddRange(presetTags);
+            if (customTags != null) allTags.AddRange(customTags);
+            return allTags;
+        }
+        
+        /// <summary>
+        /// Check if profile has a specific tag (preset or custom)
+        /// </summary>
+        public bool HasTag(string tag)
+        {
+            if (string.IsNullOrEmpty(tag)) return false;
+            return (presetTags != null && presetTags.Contains(tag)) ||
+                   (customTags != null && customTags.Contains(tag));
+        }
+        
+        /// <summary>
+        /// Add a preset tag
+        /// </summary>
+        public void AddPresetTag(string tag)
+        {
+            if (string.IsNullOrEmpty(tag) || !AvailablePresetTags.Contains(tag)) return;
+            if (presetTags == null) presetTags = new List<string>();
+            if (!presetTags.Contains(tag))
+            {
+                presetTags.Add(tag);
+                UnityEditor.EditorUtility.SetDirty(this);
+            }
+        }
+        
+        /// <summary>
+        /// Remove a preset tag
+        /// </summary>
+        public void RemovePresetTag(string tag)
+        {
+            if (presetTags != null && presetTags.Remove(tag))
+            {
+                UnityEditor.EditorUtility.SetDirty(this);
+            }
+        }
+        
+        /// <summary>
+        /// Add a custom tag
+        /// </summary>
+        public void AddCustomTag(string tag)
+        {
+            if (string.IsNullOrWhiteSpace(tag)) return;
+            tag = tag.Trim();
+            if (customTags == null) customTags = new List<string>();
+            if (!customTags.Contains(tag))
+            {
+                customTags.Add(tag);
+                UnityEditor.EditorUtility.SetDirty(this);
+            }
+        }
+        
+        /// <summary>
+        /// Remove a custom tag
+        /// </summary>
+        public void RemoveCustomTag(string tag)
+        {
+            if (customTags != null && customTags.Remove(tag))
+            {
+                UnityEditor.EditorUtility.SetDirty(this);
+            }
         }
     }
     

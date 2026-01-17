@@ -94,13 +94,11 @@ namespace YUCP.DevTools.Components
             
             // Create and store the appropriate container
             _listContainer = new VisualElement();
+            // Always set ListContainer so it's accessible regardless of overlay state
+            ListContainer = _listContainer;
             if (isOverlay)
             {
                 _listContainerOverlay = _listContainer;
-            }
-            else
-            {
-                ListContainer = _listContainer;
             }
             
             ScrollView.Add(_listContainer);

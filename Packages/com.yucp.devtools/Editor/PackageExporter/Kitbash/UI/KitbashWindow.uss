@@ -1,0 +1,212 @@
+/* Shared Theme - shadcn/zinc */
+.theme-container {
+    --bg: #09090b;
+    --card: #09090b;
+    --card-border: #27272a;
+    --input: #18181b;
+    --input-border: #27272a;
+    --primary: #fafafa;
+    --primary-fg: #18181b;
+    --muted: #27272a;
+    --muted-fg: #a1a1aa;
+    --accent: #27272a;
+    --accent-fg: #fafafa;
+    --danger: #7f1d1d;
+    --radius: 6px;
+    
+    background-color: var(--bg);
+    color: var(--primary);
+    font-size: 12px;
+}
+
+/* WINDOW STYLES */
+.window-root {
+    height: 100%;
+    padding: 8px;
+    background-color: var(--bg);
+}
+
+.layers-card {
+    flex-grow: 1;
+    border-width: 1px;
+    border-color: var(--card-border);
+    border-radius: var(--radius);
+    background-color: var(--card);
+    padding: 0; /* Padding handled by internal containers for cleaner scrolling */
+    overflow: hidden;
+}
+
+.header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--card-border);
+    height: 48px;
+    background-color: var(--card);
+}
+
+.title {
+    font-size: 14px;
+    -unity-font-style: bold;
+    color: var(--primary);
+}
+
+.toolbar-row {
+    flex-direction: row;
+    padding: 8px 12px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--card-border);
+    background-color: #0c0c0e; /* slightly darker than card */
+}
+
+/* Lists */
+.layer-list {
+    flex-grow: 1;
+    background-color: transparent;
+}
+
+.list-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 0 12px;
+    height: 40px; /* Comfortable touch target */
+    border-bottom-width: 1px;
+    border-bottom-color: #1a1a1c; /* very subtle separator */
+    transition: 0.1s;
+}
+
+.list-row:hover {
+    background-color: var(--accent);
+}
+
+.list-row.selected {
+    background-color: #27272a;
+    border-left-width: 3px;
+    border-left-color: var(--primary);
+    padding-left: 9px; /* adjust for border */
+}
+
+.color-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 6px;
+    margin-right: 12px;
+    border-width: 1px;
+    border-color: rgba(255,255,255,0.1);
+}
+
+.row-info {
+    flex-grow: 1;
+    justify-content: center;
+}
+
+.row-title {
+    font-size: 13px;
+    color: var(--primary);
+}
+
+.row-sub {
+    font-size: 10px;
+    color: var(--muted-fg);
+}
+
+/* Footer / Properties Panel */
+.footer {
+    border-top-width: 1px;
+    border-top-color: var(--card-border);
+    padding: 12px;
+    background-color: #0c0c0e;
+}
+
+/* TOOLBAR OVERLAY STYLES */
+.overlay-root {
+    background-color: #09090b;
+    border-width: 1px;
+    border-color: #27272a;
+    border-radius: 20px; /* Pill shape */
+    flex-direction: row;
+    align-items: center;
+    padding: 4px;
+    height: 40px;
+    /* Clean up any default margins */
+    margin: 0;
+    margin-bottom: 20px;
+}
+
+.tool-group {
+    flex-direction: row;
+    align-items: center;
+}
+
+.tool-divider {
+    width: 1px;
+    height: 16px;
+    background-color: #3f3f46;
+    margin: 0 8px;
+}
+
+.tool-btn {
+    width: 32px;
+    height: 32px;
+    justify-content: center;
+    align-items: center;
+    border-radius: 16px; /* Circle */
+    border-width: 0;
+    margin: 0 2px;
+    padding: 0;
+    background-color: transparent;
+    transition-duration: 0.1s;
+}
+
+.tool-btn:hover {
+    background-color: #27272a;
+}
+
+.tool-btn.selected {
+    background-color: #fafafa;
+}
+
+/* Icon Handling - Specific Resources */
+.icon {
+    width: 16px;
+    height: 16px;
+    -unity-background-scale-mode: scale-to-fit;
+    opacity: 0.7;
+}
+
+.tool-btn:hover .icon {
+    opacity: 1.0;
+}
+
+.tool-btn.selected .icon {
+    -unity-background-image-tint-color: #18181b; /* Dark icon on white bg */
+    opacity: 1.0;
+}
+
+/* Specific Icons */
+.icon-brush { background-image: resource("d_Brush Icon"); }
+.icon-bucket { background-image: resource("d_FloodFill Icon"); }
+.icon-lasso { background-image: resource("d_Lasso Icon"); } /* Fallback if d_Lasso not found */
+.icon-eye { background-image: resource("d_SceneViewVisibility"); }
+
+.text-icon {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: #a1a1aa;
+}
+
+.tool-btn.selected .text-icon {
+    color: #18181b; /* Dark text on white bg */
+}
+
+/* Slider Compact */
+.slider-compact {
+    width: 100px;
+    margin: 0;
+}
+
+.label-small {
+    font-size: 11px;
+}
