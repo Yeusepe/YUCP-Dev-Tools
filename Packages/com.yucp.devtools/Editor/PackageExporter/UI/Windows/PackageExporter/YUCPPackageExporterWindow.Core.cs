@@ -162,7 +162,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             profile.description = "This is a demo package to help you get started with the Package Exporter.";
             profile.author = "You";
             
-            profile.foldersToExport = new List<string> { "Assets" };
+            profile.foldersToExport = new List<string>();
             
             AssetDatabase.CreateAsset(profile, demoPath);
             AssetDatabase.SaveAssets();
