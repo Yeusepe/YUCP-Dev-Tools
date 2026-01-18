@@ -11,7 +11,9 @@
     padding: 3px 6px;
     min-height: 32px;
     align-items: center;
-    transition: border-color 0.2s ease;
+    transition-property: border-color;
+    transition-duration: 0.2s;
+    transition-timing-function: ease-out;
 }
 
 .yucp-tokenized-field.focused {

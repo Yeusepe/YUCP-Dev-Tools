@@ -74,7 +74,7 @@
     height: 40px; /* Comfortable touch target */
     border-bottom-width: 1px;
     border-bottom-color: #1a1a1c; /* very subtle separator */
-    transition: 0.1s;
+    transition-duration: 0.1s;
 }
 
 .list-row:hover {

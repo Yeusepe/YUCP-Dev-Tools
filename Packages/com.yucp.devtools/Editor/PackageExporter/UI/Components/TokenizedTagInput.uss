@@ -10,7 +10,9 @@
     padding: 3px 6px;
     min-height: 32px;
     align-items: center;
-    transition: border-color 0.2s ease;
+    transition-property: border-color;
+    transition-duration: 0.2s;
+    transition-timing-function: ease-out;
 }
 
 .yucp-tokenized-tag-input.focused {
@@ -63,7 +65,7 @@
     border-width: 0;
     color: rgba(54, 191, 177, 0.8);
     font-size: 14px;
-    font-weight: bold;
+    -unity-font-style: bold;
     padding: 0;
     margin: 0;
     margin-left: 4px;
@@ -76,18 +78,21 @@
     border-radius: 50%;
     display: flex;
     visibility: visible;
-    transition: all 0.15s ease;
+    transition-property: background-color, color, scale;
+    transition-duration: 0.15s, 0.15s, 0.15s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+    scale: 1 1;
 }
 
 .yucp-tag-chip-remove:hover {
     background-color: rgba(226, 74, 74, 0.25);
     color: rgba(226, 74, 74, 1);
-    transform: scale(1.1);
+    scale: 1.1 1.1;
 }
 
 .yucp-tag-chip-remove:active {
     background-color: rgba(226, 74, 74, 0.35);
-    transform: scale(0.95);
+    scale: 0.95 0.95;
 }
 
 /* Autocomplete Overlay */
