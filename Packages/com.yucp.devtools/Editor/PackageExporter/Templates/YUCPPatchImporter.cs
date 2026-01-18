@@ -2137,6 +2137,8 @@ namespace YUCP.PatchCleanup
                 var kitbashRecipeJsonField = patchType.GetField("kitbashRecipeJson");
                 var recipeHashField = patchType.GetField("recipeHash");
                 var requiredSourceGuidsField = patchType.GetField("requiredSourceGuids");
+                var sourcePartIndicesField = patchType.GetField("kitbashSourcePartIndices");
+                var sourceTriangleIndicesField = patchType.GetField("kitbashSourceTriangleIndices");
                 var hdiffFilePathField = patchType.GetField("hdiffFilePath");
                 var derivedFbxGuidField = patchType.GetField("derivedFbxGuid");
                 var originalDerivedFbxPathField = patchType.GetField("originalDerivedFbxPath");
@@ -2146,6 +2148,8 @@ namespace YUCP.PatchCleanup
                 string kitbashRecipeJson = kitbashRecipeJsonField?.GetValue(patchObj) as string;
                 string recipeHash = recipeHashField?.GetValue(patchObj) as string;
                 string[] requiredSourceGuids = requiredSourceGuidsField?.GetValue(patchObj) as string[];
+                int[] sourcePartIndices = sourcePartIndicesField?.GetValue(patchObj) as int[];
+                int[] sourceTriangleIndices = sourceTriangleIndicesField?.GetValue(patchObj) as int[];
                 string hdiffFilePath = hdiffFilePathField?.GetValue(patchObj) as string;
                 string derivedFbxGuid = derivedFbxGuidField?.GetValue(patchObj) as string;
                 string originalDerivedFbxPath = originalDerivedFbxPathField?.GetValue(patchObj) as string;
@@ -2211,7 +2215,7 @@ namespace YUCP.PatchCleanup
                 
                 // Build synthetic base from recipe
                 WriteLog($"  Building synthetic base from recipe (hash: {recipeHash})...");
-                string syntheticBasePath = BuildSyntheticBaseFromRecipe(kitbashRecipeJson, recipeHash);
+                string syntheticBasePath = BuildSyntheticBaseFromRecipe(kitbashRecipeJson, recipeHash, sourcePartIndices, sourceTriangleIndices);
                 
                 if (string.IsNullOrEmpty(syntheticBasePath))
                 {
@@ -2251,7 +2255,7 @@ namespace YUCP.PatchCleanup
         /// Builds a synthetic base FBX from a recipe JSON.
         /// Uses caching by recipe hash.
         /// </summary>
-        private static string BuildSyntheticBaseFromRecipe(string recipeJson, string recipeHash)
+        private static string BuildSyntheticBaseFromRecipe(string recipeJson, string recipeHash, int[] sourcePartIndices, int[] sourceTriangleIndices)
         {
             try
             {
@@ -2259,7 +2263,14 @@ namespace YUCP.PatchCleanup
                 string cacheDir = Path.Combine(Application.dataPath, "..", "Library", "YUCP", "KitbashCache");
                 Directory.CreateDirectory(cacheDir);
                 
-                string cachedPath = Path.Combine(cacheDir, $"{recipeHash}.fbx");
+                string cacheKey = recipeHash;
+                if (sourcePartIndices != null && sourceTriangleIndices != null &&
+                    sourcePartIndices.Length == sourceTriangleIndices.Length &&
+                    sourcePartIndices.Length > 0)
+                {
+                    cacheKey = ComputeMappingHash(recipeHash, sourcePartIndices, sourceTriangleIndices);
+                }
+                string cachedPath = Path.Combine(cacheDir, $"{cacheKey}.fbx");
                 if (File.Exists(cachedPath))
                 {
                     WriteLog($"    Using cached synthetic base: {cachedPath}");
@@ -2300,6 +2311,26 @@ namespace YUCP.PatchCleanup
                 GameObject root = new GameObject("SyntheticBase");
                 try
                 {
+                    Dictionary<int, HashSet<int>> trianglesByPart = null;
+                    if (sourcePartIndices != null && sourceTriangleIndices != null &&
+                        sourcePartIndices.Length == sourceTriangleIndices.Length &&
+                        sourcePartIndices.Length > 0)
+                    {
+                        trianglesByPart = new Dictionary<int, HashSet<int>>();
+                        for (int i = 0; i < sourcePartIndices.Length; i++)
+                        {
+                            int partIndex = sourcePartIndices[i];
+                            int triIndex = sourceTriangleIndices[i];
+                            if (partIndex < 0 || triIndex < 0) continue;
+                            if (!trianglesByPart.TryGetValue(partIndex, out var set))
+                            {
+                                set = new HashSet<int>();
+                                trianglesByPart[partIndex] = set;
+                            }
+                            set.Add(triIndex);
+                        }
+                    }
+
                     foreach (var part in parts)
                     {
                         if (string.IsNullOrEmpty(part.sourceFbxGuid))
@@ -2331,15 +2362,45 @@ namespace YUCP.PatchCleanup
                                 sourceTransform = found;
                         }
                         
-                        // Instantiate the part
-                        GameObject partInstance = UnityEngine.Object.Instantiate(sourceTransform.gameObject);
-                        partInstance.name = !string.IsNullOrEmpty(part.displayName) ? part.displayName : sourceTransform.name;
-                        partInstance.transform.SetParent(root.transform);
-                        partInstance.transform.localPosition = part.positionOffset;
-                        partInstance.transform.localRotation = part.rotationOffset;
-                        partInstance.transform.localScale = Vector3.Scale(Vector3.one, part.scaleMultiplier);
+                        // Instantiate the part root to preserve bones
+                        GameObject partRoot = UnityEngine.Object.Instantiate(sourcePrefab);
+                        partRoot.name = !string.IsNullOrEmpty(part.displayName) ? part.displayName : sourcePrefab.name;
                         
-                        WriteLog($"      Added part: {partInstance.name} from {sourcePath}");
+                        Transform targetTransform = partRoot.transform;
+                        if (!string.IsNullOrEmpty(part.meshPath))
+                        {
+                            var found = partRoot.transform.Find(part.meshPath);
+                            if (found != null)
+                                targetTransform = found;
+                        }
+                        
+                        if (trianglesByPart != null && trianglesByPart.TryGetValue(part.index, out var triSet) && triSet.Count > 0)
+                        {
+                            if (!TryFilterMeshOnTransform(targetTransform, triSet))
+                            {
+                                UnityEngine.Object.DestroyImmediate(partRoot);
+                                continue;
+                            }
+                        }
+                        
+                        // Disable other renderers to avoid exporting unrelated meshes
+                        foreach (var renderer in partRoot.GetComponentsInChildren<Renderer>(true))
+                        {
+                            if (renderer.transform != targetTransform)
+                                UnityEngine.Object.DestroyImmediate(renderer);
+                        }
+                        foreach (var filter in partRoot.GetComponentsInChildren<MeshFilter>(true))
+                        {
+                            if (filter.transform != targetTransform)
+                                UnityEngine.Object.DestroyImmediate(filter);
+                        }
+                        
+                        partRoot.transform.SetParent(root.transform);
+                        partRoot.transform.localPosition = part.positionOffset;
+                        partRoot.transform.localRotation = part.rotationOffset;
+                        partRoot.transform.localScale = Vector3.Scale(partRoot.transform.localScale, part.scaleMultiplier);
+                        
+                        WriteLog($"      Added part: {partRoot.name} from {sourcePath}");
                     }
                     
                     // Export to FBX
@@ -2365,12 +2426,236 @@ namespace YUCP.PatchCleanup
                 return null;
             }
         }
+
+        private static bool TryFilterMeshOnTransform(Transform targetTransform, HashSet<int> triangleSet)
+        {
+            if (targetTransform == null || triangleSet == null || triangleSet.Count == 0)
+                return false;
+
+            var skinned = targetTransform.GetComponent<SkinnedMeshRenderer>();
+            if (skinned != null && skinned.sharedMesh != null)
+            {
+                var filtered = BuildFilteredMesh(skinned.sharedMesh, triangleSet);
+                if (filtered == null) return false;
+                skinned.sharedMesh = filtered;
+                return true;
+            }
+
+            var filter = targetTransform.GetComponent<MeshFilter>();
+            if (filter != null && filter.sharedMesh != null)
+            {
+                var filtered = BuildFilteredMesh(filter.sharedMesh, triangleSet);
+                if (filtered == null) return false;
+                filter.sharedMesh = filtered;
+                return true;
+            }
+
+            WriteLog("    WARNING: No mesh renderer found on target transform");
+            return false;
+        }
+
+        private static Mesh BuildFilteredMesh(Mesh sourceMesh, HashSet<int> triangleSet)
+        {
+            if (sourceMesh == null || triangleSet == null || triangleSet.Count == 0)
+                return null;
+
+            var globalTriangles = new List<int>();
+            int submeshCount = sourceMesh.subMeshCount;
+            var submeshOffsets = new int[submeshCount];
+            var globalToSubmesh = new int[0];
+            int globalTriCount = 0;
+            
+            for (int s = 0; s < submeshCount; s++)
+            {
+                submeshOffsets[s] = globalTriCount;
+                var subTriangles = sourceMesh.GetTriangles(s);
+                globalTriangles.AddRange(subTriangles);
+                globalTriCount += subTriangles.Length / 3;
+            }
+            
+            if (globalTriCount == 0)
+                return null;
+            
+            globalToSubmesh = new int[globalTriCount];
+            for (int s = 0; s < submeshCount; s++)
+            {
+                int start = submeshOffsets[s];
+                int count = sourceMesh.GetTriangles(s).Length / 3;
+                for (int t = 0; t < count; t++)
+                {
+                    globalToSubmesh[start + t] = s;
+                }
+            }
+
+            int[] triangles = globalTriangles.ToArray();
+
+            var vertices = sourceMesh.vertices;
+            var normals = sourceMesh.normals;
+            var tangents = sourceMesh.tangents;
+            var colors = sourceMesh.colors;
+            var colors32 = sourceMesh.colors32;
+            var boneWeights = sourceMesh.boneWeights;
+
+            var outVertices = new List<Vector3>(triangleSet.Count * 3);
+            var sourceVertexIndices = new List<int>(triangleSet.Count * 3);
+            var outNormals = normals != null && normals.Length == vertices.Length ? new List<Vector3>(triangleSet.Count * 3) : null;
+            var outTangents = tangents != null && tangents.Length == vertices.Length ? new List<Vector4>(triangleSet.Count * 3) : null;
+            List<Color> outColors = null;
+            List<Color32> outColors32 = null;
+            if (colors != null && colors.Length == vertices.Length)
+                outColors = new List<Color>(triangleSet.Count * 3);
+            else if (colors32 != null && colors32.Length == vertices.Length)
+                outColors32 = new List<Color32>(triangleSet.Count * 3);
+            var outBoneWeights = boneWeights != null && boneWeights.Length == vertices.Length ? new List<BoneWeight>(triangleSet.Count * 3) : null;
+            var outUvs = new List<Vector4>[8];
+            var srcUvs = new List<Vector4>[8];
+            for (int ch = 0; ch < outUvs.Length; ch++)
+            {
+                var src = new List<Vector4>();
+                sourceMesh.GetUVs(ch, src);
+                if (src != null && src.Count == vertices.Length)
+                {
+                    srcUvs[ch] = src;
+                    outUvs[ch] = new List<Vector4>(triangleSet.Count * 3);
+                }
+            }
+
+            var submeshTriangles = new List<List<int>>(submeshCount);
+            for (int s = 0; s < submeshCount; s++)
+                submeshTriangles.Add(new List<int>());
+
+            var sorted = new List<int>(triangleSet);
+            sorted.Sort();
+
+            foreach (var triIndex in sorted)
+            {
+                int triBase = triIndex * 3;
+                if (triBase + 2 >= triangles.Length)
+                    continue;
+
+                int i0 = triangles[triBase];
+                int i1 = triangles[triBase + 1];
+                int i2 = triangles[triBase + 2];
+
+                int baseIndex = outVertices.Count;
+                outVertices.Add(vertices[i0]);
+                outVertices.Add(vertices[i1]);
+                outVertices.Add(vertices[i2]);
+                sourceVertexIndices.Add(i0);
+                sourceVertexIndices.Add(i1);
+                sourceVertexIndices.Add(i2);
+
+                outNormals?.Add(normals[i0]);
+                outNormals?.Add(normals[i1]);
+                outNormals?.Add(normals[i2]);
+
+                outTangents?.Add(tangents[i0]);
+                outTangents?.Add(tangents[i1]);
+                outTangents?.Add(tangents[i2]);
+
+                if (outColors != null)
+                {
+                    outColors.Add(colors[i0]);
+                    outColors.Add(colors[i1]);
+                    outColors.Add(colors[i2]);
+                }
+                else if (outColors32 != null)
+                {
+                    outColors32.Add(colors32[i0]);
+                    outColors32.Add(colors32[i1]);
+                    outColors32.Add(colors32[i2]);
+                }
+                for (int ch = 0; ch < outUvs.Length; ch++)
+                {
+                    if (outUvs[ch] == null) continue;
+                    var src = srcUvs[ch];
+                    outUvs[ch].Add(src[i0]);
+                    outUvs[ch].Add(src[i1]);
+                    outUvs[ch].Add(src[i2]);
+                }
+
+                outBoneWeights?.Add(boneWeights[i0]);
+                outBoneWeights?.Add(boneWeights[i1]);
+                outBoneWeights?.Add(boneWeights[i2]);
+
+                int submeshIndex = globalToSubmesh[triIndex];
+                submeshTriangles[submeshIndex].Add(baseIndex);
+                submeshTriangles[submeshIndex].Add(baseIndex + 1);
+                submeshTriangles[submeshIndex].Add(baseIndex + 2);
+            }
+
+            var mesh = new Mesh();
+            mesh.name = $"{sourceMesh.name}_KitbashFiltered";
+            mesh.indexFormat = sourceMesh.indexFormat;
+            mesh.SetVertices(outVertices);
+            if (outNormals != null) mesh.SetNormals(outNormals);
+            if (outTangents != null) mesh.SetTangents(outTangents);
+            if (outColors != null) mesh.SetColors(outColors);
+            else if (outColors32 != null) mesh.SetColors(outColors32);
+            for (int ch = 0; ch < outUvs.Length; ch++)
+            {
+                if (outUvs[ch] != null)
+                    mesh.SetUVs(ch, outUvs[ch]);
+            }
+            if (outBoneWeights != null)
+            {
+                mesh.boneWeights = outBoneWeights.ToArray();
+                mesh.bindposes = sourceMesh.bindposes;
+            }
+            mesh.subMeshCount = submeshCount;
+            for (int s = 0; s < submeshCount; s++)
+            {
+                var subTris = submeshTriangles[s];
+                mesh.SetTriangles(subTris, s);
+            }
+            CopyBlendShapes(sourceMesh, mesh, sourceVertexIndices);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        private static void CopyBlendShapes(Mesh sourceMesh, Mesh targetMesh, List<int> sourceVertexIndices)
+        {
+            int blendShapeCount = sourceMesh.blendShapeCount;
+            if (blendShapeCount == 0) return;
+            
+            var srcDeltaVertices = new Vector3[sourceMesh.vertexCount];
+            var srcDeltaNormals = new Vector3[sourceMesh.vertexCount];
+            var srcDeltaTangents = new Vector3[sourceMesh.vertexCount];
+            
+            int newVertexCount = sourceVertexIndices.Count;
+            var outDeltaVertices = new Vector3[newVertexCount];
+            var outDeltaNormals = new Vector3[newVertexCount];
+            var outDeltaTangents = new Vector3[newVertexCount];
+            
+            for (int i = 0; i < blendShapeCount; i++)
+            {
+                string shapeName = sourceMesh.GetBlendShapeName(i);
+                int frameCount = sourceMesh.GetBlendShapeFrameCount(i);
+                
+                for (int f = 0; f < frameCount; f++)
+                {
+                    sourceMesh.GetBlendShapeFrameVertices(i, f, srcDeltaVertices, srcDeltaNormals, srcDeltaTangents);
+                    float weight = sourceMesh.GetBlendShapeFrameWeight(i, f);
+                    
+                    for (int v = 0; v < newVertexCount; v++)
+                    {
+                        int srcIdx = sourceVertexIndices[v];
+                        outDeltaVertices[v] = srcDeltaVertices[srcIdx];
+                        outDeltaNormals[v] = srcDeltaNormals[srcIdx];
+                        outDeltaTangents[v] = srcDeltaTangents[srcIdx];
+                    }
+                    
+                    targetMesh.AddBlendShapeFrame(shapeName, weight, outDeltaVertices, outDeltaNormals, outDeltaTangents);
+                }
+            }
+        }
         
         /// <summary>
         /// Simple part data for JSON parsing.
         /// </summary>
         private class KitbashPartData
         {
+            public int index;
             public string sourceFbxGuid;
             public string displayName;
             public string meshPath;
@@ -2420,7 +2705,11 @@ namespace YUCP.PatchCleanup
                         {
                             string objJson = partsArrayJson.Substring(objStart, i - objStart + 1);
                             var part = ParsePartObject(objJson);
-                            if (part != null) parts.Add(part);
+                            if (part != null)
+                            {
+                                part.index = parts.Count;
+                                parts.Add(part);
+                            }
                             objStart = -1;
                         }
                     }
@@ -2444,13 +2733,9 @@ namespace YUCP.PatchCleanup
             part.sourceFbxGuid = ExtractJsonString(json, "sourceFbxGuid");
             part.displayName = ExtractJsonString(json, "displayName");
             part.meshPath = ExtractJsonString(json, "meshPath");
-            
-            // Parse vectors (simplified - assumes default values if not found)
-            // positionOffset, rotationOffset as quaternion, scaleMultiplier
-            // For now, use defaults
-            part.positionOffset = Vector3.zero;
-            part.rotationOffset = Quaternion.identity;
-            part.scaleMultiplier = Vector3.one;
+            part.positionOffset = ExtractJsonVector3(json, "positionOffset", Vector3.zero);
+            part.rotationOffset = ExtractJsonQuaternion(json, "rotationOffset", Quaternion.identity);
+            part.scaleMultiplier = ExtractJsonVector3(json, "scaleMultiplier", Vector3.one);
             
             return !string.IsNullOrEmpty(part.sourceFbxGuid) ? part : null;
         }
@@ -2479,6 +2764,94 @@ namespace YUCP.PatchCleanup
             
             return json.Substring(valueStart + 1, valueEnd - valueStart - 1);
         }
+
+        private static Vector3 ExtractJsonVector3(string json, string key, Vector3 fallback)
+        {
+            string block = ExtractJsonObject(json, key);
+            if (string.IsNullOrEmpty(block)) return fallback;
+            
+            if (!TryExtractJsonFloat(block, "x", out float x)) x = fallback.x;
+            if (!TryExtractJsonFloat(block, "y", out float y)) y = fallback.y;
+            if (!TryExtractJsonFloat(block, "z", out float z)) z = fallback.z;
+            
+            return new Vector3(x, y, z);
+        }
+
+        private static Quaternion ExtractJsonQuaternion(string json, string key, Quaternion fallback)
+        {
+            string block = ExtractJsonObject(json, key);
+            if (string.IsNullOrEmpty(block)) return fallback;
+            
+            if (!TryExtractJsonFloat(block, "x", out float x)) x = fallback.x;
+            if (!TryExtractJsonFloat(block, "y", out float y)) y = fallback.y;
+            if (!TryExtractJsonFloat(block, "z", out float z)) z = fallback.z;
+            if (!TryExtractJsonFloat(block, "w", out float w)) w = fallback.w;
+            
+            return new Quaternion(x, y, z, w);
+        }
+
+        private static string ExtractJsonObject(string json, string key)
+        {
+            string searchKey = $"\"{key}\"";
+            int keyIndex = json.IndexOf(searchKey);
+            if (keyIndex < 0) return null;
+            
+            int colonIndex = json.IndexOf(':', keyIndex + searchKey.Length);
+            if (colonIndex < 0) return null;
+            
+            int objStart = json.IndexOf('{', colonIndex);
+            if (objStart < 0) return null;
+            
+            int objEnd = FindMatchingBracket(json, objStart, '{', '}');
+            if (objEnd < 0) return null;
+            
+            return json.Substring(objStart, objEnd - objStart + 1);
+        }
+
+        private static bool TryExtractJsonFloat(string json, string key, out float value)
+        {
+            value = 0f;
+            string searchKey = $"\"{key}\"";
+            int keyIndex = json.IndexOf(searchKey);
+            if (keyIndex < 0) return false;
+            
+            int colonIndex = json.IndexOf(':', keyIndex + searchKey.Length);
+            if (colonIndex < 0) return false;
+            
+            int valueStart = colonIndex + 1;
+            while (valueStart < json.Length && char.IsWhiteSpace(json[valueStart])) valueStart++;
+            
+            int valueEnd = valueStart;
+            while (valueEnd < json.Length && ("-+.0123456789eE".IndexOf(json[valueEnd]) >= 0)) valueEnd++;
+            
+            string number = json.Substring(valueStart, valueEnd - valueStart);
+            return float.TryParse(number, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value);
+        }
+
+        private static string ComputeMappingHash(string recipeHash, int[] sourcePartIndices, int[] sourceTriangleIndices)
+        {
+            using (var md5 = System.Security.Cryptography.MD5.Create())
+            {
+                void AddBytes(byte[] bytes)
+                {
+                    md5.TransformBlock(bytes, 0, bytes.Length, null, 0);
+                }
+
+                byte[] recipeBytes = System.Text.Encoding.UTF8.GetBytes(recipeHash ?? "");
+                AddBytes(recipeBytes);
+
+                byte[] partBytes = new byte[sourcePartIndices.Length * sizeof(int)];
+                Buffer.BlockCopy(sourcePartIndices, 0, partBytes, 0, partBytes.Length);
+                AddBytes(partBytes);
+
+                byte[] triBytes = new byte[sourceTriangleIndices.Length * sizeof(int)];
+                Buffer.BlockCopy(sourceTriangleIndices, 0, triBytes, 0, triBytes.Length);
+                AddBytes(triBytes);
+
+                md5.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+                return BitConverter.ToString(md5.Hash).Replace("-", "").ToLowerInvariant();
+            }
+        }
         
         /// <summary>
         /// Finds the matching closing bracket.
@@ -2499,4 +2872,3 @@ namespace YUCP.PatchCleanup
         }
     }
 }
-
