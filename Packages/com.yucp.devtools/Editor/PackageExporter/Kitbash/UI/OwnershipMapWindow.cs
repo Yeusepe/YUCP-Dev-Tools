@@ -217,7 +217,12 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                 if (_targetMesh != null)
                 {
                     EditorGUILayout.LabelField("Mesh", _targetMesh.name);
-                    EditorGUILayout.LabelField("Triangles", _targetMesh.triangles.Length / 3 + "");
+                    int triCount = 0;
+                    for (int s = 0; s < _targetMesh.subMeshCount; s++)
+                    {
+                        triCount += _targetMesh.GetTriangles(s).Length / 3;
+                    }
+                    EditorGUILayout.LabelField("Triangles", triCount + "");
                     EditorGUILayout.LabelField("Vertices", _targetMesh.vertexCount + "");
                 }
                 else
@@ -628,7 +633,19 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             // Create a new ownership map instance
             _ownershipMap = CreateInstance<OwnershipMap>();
             _ownershipMap.targetMeshGuid = _targetMesh != null ? AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(_targetMesh)) : "";
-            _ownershipMap.expectedTriangleCount = _targetMesh != null ? _targetMesh.triangles.Length / 3 : 0;
+            if (_targetMesh != null)
+            {
+                int triCount = 0;
+                for (int s = 0; s < _targetMesh.subMeshCount; s++)
+                {
+                    triCount += _targetMesh.GetTriangles(s).Length / 3;
+                }
+                _ownershipMap.expectedTriangleCount = triCount;
+            }
+            else
+            {
+                _ownershipMap.expectedTriangleCount = 0;
+            }
             
             UpdateCoverageStats();
         }

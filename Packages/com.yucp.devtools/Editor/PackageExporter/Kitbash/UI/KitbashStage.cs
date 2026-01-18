@@ -30,6 +30,9 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         private DerivedSettings _settings;
         private GameObject _previewModel;
         private Mesh _targetMesh;
+        private int[] _allTriangles;
+        private int[] _submeshTriangleOffsets;
+        private int _triangleCount;
         
         // Layers (ownership regions)
         private List<OwnershipLayer> _layers = new List<OwnershipLayer>();
@@ -350,11 +353,42 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             }
         }
         
+        private void BuildTriangleCache()
+        {
+            if (_targetMesh == null) return;
+            
+            var all = new List<int>();
+            int submeshCount = _targetMesh.subMeshCount;
+            _submeshTriangleOffsets = new int[submeshCount];
+            int triangleOffset = 0;
+            
+            for (int s = 0; s < submeshCount; s++)
+            {
+                _submeshTriangleOffsets[s] = triangleOffset;
+                var subTriangles = _targetMesh.GetTriangles(s);
+                all.AddRange(subTriangles);
+                triangleOffset += subTriangles.Length / 3;
+            }
+            
+            _allTriangles = all.ToArray();
+            _triangleCount = _allTriangles.Length / 3;
+        }
+
+        private int[] GetAllTriangles()
+        {
+            if (_allTriangles == null || _allTriangles.Length == 0)
+            {
+                BuildTriangleCache();
+            }
+            return _allTriangles;
+        }
+        
         private void InitializeOwnershipData()
         {
             if (_targetMesh == null) return;
             
-            int triCount = _targetMesh.triangles.Length / 3;
+            BuildTriangleCache();
+            int triCount = _triangleCount;
             _triangleOwnership = new int[triCount];
             
             // Default: all triangles start as Unknown (layer 0)
@@ -372,6 +406,9 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                     var map = AssetDatabase.LoadAssetAtPath<OwnershipMap>(mapPath);
                     if (map != null)
                     {
+                        bool legacyLayerIndexing = map.regions.Any(r => r.sourcePartIndex >= _layers.Count - 1) ||
+                                                  map.regions.All(r => r.sourcePartIndex == 0);
+                        
                         if (map.expectedTriangleCount == triCount)
                         {
                             // Rebuild ownership from regions
@@ -382,7 +419,14 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                                 {
                                     if (triIdx >= 0 && triIdx < triCount)
                                     {
-                                        _triangleOwnership[triIdx] = region.sourcePartIndex;
+                                        if (legacyLayerIndexing)
+                                        {
+                                            _triangleOwnership[triIdx] = Mathf.Clamp(region.sourcePartIndex, 0, _layers.Count - 1);
+                                        }
+                                        else
+                                        {
+                                            _triangleOwnership[triIdx] = region.sourcePartIndex < 0 ? 0 : region.sourcePartIndex + 1;
+                                        }
                                     }
                                 }
                             }
@@ -394,7 +438,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                             Debug.LogWarning($"[KitbashStage] Triangle count mismatch: map has {map.expectedTriangleCount}, mesh has {triCount}. Attempting reprojection...");
                             
                             // Compute local-space triangle centers and normals for the new mesh
-                            var triangles = _targetMesh.triangles;
+                            var triangles = GetAllTriangles();
                             var vertices = _targetMesh.vertices;
                             var meshNormals = _targetMesh.normals;
                             
@@ -425,6 +469,13 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                             
                             // Reproject using sample points
                             _triangleOwnership = map.ReprojectToMeshFast(centers, normals);
+                            if (!legacyLayerIndexing)
+                            {
+                                for (int i = 0; i < _triangleOwnership.Length; i++)
+                                {
+                                    _triangleOwnership[i] = _triangleOwnership[i] < 0 ? 0 : _triangleOwnership[i] + 1;
+                                }
+                            }
                             
                             // Count reprojected
                             int reprojected = _triangleOwnership.Count(o => o > 0);
@@ -446,9 +497,10 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             var meshTransform = _previewModel.GetComponentInChildren<Renderer>()?.transform;
             if (meshTransform == null) return;
             
-            var triangles = _targetMesh.triangles;
+            var triangles = GetAllTriangles();
+            if (triangles == null || triangles.Length == 0) return;
             var vertices = _targetMesh.vertices;
-            int triCount = triangles.Length / 3;
+            int triCount = _triangleCount;
             
             // Compute world-space triangle centers
             _triangleCentersWorld = new Vector3[triCount];
@@ -581,7 +633,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                 _visualizationMesh.hideFlags = HideFlags.DontSave;
             }
             
-            var triangles = _targetMesh.triangles;
+            var triangles = GetAllTriangles();
             var vertexColors = new Color[_targetMesh.vertexCount];
             
             // Initialize gray
@@ -1171,13 +1223,13 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                 return FloodFillConnected(startTri);
             }
             
-            var triangles = _targetMesh.triangles;
+            var triangles = GetAllTriangles();
             var queue = new Queue<int>();
             int startOwner = _triangleOwnership[startTri];
             
             // Build UV-based adjacency (triangles that share UV coordinates)
             var uvToTris = new Dictionary<Vector2, List<int>>();
-            int triCount = triangles.Length / 3;
+            int triCount = _triangleCount;
             
             for (int t = 0; t < triCount; t++)
             {
@@ -1238,32 +1290,33 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         private HashSet<int> FindSubmeshTriangles(int startTri)
         {
             var result = new HashSet<int>();
-            int triCount = _targetMesh.triangles.Length / 3;
+            BuildTriangleCache();
+            if (_submeshTriangleOffsets == null) return result;
             
             // Find which submesh the start triangle belongs to
             int startSubmesh = -1;
-            int triOffset = 0;
             for (int s = 0; s < _targetMesh.subMeshCount; s++)
             {
-                var desc = _targetMesh.GetSubMesh(s);
-                int subTriCount = desc.indexCount / 3;
-                int startIdx = desc.indexStart / 3;
+                int startIdx = _submeshTriangleOffsets != null && s < _submeshTriangleOffsets.Length
+                    ? _submeshTriangleOffsets[s]
+                    : 0;
+                int subTriCount = _targetMesh.GetTriangles(s).Length / 3;
                 
                 if (startTri >= startIdx && startTri < startIdx + subTriCount)
                 {
                     startSubmesh = s;
                     break;
                 }
-                triOffset += subTriCount;
             }
             
             if (startSubmesh < 0) return result;
             
             // Get all triangles in that submesh with same ownership
             int startOwner = _triangleOwnership[startTri];
-            var desc2 = _targetMesh.GetSubMesh(startSubmesh);
-            int start = desc2.indexStart / 3;
-            int count = desc2.indexCount / 3;
+            int start = _submeshTriangleOffsets != null && startSubmesh < _submeshTriangleOffsets.Length
+                ? _submeshTriangleOffsets[startSubmesh]
+                : 0;
+            int count = _targetMesh.GetTriangles(startSubmesh).Length / 3;
             
             for (int t = start; t < start + count; t++)
             {
@@ -1279,8 +1332,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         private Dictionary<(int, int), List<int>> BuildEdgeAdjacency()
         {
             var edgeToTri = new Dictionary<(int, int), List<int>>();
-            var triangles = _targetMesh.triangles;
-            int triCount = triangles.Length / 3;
+            var triangles = GetAllTriangles();
+            int triCount = _triangleCount;
             
             for (int t = 0; t < triCount; t++)
             {
@@ -1307,7 +1360,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         private List<int> GetAdjacentTriangles(int tri, Dictionary<(int, int), List<int>> edgeToTri)
         {
             var result = new List<int>();
-            var triangles = _targetMesh.triangles;
+            var triangles = GetAllTriangles();
             
             int v0 = triangles[tri * 3];
             int v1 = triangles[tri * 3 + 1];
@@ -1536,6 +1589,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         {
             if (_targetMesh == null || _previewModel == null) return;
             
+            BuildTriangleCache();
+            
             // Use cached original materials (before visualization was applied)
             var materials = _originalMaterials;
             if (materials == null || materials.Length == 0)
@@ -1548,13 +1603,13 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             
             if (materials == null) return;
             
-            int triangleOffset = 0;
+            if (_submeshTriangleOffsets == null) return;
             
-            // Unity stores triangles as a concatenated list of submeshes
+            // Assign per submesh using cached offsets
             for (int submeshIdx = 0; submeshIdx < _targetMesh.subMeshCount; submeshIdx++)
             {
-                var submeshDesc = _targetMesh.GetSubMesh(submeshIdx);
-                int submeshTriCount = submeshDesc.indexCount / 3;
+                int submeshTriCount = _targetMesh.GetTriangles(submeshIdx).Length / 3;
+                int triangleOffset = _submeshTriangleOffsets[submeshIdx];
                 
                 string matName = submeshIdx < materials.Length && materials[submeshIdx] != null 
                     ? materials[submeshIdx].name 
@@ -1595,8 +1650,6 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                         _triangleOwnership[globalTriIdx] = layerIndex;
                     }
                 }
-                
-                triangleOffset += submeshTriCount;
             }
             
             UpdateVisualization();
@@ -1637,7 +1690,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                 {
                     var region = new OwnershipRegion
                     {
-                        sourcePartIndex = kvp.Key,
+                        sourcePartIndex = kvp.Key == 0 ? -1 : kvp.Key - 1,
                         triangleIndices = kvp.Value.ToArray(),
                         confidence = 1f,
                         samplePoints = GenerateSamplePoints(kvp.Value)
@@ -1775,7 +1828,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             if (_targetMesh == null || triangleIndices.Count == 0)
                 return Array.Empty<SamplePoint>();
             
-            var triangles = _targetMesh.triangles;
+            var triangles = GetAllTriangles();
             var vertices = _targetMesh.vertices;
             var normals = _targetMesh.normals;
             

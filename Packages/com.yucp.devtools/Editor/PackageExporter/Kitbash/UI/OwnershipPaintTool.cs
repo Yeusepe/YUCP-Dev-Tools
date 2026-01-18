@@ -99,7 +99,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             
             if (_targetMesh != null)
             {
-                _triangles = _targetMesh.triangles;
+                _triangles = GetAllTriangles(_targetMesh);
                 _vertices = _targetMesh.vertices;
                 
                 // Initialize ownership data (all unknown)
@@ -110,6 +110,18 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                     _ownershipData[i] = -1; // Unknown
                 }
             }
+        }
+
+        private static int[] GetAllTriangles(Mesh mesh)
+        {
+            if (mesh == null) return Array.Empty<int>();
+            
+            var all = new List<int>();
+            for (int s = 0; s < mesh.subMeshCount; s++)
+            {
+                all.AddRange(mesh.GetTriangles(s));
+            }
+            return all.ToArray();
         }
         
         public override void OnToolGUI(EditorWindow window)
@@ -449,4 +461,3 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
     // Note: OwnershipPaintToolOverlay removed - functionality consolidated in KitbashStage.DrawToolbar()
 }
 #endif
-

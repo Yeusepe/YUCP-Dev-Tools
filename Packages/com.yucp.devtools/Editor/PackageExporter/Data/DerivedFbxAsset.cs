@@ -44,6 +44,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		/// GUIDs of source FBXs required for reconstruction (KitbashRecipeHdiff mode only).
 		/// </summary>
 		[SerializeField] public string[] requiredSourceGuids;
+
+		/// <summary>
+		/// Per-triangle source part index mapping (KitbashRecipeHdiff mode only).
+		/// Indexes into KitbashRecipe.parts (0-based).
+		/// </summary>
+		[SerializeField] public int[] kitbashSourcePartIndices;
+
+		/// <summary>
+		/// Per-triangle source triangle index mapping (KitbashRecipeHdiff mode only).
+		/// Each entry is a triangle index into the source mesh's triangles array.
+		/// </summary>
+		[SerializeField] public int[] kitbashSourceTriangleIndices;
 		
 		[SerializeField] public Policy policy = new Policy();
 		[SerializeField] public UIHints uiHints = new UIHints();

@@ -270,7 +270,12 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
             if (mesh != null)
             {
                 hints.vertexCount = mesh.vertexCount;
-                hints.triangleCount = mesh.triangles.Length / 3;
+                int triCount = 0;
+                for (int s = 0; s < mesh.subMeshCount; s++)
+                {
+                    triCount += mesh.GetTriangles(s).Length / 3;
+                }
+                hints.triangleCount = triCount;
                 hints.boundsExtents = mesh.bounds.extents;
                 
                 // Get blend shape names

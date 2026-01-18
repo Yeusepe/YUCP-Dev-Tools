@@ -162,6 +162,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
             
             foreach (var region in regions)
             {
+                if (region.sourcePartIndex < 0) continue;
                 foreach (int tri in region.triangleIndices)
                 {
                     assigned.Add(tri);
@@ -196,7 +197,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
             // Initialize all as unknown with 0 confidence
             for (int i = 0; i < newTriCount; i++)
             {
-                ownership[i] = 0; // Unknown
+                ownership[i] = -1; // Unknown
                 confidence[i] = 0f;
             }
             
@@ -256,6 +257,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
         {
             int newTriCount = newTriangleCenters.Length;
             int[] ownership = new int[newTriCount];
+            for (int i = 0; i < ownership.Length; i++)
+                ownership[i] = -1;
             
             // Build spatial lookup of all samples
             var allSamples = new List<(Vector3 pos, Vector3 normal, int sourcePartIndex)>();
@@ -271,6 +274,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
             if (allSamples.Count == 0)
             {
                 // No samples - all unknown
+                for (int i = 0; i < ownership.Length; i++)
+                    ownership[i] = -1;
                 return ownership;
             }
             
@@ -281,7 +286,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
                 Vector3 triCenter = newTriangleCenters[t];
                 Vector3 triNormal = newTriangleNormals[t];
                 
-                int bestSource = 0; // Default to Unknown
+                int bestSource = -1; // Default to Unknown
                 float bestScore = 0f;
                 
                 foreach (var (pos, normal, sourcePartIndex) in allSamples)

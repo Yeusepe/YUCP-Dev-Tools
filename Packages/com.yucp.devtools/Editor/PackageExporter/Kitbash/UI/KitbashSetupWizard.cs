@@ -170,7 +170,12 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                 var mesh = GetMesh(_derivedFbx);
                 if (mesh != null)
                 {
-                    var info = new Label($"▸ {mesh.vertexCount:N0} verts · {mesh.triangles.Length / 3:N0} tris · {mesh.blendShapeCount} shapes");
+                    int triCount = 0;
+                    for (int s = 0; s < mesh.subMeshCount; s++)
+                    {
+                        triCount += mesh.GetTriangles(s).Length / 3;
+                    }
+                    var info = new Label($"▸ {mesh.vertexCount:N0} verts · {triCount:N0} tris · {mesh.blendShapeCount} shapes");
                     info.style.fontSize = 10;
                     info.style.color = new Color(1, 1, 1, 0.5f);
                     info.style.marginTop = 8;

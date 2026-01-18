@@ -41,7 +41,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
                 return result;
             }
             
-            int triangleCount = mesh.triangles.Length / 3;
+            int triangleCount = GetTriangleCount(mesh);
             
             // Strategy 1: Use submesh indices to assign sources
             // Each submesh typically corresponds to a different material/source
@@ -134,9 +134,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
             
             for (int submesh = 0; submesh < sourceCount; submesh++)
             {
-                var submeshDesc = mesh.GetSubMesh(submesh);
-                int startIndex = submeshDesc.indexStart / 3;
-                int triCount = submeshDesc.indexCount / 3;
+                int startIndex = GetSubmeshTriangleOffset(mesh, submesh);
+                int triCount = mesh.GetTriangles(submesh).Length / 3;
                 
                 for (int i = 0; i < triCount; i++)
                 {
@@ -187,9 +186,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
             {
                 if (!materialToSource.TryGetValue(submesh, out int sourceIndex)) continue;
                 
-                var submeshDesc = mesh.GetSubMesh(submesh);
-                int startIndex = submeshDesc.indexStart / 3;
-                int triCount = submeshDesc.indexCount / 3;
+                int startIndex = GetSubmeshTriangleOffset(mesh, submesh);
+                int triCount = mesh.GetTriangles(submesh).Length / 3;
                 
                 for (int i = 0; i < triCount; i++)
                 {
@@ -212,7 +210,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
             // This is a fallback for triangles not assigned by other methods
             
             Vector3[] vertices = mesh.vertices;
-            int[] triangles = mesh.triangles;
+            int[] triangles = GetAllTriangles(mesh);
             
             // Get mesh bounds
             Bounds bounds = mesh.bounds;
@@ -248,6 +246,40 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
                 result.triangleConfidence[triIndex] = 0.3f; // Low confidence for spatial
             }
         }
+
+        internal static int[] GetAllTriangles(Mesh mesh)
+        {
+            if (mesh == null) return Array.Empty<int>();
+            
+            var all = new List<int>();
+            for (int s = 0; s < mesh.subMeshCount; s++)
+            {
+                all.AddRange(mesh.GetTriangles(s));
+            }
+            return all.ToArray();
+        }
+
+        internal static int GetTriangleCount(Mesh mesh)
+        {
+            if (mesh == null) return 0;
+            
+            int count = 0;
+            for (int s = 0; s < mesh.subMeshCount; s++)
+            {
+                count += mesh.GetTriangles(s).Length / 3;
+            }
+            return count;
+        }
+
+        internal static int GetSubmeshTriangleOffset(Mesh mesh, int submeshIndex)
+        {
+            int offset = 0;
+            for (int s = 0; s < submeshIndex; s++)
+            {
+                offset += mesh.GetTriangles(s).Length / 3;
+            }
+            return offset;
+        }
     }
     
     /// <summary>
@@ -266,15 +298,14 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
             var map = ScriptableObject.CreateInstance<OwnershipMap>();
             map.targetMeshGuid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(mesh));
             map.targetMeshName = mesh.name;
-            map.expectedTriangleCount = mesh.triangles.Length / 3;
+            map.expectedTriangleCount = OwnershipAutoSeed.GetTriangleCount(mesh);
             
             int submeshCount = mesh.subMeshCount;
             
             for (int submesh = 0; submesh < submeshCount; submesh++)
             {
-                var submeshDesc = mesh.GetSubMesh(submesh);
-                int startIndex = submeshDesc.indexStart / 3;
-                int triCount = submeshDesc.indexCount / 3;
+                int startIndex = OwnershipAutoSeed.GetSubmeshTriangleOffset(mesh, submesh);
+                int triCount = mesh.GetTriangles(submesh).Length / 3;
                 
                 var triangles = new int[triCount];
                 for (int i = 0; i < triCount; i++)
@@ -317,7 +348,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
             var map = ScriptableObject.CreateInstance<OwnershipMap>();
             map.targetMeshGuid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(mesh));
             map.targetMeshName = mesh.name;
-            map.expectedTriangleCount = mesh.triangles.Length / 3;
+            map.expectedTriangleCount = OwnershipAutoSeed.GetTriangleCount(mesh);
             
             var materials = renderer.sharedMaterials;
             int matCount = materials?.Length ?? 0;
@@ -328,9 +359,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash
                 // In Unity, submesh index typically corresponds to material index
                 if (matIndex >= mesh.subMeshCount) break;
                 
-                var submeshDesc = mesh.GetSubMesh(matIndex);
-                int startIndex = submeshDesc.indexStart / 3;
-                int triCount = submeshDesc.indexCount / 3;
+                int startIndex = OwnershipAutoSeed.GetSubmeshTriangleOffset(mesh, matIndex);
+                int triCount = mesh.GetTriangles(matIndex).Length / 3;
                 
                 var triangles = new int[triCount];
                 for (int i = 0; i < triCount; i++)
