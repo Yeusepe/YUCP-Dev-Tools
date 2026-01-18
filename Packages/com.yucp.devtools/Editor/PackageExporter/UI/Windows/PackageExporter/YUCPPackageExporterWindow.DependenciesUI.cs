@@ -156,6 +156,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var section = new VisualElement();
             section.AddToClassList("yucp-section");
+            section.name = "dependencies-section";
             
             var header = CreateCollapsibleHeader("Package Dependencies", 
                 () => showDependencies, 

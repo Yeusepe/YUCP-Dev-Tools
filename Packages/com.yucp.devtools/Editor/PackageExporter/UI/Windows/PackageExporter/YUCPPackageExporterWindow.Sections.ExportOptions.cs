@@ -20,6 +20,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var section = new VisualElement();
             section.AddToClassList("yucp-section");
+            section.name = "versioning-section";
             
             var header = CreateCollapsibleHeader("Export Options", 
                 () => showExportOptions, 

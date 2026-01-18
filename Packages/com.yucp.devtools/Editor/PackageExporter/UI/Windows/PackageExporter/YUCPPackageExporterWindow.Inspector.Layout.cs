@@ -19,6 +19,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private VisualElement CreateExportInspectorSection(ExportProfile profile)
         {
             var section = new VisualElement();
+            section.name = "export-inspector-section";
             section.AddToClassList("yucp-section");
             section.style.flexGrow = 0;
             section.style.flexShrink = 1;
@@ -296,6 +297,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					// Show Only Derived toggle
 					var derivedToggle = new Toggle("Show Only Derived") { value = showOnlyDerived };
 					derivedToggle.AddToClassList("yucp-toggle");
+                    derivedToggle.name = "derived-fbx-section";
 					derivedToggle.RegisterValueChangedCallback(evt =>
 					{
 						showOnlyDerived = evt.newValue;

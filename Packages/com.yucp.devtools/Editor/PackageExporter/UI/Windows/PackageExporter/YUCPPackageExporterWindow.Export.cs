@@ -38,23 +38,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 _multiSelectInfo.style.display = DisplayStyle.None;
             }
             
-            // Update export selected button
-            _exportSelectedButton.SetEnabled(selectedProfileIndices.Count > 0 && !isExporting);
-            if (selectedProfileIndices.Count == 1)
-            {
-                _exportSelectedButton.text = "Export Selected Profile";
-            }
-            else if (selectedProfileIndices.Count > 1)
-            {
-                _exportSelectedButton.text = $"Export Selected Profiles ({selectedProfileIndices.Count})";
-            }
-            else
-            {
-                _exportSelectedButton.text = "Export Selected";
-            }
+            // Update export button
+            // If exporting, disable it
+            // If no profiles exist at all, disable it
+            // Otherwise enable (overlay handles specific validations)
+            _exportButton.SetEnabled(allProfiles.Count > 0 && !isExporting);
             
-            // Update export all button
-            _exportAllButton.SetEnabled(allProfiles.Count > 0 && !isExporting);
+            // Text is static "Export" now, but let's double check if we want to change it?
+            // Requirement: "Change the 'Export Selected Profile' to Export"
+            _exportButton.text = "Export";
         }
 
         private void UpdateProgress(float progress, string status)

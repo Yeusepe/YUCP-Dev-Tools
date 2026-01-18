@@ -62,7 +62,6 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             _inputField.RegisterCallback<KeyDownEvent>(OnKeyDown);
             
             // Handle focus loss to close overlay (delayed to allow click)
-            // Handle focus loss to close overlay (delayed to allow click)
             _inputField.RegisterCallback<FocusOutEvent>(e => {
                 this.RemoveFromClassList("focused");
                 schedule.Execute(() => HideOverlay()).ExecuteLater(200);
@@ -164,6 +163,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
              RefreshChips();
         }
 
+        public Func<string, Color> TagColorProvider;
+
         private void RefreshChips()
         {
             _chipsContainer.Clear();
@@ -172,14 +173,40 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 var chip = new VisualElement();
                 chip.AddToClassList("yucp-chip");
                 
-                var label = new Label(tag);
-                label.AddToClassList("yucp-chip-label");
-                chip.Add(label);
-
-                var closeBtn = new Button(() => RemoveTag(tag));
-                closeBtn.text = "×";
-                closeBtn.AddToClassList("yucp-chip-remove");
-                chip.Add(closeBtn);
+                if (TagColorProvider != null)
+                {
+                    var baseColor = TagColorProvider(tag);
+                    chip.style.backgroundColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.15f));
+                    chip.style.borderLeftColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
+                    chip.style.borderRightColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
+                    chip.style.borderTopColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
+                    chip.style.borderBottomColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
+                    
+                    // We need to find the label and button after adding to style them too, or just add them now.
+                    
+                    var label = new Label(tag);
+                    label.AddToClassList("yucp-chip-label");
+                    label.style.color = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.95f));
+                    chip.Add(label);
+    
+                    var closeBtn = new Button(() => RemoveTag(tag));
+                    closeBtn.text = "×";
+                    closeBtn.AddToClassList("yucp-chip-remove");
+                    closeBtn.style.color = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.8f));
+                    chip.Add(closeBtn);
+                }
+                else
+                {
+                    // Default behavior
+                    var label = new Label(tag);
+                    label.AddToClassList("yucp-chip-label");
+                    chip.Add(label);
+    
+                    var closeBtn = new Button(() => RemoveTag(tag));
+                    closeBtn.text = "×";
+                    closeBtn.AddToClassList("yucp-chip-remove");
+                    chip.Add(closeBtn);
+                }
 
                 _chipsContainer.Add(chip);
             }

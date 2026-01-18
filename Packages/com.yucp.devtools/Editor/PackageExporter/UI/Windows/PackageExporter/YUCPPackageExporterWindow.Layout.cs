@@ -37,6 +37,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 root.styleSheets.Add(styleSheet);
             }
             
+            // Load TokenizedTagInput stylesheet for shared chip styles
+            var tagStyleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(
+                "Packages/com.yucp.devtools/Editor/PackageExporter/UI/Components/TokenizedTagInput.uss");
+            if (tagStyleSheet != null)
+            {
+                root.styleSheets.Add(tagStyleSheet);
+            }
+            
             // Main container
             var mainContainer = new VisualElement();
             mainContainer.AddToClassList("yucp-main-container");
@@ -137,6 +145,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 UpdateResponsiveLayout(rootVisualElement.resolvedStyle.width);
             }).StartingIn(100);
+
+            // Initialize Onboarding Overlay (Hidden by default)
+            _onboardingOverlay = new OnboardingOverlay(root, () => 
+            {
+                _onboardingOverlay.style.display = DisplayStyle.None;
+                // Remove from actual parent to avoid "not my child" error
+                _onboardingOverlay.RemoveFromHierarchy();
+                _onboardingOverlay = null;
+            });
+            _onboardingOverlay.style.display = DisplayStyle.None;
+            root.Add(_onboardingOverlay);
+
+            // Check for first-time launch
+            root.schedule.Execute(CheckAndStartOnboarding).StartingIn(500); // Delay to ensure layout is ready
+
+            // Register keyboard shortcuts handler
+            root.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
         }
 
     }

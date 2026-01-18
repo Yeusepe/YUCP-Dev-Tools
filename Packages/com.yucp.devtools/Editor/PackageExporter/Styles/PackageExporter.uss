@@ -60,6 +60,60 @@
     margin-left: 8px;
 }
 
+/* ============================================================================
+   GENERAL BUTTONS - Standardized
+   ============================================================================ */
+
+/* Base Button Style */
+Button {
+    height: 30px;
+    border-radius: 6px;
+    font-size: 12px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #e0e0e0;
+    margin-left: 2px;
+    margin-right: 2px;
+    padding-left: 12px;
+    padding-right: 12px;
+    transition-duration: 0.15s;
+    transition-property: background-color, border-color, scale;
+}
+
+Button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+Button:active {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Primary Action Button (Teal) */
+.yucp-button-primary {
+    background-color: rgba(54, 191, 177, 0.2);
+    border-color: rgba(54, 191, 177, 0.5);
+    color: #36BFB1;
+}
+
+.yucp-button-primary:hover {
+    background-color: rgba(54, 191, 177, 0.3);
+    border-color: rgba(54, 191, 177, 0.7);
+}
+
+/* Text-only / Ghost Button */
+.yucp-button-text {
+    background-color: transparent;
+    border-width: 0;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.yucp-button-text:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+}
+
 /* Outline Button - Compact with icon */
 .yucp-btn-outline {
     background-color: transparent;
@@ -375,6 +429,15 @@
     height: 18px;
     margin-right: 4px;
     margin-bottom: 4px;
+}
+
+.yucp-clickable-tag {
+    cursor: link;
+}
+
+.yucp-clickable-tag:hover {
+    background-color: rgba(54, 191, 177, 0.25);
+    border-color: rgba(54, 191, 177, 0.5);
 }
 
 /* ============================================================================
@@ -1811,4 +1874,157 @@
 
 .yucp-resize-handle:active {
     background-color: rgba(54, 191, 177, 0.8);
+}
+
+/* ============================================================================
+   ONBOARDING - Tour UI Styles
+   ============================================================================ */
+
+.yucp-onboarding-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.yucp-onboarding-dimmer {
+    position: absolute;
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+.yucp-onboarding-spotlight-border {
+    position: absolute;
+    border-width: 2px;
+    border-color: #36BFB1; /* Accent color */
+    border-radius: 8px;
+    background-color: transparent;
+    opacity: 0.8;
+    transition-duration: 0.1s;
+    transition-property: all;
+    transition-timing-function: ease-out;
+}
+
+.yucp-onboarding-card {
+    position: absolute;
+    width: 380px;
+    padding: 24px;
+    background-color: #1e1e1e;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+}
+
+.yucp-onboarding-title {
+    font-size: 16px;
+    color: #ffffff;
+    margin-bottom: 8px;
+    flex-grow: 1;
+}
+
+.yucp-onboarding-counter {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+    align-self: flex-start;
+    margin-top: 4px;
+}
+
+.yucp-onboarding-description {
+    font-size: 12px;
+    margin-bottom: 12px;
+    white-space: normal;
+    color: #d4d4d4;
+    line-height: 18px; /* 1.4em approx */
+}
+
+/* Button consistency in onboarding card */
+.yucp-onboarding-card Button {
+    height: 32px;
+    border-radius: 6px;
+    font-size: 12px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #e0e0e0;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 16px;
+    padding-right: 16px;
+    transition-duration: 0.15s;
+    transition-property: background-color, border-color, scale;
+}
+
+.yucp-onboarding-card Button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.yucp-onboarding-card Button:active {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.yucp-onboarding-card .yucp-button-primary {
+    background-color: rgba(54, 191, 177, 0.2);
+    border-color: rgba(54, 191, 177, 0.5);
+    color: #36BFB1;
+}
+
+.yucp-onboarding-card .yucp-button-primary:hover {
+    background-color: rgba(54, 191, 177, 0.3);
+    border-color: rgba(54, 191, 177, 0.7);
+}
+
+.yucp-onboarding-card .yucp-button-text {
+    background-color: transparent;
+    border-width: 0;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.yucp-onboarding-card .yucp-button-text:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+    border-width: 0;
+}
+
+/* ============================================================================
+   EXPORT ACTIONS OVERLAY - Teaching Tip Style
+   ============================================================================ */
+.yucp-teaching-tip-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    justify-content: flex-end;
+    align-items: flex-end;
+}
+
+.yucp-teaching-tip-container {
+    background-color: #2b2b2b;
+    border-radius: 8px;
+    padding: 16px;
+    min-width: 250px;
+    border-width: 1px;
+    border-color: rgba(54, 191, 177, 0.5); /* Brand color border */
+    background-image: none;
+}
+
+.yucp-teaching-tip-title {
+    font-size: 14px;
+    -unity-font-style: bold;
+    color: #ffffff;
+    margin-bottom: 4px;
+}
+
+.yucp-teaching-tip-description {
+    font-size: 12px;
+    color: #cccccc;
+    margin-bottom: 12px;
+    white-space: normal;
+}
+
+.yucp-teaching-tip-divider {
+    height: 1px;
+    background-color: rgba(255, 255, 255, 0.1);
+    margin-bottom: 12px;
 }

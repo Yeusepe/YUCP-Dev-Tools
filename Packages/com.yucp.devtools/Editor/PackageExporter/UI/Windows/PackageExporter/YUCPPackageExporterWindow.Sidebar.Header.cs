@@ -101,6 +101,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             headerRow.style.overflow = Overflow.Visible;
             
             var searchField = new TokenizedSearchField();
+            searchField.name = "global-search-field";
             if (isOverlay) _overlaySearchField = searchField;
             else _mainSearchField = searchField;
             
@@ -144,6 +145,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 UpdateProfileList();
             };
+            
+            // Connect Color Provider
+            searchField.TagColorProvider = (tag) => GetTagColor(tag);
             
             searchField.OnTagRemoved += (tag) => 
             {

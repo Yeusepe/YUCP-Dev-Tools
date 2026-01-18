@@ -49,10 +49,183 @@ namespace YUCP.DevTools.Editor.PackageExporter
             contentColumn.AddToClassList("yucp-profile-item-content");
             contentColumn.style.flexGrow = 1;
             
+            // Name + Tags Row
+            var nameRow = new VisualElement();
+            nameRow.style.flexDirection = FlexDirection.Row;
+            nameRow.style.alignItems = Align.Center;
+            nameRow.style.flexWrap = Wrap.Wrap;
+            nameRow.style.marginBottom = 4; // Move spacing here from label
+            
             // Profile name
             var nameLabel = new Label(GetProfileDisplayName(profile));
             nameLabel.AddToClassList("yucp-profile-item-name");
-            contentColumn.Add(nameLabel);
+            nameLabel.style.marginRight = 8; // Space before tags
+            nameLabel.style.marginBottom = 0; // Remove default margin-bottom from USS
+            nameLabel.style.marginTop = 0;
+            nameLabel.style.unityTextAlign = TextAnchor.MiddleLeft; // Ensure vertical centering of text
+            nameRow.Add(nameLabel);
+            
+            // Tags (beside name)
+            var allTags = profile.GetAllTags();
+            if (allTags.Count > 0)
+            {
+                var tagsContainer = new VisualElement();
+                tagsContainer.style.flexDirection = FlexDirection.Row;
+                tagsContainer.style.alignItems = Align.Center;
+                tagsContainer.style.flexWrap = Wrap.NoWrap; // Try to keep on same line if possible
+                tagsContainer.name = "tags-container";
+                
+                // Show up to 2 tags
+                int maxVisibleTags = 2;
+                var tagsToShow = allTags.Take(maxVisibleTags).ToList();
+                
+                foreach (var tag in tagsToShow)
+                {
+                    var baseColor = GetTagColor(tag);
+                    
+                    var chip = new VisualElement();
+                    chip.AddToClassList("yucp-tag-chip");
+                    // Make chips slightly smaller/compact for this inline view
+                    chip.style.height = 18;
+                    chip.style.paddingLeft = 6;
+                    chip.style.paddingRight = 6;
+                    chip.style.justifyContent = Justify.Center; // Cross-axis (horizontal for row)
+                    chip.style.alignItems = Align.Center;       // Main-axis (vertical for row)
+                    
+                    chip.style.marginRight = 4;
+                    chip.style.marginTop = 0;
+                    chip.style.marginBottom = 0;
+                    chip.AddToClassList("yucp-clickable-tag"); // CSS class for cursor: link
+                    
+                    // Apply colors
+                    chip.style.backgroundColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.15f));
+                    chip.style.borderLeftColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
+                    chip.style.borderRightColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
+                    chip.style.borderTopColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
+                    chip.style.borderBottomColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
+
+                    // Add click handler to add tag to search
+                    chip.RegisterCallback<MouseDownEvent>(evt => 
+                    {
+                        if (evt.button == 0) // Left click
+                        {
+                            _mainSearchField?.AddTag(tag);
+                            _overlaySearchField?.AddTag(tag);
+                            evt.StopPropagation();
+                        }
+                        else if (evt.button == 1) // Right Click
+                        {
+                            ShowTagContextMenu(tag, chip);
+                            evt.StopPropagation();
+                        }
+                    });
+                    
+                    var label = new Label(tag);
+                    label.AddToClassList("yucp-tag-chip-label");
+                    label.userData = tag; // Store full text for responsive switching
+                    // Override label font size for compact view
+                    label.style.fontSize = 10;
+                    label.style.marginRight = 0; // No remove button so no margin needed
+                    label.style.unityTextAlign = TextAnchor.MiddleCenter; // Center text inside label
+                    label.style.color = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.95f));
+                    chip.Add(label);
+                    
+                    tagsContainer.Add(chip);
+                }
+                
+                if (allTags.Count > maxVisibleTags)
+                {
+                    var moreChip = new VisualElement();
+                    moreChip.AddToClassList("yucp-tag-chip");
+                    moreChip.style.backgroundColor = new Color(0.5f, 0.5f, 0.5f, 0.2f);
+                    moreChip.style.height = 18;
+                    moreChip.style.paddingLeft = 6;
+                    moreChip.style.paddingRight = 6;
+                    moreChip.style.justifyContent = Justify.Center;
+                    moreChip.style.marginTop = 0;
+                    moreChip.style.marginBottom = 0;
+                    
+                    var moreLabel = new Label($"+{allTags.Count - maxVisibleTags}");
+                    moreLabel.AddToClassList("yucp-tag-chip-label");
+                    moreLabel.style.fontSize = 9;
+                    moreLabel.style.marginRight = 0;
+                    moreLabel.style.unityTextAlign = TextAnchor.MiddleCenter;
+                    moreChip.Add(moreLabel);
+                    
+                    tagsContainer.Add(moreChip);
+                }
+                
+                nameRow.Add(tagsContainer);
+            }
+
+            contentColumn.Add(nameRow);
+
+            // Responsive Logic
+            item.RegisterCallback<GeometryChangedEvent>(evt => 
+            {
+                if (evt.newRect.width == 0) return;
+                
+                bool isCompact = evt.newRect.width < 260; // Threshold
+                
+                var tags = item.Query(className: "yucp-tag-chip").ToList();
+                foreach(var tagChip in tags)
+                {
+                    var lbl = tagChip.Q<Label>();
+                    // Only apply to actual tags (that have userData string), not the "+N" chip
+                    if(lbl != null && lbl.userData is string fullText)
+                    {
+                        if (isCompact)
+                        {
+                            // Compact Mode: Initial only, fixed square size
+                            lbl.text = !string.IsNullOrEmpty(fullText) ? fullText.Substring(0, 1).ToUpper() : "";
+                            tagChip.style.width = 18;
+                            tagChip.style.height = 18; // Explicit height
+                            tagChip.style.paddingLeft = 0;
+                            tagChip.style.paddingRight = 0;
+                            tagChip.style.paddingTop = 0;
+                            tagChip.style.paddingBottom = 0;
+                            tagChip.style.justifyContent = Justify.Center;
+                            tagChip.style.alignItems = Align.Center;
+                            
+                            lbl.style.marginRight = 0;
+                            lbl.style.marginLeft = 0;
+                            lbl.style.marginTop = 0;
+                            lbl.style.marginBottom = 0;
+                            lbl.style.paddingTop = 0;
+                            lbl.style.paddingBottom = 0;
+                            lbl.style.width = 18; // Match container
+                            lbl.style.height = 18; // Match container
+                            lbl.style.unityTextAlign = TextAnchor.MiddleCenter;
+                        }
+                        else
+                        {
+                            // Normal Mode: Full text, auto width
+                            lbl.text = fullText;
+                            
+                            // Reset Chip Styles
+                            tagChip.style.width = StyleKeyword.Auto;
+                            tagChip.style.height = 18; // Keep fixed height
+                            tagChip.style.paddingLeft = 6;
+                            tagChip.style.paddingRight = 6;
+                            tagChip.style.paddingTop = 0;
+                            tagChip.style.paddingBottom = 0;
+                            tagChip.style.justifyContent = Justify.Center;
+                            tagChip.style.alignItems = Align.Center;
+
+                            // Reset Label Styles
+                            lbl.style.width = StyleKeyword.Auto;
+                            lbl.style.height = StyleKeyword.Auto;
+                            lbl.style.marginRight = 0;
+                            lbl.style.marginLeft = 0;
+                            lbl.style.marginTop = 0;
+                            lbl.style.marginBottom = 0;
+                            lbl.style.paddingTop = 0;
+                            lbl.style.paddingBottom = 0;
+                            lbl.style.unityTextAlign = TextAnchor.MiddleCenter;
+                        }
+                    }
+                }
+            });
             
             // Profile info container
             var infoContainer = new VisualElement();
@@ -100,43 +273,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             contentColumn.Add(infoContainer);
             
-            // Tags display - show as small chips
-            var allTags = profile.GetAllTags();
-            if (allTags.Count > 0)
-            {
-                var tagsContainer = new VisualElement();
-                tagsContainer.style.flexDirection = FlexDirection.Row;
-                tagsContainer.style.flexWrap = Wrap.Wrap;
-                tagsContainer.style.marginTop = 4;
-                tagsContainer.style.marginBottom = 2;
-                
-                // Show up to 3 tags, then "+X more" if there are more
-                int maxVisibleTags = 3;
-                var tagsToShow = allTags.Take(maxVisibleTags).ToList();
-                
-                foreach (var tag in tagsToShow)
-                {
-                    var tagChip = BuildChip(tag, null, false);
-                    tagChip.AddToClassList("yucp-profile-tag-chip");
-                    // Remove remove button for list display
-                    var removeBtn = tagChip.Q<Button>(className: "yucp-chip-remove");
-                    if (removeBtn != null)
-                        removeBtn.RemoveFromHierarchy();
-                    tagsContainer.Add(tagChip);
-                }
-                
-                if (allTags.Count > maxVisibleTags)
-                {
-                    var moreLabel = new Label($"+{allTags.Count - maxVisibleTags} more");
-                    moreLabel.style.fontSize = 9;
-                    moreLabel.style.color = new Color(0.6f, 0.6f, 0.6f, 1f);
-                    moreLabel.style.marginLeft = 4;
-                    moreLabel.style.marginTop = 2;
-                    tagsContainer.Add(moreLabel);
-                }
-                
-                contentColumn.Add(tagsContainer);
-            }
+            // Tags moved to title line
             
             item.Add(contentColumn);
             

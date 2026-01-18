@@ -75,6 +75,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Debug dropdown
             var debugButton = CreateDropdownButton("Debug", GetDebugMenuItems());
             container.Add(debugButton);
+
+            // Help dropdown
+            var helpButton = CreateDropdownButton("Help", GetHelpMenuItems());
+            container.Add(helpButton);
             
             return container;
         }
@@ -142,25 +146,31 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private List<ToolbarMenuItem> GetExportMenuItems()
         {
+            #if UNITY_EDITOR_WIN
+                string modKey = "Ctrl";
+            #else
+                string modKey = "Cmd";
+            #endif
+            
             return new List<ToolbarMenuItem>
             {
                 new ToolbarMenuItem
                 {
                     Label = "Export Selected",
-                    Tooltip = "Export selected profile(s)",
+                    Tooltip = $"Export selected profile(s) ({modKey}+E)",
                     Callback = () => ExportSelectedProfiles()
                 },
                 new ToolbarMenuItem
                 {
                     Label = "Export All",
-                    Tooltip = "Export all profiles",
+                    Tooltip = $"Export all profiles ({modKey}+Shift+E)",
                     Callback = () => ExportAllProfiles()
                 },
                 ToolbarMenuItem.Separator(),
                 new ToolbarMenuItem
                 {
                     Label = "Quick Export Current",
-                    Tooltip = "Quick export the currently selected profile",
+                    Tooltip = $"Quick export the currently selected profile ({modKey}+Enter)",
                     Callback = () => {
                         if (selectedProfile != null)
                         {
@@ -199,6 +209,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Label = "Scan for @bump Directives",
                     Tooltip = "Scan project for version bump directives",
                     Callback = () => MenuItems.ScanProjectForVersionDirectives()
+                },
+                ToolbarMenuItem.Separator(),
+                new ToolbarMenuItem
+                {
+                    Label = "Refresh",
+                    Tooltip = $"Reload profiles from disk (F5)",
+                    Callback = () => {
+                        LoadProfiles();
+                        UpdateProfileList();
+                        UpdateProfileDetails();
+                        UpdateBottomBar();
+                    }
                 }
             };
         }
@@ -245,7 +267,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             var method = menuItemsType.GetMethod("RepairInstall", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
                             method?.Invoke(null, null);
                         }
+
                     }
+                }
+            };
+        }
+
+        private List<ToolbarMenuItem> GetHelpMenuItems()
+        {
+            return new List<ToolbarMenuItem>
+            {
+                new ToolbarMenuItem
+                {
+                    Label = "Restart Onboarding",
+                    Tooltip = "Restart the onboarding tour",
+                    Callback = () => {
+                         EditorPrefs.SetBool(OnboardingPrefKey, false);
+                         StartOnboarding();
+                    }
+                },
+                new ToolbarMenuItem
+                {
+                    Label = "Documentation",
+                    Tooltip = "Open online documentation",
+                    Callback = () => Application.OpenURL("https://github.com/Yeusepe/YUCP-Components")
                 }
             };
         }

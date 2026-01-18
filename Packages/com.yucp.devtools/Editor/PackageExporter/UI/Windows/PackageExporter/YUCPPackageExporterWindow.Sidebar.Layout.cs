@@ -20,6 +20,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var leftPane = new VisualElement();
             leftPane.AddToClassList("yucp-left-pane");
+            leftPane.name = "yucp-left-pane";
             
             // Create sidebar configuration
             var config = new YucpSidebar.SidebarConfig

@@ -21,6 +21,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var section = new VisualElement();
             section.AddToClassList("yucp-section");
             section.AddToClassList("yucp-metadata-section");
+            section.name = "package-identity-section";
             
             // Hero-style header with icon and name
             var headerRow = new VisualElement();
@@ -181,9 +182,33 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 : new List<string>();
 
             var allAvailable = availablePresets.Union(globalTags).Distinct().ToList();
-            tokenizedTags.SetAvailableTags(allAvailable);
             
+            // Color Provider (Must be set BEFORE SetSelectedTags to apply colors initially)
+            tokenizedTags.TagColorProvider = (tag) => GetTagColor(tag);
+            
+            tokenizedTags.SetAvailableTags(allAvailable);
             tokenizedTags.SetSelectedTags(profile.GetAllTags());
+            
+            // Tag Color Changed Handler
+            tokenizedTags.OnTagColorChanged += (tag, color) => 
+            {
+                SetTagColor(tag, color);
+                UpdateProfileList();
+                UpdateProfileDetails(); // Refresh details to show new color in input immediately
+            };
+            
+            // Tag Deleted Handler
+            tokenizedTags.OnTagDeleted += (tag) => 
+            {
+                DeleteGlobalTag(tag);
+                
+                // Update available options
+                if (globalTags.Contains(tag)) globalTags.Remove(tag);
+                allAvailable = availablePresets.Union(globalTags).Distinct().ToList();
+                tokenizedTags.SetAvailableTags(allAvailable);
+                
+                UpdateProfileList();
+            };
             
             tokenizedTags.OnTagsChanged += (newTags) => {
                  if (profile != null) 
