@@ -45,13 +45,35 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 		public override void OnEnable()
 		{
+			// Fix any orphaned cache entries for our own editor BEFORE base.OnEnable().
+			// This handles edge cases where SaveChanges triggers a reimport before OnDisable runs.
+			if (targets != null && targets.Length > 0)
+			{
+				FixOrphanedCacheEntries(GetType());
+			}
+			
 			// Let Unity initialize importer editor internals.
 			base.OnEnable();
 
 			// Create (or reuse) Unity's internal ModelImporterEditor to draw the default UI/tabs.
 			if (s_ModelImporterEditorType != null && targets != null && targets.Length > 0)
 			{
-				UnityEditor.Editor.CreateCachedEditor(targets, s_ModelImporterEditorType, ref m_DefaultEditor);
+				// If there's an existing editor with different targets, destroy it first.
+				// DestroyImmediate will properly call OnDisable which handles cache cleanup.
+				if (m_DefaultEditor != null && !ArrayEquals(m_DefaultEditor.targets, targets))
+				{
+					DestroyImmediate(m_DefaultEditor);
+					m_DefaultEditor = null;
+				}
+
+				if (m_DefaultEditor == null)
+				{
+					// Fix any orphaned cache entries before creating the editor.
+					// This can happen if a previous editor was destroyed without proper OnDisable.
+					FixOrphanedCacheEntries(s_ModelImporterEditorType);
+					
+					m_DefaultEditor = UnityEditor.Editor.CreateEditor(targets, s_ModelImporterEditorType);
+				}
 
 				// Some internal tabs expect an "asset target" (imported GameObject) editor to be present.
 				if (m_DefaultEditor is AssetImporterEditor defaultAssetEditor && targets[0] is ModelImporter importer)
@@ -62,7 +84,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						var internalSetMethod = typeof(AssetImporterEditor).GetMethod("InternalSetAssetImporterTargetEditor", BindingFlags.NonPublic | BindingFlags.Instance);
 						if (internalSetMethod != null)
 						{
-							UnityEditor.Editor.CreateCachedEditor(importedGameObject, null, ref m_GameObjectEditor);
+							if (m_GameObjectEditor == null || m_GameObjectEditor.target != importedGameObject)
+							{
+								if (m_GameObjectEditor != null)
+								{
+									DestroyImmediate(m_GameObjectEditor);
+								}
+								m_GameObjectEditor = UnityEditor.Editor.CreateEditor(importedGameObject);
+							}
 							if (m_GameObjectEditor != null)
 							{
 								internalSetMethod.Invoke(defaultAssetEditor, new object[] { m_GameObjectEditor });
@@ -71,6 +100,76 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					}
 				}
 			}
+		}
+
+		/// <summary>
+		/// Fixes orphaned cache entries by calling Unity's FixCacheCount method.
+		/// This corrects the native cache count to match the actual managed editor count.
+		/// </summary>
+		/// <param name="editorType">The editor type to search for (e.g., ModelImporterEditor or YUCPFbxDerivedImportSettingsEditor)</param>
+		private void FixOrphanedCacheEntries(Type editorType)
+		{
+			try
+			{
+				var allEditors = Resources.FindObjectsOfTypeAll(editorType);
+				var onEnableCalledField = typeof(AssetImporterEditor).GetField("m_OnEnableCalled", BindingFlags.Instance | BindingFlags.NonPublic);
+				var getCountMethod = typeof(AssetImporterEditor).GetMethod("GetInspectorCopyCount", BindingFlags.Static | BindingFlags.NonPublic);
+				var fixCacheMethod = typeof(AssetImporterEditor).GetMethod("FixCacheCount", BindingFlags.Static | BindingFlags.NonPublic);
+
+				if (getCountMethod == null || fixCacheMethod == null || targets == null)
+					return;
+
+				foreach (var target in targets)
+				{
+					int instanceId = target.GetInstanceID();
+					int cacheCount = (int)getCountMethod.Invoke(null, new object[] { instanceId });
+
+					// Find editors that reference this target with m_OnEnableCalled=true
+					var editorsForTarget = new System.Collections.Generic.List<int>();
+					foreach (var editor in allEditors)
+					{
+						if (editor is AssetImporterEditor aie)
+						{
+							bool onEnableCalled = onEnableCalledField != null ? (bool)onEnableCalledField.GetValue(aie) : false;
+							if (onEnableCalled && aie.targets != null)
+							{
+								foreach (var t in aie.targets)
+								{
+									if (t != null && t.GetInstanceID() == instanceId)
+									{
+										editorsForTarget.Add(aie.GetInstanceID());
+										break;
+									}
+								}
+							}
+						}
+					}
+
+					// If there's a mismatch, fix it before CreateEditor runs its check
+					if (cacheCount != editorsForTarget.Count)
+					{
+						fixCacheMethod.Invoke(null, new object[] { instanceId, editorsForTarget.ToArray() });
+					}
+				}
+			}
+			catch (Exception)
+			{
+				// Silently ignore - this is a best-effort fix
+			}
+		}
+
+
+
+		private static bool ArrayEquals(UnityEngine.Object[] a, UnityEngine.Object[] b)
+		{
+			if (a == null && b == null) return true;
+			if (a == null || b == null) return false;
+			if (a.Length != b.Length) return false;
+			for (int i = 0; i < a.Length; i++)
+			{
+				if (a[i] != b[i]) return false;
+			}
+			return true;
 		}
 
 	public override void OnDisable()
@@ -291,10 +390,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
 							}
 							else
 							{
-								// Fallback: try to find and set the backing field directly
-								// The property might have a backing field, but since it's auto-implemented,
-								// we can't easily access it. Just log a warning.
-								Debug.LogWarning("[YUCPFbxEditor] Could not set activeTab - setter not found");
+								// For auto-implemented properties, try the backing field directly
+								// The backing field name follows C# compiler convention: <PropertyName>k__BackingField
+								var backingField = defaultEditorType.BaseType?.GetField("<activeTab>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
+								backingField?.SetValue(m_DefaultEditor, newActiveTab);
 							}
 						}
 					}
