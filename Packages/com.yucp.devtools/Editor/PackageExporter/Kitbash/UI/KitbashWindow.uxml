@@ -6,23 +6,27 @@
             
             <!-- Header -->
             <ui:VisualElement class="header">
-                <ui:Label text="Kitbash Layers" class="title"/>
+                <ui:Button name="back-btn" class="btn btn-ghost" style="width: 24px; padding: 0; margin-right: 4px;">
+                     <ui:Image class="icon" style="background-image: resource('d_back'); width: 16px; height: 16px;"/>
+                </ui:Button>
+                <ui:Label text="Layers" class="title" style="flex-grow: 1;"/>
                 <ui:VisualElement style="flex-direction: row;">
-                    <ui:Button class="btn btn-ghost" tooltip="Options" style="width: 32px; padding: 0;">
+                    <ui:Button text="+" class="btn btn-primary" name="add-layer-btn" style="width: 24px; padding: 0; margin-right: 4px;" tooltip="Add New Layer"/>
+                    <ui:Button class="btn btn-ghost" tooltip="Options" style="width: 24px; padding: 0;">
                         <ui:Label text="•••" style="font-size: 14px; margin-top: -4px;"/>
                     </ui:Button>
+                    <ui:Button text="Auto" name="auto-seed-btn" class="btn btn-outline" style="height: 20px; font-size: 10px; padding: 0 4px; margin-left: 4px;" tooltip="Auto-Detect Layers from Source"/>
                 </ui:VisualElement>
             </ui:VisualElement>
             
-            <!-- Search & Actions Toolbar -->
+            <!-- Search & Quick Actions -->
             <ui:VisualElement class="toolbar-row">
-                <ui:TextField placeholder-text="Search..." class="input" style="flex-grow: 1; margin-right: 8px;"/>
-                <ui:Button text="Auto-Seed" class="btn btn-outline" style="margin-right: 8px; font-size: 11px;"/>
-                <ui:Button text="+" class="btn btn-primary" style="width: 32px; padding: 0;"/>
+                <ui:TextField name="search-input" placeholder-text="Search..." class="input" style="flex-grow: 1; margin-right: 8px;"/>
+                <ui:Button text="Select All" name="select-all-btn" class="btn btn-outline" style="font-size: 10px;"/>
             </ui:VisualElement>
             
             <!-- Layer List -->
-            <ui:ListView name="layer-list" class="layer-list" virtualized="true"/>
+            <ui:ListView name="layer-list" class="layer-list" virtualized="true" reorderable="true"/>
             
             <!-- Empty State (Conditional) -->
             <ui:VisualElement name="empty-state" style="display: none; align-items: center; justify-content: center; flex-grow: 1; opacity: 0.5;">
@@ -31,35 +35,45 @@
             
             <!-- Footer: Selected Layer Properties -->
             <ui:VisualElement name="footer" class="footer">
+                
+                <!-- Fill Settings Section (Always Visible or contextual?) -> Let's make it contextual to Paint Mode or Bucket Tool -->
+                <!-- Fill Settings Section -->
+                <ui:VisualElement name="fill-settings" class="fill-settings">
+                    <ui:Label text="FILL MODE" class="field-label"/>
+                    <ui:VisualElement class="segmented-control" style="margin-bottom: 8px;">
+                        <ui:Button text="Connected" name="fill-connected" class="segment-btn selected"/>
+                        <ui:Button text="UV Island" name="fill-uv" class="segment-btn"/>
+                        <ui:Button text="Submesh" name="fill-submesh" class="segment-btn"/>
+                    </ui:VisualElement>
+                    
+                    <ui:VisualElement name="uv-settings" style="flex-direction: row; align-items: center; display: none;">
+                        <ui:Label text="UV Channel" class="field-sub-label" style="margin-right: 8px; font-size: 10px; color: #a1a1aa;"/>
+                        <ui:DropdownField name="uv-channel-dropdown" index="0" choices="UV0,UV1,UV2,UV3" style="flex-grow: 1;"/>
+                    </ui:VisualElement>
+                </ui:VisualElement>
+            
                 <ui:VisualElement id="props-container" style="display: none;">
                     
                     <ui:VisualElement style="flex-direction: row; margin-bottom: 8px;">
-                        <ui:VisualElement style="flex-grow: 1; margin-right: 8px;">
+                        <ui:VisualElement style="flex-grow: 1;">
                             <ui:Label text="LAYER NAME" class="field-label"/>
                             <ui:TextField name="prop-name" class="input"/>
                         </ui:VisualElement>
-                        <ui:VisualElement style="width: 80px;">
-                            <ui:Label text="OPACITY" class="field-label"/>
-                            <ui:Slider value="1" high-value="1" style="margin-top: 6px;"/>
-                        </ui:VisualElement>
                     </ui:VisualElement>
                     
-                    <ui:Label text="SOURCE MESH" class="field-label"/>
+                    <ui:Label text="SOURCE" class="field-label"/>
                     <ui:VisualElement style="flex-direction: row; margin-bottom: 12px;">
-                         <ui:Button text="Select Source..." class="btn btn-outline" style="flex-grow: 1; justify-content: flex-start;"/>
+                         <ui:Button text="Select Source..." name="prop-source-btn" class="btn btn-outline" style="flex-grow: 1; justify-content: flex-start; text-overflow: ellipsis; overflow: hidden;"/>
                     </ui:VisualElement>
                     
-                    <ui:VisualElement style="height: 1px; background-color: #27272a; margin-bottom: 12px;"/>
-                    
-                    <ui:VisualElement style="flex-direction: row;">
-                        <ui:Button text="Fill Connected" class="btn btn-outline" style="flex-grow: 1; margin-right: 4px;"/>
-                        <ui:Button text="Clear" class="btn btn-ghost" style="flex-grow: 0.5; color: #ef4444;"/>
+                    <ui:VisualElement style="flex-direction: row; justify-content: flex-end;">
+                        <ui:Button text="Clear" name="clear-layer-btn" class="btn btn-ghost" style="color: #ef4444;"/>
                     </ui:VisualElement>
                     
                 </ui:VisualElement>
                 
                 <ui:VisualElement id="no-selection" style="align-items: center; padding: 10px;">
-                    <ui:Label text="Select a layer to edit properties" style="color: #52525b; font-size: 11px; font-style: italic;"/>
+                    <ui:Label text="No Layer Selected" style="color: #52525b; font-size: 11px; font-style: italic;"/>
                 </ui:VisualElement>
             </ui:VisualElement>
             

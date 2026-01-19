@@ -13,9 +13,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		{
 			if (importer == null) return;
 
-			EditorGUILayout.Space(6);
-			EditorGUILayout.LabelField("YUCP Patch Export", EditorStyles.boldLabel);
-
+			EditorGUILayout.Space(15);
+			
+			// Main Section Header
+			GUILayout.Label("YUCP Import Options", EditorStyles.boldLabel);
+			EditorGUILayout.HelpBox("Configure how this asset is exported as a lightweight patch package. Patches allow you to distribute modifications without including the original large assets.", MessageType.Info);
+			
+			EditorGUILayout.Space(5);
 			DerivedSettings settings = null;
 			try
 			{
@@ -28,86 +32,64 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			}
 
 			EditorGUI.BeginChangeCheck();
-			settings.isDerived = EditorGUILayout.Toggle(new GUIContent("Export As Patch (Derived)"), settings.isDerived);
 
-			using (new EditorGUI.DisabledScope(!settings.isDerived))
+			// Main Card Style
+			using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
 			{
-				UnityEngine.Object currentBase = null;
-				if (!string.IsNullOrEmpty(settings.baseGuid))
+				// -- Header --
+				using (new EditorGUILayout.HorizontalScope())
 				{
-					string path = AssetDatabase.GUIDToAssetPath(settings.baseGuid);
-					if (!string.IsNullOrEmpty(path))
-						currentBase = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+					var headerStyle = new GUIStyle(EditorStyles.boldLabel);
+					settings.isDerived = EditorGUILayout.ToggleLeft("Enable Patch Export", settings.isDerived, headerStyle);
 				}
 
-				var newBase = EditorGUILayout.ObjectField(new GUIContent("Base FBX (original)"), currentBase, typeof(UnityEngine.Object), false);
-				if (newBase != currentBase)
+				if (settings.isDerived)
 				{
-					string path = AssetDatabase.GetAssetPath(newBase);
-					settings.baseGuid = string.IsNullOrEmpty(path) ? null : AssetDatabase.AssetPathToGUID(path);
-				}
+					EditorGUILayout.Space(5);
+					
+					// -- Mode Selection (Kitbash vs Single) --
+					#if YUCP_KITBASH_ENABLED
+					DrawModeSelection(settings);
+					EditorGUILayout.Space(5);
+					#endif
 
-				EditorGUILayout.Space(4);
-				EditorGUILayout.LabelField("UI Hints", EditorStyles.boldLabel);
-				settings.friendlyName = EditorGUILayout.TextField("Friendly Name", string.IsNullOrEmpty(settings.friendlyName) ? System.IO.Path.GetFileNameWithoutExtension(importer.assetPath) : settings.friendlyName);
-				settings.category = EditorGUILayout.TextField("Category", settings.category);
+					// -- Source Section --
+					DrawSectionHeader("Source");
+					bool isKitbash = false;
+					#if YUCP_KITBASH_ENABLED
+					isKitbash = settings.mode == DerivedMode.KitbashRecipeHdiff;
+					#endif
 
-				EditorGUILayout.Space(4);
-				EditorGUILayout.HelpBox("Override Original References: After generating the derived FBX, replace all references to the original FBX with the new one. This can be reversed via Tools->YUCP->Revert GUID Override.", MessageType.Info);
-				settings.overrideOriginalReferences = EditorGUILayout.Toggle(new GUIContent("Override Original References"), settings.overrideOriginalReferences);
-				
-				// Kitbash Mode UI (only visible when feature is enabled)
-				#if YUCP_KITBASH_ENABLED
-				EditorGUILayout.Space(8);
-				EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
-				EditorGUILayout.Space(4);
-				
-				// Simple toggle like Humanoid/Generic rig selection
-				bool isKitbash = settings.mode == DerivedMode.KitbashRecipeHdiff;
-				EditorGUI.BeginChangeCheck();
-				isKitbash = EditorGUILayout.Toggle(
-					new GUIContent("Multi-Source (Kitbash)", 
-						"Enable if this mesh combines parts from multiple source FBXs"),
-					isKitbash
-				);
-				if (EditorGUI.EndChangeCheck())
-				{
-					settings.mode = isKitbash ? DerivedMode.KitbashRecipeHdiff : DerivedMode.SingleBaseHdiff;
-				}
-				
-				// Configure button - like Humanoid "Configure..." button
-				if (isKitbash)
-				{
-					EditorGUILayout.Space(4);
-					
-					// Status line
-					bool hasRecipe = !string.IsNullOrEmpty(settings.kitbashRecipeGuid);
-					string statusText = hasRecipe ? "✓ Configured" : "Not configured";
-					Color statusColor = hasRecipe ? new Color(0.3f, 0.8f, 0.3f) : new Color(0.9f, 0.6f, 0.2f);
-					
-					EditorGUILayout.BeginHorizontal();
-					var oldColor = GUI.color;
-					GUI.color = statusColor;
-					EditorGUILayout.LabelField(statusText, EditorStyles.boldLabel, GUILayout.Width(100));
-					GUI.color = oldColor;
-					
-					// Big Configure button
-					if (GUILayout.Button("Configure...", GUILayout.Height(24)))
+					if (isKitbash)
 					{
-						OpenKitbashConfigurator(importer, settings);
+						#if YUCP_KITBASH_ENABLED
+						DrawKitbashConfig(importer, settings);
+						#endif
 					}
-					EditorGUILayout.EndHorizontal();
-				}
-				#endif
-				
-				EditorGUILayout.Space(8);
-				EditorGUILayout.LabelField("", GUI.skin.horizontalSlider);
-				EditorGUILayout.Space(4);
-				EditorGUILayout.HelpBox("If you replaced the original FBX file with this derived version, Unity lost track of the original file. Click the button below to fix the file references. Afterward, you can put your original FBX file back and Unity will recognize it properly again. All your materials and settings will be preserved.", MessageType.Info);
-				
-				if (GUILayout.Button("Fix File References", GUILayout.Height(30)))
-				{
-					RegenerateAndRelinkGuids(importer, settings);
+					else
+					{
+						DrawSingleSourceConfig(settings);
+					}
+
+					EditorGUILayout.Space(10);
+
+					// -- Metadata Section --
+					DrawSectionHeader("Package Metadata");
+					
+					settings.friendlyName = EditorGUILayout.TextField(new GUIContent("Display Name", "The name used for this patch in the package installer."), string.IsNullOrEmpty(settings.friendlyName) ? System.IO.Path.GetFileNameWithoutExtension(importer.assetPath) : settings.friendlyName);
+					DrawHelpText("The user-friendly name shown in the installer (e.g., 'Blue Shirt Variant').");
+					
+					EditorGUILayout.Space(2);
+					
+					settings.category = EditorGUILayout.TextField(new GUIContent("Category", "Group this patch under a category in the package installer."), settings.category);
+					DrawHelpText("Organizes patches in the installer (e.g., 'Clothes/Shirts').");
+
+					EditorGUILayout.Space(10);
+
+					// -- Advanced Actions --
+					DrawAdvancedActions(importer, settings);
+					
+					EditorGUILayout.Space(2);
 				}
 			}
 
@@ -116,6 +98,152 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				importer.userData = JsonUtility.ToJson(settings);
 				EditorUtility.SetDirty(importer);
 				AssetDatabase.SaveAssets();
+			}
+		}
+
+		private static void DrawSectionHeader(string title)
+		{
+			EditorGUILayout.LabelField(title, EditorStyles.miniBoldLabel);
+		}
+		
+		private static void DrawHelpText(string text)
+		{
+			// Subtle help text style
+			var style = new GUIStyle(EditorStyles.miniLabel);
+			style.wordWrap = true;
+			style.normal.textColor = EditorGUIUtility.isProSkin ? new Color(0.7f, 0.7f, 0.7f) : new Color(0.4f, 0.4f, 0.4f);
+			EditorGUILayout.LabelField(text, style);
+		}
+
+		#if YUCP_KITBASH_ENABLED
+		private static void DrawModeSelection(DerivedSettings settings)
+		{
+			EditorGUILayout.BeginHorizontal();
+			EditorGUILayout.LabelField("Patch Mode:", GUILayout.Width(80));
+			
+			// Use a toolbar-style selection
+			var modes = new string[] { "Single Source", "Kitbash (Multi-Source)" };
+			int currentMode = (int)settings.mode;
+			int newMode = GUILayout.Toolbar(currentMode, modes, EditorStyles.miniButton); 
+			
+			if (newMode != currentMode)
+			{
+				settings.mode = (DerivedMode)newMode;
+			}
+			EditorGUILayout.EndHorizontal();
+			
+			// Explanation for modes
+			if (settings.mode == DerivedMode.SingleBaseHdiff)
+			{
+				DrawHelpText("Standard Mode: Creates a patch for a single Original FBX file. Use this for texture variations or simple mesh edits.");
+			}
+			else
+			{
+				DrawHelpText("Kitbash Mode: Creates a patch that combines parts from multiple source FBXs. Use this for complex assemblies.");
+			}
+		}
+
+		private static void DrawKitbashConfig(ModelImporter importer, DerivedSettings settings)
+		{
+			// Status
+			bool hasRecipe = !string.IsNullOrEmpty(settings.kitbashRecipeGuid);
+			
+			using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+			{
+				using (new EditorGUILayout.HorizontalScope())
+				{
+					// Icon/Status
+					var statusIcon = hasRecipe ? "✓" : "!";
+					var statusColor = hasRecipe ? new Color(0.3f, 0.8f, 0.3f) : new Color(0.9f, 0.6f, 0.2f);
+					var oldColor = GUI.color;
+					GUI.color = statusColor;
+					GUILayout.Label(statusIcon, GUILayout.Width(15));
+					GUILayout.Label(hasRecipe ? "Configured" : "Recipe Missing", EditorStyles.boldLabel);
+					GUI.color = oldColor;
+
+					GUILayout.FlexibleSpace();
+
+					if (GUILayout.Button("Open Kitbash Configurator", GUILayout.Height(20)))
+					{
+						OpenKitbashConfigurator(importer, settings);
+					}
+				}
+				
+				if (!hasRecipe)
+				{
+					EditorGUILayout.HelpBox("Click 'Open Kitbash Configurator' to select the source FBX files you want to combine.", MessageType.Info);
+				}
+			}
+		}
+		#endif
+
+		private static void DrawSingleSourceConfig(DerivedSettings settings)
+		{
+			UnityEngine.Object currentBase = null;
+			if (!string.IsNullOrEmpty(settings.baseGuid))
+			{
+				string path = AssetDatabase.GUIDToAssetPath(settings.baseGuid);
+				if (!string.IsNullOrEmpty(path))
+					currentBase = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+			}
+
+			var newBase = EditorGUILayout.ObjectField(new GUIContent("Original FBX", "The original FBX file that this specific mesh is modified from."), currentBase, typeof(UnityEngine.Object), false);
+			
+			if (newBase != currentBase)
+			{
+				string path = AssetDatabase.GetAssetPath(newBase);
+				settings.baseGuid = string.IsNullOrEmpty(path) ? null : AssetDatabase.AssetPathToGUID(path);
+			}
+
+			if (currentBase == null)
+			{
+				EditorGUILayout.HelpBox("REQUIRED: Select the original FBX file. This patch will store ONLY the differences between your file and this Original FBX.", MessageType.Error);
+			}
+			else
+			{
+				DrawHelpText($"This patch will rely on '{currentBase.name}' as its base.");
+			}
+		}
+
+		private static void DrawAdvancedActions(ModelImporter importer, DerivedSettings settings)
+		{
+			string foldoutKey = "YUCP_DerivedSettings_Advanced_" + importer.assetPath.GetHashCode();
+			bool foldout = UnityEditor.SessionState.GetBool(foldoutKey, false);
+
+			foldout = EditorGUILayout.Foldout(foldout, "Advanced Settings", true);
+			if (foldout)
+			{
+				UnityEditor.SessionState.SetBool(foldoutKey, true);
+				EditorGUI.indentLevel++;
+				
+				// Reference Override
+				EditorGUILayout.LabelField("Reference Handling", EditorStyles.miniBoldLabel);
+				EditorGUILayout.BeginHorizontal();
+				settings.overrideOriginalReferences = EditorGUILayout.Toggle(settings.overrideOriginalReferences, GUILayout.Width(15));
+				EditorGUILayout.LabelField(new GUIContent("Replace Original References", "After generating the derived FBX, automatically update all scene/prefab references to point to this new file instead of the original."), EditorStyles.label);
+				EditorGUILayout.EndHorizontal();
+				
+				DrawHelpText("When enabled, Unity will update all scenes and prefabs to use THIS patch file instead of the Original FBX. Useful if you want to seamlessly swap the asset in your project.");
+				
+				EditorGUILayout.Space(5);
+
+				// Fix File References
+				EditorGUILayout.LabelField("Maintenance (Repair)", EditorStyles.miniBoldLabel);
+				
+				EditorGUILayout.BeginHorizontal();
+				if (GUILayout.Button("Repair File Identity (GUID)", GUILayout.Height(24)))
+				{
+					RegenerateAndRelinkGuids(importer, settings);
+				}
+				EditorGUILayout.EndHorizontal();
+				
+				DrawHelpText("Use this ONLY if you replaced the file manually and links are broken. It assigns a new ID to this file and updates references.");
+
+				EditorGUI.indentLevel--;
+			}
+			else
+			{
+				UnityEditor.SessionState.SetBool(foldoutKey, false);
 			}
 		}
 		

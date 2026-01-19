@@ -34,6 +34,8 @@
     background-color: var(--card);
     padding: 0; /* Padding handled by internal containers for cleaner scrolling */
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .header {
@@ -45,6 +47,7 @@
     border-bottom-color: var(--card-border);
     height: 48px;
     background-color: var(--card);
+    flex-shrink: 0;
 }
 
 .title {
@@ -59,6 +62,7 @@
     border-bottom-width: 1px;
     border-bottom-color: var(--card-border);
     background-color: #0c0c0e; /* slightly darker than card */
+    flex-shrink: 0;
 }
 
 /* Lists */
@@ -70,10 +74,10 @@
 .list-row {
     flex-direction: row;
     align-items: center;
-    padding: 0 12px;
-    height: 40px; /* Comfortable touch target */
+    padding: 0 8px; /* Compact padding */
+    height: 36px; /* Slightly tighter than 40px */
     border-bottom-width: 1px;
-    border-bottom-color: #1a1a1c; /* very subtle separator */
+    border-bottom-color: #1a1a1c;
     transition-duration: 0.1s;
 }
 
@@ -83,33 +87,74 @@
 
 .list-row.selected {
     background-color: #27272a;
-    border-left-width: 3px;
-    border-left-color: var(--primary);
-    padding-left: 9px; /* adjust for border */
 }
 
-.color-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 6px;
-    margin-right: 12px;
-    border-width: 1px;
-    border-color: rgba(255,255,255,0.1);
+/* Row Content */
+.row-visibility-btn {
+    width: 24px;
+    height: 24px;
+    margin-right: 4px;
+    background-color: transparent;
+    border-width: 0;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.5;
 }
 
-.row-info {
+.row-visibility-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    opacity: 1.0;
+    border-radius: 4px;
+}
+
+.row-visibility-btn.visible {
+    opacity: 1.0;
+}
+
+.icon-eye-small {
+    width: 14px;
+    height: 14px;
+    background-image: resource("d_SceneViewVisibility");
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.row-color-swatch {
+    width: 6px;
+    height: 24px;
+    margin-right: 8px;
+    border-radius: 2px;
+}
+
+.row-content {
     flex-grow: 1;
     justify-content: center;
+    overflow: hidden;
 }
 
 .row-title {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--primary);
+    -unity-text-align: middle-left;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .row-sub {
-    font-size: 10px;
+    font-size: 9px;
     color: var(--muted-fg);
+    display: none; /* Hide sub for cleaner look, maybe show on hover or selected */
+}
+
+/* Stats Logic */
+.row-stats {
+    width: 40px;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+.row-percent {
+    font-size: 10px;
+    color: #52525b;
 }
 
 /* Footer / Properties Panel */
@@ -118,6 +163,96 @@
     border-top-color: var(--card-border);
     padding: 12px;
     background-color: #0c0c0e;
+    flex-shrink: 0;
+}
+
+.field-label {
+    font-size: 10px;
+    color: #a1a1aa;
+    margin-bottom: 4px;
+    -unity-font-style: bold;
+}
+
+.input {
+    background-color: var(--input);
+    border-color: var(--input-border);
+    border-radius: 4px;
+    color: var(--primary);
+    padding: 4px;
+}
+
+.btn {
+    border-radius: 4px;
+    border-width: 1px;
+    padding: 4px 12px;
+    font-size: 12px;
+    cursor: link;
+    transition-duration: 0.1s;
+}
+
+.btn-primary {
+    background-color: var(--primary);
+    color: var(--primary-fg);
+    border-color: var(--primary);
+}
+
+.btn-secondary {
+    background-color: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--card-border);
+}
+
+.btn-outline {
+    background-color: transparent;
+    border-color: var(--input-border);
+    color: var(--primary);
+}
+
+.btn-ghost {
+    background-color: transparent;
+    border-color: transparent;
+    color: var(--primary);
+}
+
+.btn:hover {
+    opacity: 0.9;
+}
+
+/* Fill Settings Panel */
+.fill-settings {
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--card-border);
+}
+
+.segmented-control {
+    flex-direction: row;
+    background-color: var(--input);
+    border-radius: 6px;
+    padding: 2px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.segment-btn {
+    flex-grow: 1;
+    background-color: transparent;
+    border-width: 0;
+    border-radius: 4px;
+    height: 24px;
+    color: #71717a;
+    font-size: 11px;
+    -unity-font-style: bold;
+}
+
+.segment-btn:hover {
+    color: #a1a1aa;
+}
+
+.segment-btn.selected {
+    background-color: #27272a;
+    color: var(--primary);
 }
 
 /* TOOLBAR OVERLAY STYLES */

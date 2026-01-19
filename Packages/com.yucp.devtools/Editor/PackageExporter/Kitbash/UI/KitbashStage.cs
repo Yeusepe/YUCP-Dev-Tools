@@ -91,6 +91,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             public string name;
             public string sourceGuid;
             public string sourceName;
+            public string group; // New field for hierarchy/grouping
             public Color color;
             public bool visible = true;
             public int triangleCount;
@@ -98,6 +99,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         
         // Public API
         public List<OwnershipLayer> Layers => _layers;
+        
+
         public int SelectedLayerIndex { get => _selectedLayerIndex; set => _selectedLayerIndex = value; }
         public int TotalTriangles => _triangleOwnership?.Length ?? 0;
         public ModelImporter Importer => _importer;
@@ -108,6 +111,12 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         public bool MirrorX { get => _mirrorX; set => _mirrorX = value; }
         public bool MirrorY { get => _mirrorY; set => _mirrorY = value; }
         public bool MirrorZ { get => _mirrorZ; set => _mirrorZ = value; }
+        // 0=UV, 1=UV2, 2=UV3, 3=UV4
+        public int UVChannel { get; set; } = 0;
+        
+        public FillMode CurrentFillMode { get => _fillMode; set => _fillMode = value; }
+        
+        public PaintToolMode ToolMode { get => _paintTool; set => _paintTool = value; }
         
         /// <summary>
         /// Creates and enters a Kitbash stage for the specified FBX.
@@ -196,6 +205,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             
             // Close the Layers panel
             KitbashWindow.CloseForStage();
+            KitbashOverlay.EnsureDetached(); // Cleanup fixed toolbar
             
             base.OnCloseStage();
         }
@@ -292,6 +302,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                 name = "Unknown",
                 sourceGuid = null,
                 sourceName = "(Unassigned)",
+                group = null,
                 color = new Color(0.5f, 0.5f, 0.5f, 1f),
                 visible = true
             });
@@ -314,6 +325,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                                 name = !string.IsNullOrEmpty(part.displayName) ? part.displayName : $"Source {_layers.Count}",
                                 sourceGuid = part.sourceFbxGuid,
                                 sourceName = Path.GetFileNameWithoutExtension(sourcePath),
+                                group = Path.GetFileNameWithoutExtension(sourcePath), // Default group to source name
                                 color = KitbashSourceLibrary.GetDefaultColor(colorIdx++),
                                 visible = true
                             });
@@ -331,25 +343,71 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             _selectedLayerIndex = _layers.Count > 1 ? 1 : 0;
         }
         
-        private void AutoDetectLayers()
+
+        
+        public void AutoDetectLayers()
         {
+            if (_layers == null) _layers = new List<OwnershipLayer>();
+            
+            // Add "Unknown" layer if missing
+            if (_layers.Count == 0)
+            {
+                _layers.Add(new OwnershipLayer
+                {
+                    name = "Unknown",
+                    sourceGuid = null,
+                    sourceName = "(Unassigned)",
+                    group = null,
+                    color = new Color(0.5f, 0.5f, 0.5f, 1f),
+                    visible = true
+                });
+            }
+
             string folder = Path.GetDirectoryName(_assetPath);
             var fbxGuids = AssetDatabase.FindAssets("t:Model", new[] { folder });
             
             int colorIdx = 0;
-            foreach (var guid in fbxGuids.Take(6))
+            foreach (var guid in fbxGuids.Take(10)) // Increased limit
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
                 if (path == _assetPath) continue;
                 
-                _layers.Add(new OwnershipLayer
+                string filename = Path.GetFileNameWithoutExtension(path);
+                
+                // Load all assets at path to find meshes
+                var assets = AssetDatabase.LoadAllAssetsAtPath(path);
+                var meshes = assets.OfType<Mesh>().Where(m => !m.name.StartsWith("Preview")).ToList();
+                
+                if (meshes.Count > 0)
                 {
-                    name = Path.GetFileNameWithoutExtension(path),
-                    sourceGuid = guid,
-                    sourceName = Path.GetFileNameWithoutExtension(path),
-                    color = KitbashSourceLibrary.GetDefaultColor(colorIdx++),
-                    visible = true
-                });
+                    // Add a layer per mesh
+                    foreach (var mesh in meshes)
+                    {
+                        _layers.Add(new OwnershipLayer
+                        {
+                            name = mesh.name,
+                            sourceGuid = guid,
+                            sourceName = mesh.name, // The specific part name
+                            group = filename,       // The file name
+                            color = KitbashSourceLibrary.GetDefaultColor(colorIdx),
+                            visible = true
+                        });
+                    }
+                    colorIdx++; // Use same color family for same source? Or valid indexing? Let's just increment.
+                }
+                else
+                {
+                    // Fallback if no meshes found (rare for Model)
+                    _layers.Add(new OwnershipLayer
+                    {
+                        name = filename,
+                        sourceGuid = guid,
+                        sourceName = filename,
+                        group = filename,
+                        color = KitbashSourceLibrary.GetDefaultColor(colorIdx++),
+                        visible = true
+                    });
+                }
             }
         }
         
@@ -704,10 +762,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         
         private void OnSceneGUI(SceneView sceneView)
         {
-            // Always draw toolbar when stage is active
-            Handles.BeginGUI();
-            DrawToolbar(sceneView);
-            Handles.EndGUI();
+            // Inject fixed toolbar
+            KitbashOverlay.EnsureAttached(sceneView);
             
             // Paint mode handling
             if (!_paintMode) return;
@@ -825,158 +881,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             }
         }
         
-        private void DrawToolbar(SceneView sceneView)
-        {
-            float toolbarWidth = 520;
-            float toolbarHeight = 36;
-            float margin = 16;
-            
-            Rect cameraRect = sceneView.camera.pixelRect;
-            toolbarWidth = Mathf.Min(toolbarWidth, cameraRect.width - 32);
-            
-            float x = (cameraRect.width - toolbarWidth) / 2f;
-            float y = cameraRect.height - toolbarHeight - margin;
-            
-            Rect toolbarRect = new Rect(x, y, toolbarWidth, toolbarHeight);
-            
-            // Dark background
-            EditorGUI.DrawRect(toolbarRect, new Color(0.15f, 0.15f, 0.15f, 0.95f));
-            // Border
-            EditorGUI.DrawRect(new Rect(toolbarRect.x, toolbarRect.y, toolbarRect.width, 1), new Color(0.3f, 0.3f, 0.3f));
-            
-            Rect contentRect = new Rect(toolbarRect.x + 8, toolbarRect.y + 6, toolbarRect.width - 16, toolbarRect.height - 12);
-            
-            GUILayout.BeginArea(contentRect);
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                // === Paint Mode Toggle ===
-                DrawToolButton("Grid.PaintTool", "Brush (B)", _paintTool == PaintToolMode.Brush, () => _paintTool = PaintToolMode.Brush);
-                DrawToolButton("Grid.FillTool", "Bucket (G)", _paintTool == PaintToolMode.Bucket, () => _paintTool = PaintToolMode.Bucket);
-                
-                DrawVerticalSeparator();
-                
-                // === Brush Size (only for brush mode) ===
-                if (_paintTool == PaintToolMode.Brush)
-                {
-                    GUILayout.Label("Size:", EditorStyles.miniLabel, GUILayout.Width(28));
-                    _brushSize = GUILayout.HorizontalSlider(_brushSize, 0.005f, 0.5f, GUILayout.Width(50));
-                    GUILayout.Label($"{_brushSize:F2}", EditorStyles.miniLabel, GUILayout.Width(28));
-                    DrawVerticalSeparator();
-                }
-                
-                // === Fill Mode (for bucket) ===
-                if (_paintTool == PaintToolMode.Bucket)
-                {
-                    GUILayout.Label("Fill:", EditorStyles.miniLabel, GUILayout.Width(24));
-                    DrawFillModeButton("Connected", FillMode.Connected);
-                    DrawFillModeButton("UV Island", FillMode.UVIsland);
-                    DrawFillModeButton("Submesh", FillMode.Submesh);
-                    DrawVerticalSeparator();
-                }
-                
-                // === Mirror ===
-                Color oldBg = GUI.backgroundColor;
-                var teal = new Color(0.21f, 0.75f, 0.69f);
-                
-                GUI.backgroundColor = _mirrorX ? teal : oldBg;
-                if (GUILayout.Button("X", EditorStyles.miniButtonLeft, GUILayout.Width(20))) _mirrorX = !_mirrorX;
-                GUI.backgroundColor = _mirrorY ? teal : oldBg;
-                if (GUILayout.Button("Y", EditorStyles.miniButtonMid, GUILayout.Width(20))) _mirrorY = !_mirrorY;
-                GUI.backgroundColor = _mirrorZ ? teal : oldBg;
-                if (GUILayout.Button("Z", EditorStyles.miniButtonRight, GUILayout.Width(20))) _mirrorZ = !_mirrorZ;
-                GUI.backgroundColor = oldBg;
-                
-                DrawVerticalSeparator();
-                
-                // === Layer chips ===
-                DrawLayerChips();
-                
-                GUILayout.FlexibleSpace();
-                
-                // === Actions ===
-                if (GUILayout.Button("Auto", EditorStyles.miniButton, GUILayout.Width(36)))
-                {
-                    AutoFillFromSubmeshes();
-                    KitbashWindow.Refresh();
-                }
-            }
-            GUILayout.EndArea();
-            
-            // Keyboard hints at bottom
-            Rect hintsRect = new Rect(toolbarRect.x, toolbarRect.yMax + 2, toolbarRect.width, 14);
-            GUI.Label(hintsRect, "[ ] Size   Ctrl+Z/Y = Undo/Redo   Alt+Click = Pick Layer", 
-                new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(1,1,1,0.4f) }});
-        }
-        
-        private void DrawToolButton(string icon, string tooltip, bool selected, System.Action onClick)
-        {
-            var style = selected ? EditorStyles.toolbarButton : EditorStyles.miniButton;
-            GUI.backgroundColor = selected ? new Color(0.21f, 0.75f, 0.69f) : Color.white;
-            
-            var content = EditorGUIUtility.IconContent(icon);
-            content.tooltip = tooltip;
-            
-            if (GUILayout.Button(content, style, GUILayout.Width(26), GUILayout.Height(22)))
-            {
-                onClick?.Invoke();
-            }
-            GUI.backgroundColor = Color.white;
-        }
-        
-        private void DrawFillModeButton(string label, FillMode mode)
-        {
-            bool selected = _fillMode == mode;
-            GUI.backgroundColor = selected ? new Color(0.21f, 0.75f, 0.69f) : Color.white;
-            
-            GUIStyle style = mode == FillMode.Connected ? EditorStyles.miniButtonLeft :
-                             mode == FillMode.Submesh ? EditorStyles.miniButtonRight : 
-                             EditorStyles.miniButtonMid;
-            
-            if (GUILayout.Button(label, style, GUILayout.Height(18)))
-            {
-                _fillMode = mode;
-            }
-            GUI.backgroundColor = Color.white;
-        }
-        
-        private void DrawVerticalSeparator()
-        {
-            GUILayout.Space(6);
-            var rect = GUILayoutUtility.GetRect(1, 18);
-            EditorGUI.DrawRect(rect, new Color(1, 1, 1, 0.15f));
-            GUILayout.Space(6);
-        }
-        
-        private void DrawLayerChips()
-        {
-            // Show up to 4 layers as color chips
-            int maxChips = Mathf.Min(4, Layers.Count);
-            for (int i = 0; i < maxChips; i++)
-            {
-                var layer = Layers[i];
-                bool isSelected = i == SelectedLayerIndex;
-                
-                // Chip background
-                Color chipBg = isSelected ? new Color(layer.color.r, layer.color.g, layer.color.b, 0.3f) : Color.clear;
-                
-                var chipStyle = new GUIStyle(EditorStyles.miniButton)
-                {
-                    padding = new RectOffset(2, 2, 1, 1),
-                    margin = new RectOffset(1, 1, 2, 2),
-                    fontSize = 9
-                };
-                
-                GUI.backgroundColor = layer.color;
-                string label = layer.name.Length > 4 ? layer.name.Substring(0, 4) : layer.name;
-                
-                if (GUILayout.Button(label, chipStyle, GUILayout.Height(16)))
-                {
-                    SelectedLayerIndex = i;
-                    KitbashWindow.Refresh();
-                }
-            }
-            GUI.backgroundColor = Color.white;
-        }
+
         
         private void PaintTrianglesInRadius(Vector3 center, float radius)
         {
@@ -1216,10 +1121,20 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             var result = new HashSet<int>();
             
             // Check if mesh has UVs
-            var uvs = _targetMesh.uv;
-            if (uvs == null || uvs.Length == 0)
+            // 1. Get the correct UV channel data
+            List<Vector2> uvList = new List<Vector2>();
+            
+            // Unity supports uv (0), uv2 (1), uv3 (2), uv4 (3) ... up to uv8
+            if (UVChannel == 0) _targetMesh.GetUVs(0, uvList);
+            else if (UVChannel == 1) _targetMesh.GetUVs(1, uvList);
+            else if (UVChannel == 2) _targetMesh.GetUVs(2, uvList);
+            else if (UVChannel == 3) _targetMesh.GetUVs(3, uvList);
+            else _targetMesh.GetUVs(0, uvList); // Fallback to UV0
+            
+            if (uvList.Count == 0)
             {
-                // Fallback to connected fill
+                // Fallback to connected fill if no UVs on channel
+                Debug.LogWarning($"[Kitbash] No UVs found on channel {UVChannel}, falling back to connected fill.");
                 return FloodFillConnected(startTri);
             }
             
@@ -1236,11 +1151,11 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                 for (int v = 0; v < 3; v++)
                 {
                     int vertIdx = triangles[t * 3 + v];
-                    if (vertIdx < uvs.Length)
+                    if (vertIdx < uvList.Count)
                     {
                         Vector2 uv = new Vector2(
-                            Mathf.Round(uvs[vertIdx].x * 1000) / 1000,
-                            Mathf.Round(uvs[vertIdx].y * 1000) / 1000
+                            Mathf.Round(uvList[vertIdx].x * 1000) / 1000,
+                            Mathf.Round(uvList[vertIdx].y * 1000) / 1000
                         );
                         
                         if (!uvToTris.ContainsKey(uv))
@@ -1262,11 +1177,11 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                 for (int v = 0; v < 3; v++)
                 {
                     int vertIdx = triangles[tri * 3 + v];
-                    if (vertIdx < uvs.Length)
+                    if (vertIdx < uvList.Count)
                     {
                         Vector2 uv = new Vector2(
-                            Mathf.Round(uvs[vertIdx].x * 1000) / 1000,
-                            Mathf.Round(uvs[vertIdx].y * 1000) / 1000
+                            Mathf.Round(uvList[vertIdx].x * 1000) / 1000,
+                            Mathf.Round(uvList[vertIdx].y * 1000) / 1000
                         );
                         
                         if (uvToTris.TryGetValue(uv, out var neighbors))
@@ -1634,6 +1549,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                         name = matName,
                         sourceGuid = null,
                         sourceName = "Auto-Fill",
+                        group = "Materials", // Group by Materials
                         color = newColor,
                         visible = true
                     });
@@ -1872,6 +1788,71 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             }
             
             return samples.ToArray();
+        }
+
+        /// <summary>
+        /// Remaps triangle ownership indices when layers are reordered.
+        /// </summary>
+        public void RemapLayerIndex(int oldIndex, int newIndex)
+        {
+            if (_triangleOwnership == null) return;
+            
+            // Map: index -> index
+            // If dragging from oldIndex to newIndex:
+            // Items shift to Close the gap at oldIndex, and Open a gap at newIndex.
+            
+            // Example: [A, B, C, D] (0, 1, 2, 3)
+            // Move B(1) to 3. Result: [A, C, D, B]
+            // A(0)->0
+            // C(2)->1
+            // D(3)->2
+            // B(1)->3
+            
+            int[] map = new int[_layers.Count];
+            for (int i = 0; i < map.Length; i++) map[i] = i;
+            
+            // Replicate the list move logic on indices
+            if (newIndex > oldIndex) // Move Down
+            {
+                // Items between old+1 and new shift UP (-1)
+                for (int i = 0; i < map.Length; i++)
+                {
+                    if (i == oldIndex) map[i] = newIndex;
+                    else if (i > oldIndex && i <= newIndex) map[i] = i - 1;
+                    else map[i] = i;
+                }
+            }
+            else if (newIndex < oldIndex) // Move Up
+            {
+                // Items between new and old-1 shift DOWN (+1)
+                for (int i = 0; i < map.Length; i++)
+                {
+                    if (i == oldIndex) map[i] = newIndex;
+                    else if (i >= newIndex && i < oldIndex) map[i] = i + 1;
+                    else map[i] = i;
+                }
+            }
+            
+            // Apply map to triangles
+            bool changed = false;
+            for (int i = 0; i < _triangleOwnership.Length; i++)
+            {
+                int current = _triangleOwnership[i];
+                if (current >= 0 && current < map.Length)
+                {
+                    int newVal = map[current];
+                    if (newVal != current)
+                    {
+                        _triangleOwnership[i] = newVal;
+                        changed = true;
+                    }
+                }
+            }
+            
+            if (changed)
+            {
+                Debug.Log($"[KitbashStage] Remapped ownership indices for move {oldIndex}->{newIndex}");
+            }
         }
     }
 }

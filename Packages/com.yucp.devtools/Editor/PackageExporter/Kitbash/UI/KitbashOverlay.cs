@@ -1,59 +1,119 @@
 #if YUCP_KITBASH_ENABLED
 using UnityEditor;
-using UnityEditor.Overlays;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
 {
     /// <summary>
-    /// Kitbash Toolbar Overlay - appears in Scene View only when KitbashStage is active.
+    /// Manages the floating toolbar in the Scene View.
+    /// Injected manually to force bottom positioning.
     /// </summary>
-    [Overlay(typeof(SceneView), "Kitbash Toolbar", false)] // defaultDisplay = false
-    public class KitbashOverlay : Overlay
+    public class KitbashOverlay
     {
+        private static KitbashOverlay _instance;
+        private VisualElement _root;
+        private SceneView _activeView;
+        
         private Slider _sizeSlider;
         private Button _brushBtn, _bucketBtn, _lassoBtn;
         private Button _symX, _symY;
         private Button _viewOverlay;
         
-        public override VisualElement CreatePanelContent()
+        public static void EnsureAttached(SceneView view)
         {
-            var root = new VisualElement();
+            if (_instance == null) _instance = new KitbashOverlay();
+            _instance.Attach(view);
+        }
+        
+        public static void EnsureDetached()
+        {
+            _instance?.Detach();
+        }
+        
+        private void Attach(SceneView view)
+        {
+            if (_activeView == view && _root != null && _root.parent != null)
+            {
+                // Already attached and valid, just sync
+                CheckStageActive();
+                return;
+            }
+            
+            // Detach from old if needed
+            Detach();
+            
+            _activeView = view;
+            CreateContent();
+            
+            if (_activeView != null && _root != null)
+            {
+                _activeView.rootVisualElement.Add(_root);
+                EditorApplication.update += CheckStageActive;
+            }
+        }
+        
+        private void Detach()
+        {
+            EditorApplication.update -= CheckStageActive;
+            
+            if (_root != null && _root.parent != null)
+            {
+                _root.RemoveFromHierarchy();
+            }
+            _root = null;
+            _activeView = null;
+        }
+        
+        private void CreateContent()
+        {
+            _root = new VisualElement();
+            _root.name = "kitbash-toolbar-overlay";
+            _root.pickingMode = PickingMode.Ignore; // Let clicks pass through container
+            
+            // Layout container to center bottom
+            _root.style.position = Position.Absolute;
+            _root.style.bottom = 16;
+            _root.style.left = 0;
+            _root.style.right = 0;
+            _root.style.alignItems = Align.Center;
+            _root.style.justifyContent = Justify.FlexEnd;
+            _root.style.flexDirection = FlexDirection.Column;
             
             // Load UXML
             var visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(
                 "Packages/com.yucp.devtools/Editor/PackageExporter/Kitbash/UI/KitbashToolbar.uxml");
             if (visualTree != null)
-                visualTree.CloneTree(root);
+            {
+                var content = visualTree.CloneTree();
+                _root.Add(content);
+            }
             else
-                root.Add(new Label("Error loading toolbar"));
+                _root.Add(new Label("Error loading toolbar"));
 
             // Load USS
             var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(
                 "Packages/com.yucp.devtools/Editor/PackageExporter/Kitbash/UI/KitbashWindow.uss");
             if (styleSheet != null)
-                root.styleSheets.Add(styleSheet);
+                _root.styleSheets.Add(styleSheet);
 
             // Cache references
-            _brushBtn = root.Q<Button>("tool-brush");
-            _bucketBtn = root.Q<Button>("tool-bucket");
-            _lassoBtn = root.Q<Button>("tool-lasso");
-            _sizeSlider = root.Q<Slider>("brush-size");
-            _symX = root.Q<Button>("sym-x");
-            _symY = root.Q<Button>("sym-y");
-            _viewOverlay = root.Q<Button>("view-overlay");
+            _brushBtn = _root.Q<Button>("tool-brush");
+            _bucketBtn = _root.Q<Button>("tool-bucket");
+            _lassoBtn = _root.Q<Button>("tool-lasso");
+            _sizeSlider = _root.Q<Slider>("brush-size");
+            _symX = _root.Q<Button>("sym-x");
+            _symY = _root.Q<Button>("sym-y");
+            _viewOverlay = _root.Q<Button>("view-overlay");
 
             // Setup icons
-            SetupIcons(root);
+            SetupIcons(_root);
             
             // Setup interactions
-            SetupInteractions(root);
+            SetupInteractions(_root);
             
-            // Initial sync from stage
-            SyncFromStage();
-
-            return root;
+            // Initial sync
+            CheckStageActive();
         }
 
         private void SetupIcons(VisualElement root)
@@ -74,9 +134,9 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                     iconEl.style.backgroundImage = content.image as Texture2D;
             }
 
-            SetIcon("tool-brush", "d_Brush Icon", "Brush Icon");
-            SetIcon("tool-bucket", "d_FloodFill Icon", "FloodFill Icon");
-            SetIcon("tool-lasso", "d_Lasso Icon", "RectTransformBlueprint");
+            SetIcon("tool-brush", "d_Grid.PaintTool", "Grid.PaintTool");
+            SetIcon("tool-bucket", "d_Grid.FillTool", "Grid.FillTool");
+            SetIcon("tool-lasso", "d_RectTool", "RectTool");
             SetIcon("view-overlay", "d_SceneViewVisibility", "SceneViewVisibility");
         }
 
@@ -129,23 +189,10 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             var stage = KitbashStage.Current;
             if (stage == null) return;
             
-            // Update stage (need public setter - for now just visual)
-            // stage.ToolMode = mode; // TODO: Add public setter
+            stage.ToolMode = mode;
             
             // Update visuals
-            _brushBtn?.RemoveFromClassList("selected");
-            _bucketBtn?.RemoveFromClassList("selected");
-            _lassoBtn?.RemoveFromClassList("selected");
-            
-            switch (mode)
-            {
-                case KitbashStage.PaintToolMode.Brush:
-                    _brushBtn?.AddToClassList("selected");
-                    break;
-                case KitbashStage.PaintToolMode.Bucket:
-                    _bucketBtn?.AddToClassList("selected");
-                    break;
-            }
+            SetToolVisuals(mode);
         }
 
         private void UpdateToggle(Button btn, bool active)
@@ -171,31 +218,37 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             UpdateToggle(_symY, stage.MirrorY);
             UpdateToggle(_viewOverlay, stage.PaintMode);
             
-            // Sync tool (default to brush)
-            SetTool(KitbashStage.PaintToolMode.Brush);
+            // Sync tool
+            SetToolVisuals(stage.ToolMode);
         }
-
-        // --- Visibility Control ---
         
-        public override void OnCreated()
+        private void SetToolVisuals(KitbashStage.PaintToolMode mode)
         {
-            base.OnCreated();
-            // Subscribe to stage changes
-            EditorApplication.update += CheckStageActive;
-        }
-
-        public override void OnWillBeDestroyed()
-        {
-            EditorApplication.update -= CheckStageActive;
-            base.OnWillBeDestroyed();
+            _brushBtn?.RemoveFromClassList("selected");
+            _bucketBtn?.RemoveFromClassList("selected");
+            _lassoBtn?.RemoveFromClassList("selected");
+            
+            switch (mode)
+            {
+                case KitbashStage.PaintToolMode.Brush:
+                    _brushBtn?.AddToClassList("selected");
+                    break;
+                case KitbashStage.PaintToolMode.Bucket:
+                    _bucketBtn?.AddToClassList("selected");
+                    break;
+            }
         }
 
         private void CheckStageActive()
         {
             bool shouldBeVisible = KitbashStage.Current != null;
-            if (displayed != shouldBeVisible)
+            
+            if (_root != null)
+                _root.style.display = shouldBeVisible ? DisplayStyle.Flex : DisplayStyle.None;
+            
+            if (shouldBeVisible)
             {
-                displayed = shouldBeVisible;
+                SyncFromStage();
             }
         }
     }
