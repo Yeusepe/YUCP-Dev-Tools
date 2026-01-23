@@ -23,9 +23,12 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             public bool IsHeader;
             public string Label;
             public int LayerIndex; // -1 if header
+            public bool IsLastInGroup; // For visual hierarchy
+            public bool HasSelectedChild; // If true, one of the children is selected
         }
         
         private List<LayerListItem> _viewItems = new List<LayerListItem>();
+        private HashSet<string> _collapsedGroups = new HashSet<string>();
         
         private ListView _listView;
         private VisualElement _propsContainer;
@@ -54,7 +57,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         public static void OpenForStage()
         {
             var wnd = GetWindow<KitbashWindow>();
-            wnd.titleContent = new GUIContent("Kitbash Layers", EditorGUIUtility.IconContent("Preset.Context").image);
+            wnd.titleContent = new GUIContent("Asset Layers", EditorGUIUtility.IconContent("Preset.Context").image);
             wnd.minSize = new Vector2(280, 500);
             _instance = wnd;
             wnd.Show();
@@ -123,7 +126,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             // Setup ListView
             _listView.makeItem = MakeLayerRow;
             _listView.bindItem = BindLayerRow;
-            _listView.fixedItemHeight = 36;
+            _listView.fixedItemHeight = 42; // Taller rows for modern feel
             _listView.selectionChanged += OnLayerSelected;
             // Native drag and drop reordering
             _listView.reorderable = true;
@@ -168,19 +171,48 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             var grouped = stage.Layers
                 .Select((layer, index) => new { Layer = layer, Index = index })
                 .GroupBy(x => x.Layer.group ?? "Ungrouped"); // Group by new 'group' field
+            
+            // Identify active group
+            string activeGroupName = null;
+            if (stage.SelectedLayerIndex >= 0 && stage.SelectedLayerIndex < stage.Layers.Count)
+            {
+                activeGroupName = stage.Layers[stage.SelectedLayerIndex].group;
+            }
                 
             foreach (var group in grouped)
             {
-                // Add Header (skip for single unknown layer or if desired)
-                if (group.Key != "Ungrouped" || stage.Layers.Count > 1) 
+                bool isGrouped = group.Key != "Ungrouped";
+                
+                // Never show "Ungrouped" header. Only show headers for actual named groups.
+                if (isGrouped)
                 {
-                    _viewItems.Add(new LayerListItem { IsHeader = true, Label = group.Key, LayerIndex = -1 });
+                    bool isActiveGroup = (activeGroupName == group.Key);
+                    _viewItems.Add(new LayerListItem 
+                    { 
+                        IsHeader = true, 
+                        Label = group.Key, 
+                        LayerIndex = -1,
+                        HasSelectedChild = isActiveGroup
+                    });
                 }
                 
-                // Add Items
-                foreach (var item in group)
+                // If collapsed, skip adding items (effectively hiding them)
+                if (isGrouped && _collapsedGroups.Contains(group.Key))
                 {
-                    _viewItems.Add(new LayerListItem { IsHeader = false, Label = item.Layer.name, LayerIndex = item.Index });
+                    continue;
+                }
+                
+                var itemsInGroup = group.ToList();
+                for (int i = 0; i < itemsInGroup.Count; i++)
+                {
+                    var item = itemsInGroup[i];
+                    _viewItems.Add(new LayerListItem 
+                    { 
+                        IsHeader = false, 
+                        Label = item.Layer.name, 
+                        LayerIndex = item.Index,
+                        IsLastInGroup = (i == itemsInGroup.Count - 1) && (group.Key != "Ungrouped")
+                    });
                 }
             }
 
@@ -210,35 +242,66 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         private VisualElement MakeLayerRow()
         {
             var row = new VisualElement();
-            row.AddToClassList("list-row");
+            row.AddToClassList("kitbash-layer-row");
 
-            // Header Element (Hidden by default)
-            var header = new Label();
-            header.name = "header-idx"; // Using unique name
-            header.AddToClassList("field-label"); // Reuse label style
-            header.style.display = DisplayStyle.None;
-            header.style.paddingLeft = 4;
-            header.style.unityFontStyleAndWeight = FontStyle.Bold;
-            row.Add(header);
+            // --- Header Mode Elements ---
+            var headerContainer = new VisualElement { name = "header-container" };
+            headerContainer.AddToClassList("kitbash-layer-header");
+            row.Add(headerContainer);
+            
+            // Interaction handler for folding
+            headerContainer.RegisterCallback<ClickEvent>(evt => {
+                if (row.userData is LayerListItem item && item.IsHeader) {
+                    if (_collapsedGroups.Contains(item.Label))
+                        _collapsedGroups.Remove(item.Label);
+                    else
+                        _collapsedGroups.Add(item.Label);
+                        
+                    RefreshFromStage();
+                    evt.StopPropagation(); 
+                }
+            });
 
-            // Layer Container (Visible by default)
-            var layerContainer = new VisualElement();
-            layerContainer.name = "layer-container";
-            layerContainer.style.flexDirection = FlexDirection.Row;
-            layerContainer.style.flexGrow = 1;
-            layerContainer.style.alignItems = Align.Center;
+            var headerArrow = new VisualElement { name = "header-arrow" };
+            headerArrow.AddToClassList("kitbash-header-arrow");
+            headerContainer.Add(headerArrow);
+
+            var headerIcon = new VisualElement();
+            headerIcon.AddToClassList("kitbash-header-icon"); // Folder icon
+            headerContainer.Add(headerIcon);
+
+            var headerLabel = new Label();
+            headerLabel.name = "header-label";
+            headerLabel.AddToClassList("kitbash-header-label");
+            headerContainer.Add(headerLabel);
+
+            // --- Layer Mode Elements ---
+            var layerContainer = new VisualElement { name = "layer-container" };
+            layerContainer.AddToClassList("kitbash-layer-content");
             row.Add(layerContainer);
+            
+            // 0. Hierarchy Tree Guide (New)
+            var treeGuide = new VisualElement { name = "tree-guide" };
+            treeGuide.AddToClassList("kitbash-tree-guide");
+            var treeLineV = new VisualElement();
+            treeLineV.AddToClassList("tree-line-v");
+            treeGuide.Add(treeLineV);
+            var treeLineH = new VisualElement();
+            treeLineH.AddToClassList("tree-line-h");
+            treeGuide.Add(treeLineH);
+            layerContainer.Add(treeGuide);
 
-            // Visibility Toggle
+            // 1. Visibility Toggle (Leftmost)
             var visBtn = new Button();
             visBtn.name = "vis-btn";
-            visBtn.AddToClassList("row-visibility-btn");
+            visBtn.AddToClassList("kitbash-vis-toggle");
             var visIcon = new VisualElement();
-            visIcon.AddToClassList("icon-eye-small");
+            visIcon.name = "vis-icon";
+            visIcon.AddToClassList("kitbash-vis-icon");
             visBtn.Add(visIcon);
             layerContainer.Add(visBtn);
             
-            // Persistent Listener using userData
+            // Click Handler for visibility
             visBtn.clicked += () => {
                 if (row.userData is LayerListItem item && !item.IsHeader)
                 {
@@ -253,32 +316,32 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                 }
             };
 
-            // Color Swatch
-            var swatch = new VisualElement { name = "swatch" };
-            swatch.AddToClassList("row-color-swatch");
-            layerContainer.Add(swatch);
+            // 2. Color Bar (Vertical accent)
+            var colorBar = new VisualElement { name = "color-bar" };
+            colorBar.AddToClassList("kitbash-layer-color-bar");
+            layerContainer.Add(colorBar);
 
-            // Content
-            var content = new VisualElement();
-            content.AddToClassList("row-content");
-            layerContainer.Add(content);
+            // 3. Info Column (Name + Source/Meta)
+            var infoCol = new VisualElement();
+            infoCol.AddToClassList("kitbash-layer-info");
+            layerContainer.Add(infoCol);
 
-            var title = new Label { name = "title" };
-            title.AddToClassList("row-title");
-            content.Add(title);
+            var nameLabel = new Label { name = "layer-name" };
+            nameLabel.AddToClassList("kitbash-layer-name");
+            infoCol.Add(nameLabel);
 
-            var sub = new Label { name = "sub" };
-            sub.AddToClassList("row-sub");
-            content.Add(sub);
+            var metaLabel = new Label { name = "layer-meta" };
+            metaLabel.AddToClassList("kitbash-layer-meta");
+            infoCol.Add(metaLabel);
 
-            // Stats
-            var stats = new VisualElement();
-            stats.AddToClassList("row-stats");
-            layerContainer.Add(stats);
-            
-            var percent = new Label { name = "percent" };
-            percent.AddToClassList("row-percent");
-            stats.Add(percent);
+            // 4. Stats Badge (Right aligned)
+            var statsBadge = new VisualElement();
+            statsBadge.AddToClassList("kitbash-layer-stats");
+            layerContainer.Add(statsBadge);
+
+            var countLabel = new Label { name = "tri-count" };
+            countLabel.AddToClassList("kitbash-layer-count");
+            statsBadge.Add(countLabel);
 
             return row;
         }
@@ -287,56 +350,101 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         {
             if (index >= _viewItems.Count) return;
             var item = _viewItems[index];
-
-            // Update userData for listeners
             element.userData = item;
-            
-            var header = element.Q<Label>("header-idx");
-            var container = element.Q("layer-container");
+
+            var headerContainer = element.Q("header-container");
+            var layerContainer = element.Q("layer-container");
 
             if (item.IsHeader)
             {
-                header.text = item.Label.ToUpper();
-                header.style.display = DisplayStyle.Flex;
-                container.style.display = DisplayStyle.None;
+                // Show Header, Hide Layer
+                headerContainer.style.display = DisplayStyle.Flex;
+                layerContainer.style.display = DisplayStyle.None;
                 
-                // Style fix for header row
-                element.style.backgroundColor = new Color(0,0,0,0.2f); // Darker background for header
+                element.Q<Label>("header-label").text = item.Label;
+                
+                // Rotated arrow if expanded
+                var arrow = element.Q("header-arrow");
+                bool isCollapsed = _collapsedGroups.Contains(item.Label);
+                // Class 'collapsed' will rotate -90 or similar
+                if (isCollapsed) arrow.AddToClassList("is-collapsed");
+                else arrow.RemoveFromClassList("is-collapsed");
+                
+                // Highlight if child is selected
+                if (item.HasSelectedChild) headerContainer.AddToClassList("has-selection");
+                else headerContainer.RemoveFromClassList("has-selection");
+                
+                // Reset interaction styles
+                element.AddToClassList("is-header");
+                element.RemoveFromClassList("is-layer");
                 return;
             }
 
-            // It's a layer
-            header.style.display = DisplayStyle.None;
-            container.style.display = DisplayStyle.Flex;
-            element.style.backgroundColor = StyleKeyword.Null; // Reset bg
+            // Show Layer, Hide Header
+            headerContainer.style.display = DisplayStyle.None;
+            layerContainer.style.display = DisplayStyle.Flex;
+            
+            element.RemoveFromClassList("is-header");
+            element.AddToClassList("is-layer");
 
             var stage = KitbashStage.Current;
             if (stage == null || item.LayerIndex >= stage.Layers.Count) return;
             
             var layer = stage.Layers[item.LayerIndex];
-            
-            // Indent layer
-            container.style.paddingLeft = 16; 
 
-            // Bind Visibility
+            // 0. Tree Guide Logic
+            var treeGuide = element.Q("tree-guide");
+            // Only show tree guide if we are part of a named group
+            bool isInGroup = !string.IsNullOrEmpty(layer.group) && layer.group != "Ungrouped";
+            
+            if (isInGroup)
+            {
+                treeGuide.style.display = DisplayStyle.Flex;
+                if (item.IsLastInGroup) treeGuide.AddToClassList("is-last");
+                else treeGuide.RemoveFromClassList("is-last");
+            }
+            else
+            {
+                treeGuide.style.display = DisplayStyle.None;
+            }
+
+            // 1. Visibility
             var visBtn = element.Q<Button>("vis-btn");
-            visBtn.RemoveFromClassList("visible");
-            if (layer.visible) visBtn.AddToClassList("visible");
-            // Listener is already attached in MakeLayerRow and uses element.userData
+            var visIcon = visBtn.Q("vis-icon");
+            // Toggle class based on state for styling opacity/icon
+            if (layer.visible) 
+            {
+                visBtn.AddToClassList("is-visible");
+                visIcon.style.opacity = 1f;
+            }
+            else 
+            {
+                visBtn.RemoveFromClassList("is-visible");
+                visIcon.style.opacity = 0.3f;
+            }
 
-            // Bind Data
-            var swatch = element.Q("swatch");
-            swatch.style.backgroundColor = layer.color;
+            // 2. Color Bar
+            var colorBar = element.Q("color-bar");
+            colorBar.style.backgroundColor = layer.color;
+
+            // 3. Name & Meta
+            var nameLabel = element.Q<Label>("layer-name");
+            nameLabel.text = layer.name;
             
-            var title = element.Q<Label>("title");
-            title.text = layer.name;
-            title.style.color = layer.visible ? new Color(0.98f, 0.98f, 0.98f) : new Color(0.5f, 0.5f, 0.5f);
+            var metaLabel = element.Q<Label>("layer-meta");
+            // Show source name or "Empty" if 0 tris
+            int triCount = layer.triangleCount;
+            if (triCount == 0) metaLabel.text = "Empty";
+            else metaLabel.text = string.IsNullOrEmpty(layer.sourceName) ? "No Source" : layer.sourceName;
 
-            element.Q<Label>("sub").text = layer.sourceName ?? "(No source)";
-
-            int total = stage.TotalTriangles;
-            float pct = total > 0 ? (layer.triangleCount * 100f / total) : 0;
-            element.Q<Label>("percent").text = $"{pct:F0}%";
+            // 4. Stats
+            var countLabel = element.Q<Label>("tri-count");
+            // Format: 1.2k or 500
+            if (triCount > 1000) countLabel.text = $"{triCount/1000f:F1}k";
+            else countLabel.text = triCount.ToString();
+            
+            // Add tooltip with full count
+            countLabel.tooltip = $"{triCount:N0} Triangles";
         }
 
         private void OnLayerSelected(IEnumerable<object> selection)

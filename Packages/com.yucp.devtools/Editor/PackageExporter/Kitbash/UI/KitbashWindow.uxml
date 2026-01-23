@@ -1,83 +1,70 @@
-<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="True">
-    <ui:VisualElement class="theme-container window-root">
-        
-        <!-- Main Card Container -->
-        <ui:VisualElement class="layers-card">
-            
-            <!-- Header -->
-            <ui:VisualElement class="header">
-                <ui:Button name="back-btn" class="btn btn-ghost" style="width: 24px; padding: 0; margin-right: 4px;">
-                     <ui:Image class="icon" style="background-image: resource('d_back'); width: 16px; height: 16px;"/>
-                </ui:Button>
-                <ui:Label text="Layers" class="title" style="flex-grow: 1;"/>
-                <ui:VisualElement style="flex-direction: row;">
-                    <ui:Button text="+" class="btn btn-primary" name="add-layer-btn" style="width: 24px; padding: 0; margin-right: 4px;" tooltip="Add New Layer"/>
-                    <ui:Button class="btn btn-ghost" tooltip="Options" style="width: 24px; padding: 0;">
-                        <ui:Label text="•••" style="font-size: 14px; margin-top: -4px;"/>
-                    </ui:Button>
-                    <ui:Button text="Auto" name="auto-seed-btn" class="btn btn-outline" style="height: 20px; font-size: 10px; padding: 0 4px; margin-left: 4px;" tooltip="Auto-Detect Layers from Source"/>
-                </ui:VisualElement>
+<?xml version="1.0" encoding="utf-8"?>
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements">
+    <ui:VisualElement name="root" class="kitbash-root">
+        <!-- Header -->
+        <ui:VisualElement name="header" class="kitbash-header">
+            <ui:VisualElement class="kitbash-header-left">
+                <ui:Button name="back-btn" class="kitbash-back-btn" text="←" tooltip="Exit Kitbash Mode" />
+                <ui:Label text="Layers" class="kitbash-header-title" />
             </ui:VisualElement>
-            
-            <!-- Search & Quick Actions -->
-            <ui:VisualElement class="toolbar-row">
-                <ui:TextField name="search-input" placeholder-text="Search..." class="input" style="flex-grow: 1; margin-right: 8px;"/>
-                <ui:Button text="Select All" name="select-all-btn" class="btn btn-outline" style="font-size: 10px;"/>
-            </ui:VisualElement>
-            
-            <!-- Layer List -->
-            <ui:ListView name="layer-list" class="layer-list" virtualized="true" reorderable="true"/>
-            
-            <!-- Empty State (Conditional) -->
-            <ui:VisualElement name="empty-state" style="display: none; align-items: center; justify-content: center; flex-grow: 1; opacity: 0.5;">
-                <ui:Label text="No layers defined"/>
-            </ui:VisualElement>
-            
-            <!-- Footer: Selected Layer Properties -->
-            <ui:VisualElement name="footer" class="footer">
-                
-                <!-- Fill Settings Section (Always Visible or contextual?) -> Let's make it contextual to Paint Mode or Bucket Tool -->
-                <!-- Fill Settings Section -->
-                <ui:VisualElement name="fill-settings" class="fill-settings">
-                    <ui:Label text="FILL MODE" class="field-label"/>
-                    <ui:VisualElement class="segmented-control" style="margin-bottom: 8px;">
-                        <ui:Button text="Connected" name="fill-connected" class="segment-btn selected"/>
-                        <ui:Button text="UV Island" name="fill-uv" class="segment-btn"/>
-                        <ui:Button text="Submesh" name="fill-submesh" class="segment-btn"/>
-                    </ui:VisualElement>
-                    
-                    <ui:VisualElement name="uv-settings" style="flex-direction: row; align-items: center; display: none;">
-                        <ui:Label text="UV Channel" class="field-sub-label" style="margin-right: 8px; font-size: 10px; color: #a1a1aa;"/>
-                        <ui:DropdownField name="uv-channel-dropdown" index="0" choices="UV0,UV1,UV2,UV3" style="flex-grow: 1;"/>
-                    </ui:VisualElement>
-                </ui:VisualElement>
-            
-                <ui:VisualElement id="props-container" style="display: none;">
-                    
-                    <ui:VisualElement style="flex-direction: row; margin-bottom: 8px;">
-                        <ui:VisualElement style="flex-grow: 1;">
-                            <ui:Label text="LAYER NAME" class="field-label"/>
-                            <ui:TextField name="prop-name" class="input"/>
-                        </ui:VisualElement>
-                    </ui:VisualElement>
-                    
-                    <ui:Label text="SOURCE" class="field-label"/>
-                    <ui:VisualElement style="flex-direction: row; margin-bottom: 12px;">
-                         <ui:Button text="Select Source..." name="prop-source-btn" class="btn btn-outline" style="flex-grow: 1; justify-content: flex-start; text-overflow: ellipsis; overflow: hidden;"/>
-                    </ui:VisualElement>
-                    
-                    <ui:VisualElement style="flex-direction: row; justify-content: flex-end;">
-                        <ui:Button text="Clear" name="clear-layer-btn" class="btn btn-ghost" style="color: #ef4444;"/>
-                    </ui:VisualElement>
-                    
-                </ui:VisualElement>
-                
-                <ui:VisualElement id="no-selection" style="align-items: center; padding: 10px;">
-                    <ui:Label text="No Layer Selected" style="color: #52525b; font-size: 11px; font-style: italic;"/>
-                </ui:VisualElement>
-            </ui:VisualElement>
-            
         </ui:VisualElement>
-        
+
+        <!-- Search -->
+        <ui:VisualElement name="search-container" class="kitbash-search-container">
+            <ui:TextField name="search-input" class="kitbash-search-input" placeholder-text="Search layers..." />
+        </ui:VisualElement>
+
+        <!-- Layer List -->
+        <ui:VisualElement name="list-container" class="kitbash-list-container">
+            <ui:ListView name="layer-list" virtualization-method="FixedHeight" show-border="false" show-alternating-row-backgrounds="None" />
+        </ui:VisualElement>
+
+        <!-- Add Layer Button -->
+        <ui:VisualElement name="add-layer-container" class="kitbash-add-layer-container">
+            <ui:Button name="add-layer-btn" class="kitbash-add-layer-btn" text="+ Add Layer" />
+        </ui:VisualElement>
+
+        <!-- No Selection State -->
+        <ui:VisualElement name="no-selection" class="kitbash-no-selection">
+            <ui:Label text="Select a layer to edit properties" class="kitbash-no-selection-text" />
+        </ui:VisualElement>
+
+        <!-- Properties Panel -->
+        <ui:VisualElement name="props-container" class="kitbash-props-section">
+            <ui:Label text="LAYER PROPERTIES" class="kitbash-section-title" />
+            
+            <!-- Name -->
+            <ui:VisualElement class="kitbash-prop-row">
+                <ui:Label text="Name" class="kitbash-prop-label" />
+                <ui:TextField name="prop-name" class="kitbash-prop-input kitbash-prop-field" />
+            </ui:VisualElement>
+            
+            <!-- Source -->
+            <ui:VisualElement class="kitbash-prop-row">
+                <ui:Label text="Source" class="kitbash-prop-label" />
+                <ui:Button name="prop-source-btn" class="kitbash-source-btn kitbash-prop-field" text="Select Source..." />
+            </ui:VisualElement>
+
+            <!-- Fill Mode Section -->
+            <ui:VisualElement name="fill-settings" class="kitbash-fill-section">
+                <ui:Label text="FILL MODE" class="kitbash-section-title" />
+                <ui:VisualElement class="kitbash-fill-row">
+                    <ui:Button name="fill-connected" class="kitbash-fill-btn" text="Connected" />
+                    <ui:Button name="fill-uv" class="kitbash-fill-btn" text="UV Island" />
+                    <ui:Button name="fill-submesh" class="kitbash-fill-btn" text="Submesh" />
+                </ui:VisualElement>
+                
+                <!-- UV Channel Settings (shown when UV Island is selected) -->
+                <ui:VisualElement name="uv-settings" class="kitbash-uv-settings">
+                    <ui:DropdownField name="uv-channel-dropdown" class="kitbash-uv-dropdown" label="Channel" choices="UV0,UV1,UV2,UV3" value="UV0" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+
+            <!-- Actions -->
+            <ui:VisualElement class="kitbash-actions">
+                <ui:Button name="auto-seed-btn" class="kitbash-action-btn kitbash-action-btn-primary" text="Auto Seed" tooltip="Automatically assign layers based on source meshes" />
+                <ui:Button name="clear-layer-btn" class="kitbash-action-btn kitbash-action-btn-danger" text="Clear Layer" tooltip="Remove all triangles from this layer" />
+            </ui:VisualElement>
+        </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

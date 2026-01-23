@@ -231,7 +231,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         protected override GUIContent CreateHeaderContent()
         {
             string fileName = Path.GetFileNameWithoutExtension(_assetPath);
-            return new GUIContent($"Kitbash: {fileName}", EditorGUIUtility.IconContent("Mesh Icon").image);
+            return new GUIContent($"Asset Layers: {fileName}", EditorGUIUtility.IconContent("Mesh Icon").image);
         }
         
         private bool LoadPreviewModel()

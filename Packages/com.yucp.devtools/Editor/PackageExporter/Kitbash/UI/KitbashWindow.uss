@@ -1,347 +1,810 @@
-/* Shared Theme - shadcn/zinc */
-.theme-container {
-    --bg: #09090b;
-    --card: #09090b;
-    --card-border: #27272a;
-    --input: #18181b;
-    --input-border: #27272a;
-    --primary: #fafafa;
-    --primary-fg: #18181b;
-    --muted: #27272a;
-    --muted-fg: #a1a1aa;
-    --accent: #27272a;
-    --accent-fg: #fafafa;
-    --danger: #7f1d1d;
-    --radius: 6px;
-    
-    background-color: var(--bg);
-    color: var(--primary);
-    font-size: 12px;
-}
+/* ============================================================================
+   Kitbash Window - Component-Specific Styles
+   Using YUCP Design System - shadcn/ui inspired, teal accent
+   ============================================================================ */
 
-/* WINDOW STYLES */
-.window-root {
-    height: 100%;
-    padding: 8px;
-    background-color: var(--bg);
-}
-
-.layers-card {
+/* ============================================================================
+   ROOT CONTAINER - Base styling
+   ============================================================================ */
+.kitbash-root {
     flex-grow: 1;
-    border-width: 1px;
-    border-color: var(--card-border);
-    border-radius: var(--radius);
-    background-color: var(--card);
-    padding: 0; /* Padding handled by internal containers for cleaner scrolling */
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
+    background-color: #151515;
+    padding: 0;
+    min-width: 0;
 }
 
-.header {
+/* ============================================================================
+   HEADER - Navigation bar
+   ============================================================================ */
+.kitbash-header {
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    padding: 12px;
+    padding: 12px 16px;
+    background-color: #1a1a1a;
     border-bottom-width: 1px;
-    border-bottom-color: var(--card-border);
-    height: 48px;
-    background-color: var(--card);
+    border-bottom-color: #2a2a2a;
+    min-height: 48px;
     flex-shrink: 0;
 }
 
-.title {
+.kitbash-header-left {
+    flex-direction: row;
+    align-items: center;
+}
+
+.kitbash-header-title {
     font-size: 14px;
     -unity-font-style: bold;
-    color: var(--primary);
+    color: #ffffff;
+    margin-left: 8px;
 }
 
-.toolbar-row {
-    flex-direction: row;
-    padding: 8px 12px;
+.kitbash-back-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    padding: 0;
+    background-color: transparent;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 6px;
+    color: #b0b0b0;
+    font-size: 14px;
+    -unity-text-align: middle-center;
+    justify-content: center;
+    align-items: center;
+    transition-duration: 0.15s;
+    transition-property: background-color, border-color, color;
+}
+
+.kitbash-back-btn:hover {
+    background-color: #2a2a2a;
+    border-color: #3a3a3a;
+    color: #ffffff;
+}
+
+/* ============================================================================
+   SEARCH BAR
+   ============================================================================ */
+.kitbash-search-container {
+    padding: 12px 16px;
     border-bottom-width: 1px;
-    border-bottom-color: var(--card-border);
-    background-color: #0c0c0e; /* slightly darker than card */
+    border-bottom-color: #2a2a2a;
     flex-shrink: 0;
 }
 
-/* Lists */
-.layer-list {
-    flex-grow: 1;
-    background-color: transparent;
+.kitbash-search-input {
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: #ffffff;
+    min-height: 32px;
+    transition-duration: 0.15s;
+    transition-property: border-color, background-color;
 }
 
-.list-row {
-    flex-direction: row;
-    align-items: center;
-    padding: 0 8px; /* Compact padding */
-    height: 36px; /* Slightly tighter than 40px */
-    border-bottom-width: 1px;
-    border-bottom-color: #1a1a1c;
-    transition-duration: 0.1s;
+.kitbash-search-input:focus {
+    border-color: rgba(54, 191, 177, 0.5);
+    background-color: #2f2f2f;
 }
 
-.list-row:hover {
-    background-color: var(--accent);
-}
-
-.list-row.selected {
-    background-color: #27272a;
-}
-
-/* Row Content */
-.row-visibility-btn {
-    width: 24px;
-    height: 24px;
-    margin-right: 4px;
+.kitbash-search-input .unity-base-text-field__input {
     background-color: transparent;
     border-width: 0;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.5;
+    color: #ffffff;
 }
 
-.row-visibility-btn:hover {
-    background-color: rgba(255, 255, 255, 0.1);
-    opacity: 1.0;
-    border-radius: 4px;
-}
-
-.row-visibility-btn.visible {
-    opacity: 1.0;
-}
-
-.icon-eye-small {
-    width: 14px;
-    height: 14px;
-    background-image: resource("d_SceneViewVisibility");
-    -unity-background-scale-mode: scale-to-fit;
-}
-
-.row-color-swatch {
-    width: 6px;
-    height: 24px;
-    margin-right: 8px;
-    border-radius: 2px;
-}
-
-.row-content {
+/* ============================================================================
+   LAYER LIST
+   ============================================================================ */
+/* ============================================================================
+   LAYER LIST REDESIGN
+   ============================================================================ */
+.kitbash-list-container {
     flex-grow: 1;
-    justify-content: center;
+    flex-shrink: 1;
+    padding: 8px 12px;
+    background-color: #121212; /* Darker list background */
+}
+
+/* Base list item style controlled by Unity */
+#layer-list .unity-list-view__item {
+    background-color: transparent;
+    padding: 0;
+    margin-bottom: 2px;
+    border-radius: 6px;
     overflow: hidden;
 }
 
-.row-title {
-    font-size: 12px;
-    color: var(--primary);
-    -unity-text-align: middle-left;
-    overflow: hidden;
-    text-overflow: ellipsis;
+#layer-list .unity-list-view__item:hover {
+    background-color: transparent; /* Handled by internal row */
 }
 
-.row-sub {
-    font-size: 9px;
-    color: var(--muted-fg);
-    display: none; /* Hide sub for cleaner look, maybe show on hover or selected */
+#layer-list .unity-list-view__item--selected {
+    background-color: transparent; /* Handled by internal row */
 }
 
-/* Stats Logic */
-.row-stats {
-    width: 40px;
-    align-items: flex-end;
-    justify-content: center;
-}
-
-.row-percent {
-    font-size: 10px;
-    color: #52525b;
-}
-
-/* Footer / Properties Panel */
-.footer {
-    border-top-width: 1px;
-    border-top-color: var(--card-border);
-    padding: 12px;
-    background-color: #0c0c0e;
-    flex-shrink: 0;
-}
-
-.field-label {
-    font-size: 10px;
-    color: #a1a1aa;
-    margin-bottom: 4px;
-    -unity-font-style: bold;
-}
-
-.input {
-    background-color: var(--input);
-    border-color: var(--input-border);
-    border-radius: 4px;
-    color: var(--primary);
-    padding: 4px;
-}
-
-.btn {
-    border-radius: 4px;
-    border-width: 1px;
-    padding: 4px 12px;
-    font-size: 12px;
-    cursor: link;
+/* 
+   Internal Row Container 
+   This is the root created by MakeLayerRow
+*/
+.kitbash-layer-row {
+    flex-grow: 1;
+    flex-direction: row;
+    align-items: center;
+    border-radius: 6px;
     transition-duration: 0.1s;
+    transition-property: background-color;
 }
 
-.btn-primary {
-    background-color: var(--primary);
-    color: var(--primary-fg);
-    border-color: var(--primary);
+/* Selected State */
+.is-layer:checked,
+#layer-list .unity-list-view__item--selected .kitbash-layer-row.is-layer {
+    background-color: rgba(54, 191, 177, 0.1);
 }
 
-.btn-secondary {
-    background-color: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--card-border);
+/* Hover State (only for layers, handled via parent hover usually but safer here) */
+.kitbash-layer-row.is-layer:hover {
+    background-color: rgba(255, 255, 255, 0.03);
 }
 
-.btn-outline {
-    background-color: transparent;
-    border-color: var(--input-border);
-    color: var(--primary);
+#layer-list .unity-list-view__item--selected .kitbash-layer-row.is-layer:hover {
+    background-color: rgba(54, 191, 177, 0.15);
 }
 
-.btn-ghost {
-    background-color: transparent;
-    border-color: transparent;
-    color: var(--primary);
+/* ============================================================================
+   HEADERS (Groups)
+   ============================================================================ */
+.kitbash-layer-header {
+    flex-grow: 1;
+    flex-direction: row;
+    align-items: center;
+    background-color: rgba(255, 255, 255, 0.05); /* Subtle separate bg */
+    border-radius: 4px;
+    padding-left: 8px;
+    margin-top: 4px;
+    height: 100%;
+    cursor: link; /* Custom cursor for interactivity */
 }
 
-.btn:hover {
+/* Hover Effect for Header */
+.kitbash-layer-header:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Active Group (Parent of selected layer) */
+.kitbash-layer-header.has-selection {
+    border-left-width: 2px;
+    border-left-color: rgba(54, 191, 177, 0.5); /* Dimmed teal */
+    background-color: rgba(54, 191, 177, 0.05);
+    padding-left: 6px; /* Compensate for border width (8 - 2) */
+}
+
+.kitbash-layer-header.has-selection .kitbash-header-label {
+    color: #36BFB1; /* Teal text */
     opacity: 0.9;
 }
 
-/* Fill Settings Panel */
-.fill-settings {
-    margin-bottom: 12px;
-    padding-bottom: 12px;
-    border-bottom-width: 1px;
-    border-bottom-color: var(--card-border);
+.kitbash-layer-header.has-selection .kitbash-header-icon {
+    -unity-background-image-tint-color: #36BFB1;
+    opacity: 0.8;
 }
 
-.segmented-control {
-    flex-direction: row;
-    background-color: var(--input);
-    border-radius: 6px;
-    padding: 2px;
-    overflow: hidden;
-    margin-bottom: 8px;
+.kitbash-header-arrow {
+    width: 12px;
+    height: 12px;
+    background-image: resource("d_IN_foldout_act"); /* Expanded chevron (down) */
+    -unity-background-scale-mode: scale-to-fit;
+    opacity: 0.7;
+    margin-right: 4px;
+    rotate: 90deg; /* Default is right-facing, so 90 is down? No, foldout is usually right. */
+    /* Wait, IN_foldout is usually pointing right. Act might be down? Let's check standards. */
+    /* Usually standard is: collapsed = right, expanded = down. */
 }
 
-.segment-btn {
+/* If using d_IN_foldout (right), we rotate 90deg for open. */
+/* Let's use standard unity-foldout styling logic manually */
+
+.kitbash-header-arrow {
+    width: 12px;
+    height: 12px;
+    background-image: resource("d_IN_foldout"); /* Right pointing arrow */
+    -unity-background-scale-mode: scale-to-fit;
+    opacity: 0.6;
+    margin-right: 4px;
+    margin-left: -4px;
+    rotate: 90deg; /* Default state in list is valid (expanded) */
+    transition-duration: 0.1s;
+    transition-property: rotate;
+}
+
+.kitbash-header-arrow.is-collapsed {
+    rotate: 0deg; /* Pointing right */
+}
+
+.kitbash-header-icon {
+    width: 14px;
+    height: 14px;
+    background-image: resource("d_Folder Icon"); /* Unity Folder Icon */
+    -unity-background-scale-mode: scale-to-fit;
+    opacity: 0.5;
+    margin-right: 6px;
+}
+
+.kitbash-header-label {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.6);
+    padding: 0;
+}
+
+/* ============================================================================
+   LAYER CONTENT
+   ============================================================================ */
+.kitbash-layer-content {
     flex-grow: 1;
+    flex-direction: row;
+    align-items: center;
+    padding-right: 8px;
+    height: 100%;
+}
+
+/* 1. Visibility Toggle */
+.kitbash-vis-toggle {
+    width: 38px;
+    height: 100%;
+    margin: 0;
+    padding: 0;
     background-color: transparent;
     border-width: 0;
-    border-radius: 4px;
+    align-items: center;
+    justify-content: center;
+}
+
+.kitbash-vis-icon {
+    width: 16px;
+    height: 16px;
+    background-image: resource("d_scenevis_visible_hover");
+    -unity-background-scale-mode: scale-to-fit;
+    opacity: 0.3;
+    transition-duration: 0.1s;
+    transition-property: opacity, scale;
+}
+
+.kitbash-vis-toggle:hover .kitbash-vis-icon {
+    opacity: 0.8;
+}
+
+.kitbash-vis-toggle.is-visible .kitbash-vis-icon {
+    opacity: 1;
+    -unity-background-image-tint-color: #36BFB1; /* Teal tint when active */
+}
+
+/* 2. Color Bar */
+.kitbash-layer-color-bar {
+    width: 3px;
     height: 24px;
-    color: #71717a;
-    font-size: 11px;
+    border-radius: 1.5px;
+    margin-right: 12px;
+}
+
+/* 3. Info Column */
+.kitbash-layer-info {
+    flex-grow: 1;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.kitbash-layer-name {
+    font-size: 13px;
+    color: #e0e0e0;
+    -unity-font-style: normal;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0;
+}
+
+#layer-list .unity-list-view__item--selected .kitbash-layer-name {
+    color: #ffffff;
     -unity-font-style: bold;
 }
 
-.segment-btn:hover {
-    color: #a1a1aa;
+.kitbash-layer-meta {
+    font-size: 10px;
+    color: #808080;
+    margin-top: -2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0;
 }
 
-.segment-btn.selected {
-    background-color: #27272a;
-    color: var(--primary);
+#layer-list .unity-list-view__item--selected .kitbash-layer-meta {
+    color: #a0a0a0;
 }
 
-/* TOOLBAR OVERLAY STYLES */
-.overlay-root {
-    background-color: #09090b;
+/* 4. Stats Badge */
+.kitbash-layer-stats {
+    background-color: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    padding: 2px 6px;
+    min-width: 36px;
+    align-items: flex-end;
+    margin-left: 8px;
+}
+
+.kitbash-layer-count {
+    font-size: 10px;
+    color: #707070;
+    -unity-font-style: bold;
+}
+
+#layer-list .unity-list-view__item--selected .kitbash-layer-count {
+    color: #36BFB1;
+}
+
+/* ============================================================================
+   PROPERTIES PANEL (Bottom Section)
+   ============================================================================ */
+.kitbash-props-section {
+    flex-shrink: 0;
+    padding: 16px;
+    background-color: #1a1a1a;
+    border-top-width: 1px;
+    border-top-color: #2a2a2a;
+}
+
+.kitbash-section-title {
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.5);
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+}
+
+/* Property Rows */
+.kitbash-prop-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.kitbash-prop-label {
+    width: 80px;
+    font-size: 11px;
+    color: #b0b0b0;
+    flex-shrink: 0;
+}
+
+.kitbash-prop-field {
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.kitbash-prop-input {
+    background-color: #2a2a2a;
     border-width: 1px;
-    border-color: #27272a;
-    border-radius: 20px; /* Pill shape */
-    flex-direction: row;
-    align-items: center;
-    padding: 4px;
-    height: 40px;
-    /* Clean up any default margins */
-    margin: 0;
-    margin-bottom: 20px;
+    border-color: #3a3a3a;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: #ffffff;
+    min-height: 28px;
+    transition-duration: 0.15s;
+    transition-property: border-color;
 }
 
-.tool-group {
-    flex-direction: row;
-    align-items: center;
+.kitbash-prop-input:focus {
+    border-color: rgba(54, 191, 177, 0.5);
 }
 
-.tool-divider {
+.kitbash-prop-input .unity-base-text-field__input {
+    background-color: transparent;
+    border-width: 0;
+    color: #ffffff;
+}
+
+/* Source Button */
+.kitbash-source-btn {
+    height: 28px;
+    padding: 0 12px;
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    border-radius: 6px;
+    font-size: 11px;
+    color: #b0b0b0;
+    -unity-text-align: middle-left;
+    transition-duration: 0.15s;
+    transition-property: background-color, border-color, color;
+}
+
+.kitbash-source-btn:hover {
+    background-color: #3a3a3a;
+    border-color: rgba(54, 191, 177, 0.3);
+    color: #ffffff;
+}
+
+/* Fill Mode Buttons */
+.kitbash-fill-section {
+    margin-top: 12px;
+}
+
+.kitbash-fill-row {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.kitbash-fill-btn {
+    flex: 1 1 auto;
+    height: 28px;
+    margin-right: 4px;
+    padding: 0 8px;
+    background-color: transparent;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    border-radius: 6px;
+    font-size: 11px;
+    color: #b0b0b0;
+    transition-duration: 0.15s;
+    transition-property: background-color, border-color, color;
+}
+
+.kitbash-fill-btn:last-child {
+    margin-right: 0;
+}
+
+.kitbash-fill-btn:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.kitbash-fill-btn.selected {
+    background-color: rgba(54, 191, 177, 0.15);
+    border-color: rgba(54, 191, 177, 0.5);
+    color: #36BFB1;
+}
+
+/* UV Settings */
+.kitbash-uv-settings {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background-color: rgba(54, 191, 177, 0.08);
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: rgba(54, 191, 177, 0.15);
+}
+
+.kitbash-uv-dropdown {
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    border-radius: 6px;
+    min-height: 26px;
+}
+
+.kitbash-uv-dropdown .unity-base-popup-field__text {
+    font-size: 11px;
+    color: #ffffff;
+}
+
+/* ============================================================================
+   TREE GUIDE VISUALIZATION
+   ============================================================================ */
+.kitbash-tree-guide {
+    width: 24px;
+    height: 100%;
+    margin-right: 0;
+    flex-shrink: 0;
+    position: relative;
+    /* Debug: background-color: rgba(255,0,0,0.1); */
+}
+
+/* Vertical Line */
+.tree-line-v {
+    position: absolute;
+    left: 10px; /* Center-ish alignment to match header icon center? */
+    top: 0;
+    bottom: 0;
     width: 1px;
-    height: 16px;
-    background-color: #3f3f46;
-    margin: 0 8px;
+    background-color: rgba(255, 255, 255, 0.1);
 }
 
-.tool-btn {
+/* If it is last in group, vertical line only goes halfway */
+.kitbash-tree-guide.is-last .tree-line-v {
+    bottom: 50%;
+}
+
+/* Horizontal Line (Connector) */
+.tree-line-h {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    right: 4px; /* Connects to next element */
+    height: 1px;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Rounded Corner for L-shape (Optional Polish) */
+.kitbash-tree-guide.is-last .tree-line-h {
+    border-bottom-left-radius: 0;
+}
+
+/* ============================================================================
+   ACTION BUTTONS
+   ============================================================================ */
+.kitbash-actions {
+    flex-direction: row;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top-width: 1px;
+    border-top-color: #2a2a2a;
+}
+
+.kitbash-action-btn {
+    flex: 1 1 auto;
+    height: 32px;
+    margin-right: 8px;
+    padding: 0 12px;
+    background-color: #3a3a3a;
+    border-width: 0;
+    border-radius: 6px;
+    font-size: 11px;
+    color: #ffffff;
+    transition-duration: 0.15s;
+    transition-property: background-color, scale;
+    scale: 1 1;
+}
+
+.kitbash-action-btn:last-child {
+    margin-right: 0;
+}
+
+.kitbash-action-btn:hover {
+    background-color: #4a4a4a;
+    scale: 1.02 1.02;
+}
+
+.kitbash-action-btn:active {
+    background-color: #2a2a2a;
+    scale: 0.98 0.98;
+}
+
+.kitbash-action-btn-primary {
+    background-color: rgba(54, 191, 177, 0.2);
+    border-width: 1px;
+    border-color: rgba(54, 191, 177, 0.4);
+    color: #36BFB1;
+}
+
+.kitbash-action-btn-primary:hover {
+    background-color: rgba(54, 191, 177, 0.3);
+    border-color: rgba(54, 191, 177, 0.6);
+}
+
+.kitbash-action-btn-danger {
+    background-color: #3a3a3a;
+    color: #ffffff;
+}
+
+.kitbash-action-btn-danger:hover {
+    background-color: rgba(226, 74, 74, 0.3);
+    color: #E24A4A;
+}
+
+/* Add Layer Button (bottom floating) */
+.kitbash-add-layer-container {
+    padding: 12px 16px;
+    border-top-width: 1px;
+    border-top-color: #2a2a2a;
+    flex-shrink: 0;
+}
+
+.kitbash-add-layer-btn {
+    width: 100%;
+    height: 36px;
+    background-color: rgba(54, 191, 177, 0.15);
+    border-width: 1px;
+    border-color: rgba(54, 191, 177, 0.3);
+    border-radius: 6px;
+    color: #36BFB1;
+    font-size: 12px;
+    -unity-font-style: bold;
+    transition-duration: 0.15s;
+    transition-property: background-color, border-color, scale;
+    scale: 1 1;
+}
+
+.kitbash-add-layer-btn:hover {
+    background-color: rgba(54, 191, 177, 0.25);
+    border-color: rgba(54, 191, 177, 0.5);
+    scale: 1.01 1.01;
+}
+
+.kitbash-add-layer-btn:active {
+    background-color: rgba(54, 191, 177, 0.1);
+    scale: 0.99 0.99;
+}
+
+/* ============================================================================
+   NO SELECTION STATE
+   ============================================================================ */
+.kitbash-no-selection {
+    padding: 24px 16px;
+    -unity-text-align: middle-center;
+}
+
+.kitbash-no-selection-text {
+    font-size: 12px;
+    color: #808080;
+    -unity-text-align: middle-center;
+}
+
+/* ============================================================================
+   TOOLBAR (Scene View Overlay)
+   ============================================================================ */
+.kitbash-toolbar {
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 12px;
+    background-color: rgba(26, 26, 26, 0.95);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.8);
+    border-radius: 8px;
+    margin: 8px;
+}
+
+.kitbash-toolbar-section {
+    flex-direction: row;
+    align-items: center;
+    margin-right: 12px;
+    padding-right: 12px;
+    border-right-width: 1px;
+    border-right-color: rgba(255, 255, 255, 0.1);
+}
+
+.kitbash-toolbar-section:last-child {
+    margin-right: 0;
+    padding-right: 0;
+    border-right-width: 0;
+}
+
+/* Tool Buttons */
+.kitbash-tool-btn {
     width: 32px;
     height: 32px;
+    min-width: 32px;
+    padding: 0;
+    margin-right: 4px;
+    background-color: transparent;
+    border-width: 1px;
+    border-color: transparent;
+    border-radius: 6px;
     justify-content: center;
     align-items: center;
-    border-radius: 16px; /* Circle */
-    border-width: 0;
-    margin: 0 2px;
-    padding: 0;
-    background-color: transparent;
-    transition-duration: 0.1s;
+    transition-duration: 0.15s;
+    transition-property: background-color, border-color;
 }
 
-.tool-btn:hover {
-    background-color: #27272a;
+.kitbash-tool-btn:last-child {
+    margin-right: 0;
 }
 
-.tool-btn.selected {
-    background-color: #fafafa;
+.kitbash-tool-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
 }
 
-/* Icon Handling - Specific Resources */
-.icon {
-    width: 16px;
-    height: 16px;
+.kitbash-tool-btn.selected {
+    background-color: rgba(54, 191, 177, 0.2);
+    border-color: rgba(54, 191, 177, 0.5);
+}
+
+.kitbash-tool-btn .icon {
+    width: 18px;
+    height: 18px;
     -unity-background-scale-mode: scale-to-fit;
     opacity: 0.7;
 }
 
-.tool-btn:hover .icon {
-    opacity: 1.0;
+.kitbash-tool-btn:hover .icon {
+    opacity: 1;
 }
 
-.tool-btn.selected .icon {
-    -unity-background-image-tint-color: #18181b; /* Dark icon on white bg */
-    opacity: 1.0;
+.kitbash-tool-btn.selected .icon {
+    opacity: 1;
 }
 
-/* Specific Icons */
-.icon-brush { background-image: resource("d_Brush Icon"); }
-.icon-bucket { background-image: resource("d_FloodFill Icon"); }
-.icon-lasso { background-image: resource("d_Lasso Icon"); } /* Fallback if d_Lasso not found */
-.icon-eye { background-image: resource("d_SceneViewVisibility"); }
-
-.text-icon {
+/* Symmetry Toggle Buttons */
+.kitbash-sym-btn {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    padding: 0;
+    margin-right: 4px;
+    background-color: transparent;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
     font-size: 11px;
+    color: #808080;
     -unity-font-style: bold;
-    color: #a1a1aa;
+    transition-duration: 0.15s;
+    transition-property: background-color, border-color, color;
 }
 
-.tool-btn.selected .text-icon {
-    color: #18181b; /* Dark text on white bg */
+.kitbash-sym-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #b0b0b0;
 }
 
-/* Slider Compact */
-.slider-compact {
+.kitbash-sym-btn.selected {
+    background-color: rgba(54, 191, 177, 0.2);
+    border-color: rgba(54, 191, 177, 0.5);
+    color: #36BFB1;
+}
+
+/* Brush Size Slider */
+.kitbash-size-slider {
     width: 100px;
-    margin: 0;
+    min-width: 80px;
+    margin-left: 8px;
+    margin-right: 8px;
 }
 
-.label-small {
-    font-size: 11px;
+.kitbash-size-slider .unity-base-slider__dragger {
+    width: 14px;
+    height: 14px;
+    min-width: 14px;
+    min-height: 14px;
+    background-color: #36BFB1;
+    border-radius: 7px;
+    border-width: 0;
+    margin-top: -5px;
+}
+
+.kitbash-size-slider .unity-base-slider__tracker {
+    height: 4px;
+    background-color: #3a3a3a;
+    border-radius: 2px;
+    border-width: 0;
+}
+
+.kitbash-size-slider .unity-base-slider__drag-container {
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+/* ============================================================================
+   RESPONSIVE OVERRIDES
+   ============================================================================ */
+@media (max-width: 320px) {
+    .kitbash-props-section {
+        padding: 12px;
+    }
+    
+    .kitbash-prop-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .kitbash-prop-label {
+        width: 100%;
+        margin-bottom: 4px;
+    }
+    
+    .kitbash-actions {
+        flex-direction: column;
+    }
+    
+    .kitbash-action-btn {
+        margin-right: 0;
+        margin-bottom: 4px;
+    }
 }

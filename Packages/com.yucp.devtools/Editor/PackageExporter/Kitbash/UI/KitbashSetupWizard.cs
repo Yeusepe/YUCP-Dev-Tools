@@ -20,10 +20,10 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         private bool _autoFill = true;
         private string _displayName;
         
-        [MenuItem("YUCP/Kitbash/Setup Wizard...", priority = 100)]
+        [MenuItem("Tools/YUCP/Asset Layers/Setup Wizard...", priority = 100)]
         public static void ShowWindow()
         {
-            var window = GetWindow<KitbashSetupWizard>("Kitbash Setup");
+            var window = GetWindow<KitbashSetupWizard>("Asset Layers Setup");
             window.minSize = new Vector2(340, 400);
             window.maxSize = new Vector2(400, 500);
             window.Show();
@@ -32,7 +32,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
         private void CreateGUI()
         {
             var root = rootVisualElement;
-            root.style.backgroundColor = new Color(0.16f, 0.16f, 0.16f);
+            root.style.backgroundColor = new Color(0.082f, 0.082f, 0.082f); // #151515
             root.style.paddingTop = 12;
             root.style.paddingBottom = 12;
             root.style.paddingLeft = 16;
@@ -58,7 +58,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
                 dot.style.borderBottomRightRadius = 4;
                 dot.style.marginLeft = 4;
                 dot.style.marginRight = 4;
-                dot.style.backgroundColor = _step >= i ? new Color(0.21f, 0.75f, 0.69f) : new Color(0.3f, 0.3f, 0.3f);
+                dot.style.backgroundColor = _step >= i ? new Color(0.212f, 0.749f, 0.694f) : new Color(0.3f, 0.3f, 0.3f); // #36BFB1
                 stepRow.Add(dot);
             }
             root.Add(stepRow);
@@ -85,7 +85,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             var nextBtn = new Button(() => GoToStep(_step + 1)) { text = "Next →" };
             nextBtn.name = "next-btn";
             nextBtn.style.width = 80;
-            nextBtn.style.backgroundColor = new Color(0.21f, 0.75f, 0.69f);
+            nextBtn.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f); // #36BFB1
             nav.Add(nextBtn);
             
             root.Add(nav);
@@ -116,7 +116,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Kitbash.UI
             {
                 var dot = rootVisualElement.Q($"step-{i}");
                 if (dot != null)
-                    dot.style.backgroundColor = _step >= i ? new Color(0.21f, 0.75f, 0.69f) : new Color(0.3f, 0.3f, 0.3f);
+                    dot.style.backgroundColor = _step >= i ? new Color(0.212f, 0.749f, 0.694f) : new Color(0.3f, 0.3f, 0.3f); // #36BFB1
             }
             
             var backBtn = rootVisualElement.Q<Button>("back-btn");
