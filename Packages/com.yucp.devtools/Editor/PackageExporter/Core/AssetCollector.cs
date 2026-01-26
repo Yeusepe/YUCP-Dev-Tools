@@ -14,18 +14,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
     public static class AssetCollector
     {
         /// <summary>
-        /// Settings stored in ModelImporter.userData for derived FBX files
-        /// </summary>
-        private class DerivedSettings
-        {
-            public bool isDerived;
-            public string baseGuid;
-            public string friendlyName;
-            public string category;
-            public bool overrideOriginalReferences = false;
-        }
-        
-        /// <summary>
         /// Scan all export folders and collect discovered assets with dependencies
         /// </summary>
         public static List<DiscoveredAsset> ScanExportFolders(ExportProfile profile, bool includeDependencies = true, string sourceProfileName = null)
@@ -528,12 +516,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Check userData for derived settings
             try
             {
-                string userDataJson = importer.userData;
-                if (string.IsNullOrEmpty(userDataJson))
-                    return false;
-                
-                var settings = JsonUtility.FromJson<DerivedSettings>(userDataJson);
-                if (settings != null && settings.isDerived)
+                if (DerivedSettingsUtility.TryRead(importer, out var settings) && settings != null && settings.isDerived)
                     return true;
             }
             catch
@@ -585,4 +568,3 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
     }
 }
-

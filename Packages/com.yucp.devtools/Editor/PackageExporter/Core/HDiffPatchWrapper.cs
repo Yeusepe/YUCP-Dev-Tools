@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using UnityEngine;
 using UnityEditor;
 
@@ -13,6 +14,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 	[InitializeOnLoad]
 	internal static class HDiffPatchDllInitializer
 	{
+#if UNITY_EDITOR_WIN
+		[DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
+		private static extern bool SetDllDirectory(string lpPathName);
+#endif
+
 		static HDiffPatchDllInitializer()
 		{
 #if UNITY_EDITOR_WIN
@@ -37,8 +43,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hpatchz.dll")
 				};
 				
+				string[] hdiffinfoSources = new string[]
+				{
+					Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", "hdiffinfo.dll"),
+					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hdiffinfo.dll")
+				};
 				string hdiffzDest = Path.Combine(libraryDir, "hdiffz.dll");
 				string hpatchzDest = Path.Combine(libraryDir, "hpatchz.dll");
+				string hdiffinfoDest = Path.Combine(libraryDir, "hdiffinfo.dll");
 				
 				// Copy hdiffz.dll if source exists and destination doesn't or is older
 				foreach (var source in hdiffzSources)
@@ -82,10 +94,28 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					}
 				}
 				
-				// Set DLL directory BEFORE any DllImport attributes try to resolve
-				[DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
-				static extern bool SetDllDirectory(string lpPathName);
+				// Copy hdiffinfo.dll if source exists and destination doesn't or is older
+				foreach (var source in hdiffinfoSources)
+				{
+					if (File.Exists(source))
+					{
+						try
+						{
+							if (!File.Exists(hdiffinfoDest) || File.GetLastWriteTime(source) > File.GetLastWriteTime(hdiffinfoDest))
+							{
+								File.Copy(source, hdiffinfoDest, overwrite: true);
+								Debug.Log($"[HDiffPatchDllInitializer] Copied hdiffinfo.dll to {hdiffinfoDest}");
+							}
+							break;
+						}
+						catch (Exception ex)
+						{
+							Debug.LogWarning($"[HDiffPatchDllInitializer] Could not copy hdiffinfo.dll: {ex.Message}");
+						}
+					}
+				}
 				
+				// Set DLL directory BEFORE any DllImport attributes try to resolve
 				SetDllDirectory(libraryDir);
 				Debug.Log($"[HDiffPatchDllInitializer] Set DLL directory to {libraryDir}");
 			}
@@ -148,8 +178,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hpatchz.dll")
 				};
 				
+				string[] hdiffinfoSources = new string[]
+				{
+					Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", "hdiffinfo.dll"),
+					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hdiffinfo.dll")
+				};
+				
 				string hdiffzDest = Path.Combine(libraryDir, "hdiffz.dll");
 				string hpatchzDest = Path.Combine(libraryDir, "hpatchz.dll");
+				string hdiffinfoDest = Path.Combine(libraryDir, "hdiffinfo.dll");
 				
 				// Copy hdiffz.dll if source exists and destination doesn't or is older
 				foreach (var source in hdiffzSources)
@@ -189,6 +226,27 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						catch (Exception ex)
 						{
 							Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hpatchz.dll in static constructor: {ex.Message}");
+						}
+					}
+				}
+				
+				// Copy hdiffinfo.dll if source exists and destination doesn't or is older
+				foreach (var source in hdiffinfoSources)
+				{
+					if (File.Exists(source))
+					{
+						try
+						{
+							if (!File.Exists(hdiffinfoDest) || File.GetLastWriteTime(source) > File.GetLastWriteTime(hdiffinfoDest))
+							{
+								File.Copy(source, hdiffinfoDest, overwrite: true);
+								Debug.Log($"[HDiffPatchWrapper] Copied hdiffinfo.dll to {hdiffinfoDest} (static constructor)");
+							}
+							break;
+						}
+						catch (Exception ex)
+						{
+							Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hdiffinfo.dll in static constructor: {ex.Message}");
 						}
 					}
 				}
@@ -258,6 +316,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				string libraryDir = Path.Combine(projectPath, "Library", "YUCP");
 				string hdiffzDest = Path.Combine(libraryDir, "hdiffz.dll");
 				string hpatchzDest = Path.Combine(libraryDir, "hpatchz.dll");
+				string hdiffinfoDest = Path.Combine(libraryDir, "hdiffinfo.dll");
 				
 				// Source locations to check (in order of preference)
 				string[] hdiffzSources = new string[]
@@ -272,12 +331,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hpatchz.dll")
 				};
 				
+				string[] hdiffinfoSources = new string[]
+				{
+					Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", "hdiffinfo.dll"),
+					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hdiffinfo.dll")
+				};
+				
 				// Ensure Library/YUCP directory exists
 				Directory.CreateDirectory(libraryDir);
 				
 				// Convert to absolute paths
 				hdiffzDest = Path.GetFullPath(hdiffzDest);
 				hpatchzDest = Path.GetFullPath(hpatchzDest);
+				hdiffinfoDest = Path.GetFullPath(hdiffinfoDest);
 				
 				// Get the Library/YUCP directory for SetDllDirectory
 				string dllDir = Path.GetDirectoryName(hdiffzDest);
@@ -374,6 +440,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					}
 				}
 				
+				// Find source hdiffinfo.dll
+				string sourceHdiffinfo = null;
+				foreach (var source in hdiffinfoSources)
+				{
+					if (File.Exists(source))
+					{
+						sourceHdiffinfo = source;
+						break;
+					}
+				}
+				
 				// Copy hpatchz.dll only if destination doesn't exist or source is newer
 				// If copy fails due to file lock, use existing copy if available
 				if (sourceHpatchz != null)
@@ -438,6 +515,56 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					if (!File.Exists(hpatchzDest))
 					{
 						Debug.LogError($"[HDiffPatchWrapper] hpatchz.dll not found in any source location");
+					}
+				}
+				
+				// Copy hdiffinfo.dll only if destination doesn't exist or source is newer
+				if (sourceHdiffinfo != null)
+				{
+					bool needsCopy = !File.Exists(hdiffinfoDest);
+					if (!needsCopy && File.Exists(sourceHdiffinfo))
+					{
+						try
+						{
+							var sourceTime = File.GetLastWriteTime(sourceHdiffinfo);
+							var destTime = File.GetLastWriteTime(hdiffinfoDest);
+							needsCopy = sourceTime > destTime;
+						}
+						catch
+						{
+							needsCopy = false;
+						}
+					}
+					
+					if (needsCopy)
+					{
+						try
+						{
+							File.Copy(sourceHdiffinfo, hdiffinfoDest, overwrite: true);
+							Debug.Log($"[HDiffPatchWrapper] Copied hdiffinfo.dll from {sourceHdiffinfo} to {hdiffinfoDest}");
+						}
+						catch (Exception ex)
+						{
+							if (File.Exists(hdiffinfoDest))
+							{
+								Debug.Log($"[HDiffPatchWrapper] Could not copy hdiffinfo.dll (file locked), using existing copy: {hdiffinfoDest}");
+							}
+							else
+							{
+								Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hdiffinfo.dll: {ex.Message}");
+							}
+						}
+					}
+					else if (File.Exists(hdiffinfoDest))
+					{
+						Debug.Log($"[HDiffPatchWrapper] Using existing hdiffinfo.dll copy: {hdiffinfoDest}");
+					}
+				}
+				else
+				{
+					if (!File.Exists(hdiffinfoDest))
+					{
+						Debug.LogError($"[HDiffPatchWrapper] hdiffinfo.dll not found in any source location");
 					}
 				}
 				
@@ -572,6 +699,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 		#endregion
 
+		#region HDiff Info (Patch Header Read)
+		
+		/// <summary>
+		/// Reads compressed diff info (old/new sizes, compression type) from a .hdiff file.
+		/// Implemented by hdiffinfo.dll wrapper built from HDiffPatch sources.
+		/// </summary>
+		[DllImport("hdiffinfo", EntryPoint = "hdiff_get_info", CharSet = CharSet.Ansi)]
+		public static extern int hdiff_get_info(string diffFileName,
+			out ulong oldSize, out ulong newSize, StringBuilder compressType, int compressTypeCap);
+		
+		#endregion
+
 		#region High-Level API
 
 		/// <summary>
@@ -672,6 +811,28 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 			return result;
 		}
+		
+		/// <summary>
+		/// Reads diff header info from a .hdiff file.
+		/// </summary>
+		public static bool TryGetDiffInfo(string hdiffPath, out ulong oldSize, out ulong newSize, out string compressType)
+		{
+			oldSize = 0;
+			newSize = 0;
+			compressType = string.Empty;
+			
+			EnsureDllsLoaded();
+			
+			var sb = new StringBuilder(260);
+			int result = hdiff_get_info(hdiffPath, out oldSize, out newSize, sb, sb.Capacity);
+			if (result != 0)
+			{
+				return false;
+			}
+			
+			compressType = sb.ToString();
+			return true;
+		}
 
 		#endregion
 	}
@@ -737,4 +898,3 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		HPATCH_FILEWRITE_NO_SPACE_ERROR,
 	}
 }
-

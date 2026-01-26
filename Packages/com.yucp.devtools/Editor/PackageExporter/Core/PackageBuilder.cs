@@ -381,8 +381,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
                  progressCallback?.Invoke(0.61f, $"Validating {assetsToExport.Count} assets...");
                  
                  var validAssets = new List<string>();
+                 int validateCount = 0;
+                 int totalToValidate = assetsToExport.Count;
                  foreach (string asset in assetsToExport)
                  {
+                     validateCount++;
+                     if (validateCount % 50 == 0 || validateCount == totalToValidate)
+                     {
+                         float t = totalToValidate > 0 ? (float)validateCount / totalToValidate : 1f;
+                         progressCallback?.Invoke(0.61f + 0.02f * t, $"Validating assets... ({validateCount}/{totalToValidate})");
+                     }
+                     
                      string unityPath = GetRelativePackagePath(asset);
                      
                      // Try to load the asset
@@ -405,7 +414,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                  // Unity will export the file itself even if not fully imported
                                  if (unityPath.EndsWith(".asset", StringComparison.OrdinalIgnoreCase) || 
                                      unityPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
-                                     unityPath.EndsWith(".hdiff", StringComparison.OrdinalIgnoreCase))
+                                     unityPath.EndsWith(".hdiff", StringComparison.OrdinalIgnoreCase) ||
+                                     unityPath.EndsWith(".hdiff.enc", StringComparison.OrdinalIgnoreCase))
                                  {
                                      // File exists, add it - Unity will export it
                                      validAssets.Add(unityPath);
@@ -454,7 +464,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         p.EndsWith(".asset", StringComparison.OrdinalIgnoreCase));
                     bool hasHdiff = validAssets.Any(p =>
                         p.StartsWith("Packages/com.yucp.temp/Patches/", StringComparison.OrdinalIgnoreCase) &&
-                        p.EndsWith(".hdiff", StringComparison.OrdinalIgnoreCase));
+                        p.EndsWith(".hdiff", StringComparison.OrdinalIgnoreCase) ||
+                        p.EndsWith(".hdiff.enc", StringComparison.OrdinalIgnoreCase));
                     
                     if (!hasDerivedFbxAsset || !hasHdiff)
                     {
@@ -489,8 +500,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                      throw new InvalidOperationException("No valid assets remain for export after final validation.");
                  }
                  
-                 progressCallback?.Invoke(0.65f, $"Exporting {finalValidAssets.Count} assets to Unity package...");
-                 
+                progressCallback?.Invoke(0.65f, $"Writing package file ({finalValidAssets.Count} assets)... may take a moment.");
+                
                  // Export the package
                  try
                  {
@@ -499,7 +510,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                          tempPackagePath,
                          options
                      );
-                     progressCallback?.Invoke(0.7f, "Unity package export completed");
+                     progressCallback?.Invoke(0.68f, "Package file written; verifying...");
                  }
                  catch (Exception ex)
                  {
@@ -514,9 +525,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                  int retryCount = 0;
                  while (!File.Exists(tempPackagePath) && retryCount < 30) // Increased to 30 attempts (6 seconds)
                  {
+                     if (retryCount > 0)
+                         progressCallback?.Invoke(0.69f, $"Verifying package file... (attempt {retryCount + 1}/30)");
                      System.Threading.Thread.Sleep(200); // Wait 200ms
                      retryCount++;
                  }
+                 
+                 progressCallback?.Invoke(0.7f, "Unity package export completed");
                  
                  // Verify the file was actually created
                  if (!File.Exists(tempPackagePath))
@@ -908,20 +923,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 try
                 {
-                    string userDataJson = importer.userData;
-                    
-                    var settings = string.IsNullOrEmpty(userDataJson) ? null : JsonUtility.FromJson<DerivedSettings>(userDataJson);
-                    if (settings != null && settings.isDerived && !string.IsNullOrEmpty(settings.baseGuid))
+                    if (DerivedSettingsUtility.TryRead(importer, out var settings) && settings != null && settings.isDerived)
                     {
-                        // Store original path for removal (will normalize during removal)
-                        derivedFbxPaths.Add(assetPath);
-                    }
-                    else if (settings != null)
-                    {
-                        if (settings.isDerived && string.IsNullOrEmpty(settings.baseGuid))
+                        bool hasBase = settings.baseGuids != null && settings.baseGuids.Any(g => !string.IsNullOrEmpty(g));
+                        if (hasBase)
                         {
-                            Debug.LogWarning($"[PackageBuilder] FBX {assetPath} is marked as derived but has no baseGuid assigned. " +
-                                $"Please assign the base FBX in the ModelImporter inspector. This FBX will NOT be converted to a PatchPackage.");
+                            // Store original path for removal (will normalize during removal)
+                            derivedFbxPaths.Add(assetPath);
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[PackageBuilder] FBX {assetPath} is marked as derived but has no base FBX assigned. " +
+                                $"Please add at least one base FBX in the ModelImporter inspector. This FBX will NOT be converted to a PatchPackage.");
                         }
                     }
                 }
@@ -948,9 +961,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             var fbxToRemove = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var patchAssetsToAdd = new List<string>();
+            int fbxIndex = 0;
+            int fbxTotal = derivedFbxPaths.Count;
             
             foreach (var modifiedPath in derivedFbxPaths)
             {
+                fbxIndex++;
+                string fbxName = Path.GetFileName(modifiedPath);
+                progressCallback?.Invoke(progress, $"Building patch ({fbxIndex}/{fbxTotal}): {fbxName}");
+                
                 // Normalize path for AssetImporter
                 string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                 string normalizedModifiedPath = modifiedPath;
@@ -966,45 +985,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (importer == null) continue;
                 
                 DerivedSettings settings = null;
-                try { settings = JsonUtility.FromJson<DerivedSettings>(importer.userData); } catch { /* ignore */ }
+                try { DerivedSettingsUtility.TryRead(importer, out settings); } catch { /* ignore */ }
                 if (settings == null || !settings.isDerived) continue;
                 
-                // Check for kitbash mode (requires feature flag)
-                #if YUCP_KITBASH_ENABLED
-                if (settings.mode == DerivedMode.KitbashRecipeHdiff)
-                {
-                    // Try addon conversion for kitbash mode
-                    var ctx = new Addons.PackageBuilderContext
-                    {
-                        AssetsToExport = assetsToExport,
-                        ProgressCallback = progressCallback
-                    };
-                    
-                    if (Addons.AddonManager.TryConvertDerivedFbx(ctx, normalizedModifiedPath, settings, out string addonTempPath))
-                    {
-                        if (!string.IsNullOrEmpty(addonTempPath))
-                        {
-                            patchAssetsToAdd.Add(addonTempPath);
-                            fbxToRemove.Add(modifiedPath);
-                        }
-                        continue; // Addon handled it
-                    }
-                    else
-                    {
-                        Debug.LogWarning($"[PackageBuilder] No addon handled kitbash conversion for {modifiedPath}, falling back to single-base mode.");
-                    }
-                }
-                #endif
-                
-                // Single-base mode: require baseGuid
-                if (string.IsNullOrEmpty(settings.baseGuid)) continue;
-                
-                var basePath = AssetDatabase.GUIDToAssetPath(settings.baseGuid);
-                if (string.IsNullOrEmpty(basePath))
-                {
-                    Debug.LogWarning($"[PackageBuilder] Derived FBX has no resolvable Base FBX: {modifiedPath}");
-                    continue;
-                }
+                // Multi-base mode: require at least one base GUID
+                if (settings.baseGuids == null || settings.baseGuids.Count == 0) continue;
                 
                 var policy = new DerivedFbxAsset.Policy();
                 var hints = new DerivedFbxAsset.UIHints
@@ -1045,20 +1030,49 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 try
                 {
-                    // Build DerivedFbxAsset with all data embedded
-                    var derivedAsset = PatchBuilder.BuildDerivedFbxAsset(basePath, normalizedModifiedPath, policy, hints, seeds);
-                    
-                    if (derivedAsset == null)
+                    var baseGuids = new List<string>();
+                    var basePaths = new List<string>();
+                    foreach (var baseGuid in settings.baseGuids)
                     {
-                        Debug.LogError($"[PackageBuilder] BuildDerivedFbxAsset returned null for {modifiedPath}. .hdiff file creation may have failed.");
+                        if (string.IsNullOrEmpty(baseGuid)) continue;
+                        var basePath = AssetDatabase.GUIDToAssetPath(baseGuid);
+                        if (string.IsNullOrEmpty(basePath))
+                        {
+                            Debug.LogError($"[PackageBuilder] Derived FBX has no resolvable Base FBX: {modifiedPath} (GUID: {baseGuid})");
+                            baseGuids.Clear();
+                            basePaths.Clear();
+                            break;
+                        }
+                        
+                        baseGuids.Add(baseGuid);
+                        basePaths.Add(basePath);
+                    }
+                    
+                    if (baseGuids.Count == 0)
+                    {
+                        Debug.LogError($"[PackageBuilder] No valid Base FBX entries for {modifiedPath}. Skipping derived export.");
                         continue;
                     }
                     
-                    // Store GUIDs for direct targeting and prefab compatibility
-                    derivedAsset.baseFbxGuid = settings.baseGuid;
+                    if (!PatchBuilder.CreateEncryptedPatchEntries(basePaths, baseGuids, normalizedModifiedPath, hints.friendlyName, out _, out var entries))
+                    {
+                        Debug.LogError($"[PackageBuilder] Failed to create encrypted patch for {modifiedPath}. The FBX will be exported as-is.");
+                        continue;
+                    }
+                    
+                    var derivedAsset = ScriptableObject.CreateInstance<DerivedFbxAsset>();
+                    derivedAsset.policy = policy;
+                    derivedAsset.uiHints = hints;
+                    derivedAsset.seedMaps = seeds ?? new DerivedFbxAsset.SeedMaps();
+                    derivedAsset.targetFbxName = hints.friendlyName;
+                    derivedAsset.entries = entries;
+                    derivedAsset.canonicalBaseGuid = baseGuids.FirstOrDefault(g => !string.IsNullOrEmpty(g)) ?? string.Empty;
+                    
                     derivedAsset.derivedFbxGuid = derivedFbxGuid ?? string.Empty;
                     derivedAsset.originalDerivedFbxPath = normalizedModifiedPath;
                     derivedAsset.overrideOriginalReferences = overrideOriginalReferences;
+                    
+                    PatchBuilder.EmbedMetaFile(normalizedModifiedPath, derivedAsset);
                     
                     // Use derived FBX GUID as filename identifier
                     string fileName = $"DerivedFbxAsset_{derivedFbxGuid.Substring(0, 8)}_{SanitizeFileName(hints.friendlyName)}.asset";
@@ -1173,18 +1187,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         
                         patchAssetsToAdd.Add(pkgPath);
                         
-                        // Add .hdiff file to export list
-                        if (!string.IsNullOrEmpty(derivedAsset.hdiffFilePath))
+                        // Add encrypted diff files to export list
+                        if (derivedAsset.entries != null)
                         {
-                            string hdiffPhysicalPath = Path.Combine(projectPath, derivedAsset.hdiffFilePath.Replace('/', Path.DirectorySeparatorChar));
-                            if (File.Exists(hdiffPhysicalPath))
+                            foreach (var entry in derivedAsset.entries)
                             {
-                                patchAssetsToAdd.Add(derivedAsset.hdiffFilePath);
-                                Debug.Log($"[PackageBuilder] Added .hdiff file to export: {derivedAsset.hdiffFilePath}");
-                            }
-                            else
-                            {
-                                Debug.LogWarning($"[PackageBuilder] .hdiff file not found at: {hdiffPhysicalPath}");
+                                if (entry == null || string.IsNullOrEmpty(entry.hdiffFilePath)) continue;
+                                string hdiffPhysicalPath = Path.Combine(projectPath, entry.hdiffFilePath.Replace('/', Path.DirectorySeparatorChar));
+                                if (File.Exists(hdiffPhysicalPath))
+                                {
+                                    patchAssetsToAdd.Add(entry.hdiffFilePath);
+                                    Debug.Log($"[PackageBuilder] Added encrypted diff to export: {entry.hdiffFilePath}");
+                                }
+                                else
+                                {
+                                    Debug.LogWarning($"[PackageBuilder] Encrypted diff file not found at: {hdiffPhysicalPath}");
+                                }
                             }
                         }
                     }
@@ -1794,6 +1812,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Recursively collect dependencies with depth limiting
             int depth = 0;
             int itemsAtCurrentDepth = toProcess.Count;
+            int processedCount = 0;
+            const int progressInterval = 75;
             
             while (toProcess.Count > 0 && depth < maxDepth)
             {
@@ -1805,6 +1825,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 string assetPath = toProcess.Dequeue();
                 itemsAtCurrentDepth--;
+                processedCount++;
+                if (processedCount % progressInterval == 0)
+                    progressCallback?.Invoke(0.53f, $"Collecting dependencies... ({processedCount} assets processed)");
                 
                 try
                 {
@@ -2204,27 +2227,27 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             }
                         }
                         
-                        if (!string.IsNullOrEmpty(sourceScriptPath) && File.Exists(sourceScriptPath))
-                        {
-                            string scriptGuid = Guid.NewGuid().ToString("N");
-                            string scriptFolder = Path.Combine(tempExtractDir, scriptGuid);
-                            Directory.CreateDirectory(scriptFolder);
-                            
-                            string scriptContent = File.ReadAllText(sourceScriptPath);
-                            // Replace namespace to remove DevTools reference
-                            scriptContent = scriptContent.Replace(
-                                "namespace YUCP.DevTools.Editor.PackageExporter",
-                                "namespace YUCP.PatchRuntime"
-                            );
-                            scriptContent = scriptContent.Replace(
-                                "using YUCP.DevTools.Editor.PackageExporter",
-                                "using YUCP.PatchRuntime"
-                            );
-                            
-                            string fileName = Path.GetFileName(sourceScriptPath);
-                            string targetPath = $"Packages/com.yucp.temp/Editor/{fileName}";
-                            
-                            File.WriteAllText(Path.Combine(scriptFolder, "asset"), scriptContent);
+                          if (!string.IsNullOrEmpty(sourceScriptPath) && File.Exists(sourceScriptPath))
+                          {
+                              string scriptGuid = Guid.NewGuid().ToString("N");
+                              string scriptFolder = Path.Combine(tempExtractDir, scriptGuid);
+                              Directory.CreateDirectory(scriptFolder);
+                              
+                              string scriptContent = File.ReadAllText(sourceScriptPath);
+                              // Replace namespace to remove DevTools reference
+                              scriptContent = scriptContent.Replace(
+                                  "namespace YUCP.DevTools.Editor.PackageExporter",
+                                  "namespace YUCP.PatchRuntime"
+                              );
+                              scriptContent = scriptContent.Replace(
+                                  "using YUCP.DevTools.Editor.PackageExporter",
+                                  "using YUCP.PatchRuntime"
+                              );
+                              
+                              string fileName = Path.GetFileName(sourceScriptPath);
+                              string targetPath = $"Packages/com.yucp.temp/Editor/{fileName}";
+                              
+                              File.WriteAllText(Path.Combine(scriptFolder, "asset"), scriptContent);
                             File.WriteAllText(Path.Combine(scriptFolder, "pathname"), targetPath);
                             
                             string scriptMeta = "fileFormatVersion: 2\nguid: " + scriptGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
@@ -2307,7 +2330,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     string[] hdiffDlls = new string[]
                     {
                         "Packages/com.yucp.devtools/Plugins/hdiffz.dll",
-                        "Packages/com.yucp.devtools/Plugins/hpatchz.dll"
+                        "Packages/com.yucp.devtools/Plugins/hpatchz.dll",
+                        "Packages/com.yucp.devtools/Plugins/hdiffinfo.dll"
                     };
                     
                     foreach (var dllPath in hdiffDlls)

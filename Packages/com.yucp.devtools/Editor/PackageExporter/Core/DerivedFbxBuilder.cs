@@ -1,6 +1,7 @@
 using System;
 using System.IO;
-using System.Security.Cryptography;
+using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -18,15 +19,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		/// </summary>
 		public static string BuildDerivedFbx(string baseFbxPath, DerivedFbxAsset derivedAsset, string outputPath, string targetGuid)
 		{
-			if (string.IsNullOrEmpty(baseFbxPath) || derivedAsset == null)
+			if (derivedAsset == null)
 			{
-				Debug.LogError("[DerivedFbxBuilder] Invalid inputs: baseFbxPath or derivedAsset is null");
+				Debug.LogError("[DerivedFbxBuilder] Invalid inputs: derivedAsset is null");
 				return null;
 			}
 			
-			if (string.IsNullOrEmpty(derivedAsset.hdiffFilePath))
+			if (derivedAsset.entries == null || derivedAsset.entries.Count == 0)
 			{
-				Debug.LogError("[DerivedFbxBuilder] DerivedFbxAsset has no hdiffFilePath. Cannot apply patch.");
+				Debug.LogError("[DerivedFbxBuilder] DerivedFbxAsset has no patch entries. Cannot apply patch.");
 				return null;
 			}
 			
@@ -36,38 +37,90 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			
 			try
 			{
-				// Get physical paths first
-				// Adapted from CocoTools CocoPatch.cs path handling
 				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-				string basePhysicalPath = Path.Combine(projectPath, baseFbxPath.Replace('/', Path.DirectorySeparatorChar));
-				string hdiffPhysicalPath = Path.Combine(projectPath, derivedAsset.hdiffFilePath.Replace('/', Path.DirectorySeparatorChar));
-				string outputPhysicalPath = Path.Combine(projectPath, fbxPath.Replace('/', Path.DirectorySeparatorChar));
+				string outputPhysicalPath = ResolvePhysicalPath(projectPath, fbxPath);
 				
-				// Verify base FBX exists - use both AssetDatabase and File.Exists for reliability
-				// AssetDatabase check handles Unity assets that may not be physically present yet
-				bool baseFbxExists = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(baseFbxPath) != null;
-				if (!baseFbxExists && !File.Exists(basePhysicalPath))
-				{
-					// If not found, wait a moment and check again (Unity might still be importing)
-					System.Threading.Thread.Sleep(100);
-					AssetDatabase.Refresh();
-					baseFbxExists = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(baseFbxPath) != null;
-					if (!baseFbxExists && !File.Exists(basePhysicalPath))
-					{
-						Debug.LogError($"[DerivedFbxBuilder] Base FBX not found at: {baseFbxPath}");
-						return null;
-					}
-				}
-				
-				// Verify base FBX matches expected hash/manifest
-				if (!VerifyBaseFbx(baseFbxPath, derivedAsset))
-				{
-					Debug.LogError($"[DerivedFbxBuilder] Base FBX verification failed. The base FBX may not match the expected version.");
-					return null;
-				}
-			
 				// Ensure output directory exists
 				Directory.CreateDirectory(Path.GetDirectoryName(outputPhysicalPath));
+				
+				var entries = derivedAsset.entries;
+				if (entries == null || entries.Count == 0)
+				{
+					Debug.LogError("[DerivedFbxBuilder] No patch entries found.");
+					return null;
+				}
+				
+				var shares = new List<byte[]>();
+				string encryptedDiffPath = entries[0].hdiffFilePath;
+				
+				foreach (var entry in entries)
+				{
+					if (entry == null || string.IsNullOrEmpty(entry.baseGuid) || string.IsNullOrEmpty(entry.shareEnc))
+					{
+						Debug.LogError("[DerivedFbxBuilder] Invalid patch entry (missing baseGuid/shareEnc).");
+						return null;
+					}
+					
+					string basePath = AssetDatabase.GUIDToAssetPath(entry.baseGuid);
+					if (string.IsNullOrEmpty(basePath))
+					{
+						Debug.LogError($"[DerivedFbxBuilder] Base FBX not found for GUID: {entry.baseGuid}");
+						return null;
+					}
+					
+					string basePhysicalPath = ResolvePhysicalPath(projectPath, basePath);
+					if (!File.Exists(basePhysicalPath))
+					{
+						Debug.LogError($"[DerivedFbxBuilder] Base FBX file missing: {basePath}");
+						return null;
+					}
+					
+					ComputeBaseHashAndMask(basePhysicalPath, out var baseHash, out var mask);
+					string baseHashHex = BytesToHex(baseHash);
+					if (!string.IsNullOrEmpty(entry.baseHash) && !string.Equals(entry.baseHash, baseHashHex, StringComparison.OrdinalIgnoreCase))
+					{
+						Debug.LogError($"[DerivedFbxBuilder] Base FBX hash mismatch: {basePath}");
+						return null;
+					}
+					
+					byte[] shareEnc = Convert.FromBase64String(entry.shareEnc);
+					byte[] share = XorBytes(shareEnc, mask);
+					shares.Add(share);
+				}
+				
+				byte[] key = RecoverKey(shares);
+				
+				string encryptedPhysicalPath = ResolvePhysicalPath(projectPath, encryptedDiffPath);
+				if (!File.Exists(encryptedPhysicalPath))
+				{
+					Debug.LogError($"[DerivedFbxBuilder] Encrypted diff file not found: {encryptedDiffPath}");
+					return null;
+				}
+				
+				string canonicalBaseGuid = derivedAsset.canonicalBaseGuid;
+				if (string.IsNullOrEmpty(canonicalBaseGuid))
+					canonicalBaseGuid = entries[0].baseGuid;
+				
+				string canonicalBasePath = AssetDatabase.GUIDToAssetPath(canonicalBaseGuid);
+				if (string.IsNullOrEmpty(canonicalBasePath))
+				{
+					Debug.LogError($"[DerivedFbxBuilder] Canonical base FBX not found for GUID: {canonicalBaseGuid}");
+					return null;
+				}
+				
+				string canonicalPhysicalPath = ResolvePhysicalPath(projectPath, canonicalBasePath);
+				if (!File.Exists(canonicalPhysicalPath))
+				{
+					Debug.LogError($"[DerivedFbxBuilder] Canonical base FBX file missing: {canonicalBasePath}");
+					return null;
+				}
+				
+				string tempDiffPath = Path.Combine(projectPath, "Library", "YUCP", $"patch_{Guid.NewGuid():N}.hdiff");
+				if (!DecryptDiffFile(encryptedPhysicalPath, tempDiffPath, key))
+				{
+					Debug.LogError("[DerivedFbxBuilder] Failed to decrypt diff payload.");
+					return null;
+				}
 				
 				// Delete output file if it already exists (HPatch doesn't allow overwriting)
 				if (File.Exists(outputPhysicalPath))
@@ -84,130 +137,192 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					}
 				}
 				
-				// Apply binary patch
-				// Adapted from CocoTools CocoPatch.cs hpatch_unity call
 				var patchResult = HDiffPatchWrapper.ApplyPatch(
-					basePhysicalPath,
-					hdiffPhysicalPath,
+					canonicalPhysicalPath,
+					tempDiffPath,
 					outputPhysicalPath,
 					(str) => Debug.Log($"[DerivedFbxBuilder] HPatch: {str}"),
 					(str) => Debug.LogError($"[DerivedFbxBuilder] HPatch Error: {str}")
 				);
 				
+				try
+				{
+					File.Delete(tempDiffPath);
+				}
+				catch { }
+				
 				if (patchResult != THPatchResult.HPATCH_SUCCESS)
 				{
-					Debug.LogError($"[DerivedFbxBuilder] Failed to apply binary patch: {patchResult}");
-				return null;
+					Debug.LogWarning($"[DerivedFbxBuilder] Failed to apply binary patch: {patchResult} (base: {canonicalBasePath})");
+					return null;
 				}
 				
 				if (!File.Exists(outputPhysicalPath))
 				{
-					Debug.LogError($"[DerivedFbxBuilder] Patched FBX file was not created at: {outputPhysicalPath}");
-				return null;
-			}
-			
-				// Handle meta file (GUID preservation) - use embedded meta content if available
-				TryCopyMetaWithGuid(outputPhysicalPath, derivedAsset?.originalDerivedFbxPath, baseFbxPath, targetGuid, derivedAsset);
+					Debug.LogWarning($"[DerivedFbxBuilder] Patched FBX file was not created at: {outputPhysicalPath}");
+					return null;
+				}
 				
-				// Import the patched FBX
-				// Adapted from CocoTools CocoUtils.ForceOverwrite() AssetDatabase.ImportAsset call
+				TryCopyMetaWithGuid(outputPhysicalPath, derivedAsset?.originalDerivedFbxPath, canonicalBasePath, targetGuid, derivedAsset);
+				
 				AssetDatabase.ImportAsset(fbxPath, ImportAssetOptions.ForceUpdate);
-			AssetDatabase.Refresh();
-			
-				Debug.Log($"[DerivedFbxBuilder] Successfully created patched FBX: {fbxPath}");
+				AssetDatabase.Refresh();
 				
+				Debug.Log($"[DerivedFbxBuilder] Successfully created patched FBX: {fbxPath}");
 				return fbxPath;
 			}
 			catch (System.Exception ex)
 			{
 				Debug.LogError($"[DerivedFbxBuilder] Error applying binary patch: {ex.Message}\n{ex.StackTrace}");
-			return null;
+				return null;
+			}
 		}
+
+		private static bool IsAssetDatabasePath(string path)
+		{
+			if (string.IsNullOrEmpty(path)) return false;
+			return path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ||
+			       path.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase);
 		}
 		
-		/// <summary>
-		/// Verifies that the base FBX matches the expected version.
-		/// Checks file hash and/or manifest ID.
-		/// </summary>
-		private static bool VerifyBaseFbx(string baseFbxPath, DerivedFbxAsset derivedAsset)
+		private static string ResolvePhysicalPath(string projectPath, string path)
+		{
+			if (string.IsNullOrEmpty(path)) return path;
+			string normalized = path.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+			if (Path.IsPathRooted(normalized))
+				return Path.GetFullPath(normalized);
+			return Path.GetFullPath(Path.Combine(projectPath, normalized));
+		}
+
+		private static void ComputeBaseHashAndMask(string path, out byte[] baseHash, out byte[] mask)
+		{
+			using (var shaBase = System.Security.Cryptography.SHA256.Create())
+			using (var shaMask = System.Security.Cryptography.SHA256.Create())
+			using (var fs = File.OpenRead(path))
+			{
+				byte[] prefix = System.Text.Encoding.UTF8.GetBytes("YUCP|mask|");
+				shaMask.TransformBlock(prefix, 0, prefix.Length, null, 0);
+				
+				byte[] buffer = new byte[64 * 1024];
+				int read;
+				while ((read = fs.Read(buffer, 0, buffer.Length)) > 0)
+				{
+					shaBase.TransformBlock(buffer, 0, read, null, 0);
+					shaMask.TransformBlock(buffer, 0, read, null, 0);
+				}
+				
+				shaBase.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+				shaMask.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+				
+				baseHash = shaBase.Hash;
+				mask = shaMask.Hash;
+			}
+		}
+
+		private static string BytesToHex(byte[] data)
+		{
+			var sb = new System.Text.StringBuilder(data.Length * 2);
+			for (int i = 0; i < data.Length; i++)
+				sb.Append(data[i].ToString("x2"));
+			return sb.ToString();
+		}
+
+		private static byte[] XorBytes(byte[] a, byte[] b)
+		{
+			int len = Math.Min(a.Length, b.Length);
+			byte[] result = new byte[len];
+			for (int i = 0; i < len; i++)
+			{
+				result[i] = (byte)(a[i] ^ b[i]);
+			}
+			return result;
+		}
+
+		private static byte[] RecoverKey(List<byte[]> shares)
+		{
+			if (shares == null || shares.Count == 0)
+				return Array.Empty<byte>();
+			byte[] key = new byte[shares[0].Length];
+			foreach (var share in shares)
+			{
+				key = XorBytes(key, share);
+			}
+			return key;
+		}
+
+		private static bool DecryptDiffFile(string inputPath, string outputPath, byte[] key)
 		{
 			try
 			{
-				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-				string basePhysicalPath = Path.Combine(projectPath, baseFbxPath.Replace('/', Path.DirectorySeparatorChar));
-				
-				if (!File.Exists(basePhysicalPath))
-				{
-					Debug.LogError($"[DerivedFbxBuilder] Base FBX file does not exist: {basePhysicalPath}");
+				byte[] payload = File.ReadAllBytes(inputPath);
+				byte[] magic = System.Text.Encoding.ASCII.GetBytes("YUCPHDIF1");
+				if (payload.Length < magic.Length + 16 + 32)
 					return false;
-				}
 				
-				// Check hash if available
-				if (!string.IsNullOrEmpty(derivedAsset.baseFbxHash))
+				for (int i = 0; i < magic.Length; i++)
 				{
-					string computedHash = ComputeFileHash(basePhysicalPath);
-					if (computedHash != derivedAsset.baseFbxHash)
-					{
-						Debug.LogError($"[DerivedFbxBuilder] Base FBX hash mismatch. Expected: {derivedAsset.baseFbxHash}, Got: {computedHash}");
+					if (payload[i] != magic[i])
 						return false;
-					}
-					Debug.Log($"[DerivedFbxBuilder] Base FBX hash verification passed: {computedHash}");
 				}
 				
-				// Check manifest ID if available
-				if (!string.IsNullOrEmpty(derivedAsset.sourceManifestId))
+				int offset = magic.Length;
+				byte[] iv = new byte[16];
+				Buffer.BlockCopy(payload, offset, iv, 0, iv.Length);
+				offset += iv.Length;
+				
+				byte[] hmac = new byte[32];
+				Buffer.BlockCopy(payload, offset, hmac, 0, hmac.Length);
+				offset += hmac.Length;
+				
+				byte[] ciphertext = new byte[payload.Length - offset];
+				Buffer.BlockCopy(payload, offset, ciphertext, 0, ciphertext.Length);
+				
+				byte[] hmacKey;
+				using (var sha = System.Security.Cryptography.SHA256.Create())
 				{
-					var manifest = ManifestBuilder.BuildForFbx(baseFbxPath);
-					if (manifest.manifestId != derivedAsset.sourceManifestId)
-					{
-						Debug.LogWarning($"[DerivedFbxBuilder] Base FBX manifest ID mismatch. Expected: {derivedAsset.sourceManifestId}, Got: {manifest.manifestId}. Continuing anyway...");
-						// Continue on manifest mismatch, just warn
-				}
-				else
-				{
-						Debug.Log($"[DerivedFbxBuilder] Base FBX manifest ID verification passed: {manifest.manifestId}");
-					}
+					byte[] prefix = System.Text.Encoding.UTF8.GetBytes("YUCP|hmac|");
+					byte[] data = new byte[prefix.Length + key.Length];
+					Buffer.BlockCopy(prefix, 0, data, 0, prefix.Length);
+					Buffer.BlockCopy(key, 0, data, prefix.Length, key.Length);
+					hmacKey = sha.ComputeHash(data);
 				}
 				
-				// Check GUID if available
-				if (!string.IsNullOrEmpty(derivedAsset.baseFbxGuid))
+				byte[] computed;
+				using (var h = new System.Security.Cryptography.HMACSHA256(hmacKey))
 				{
-					string baseGuid = AssetDatabase.AssetPathToGUID(baseFbxPath);
-					if (baseGuid != derivedAsset.baseFbxGuid)
-					{
-						Debug.LogWarning($"[DerivedFbxBuilder] Base FBX GUID mismatch. Expected: {derivedAsset.baseFbxGuid}, Got: {baseGuid}. Continuing anyway...");
-						// Continue on GUID mismatch, just warn
+					byte[] ivAndCipher = new byte[iv.Length + ciphertext.Length];
+					Buffer.BlockCopy(iv, 0, ivAndCipher, 0, iv.Length);
+					Buffer.BlockCopy(ciphertext, 0, ivAndCipher, iv.Length, ciphertext.Length);
+					computed = h.ComputeHash(ivAndCipher);
 				}
-				else
+				
+				if (!computed.SequenceEqual(hmac))
+					return false;
+				
+				using (var aes = System.Security.Cryptography.Aes.Create())
 				{
-						Debug.Log($"[DerivedFbxBuilder] Base FBX GUID verification passed: {baseGuid}");
+					aes.KeySize = 256;
+					aes.Mode = System.Security.Cryptography.CipherMode.CBC;
+					aes.Padding = System.Security.Cryptography.PaddingMode.PKCS7;
+					aes.Key = key;
+					aes.IV = iv;
+					
+					using (var ms = new MemoryStream())
+					using (var cs = new System.Security.Cryptography.CryptoStream(ms, aes.CreateDecryptor(), System.Security.Cryptography.CryptoStreamMode.Write))
+					{
+						cs.Write(ciphertext, 0, ciphertext.Length);
+						cs.FlushFinalBlock();
+						File.WriteAllBytes(outputPath, ms.ToArray());
 					}
 				}
 				
 				return true;
 			}
-			catch (System.Exception ex)
+			catch
 			{
-				Debug.LogError($"[DerivedFbxBuilder] Error verifying base FBX: {ex.Message}");
 				return false;
 			}
 		}
-		
-		/// <summary>
-		/// Computes MD5 hash of a file.
-		/// </summary>
-		private static string ComputeFileHash(string filePath)
-		{
-			using (var md5 = MD5.Create())
-			{
-				using (var stream = File.OpenRead(filePath))
-				{
-					byte[] hash = md5.ComputeHash(stream);
-					return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-				}
-			}
-		}
-		
 		/// <summary>
 		/// Creates meta file using embedded content from DerivedFbxAsset, preserving humanoid Avatar mappings.
 		/// Falls back to original derived FBX meta file if embedded content is not available.

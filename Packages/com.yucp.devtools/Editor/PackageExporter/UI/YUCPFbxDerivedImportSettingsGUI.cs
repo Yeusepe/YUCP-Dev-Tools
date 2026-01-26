@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -46,30 +47,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				if (settings.isDerived)
 				{
 					EditorGUILayout.Space(5);
-					
-					// -- Mode Selection (Kitbash vs Single) --
-					#if YUCP_KITBASH_ENABLED
-					DrawModeSelection(settings);
-					EditorGUILayout.Space(5);
-					#endif
 
 					// -- Source Section --
 					DrawSectionHeader("Source");
-					bool isKitbash = false;
-					#if YUCP_KITBASH_ENABLED
-					isKitbash = settings.mode == DerivedMode.KitbashRecipeHdiff;
-					#endif
-
-					if (isKitbash)
-					{
-						#if YUCP_KITBASH_ENABLED
-						DrawKitbashConfig(importer, settings);
-						#endif
-					}
-					else
-					{
-						DrawSingleSourceConfig(settings);
-					}
+					DrawBaseList(settings);
 
 					EditorGUILayout.Space(10);
 
@@ -115,93 +96,56 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			EditorGUILayout.LabelField(text, style);
 		}
 
-		#if YUCP_KITBASH_ENABLED
-		private static void DrawModeSelection(DerivedSettings settings)
+		private static void DrawBaseList(DerivedSettings settings)
 		{
-			EditorGUILayout.BeginHorizontal();
-			EditorGUILayout.LabelField("Patch Mode:", GUILayout.Width(80));
-			
-			// Use a toolbar-style selection
-			var modes = new string[] { "Single Source", "Kitbash (Multi-Source)" };
-			int currentMode = (int)settings.mode;
-			int newMode = GUILayout.Toolbar(currentMode, modes, EditorStyles.miniButton); 
-			
-			if (newMode != currentMode)
+			if (settings.baseGuids == null)
+				settings.baseGuids = new List<string>();
+
+			if (settings.baseGuids.Count == 0)
 			{
-				settings.mode = (DerivedMode)newMode;
-			}
-			EditorGUILayout.EndHorizontal();
-			
-			// Explanation for modes
-			if (settings.mode == DerivedMode.SingleBaseHdiff)
-			{
-				DrawHelpText("Standard Mode: Creates a patch for a single Original FBX file. Use this for texture variations or simple mesh edits.");
+				EditorGUILayout.HelpBox("REQUIRED: Add at least one base FBX. This patch will store ONLY the differences between your file and each base.", MessageType.Error);
 			}
 			else
 			{
-				DrawHelpText("Kitbash Mode: Creates a patch that combines parts from multiple source FBXs. Use this for complex assemblies.");
+				DrawHelpText("Add one or more base FBXs. The installer will use the first compatible base it finds.");
 			}
-		}
 
-		private static void DrawKitbashConfig(ModelImporter importer, DerivedSettings settings)
-		{
-			// Status
-			bool hasRecipe = !string.IsNullOrEmpty(settings.kitbashRecipeGuid);
-			
-			using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+			for (int i = 0; i < settings.baseGuids.Count; i++)
 			{
+				UnityEngine.Object currentBase = null;
+				if (!string.IsNullOrEmpty(settings.baseGuids[i]))
+				{
+					string path = AssetDatabase.GUIDToAssetPath(settings.baseGuids[i]);
+					if (!string.IsNullOrEmpty(path))
+						currentBase = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+				}
+
 				using (new EditorGUILayout.HorizontalScope())
 				{
-					// Icon/Status
-					var statusIcon = hasRecipe ? "✓" : "!";
-					var statusColor = hasRecipe ? new Color(0.3f, 0.8f, 0.3f) : new Color(0.9f, 0.6f, 0.2f);
-					var oldColor = GUI.color;
-					GUI.color = statusColor;
-					GUILayout.Label(statusIcon, GUILayout.Width(15));
-					GUILayout.Label(hasRecipe ? "Configured" : "Recipe Missing", EditorStyles.boldLabel);
-					GUI.color = oldColor;
+					var newBase = EditorGUILayout.ObjectField(
+						new GUIContent($"Base FBX {i + 1}", "A base FBX that this derived asset can be reconstructed from."),
+						currentBase,
+						typeof(UnityEngine.Object),
+						false);
 
-					GUILayout.FlexibleSpace();
-
-					if (GUILayout.Button("Open Kitbash Configurator", GUILayout.Height(20)))
+					if (newBase != currentBase)
 					{
-						OpenKitbashConfigurator(importer, settings);
+						string path = AssetDatabase.GetAssetPath(newBase);
+						settings.baseGuids[i] = string.IsNullOrEmpty(path) ? null : AssetDatabase.AssetPathToGUID(path);
+					}
+
+					if (GUILayout.Button("Remove", GUILayout.Width(70)))
+					{
+						settings.baseGuids.RemoveAt(i);
+						i--;
+						continue;
 					}
 				}
-				
-				if (!hasRecipe)
-				{
-					EditorGUILayout.HelpBox("Click 'Open Kitbash Configurator' to select the source FBX files you want to combine.", MessageType.Info);
-				}
-			}
-		}
-		#endif
-
-		private static void DrawSingleSourceConfig(DerivedSettings settings)
-		{
-			UnityEngine.Object currentBase = null;
-			if (!string.IsNullOrEmpty(settings.baseGuid))
-			{
-				string path = AssetDatabase.GUIDToAssetPath(settings.baseGuid);
-				if (!string.IsNullOrEmpty(path))
-					currentBase = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
 			}
 
-			var newBase = EditorGUILayout.ObjectField(new GUIContent("Original FBX", "The original FBX file that this specific mesh is modified from."), currentBase, typeof(UnityEngine.Object), false);
-			
-			if (newBase != currentBase)
+			if (GUILayout.Button("Add Base FBX", GUILayout.Height(22)))
 			{
-				string path = AssetDatabase.GetAssetPath(newBase);
-				settings.baseGuid = string.IsNullOrEmpty(path) ? null : AssetDatabase.AssetPathToGUID(path);
-			}
-
-			if (currentBase == null)
-			{
-				EditorGUILayout.HelpBox("REQUIRED: Select the original FBX file. This patch will store ONLY the differences between your file and this Original FBX.", MessageType.Error);
-			}
-			else
-			{
-				DrawHelpText($"This patch will rely on '{currentBase.name}' as its base.");
+				settings.baseGuids.Add(null);
 			}
 		}
 
@@ -247,18 +191,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			}
 		}
 		
-		#if YUCP_KITBASH_ENABLED
-		/// <summary>
-		/// Opens Kitbash Edit Mode for the specified FBX.
-		/// This is the main entry point - like clicking "Configure" on Humanoid.
-		/// </summary>
-		private static void OpenKitbashConfigurator(ModelImporter importer, DerivedSettings settings)
-		{
-			// Enter stage-based edit mode (full editor takeover)
-			Kitbash.UI.KitbashStage.Enter(importer, settings);
-		}
-		#endif
-		
 		/// <summary>
 		/// Regenerates the GUID for the current derived FBX and updates all references.
 		/// This allows the original FBX to be reimported and properly referenced as the base FBX.
@@ -280,15 +212,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				return;
 			}
 			
-			// Check if base GUID exists (it might not if the file was replaced)
-			bool hasBaseGuid = !string.IsNullOrEmpty(settings.baseGuid);
-			string basePath = null;
+			// Check if any base GUID exists (it might not if the file was replaced)
+			bool hasBaseGuid = false;
 			bool baseStillExists = false;
-			
-			if (hasBaseGuid)
+			if (settings.baseGuids != null)
 			{
-				basePath = AssetDatabase.GUIDToAssetPath(settings.baseGuid);
-				baseStillExists = !string.IsNullOrEmpty(basePath);
+				foreach (var guid in settings.baseGuids)
+				{
+					if (string.IsNullOrEmpty(guid)) continue;
+					hasBaseGuid = true;
+					string basePath = AssetDatabase.GUIDToAssetPath(guid);
+					if (!string.IsNullOrEmpty(basePath))
+					{
+						baseStillExists = true;
+						break;
+					}
+				}
 			}
 			
 			// Build user-friendly message explaining what will happen
@@ -411,7 +350,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				// Update all references that were pointing to the old derived GUID to point to the new one
 				int updatedCount = GuidReferenceUpdater.UpdateReferences(oldDerivedGuid, newDerivedGuid, currentFbxPath);
 				
-				// Note: We don't update references from baseGuid to newDerivedGuid here
+				// Note: We don't update references from base GUIDs to new derived GUID here
 				// because the goal is to allow the original FBX to be reimported with its base GUID.
 				// References to the base GUID should remain pointing to the base GUID so they work
 				// when the original FBX is reimported.
@@ -461,12 +400,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		}
 	}
 }
-
-
-
-
-
-
 
 
 

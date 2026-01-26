@@ -110,6 +110,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
             progressBar.Add(_progressText);
             
             _progressContainer.Add(progressBar);
+            
+            // Detailed step log so user sees what's happening (avoids "is it stuck?" anxiety)
+            _progressDetailScroll = new ScrollView(ScrollViewMode.Vertical);
+            _progressDetailScroll.AddToClassList("yucp-progress-detail-scroll");
+            _progressDetailScroll.style.maxHeight = 100;
+            _progressDetailScroll.style.marginTop = 6;
+            _progressDetail = new Label("");
+            _progressDetail.AddToClassList("yucp-progress-detail");
+            _progressDetail.style.whiteSpace = WhiteSpace.Normal;
+            _progressDetail.style.unityTextAlign = TextAnchor.UpperLeft;
+            _progressDetailScroll.Add(_progressDetail);
+            _progressContainer.Add(_progressDetailScroll);
+            
             bottomBar.Add(_progressContainer);
                         
             

@@ -38,19 +38,9 @@ Development tools for YUCP package creators and avatar variant management.
 
 #### Derived FBX Export
 - **HDiff Binary Patching** - Export FBX variants as small binary patches using HDiff algorithm
-- **Single Base Mode** - Create derived FBX from a single base FBX with binary diff
-- **Kitbash Mode** - Multi-source FBX assembly from recipe-based synthetic bases (requires `YUCP_KITBASH_ENABLED`)
-- **Per-Triangle Mapping** - Track triangle sources for complex kitbash operations
+- **Multi-Base Patching** - Create derived FBX patches against multiple base FBXs for robust reconstruction
 - **Reference Preservation** - Maintain prefab compatibility with original FBX GUIDs
 - **Automatic Patch Application** - Patches applied automatically on package import via YUCPPatchImporter
-
-#### Kitbash System (Advanced)
-- **Synthetic Base Builder** - Build synthetic FBX files from kitbash recipes
-- **Ownership Mapping** - Paint and manage triangle ownership for multi-source meshes
-- **Ownership Paint Tool** - Scene view tool for painting mesh ownership
-- **Recipe System** - Define kitbash recipes with multiple source parts
-- **Cache System** - Intelligent caching of synthetic bases based on recipe hashes
-- **Requires Unity FBX Exporter** - Uses Unity's FBX Exporter package for export
 
 #### Package Signing
 - **Certificate Management** - Import and manage signing certificates
@@ -223,8 +213,6 @@ Development tools for YUCP package creators and avatar variant management.
 
 #### Development Tools
 - **Derived FBX Debug Window** - Debug window for derived FBX operations
-- **Ownership Map Window** - Visual tool for managing kitbash ownership maps
-- **Kitbash Setup Wizard** - Guided setup for kitbash workflows
 - **Patch Cleanup** - Tools for cleaning up patch-related files
 
 ## Installation

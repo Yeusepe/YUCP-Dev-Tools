@@ -220,7 +220,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     return;
                 }
 
-                asset.baseFbxGuid = AssetDatabase.AssetPathToGUID(baseFbxPath);
                 asset.originalDerivedFbxPath = modifiedFbxPath;
 
                 if (saveIntermediateAsset)
@@ -236,7 +235,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Log($"  Saved intermediate asset: {intermediateAssetPath}");
                 }
 
-                Log($"  [OK] DerivedFbxAsset created with .hdiff file: {asset.hdiffFilePath ?? "none"}");
+                int entryCount = asset.entries != null ? asset.entries.Count : 0;
+                Log($"  [OK] DerivedFbxAsset created with {entryCount} patch entr{(entryCount == 1 ? "y" : "ies")}");
 
                 EditorUtility.DisplayProgressBar("Building Derived FBX", "Reconstructing FBX...", 0.7f);
 
@@ -294,7 +294,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     EditorUtility.DisplayDialog(
                         "Success",
                         $"Derived FBX created successfully:\n{result}\n\n" +
-                        $"Binary patch applied from: {asset.hdiffFilePath ?? "unknown"}",
+                        $"Patch entries: {entryCount}",
                         "OK"
                     );
 
@@ -432,4 +432,3 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
     }
 }
-

@@ -86,9 +86,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     if (IsDerivedFbx(asset.assetPath, out DerivedSettings settings, out string basePath))
                     {
+                        string assetName = Path.GetFileName(asset.assetPath);
+                        
                         if (string.IsNullOrEmpty(basePath))
                         {
-                            string assetName = Path.GetFileName(asset.assetPath);
                             warnings.Add($"Derived patch '{assetName}' is missing its origin file");
                         }
                         else
@@ -103,7 +104,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             
                             if (!File.Exists(baseAssetPath))
                             {
-                                string assetName = Path.GetFileName(asset.assetPath);
                                 warnings.Add($"Derived patch '{assetName}' origin file not found: {basePath}");
                             }
                         }
@@ -263,6 +263,65 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 parent.Remove(validationSection);
                 parent.Insert(index, CreateValidationSection(profile));
             }
+        }
+        
+        private static int GetTriangleCountForOwnershipTarget(string assetPath, string targetMeshName)
+        {
+            try
+            {
+                string unityPath = assetPath.Replace('\\', '/');
+                if (Path.IsPathRooted(unityPath))
+                {
+                    string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/');
+                    if (unityPath.StartsWith(projectPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        unityPath = unityPath.Substring(projectPath.Length).TrimStart('/');
+                    }
+                }
+                
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(unityPath);
+                if (prefab == null) return 0;
+                
+                Mesh target = FindTargetMeshForOwnership(prefab, targetMeshName);
+                if (target == null) return 0;
+                
+                int count = 0;
+                for (int s = 0; s < target.subMeshCount; s++)
+                {
+                    count += target.GetTriangles(s).Length / 3;
+                }
+                return count;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+        
+        private static Mesh FindTargetMeshForOwnership(GameObject prefab, string targetMeshName)
+        {
+            if (prefab == null) return null;
+            
+            if (!string.IsNullOrEmpty(targetMeshName))
+            {
+                foreach (var smr in prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    if (smr.sharedMesh != null && smr.sharedMesh.name == targetMeshName)
+                        return smr.sharedMesh;
+                }
+                foreach (var mf in prefab.GetComponentsInChildren<MeshFilter>(true))
+                {
+                    if (mf.sharedMesh != null && mf.sharedMesh.name == targetMeshName)
+                        return mf.sharedMesh;
+                }
+            }
+            
+            var firstSmr = prefab.GetComponentInChildren<SkinnedMeshRenderer>(true);
+            if (firstSmr != null && firstSmr.sharedMesh != null)
+                return firstSmr.sharedMesh;
+            
+            var firstMf = prefab.GetComponentInChildren<MeshFilter>(true);
+            return firstMf != null ? firstMf.sharedMesh : null;
         }
 
     }

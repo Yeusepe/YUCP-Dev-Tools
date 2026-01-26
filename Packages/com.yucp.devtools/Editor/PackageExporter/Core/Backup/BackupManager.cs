@@ -17,7 +17,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		private class DerivedSettings
 		{
 			public bool isDerived;
-			public string baseGuid;
+			public List<string> baseGuids = new List<string>();
 			public string friendlyName;
 			public string category;
 		}
@@ -50,7 +50,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					try
 					{
 						var settings = JsonUtility.FromJson<DerivedSettings>(importer.userData);
-						if (settings.isDerived && settings.baseGuid == baseGuid)
+						if (settings.isDerived && settings.baseGuids != null && settings.baseGuids.Contains(baseGuid))
 						{
 							// Found a modified FBX for this base - we're in export mode, skip backups
 							return;
@@ -273,5 +273,4 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		}
 	}
 }
-
 

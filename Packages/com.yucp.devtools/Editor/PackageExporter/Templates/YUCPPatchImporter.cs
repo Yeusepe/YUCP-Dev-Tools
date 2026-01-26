@@ -1,10 +1,11 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEditor;
 using System;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 
 namespace YUCP.PatchCleanup
 {
@@ -48,6 +49,39 @@ namespace YUCP.PatchCleanup
         private static HashSet<string> importedTempFiles = new HashSet<string>();
         private static HashSet<string> createdDerivedFbxPaths = new HashSet<string>();
         private static bool s_hasCleanedOnLoad = false;
+        private static string _currentPatchPathForRetry = null;
+
+        private class PatchEntryInfo
+        {
+            public string baseGuid;
+            public string hdiffFilePath;
+        }
+
+        private static List<PatchEntryInfo> ReadPatchEntries(UnityEngine.Object patchObj)
+        {
+            var results = new List<PatchEntryInfo>();
+            if (patchObj == null) return results;
+
+            var patchType = patchObj.GetType();
+            var entriesField = patchType.GetField("entries");
+            if (entriesField == null) return results;
+
+            var entriesObj = entriesField.GetValue(patchObj) as System.Collections.IEnumerable;
+            if (entriesObj == null) return results;
+
+            foreach (var entry in entriesObj)
+            {
+                if (entry == null) continue;
+                var entryType = entry.GetType();
+                var baseGuidField = entryType.GetField("baseGuid");
+                var hdiffField = entryType.GetField("hdiffFilePath");
+                string baseGuid = baseGuidField != null ? baseGuidField.GetValue(entry) as string : null;
+                string hdiffFilePath = hdiffField != null ? hdiffField.GetValue(entry) as string : null;
+                results.Add(new PatchEntryInfo { baseGuid = baseGuid, hdiffFilePath = hdiffFilePath });
+            }
+
+            return results;
+        }
         
         private static void CheckForPatchesOnLoad()
         {
@@ -504,6 +538,7 @@ namespace YUCP.PatchCleanup
         private static void TryApplyPatch(string patchPath)
         {
             WriteLog($"TryApplyPatch called for: {patchPath}");
+            _currentPatchPathForRetry = patchPath;
             try
             {
                 // First, fix script GUID and namespace references if needed (must happen before type lookup)
@@ -756,39 +791,52 @@ namespace YUCP.PatchCleanup
                     return;
                 }
                 
-                // Check if the asset has hdiffFilePath (required for binary patching)
+                // Check if the asset has patch entries (required for binary patching)
                 try
                 {
-                    var hdiffFilePathField = patch.GetType().GetField("hdiffFilePath");
-                    if (hdiffFilePathField != null)
+                    var entries = ReadPatchEntries(patch);
+                    if (entries == null || entries.Count == 0)
                     {
-                        string hdiffFilePath = hdiffFilePathField.GetValue(patch) as string;
-                        if (string.IsNullOrEmpty(hdiffFilePath))
-                        {
-                            Debug.LogError($"[YUCP PatchImporter] Patch asset {patchPath} has no hdiffFilePath. This asset was created with an incompatible format.\n" +
-                                "Please delete this asset file and re-export your package.\n" +
-                                $"Delete: {patchPath}");
-                            WriteLog($"  ERROR: Patch asset has no hdiffFilePath");
-                            return;
-                        }
-                        
-                        // Verify .hdiff file exists
-                        string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                        string hdiffPhysicalPath = Path.Combine(projectPath, hdiffFilePath.Replace('/', Path.DirectorySeparatorChar));
-                        if (!File.Exists(hdiffPhysicalPath))
-                        {
-                            Debug.LogError($"[YUCP PatchImporter] .hdiff file not found: {hdiffPhysicalPath}\n" +
-                                "The patch file may be missing from the package. Please re-export your package.");
-                            WriteLog($"  ERROR: .hdiff file not found: {hdiffFilePath}");
-                            return;
-                        }
-                        
-                        WriteLog($"  Found .hdiff file: {hdiffFilePath}");
+                        Debug.LogError($"[YUCP PatchImporter] Patch asset {patchPath} has no patch entries. This asset was created with an incompatible format.\n" +
+                            "Please delete this asset file and re-export your package.\n" +
+                            $"Delete: {patchPath}");
+                        WriteLog($"  ERROR: Patch asset has no patch entries");
+                        return;
                     }
-                    else
+                    
+                    bool hasAnyHdiff = false;
+                    bool anyExists = false;
+                    string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                    
+                    foreach (var entry in entries)
                     {
-                        Debug.LogWarning($"[YUCP PatchImporter] Patch asset {patchPath} does not have hdiffFilePath field. This may be an old format patch.");
-                        WriteLog($"  WARNING: Patch asset missing hdiffFilePath field");
+                        if (entry == null || string.IsNullOrEmpty(entry.hdiffFilePath)) continue;
+                        hasAnyHdiff = true;
+                        string hdiffPhysicalPath = Path.Combine(projectPath, entry.hdiffFilePath.Replace('/', Path.DirectorySeparatorChar));
+                        if (File.Exists(hdiffPhysicalPath))
+                        {
+                            anyExists = true;
+                            WriteLog($"  Found diff payload: {entry.hdiffFilePath}");
+                            break;
+                        }
+                    }
+                    
+                    if (!hasAnyHdiff)
+                    {
+                        Debug.LogError($"[YUCP PatchImporter] Patch asset {patchPath} has no hdiff file paths. This asset was created with an incompatible format.\n" +
+                            "Please delete this asset file and re-export your package.");
+                        WriteLog($"  ERROR: Patch asset has no hdiff file paths");
+                        CleanupAfterFailure("Patch asset has no diff file paths");
+                        return;
+                    }
+                    
+                    if (!anyExists)
+                    {
+                        Debug.LogError($"[YUCP PatchImporter] No diff payloads found for patch {patchPath}.\n" +
+                            "The patch files may be missing from the package. Please re-export your package.");
+                        WriteLog($"  ERROR: No diff payloads found for patch");
+                        CleanupAfterFailure("No diff payloads found for patch");
+                        return;
                     }
                 }
                 catch (Exception checkEx)
@@ -796,6 +844,7 @@ namespace YUCP.PatchCleanup
                     Debug.LogError($"[YUCP PatchImporter] Patch asset {patchPath} appears to be corrupted or incompatible.\n" +
                         "This may be due to a format change. Please delete this asset file and re-export your package.\n" +
                         $"Delete: {patchPath}\nError: {checkEx.Message}");
+                    CleanupAfterFailure("Patch asset corrupted or incompatible");
                     return;
                 }
                 
@@ -806,6 +855,7 @@ namespace YUCP.PatchCleanup
             {
                 WriteLog($"  ERROR in TryApplyPatch: {ex.Message}\n{ex.StackTrace}");
                 Debug.LogWarning($"[YUCP PatchImporter] Error processing patch {patchPath}: {ex.Message}");
+                CleanupAfterFailure($"TryApplyPatchInternal exception: {ex.GetType().Name}");
             }
         }
         
@@ -815,41 +865,19 @@ namespace YUCP.PatchCleanup
             {
                 // Delete DLLs from Plugins BEFORE patching
                 DeleteDllsFromPluginsBeforePatching();
-                
+
                 var patchType = patchObj.GetType();
-                
-                // Check for kitbash mode (multi-source)
-                var modeField = patchType.GetField("mode");
-                int mode = 0; // Default: SingleBaseHdiff
-                if (modeField != null)
-                {
-                    var modeValue = modeField.GetValue(patchObj);
-                    if (modeValue != null)
-                    {
-                        mode = (int)modeValue;
-                    }
-                }
-                
-                // Mode 1 = KitbashRecipeHdiff (multi-source)
-                if (mode == 1)
-                {
-                    ApplyKitbashPatch(patchObj, patchPath);
-                    return;
-                }
-                
-                // Mode 0 = SingleBaseHdiff (original flow)
+
                 // Get patch properties using reflection
-                var baseFbxGuidField = patchType.GetField("baseFbxGuid");
                 var derivedFbxGuidField = patchType.GetField("derivedFbxGuid");
                 var targetFbxNameField = patchType.GetField("targetFbxName");
                 var originalDerivedFbxPathField = patchType.GetField("originalDerivedFbxPath");
                 var uiHintsField = patchType.GetField("uiHints");
-                
-                string baseFbxGuid = baseFbxGuidField != null ? baseFbxGuidField.GetValue(patchObj) as string : null;
+
                 string derivedFbxGuid = derivedFbxGuidField != null ? derivedFbxGuidField.GetValue(patchObj) as string : null;
                 string targetFbxName = targetFbxNameField != null ? targetFbxNameField.GetValue(patchObj) as string : null;
                 string originalDerivedFbxPath = originalDerivedFbxPathField != null ? originalDerivedFbxPathField.GetValue(patchObj) as string : null;
-                
+
                 // Get friendly name from UIHints
                 string friendlyName = Path.GetFileNameWithoutExtension(patchPath);
                 if (uiHintsField != null)
@@ -866,386 +894,52 @@ namespace YUCP.PatchCleanup
                         }
                     }
                 }
-                
+
                 if (string.IsNullOrEmpty(targetFbxName))
                 {
                     targetFbxName = friendlyName;
                 }
-                
-                // Direct targeting: use baseFbxGuid to find the target FBX
-                if (string.IsNullOrEmpty(baseFbxGuid))
+
+                // Resolve a base FBX path hint from entries
+                string baseFbxPath = null;
+                var entries = ReadPatchEntries(patchObj);
+                if (entries != null)
                 {
-                    WriteLog($"  ERROR: baseFbxGuid is missing from patch");
-                    Debug.LogWarning($"[YUCP PatchImporter] Patch missing baseFbxGuid, cannot apply");
-                    return;
-                }
-                
-                // Refresh AssetDatabase to ensure all assets are indexed
-                AssetDatabase.Refresh();
-                
-                string baseFbxPath = AssetDatabase.GUIDToAssetPath(baseFbxGuid);
-                
-                // If GUID doesn't resolve, try refreshing and waiting for import to complete
-                if (string.IsNullOrEmpty(baseFbxPath) || !baseFbxPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
-                {
-                    WriteLog($"  WARNING: baseFbxGuid {baseFbxGuid} does not resolve immediately (path: '{baseFbxPath ?? "null"}'), waiting for AssetDatabase refresh...");
-                    Debug.LogWarning($"[YUCP PatchImporter] baseFbxGuid {baseFbxGuid} does not resolve immediately. Running diagnostics...");
-                    
-                    // ========== COMPREHENSIVE DIAGNOSTICS ==========
-                    
-                    // Diagnostic 1: Validate GUID format
-                    WriteLog($"  [DIAG] GUID Format Check:");
-                    WriteLog($"    GUID: {baseFbxGuid}");
-                    WriteLog($"    Length: {baseFbxGuid?.Length ?? 0} (expected: 32)");
-                    WriteLog($"    Is Valid Format: {!string.IsNullOrEmpty(baseFbxGuid) && baseFbxGuid.Length == 32 && Regex.IsMatch(baseFbxGuid, @"^[0-9a-f]{32}$", RegexOptions.IgnoreCase)}");
-                    
-                    // Diagnostic 2: Check if GUID exists in AssetDatabase at all (any asset type)
-                    WriteLog($"  [DIAG] AssetDatabase GUID Lookup:");
-                    string anyAssetPath = AssetDatabase.GUIDToAssetPath(baseFbxGuid);
-                    WriteLog($"    GUID resolves to: {(string.IsNullOrEmpty(anyAssetPath) ? "NOTHING" : anyAssetPath)}");
-                    if (!string.IsNullOrEmpty(anyAssetPath))
+                    foreach (var entry in entries)
                     {
-                        WriteLog($"    Asset Type: {AssetDatabase.GetMainAssetTypeAtPath(anyAssetPath)?.Name ?? "Unknown"}");
-                        WriteLog($"    Is FBX: {anyAssetPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase)}");
-                    }
-                    
-                    // Diagnostic 3: Search all FBX files in AssetDatabase
-                    WriteLog($"  [DIAG] FBX Files in AssetDatabase:");
-                    try
-                    {
-                        string[] allFbxGuids = AssetDatabase.FindAssets("t:GameObject", new[] { "Assets" });
-                        WriteLog($"    Found {allFbxGuids.Length} GameObject assets (potential FBX files)");
-                        
-                        // Also search for ModelImporter assets
-                        string[] modelGuids = AssetDatabase.FindAssets("t:Model", new[] { "Assets" });
-                        WriteLog($"    Found {modelGuids.Length} Model assets");
-                        
-                        // Check first 50 assets for FBX extension
-                        int fbxCount = 0;
-                        var fbxGuidMap = new Dictionary<string, string>();
-                        foreach (var guid in allFbxGuids.Take(50))
+                        if (entry == null || string.IsNullOrEmpty(entry.baseGuid)) continue;
+                        string path = AssetDatabase.GUIDToAssetPath(entry.baseGuid);
+                        if (!string.IsNullOrEmpty(path))
                         {
-                            try
-                            {
-                                string path = AssetDatabase.GUIDToAssetPath(guid);
-                                if (!string.IsNullOrEmpty(path) && path.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    fbxCount++;
-                                    fbxGuidMap[guid] = path;
-                                    if (guid == baseFbxGuid)
-                                    {
-                                        WriteLog($"    *** MATCH FOUND! GUID {guid} -> {path}");
-                                        baseFbxPath = path;
-                                    }
-                                }
-                            }
-                            catch { }
+                            baseFbxPath = path;
+                            break;
                         }
-                        WriteLog($"    Found {fbxCount} actual .fbx files in first 50 assets");
-                        
-                        // Check if our GUID is in the list
-                        if (fbxGuidMap.ContainsKey(baseFbxGuid))
-                        {
-                            WriteLog($"    *** baseFbxGuid found in AssetDatabase! Path: {fbxGuidMap[baseFbxGuid]}");
-                            baseFbxPath = fbxGuidMap[baseFbxGuid];
-                        }
-                    }
-                    catch (Exception diagEx)
-                    {
-                        WriteLog($"    Error searching AssetDatabase: {diagEx.Message}");
-                    }
-                    
-                    // Diagnostic 4: Search for .fbx files on disk and check their GUIDs
-                    WriteLog($"  [DIAG] FBX Files on Disk:");
-                    try
-                    {
-                        string[] fbxFiles = Directory.GetFiles(Application.dataPath, "*.fbx", SearchOption.AllDirectories);
-                        WriteLog($"    Found {fbxFiles.Length} .fbx files on disk");
-                        
-                        int checkedCount = 0;
-                        int matchingCount = 0;
-                        var guidMatches = new List<string>();
-                        
-                        // Check all FBX files (not just first 20)
-                        foreach (var fbxFile in fbxFiles)
-                        {
-                            try
-                            {
-                                string relativePath = fbxFile.Replace(Application.dataPath, "Assets").Replace('\\', '/');
-                                string guid = AssetDatabase.AssetPathToGUID(relativePath);
-                                checkedCount++;
-                                
-                                if (guid == baseFbxGuid)
-                                {
-                                    WriteLog($"    *** MATCH FOUND on disk! File: {relativePath}, GUID: {guid}");
-                                    guidMatches.Add(relativePath);
-                                    if (string.IsNullOrEmpty(baseFbxPath))
-                                    {
-                                        baseFbxPath = relativePath;
-                                    }
-                                    matchingCount++;
-                                }
-                                
-                                // Also check for partial GUID matches (first 8 chars)
-                                if (guid.Length >= 8 && baseFbxGuid.Length >= 8 && 
-                                    guid.Substring(0, 8).Equals(baseFbxGuid.Substring(0, 8), StringComparison.OrdinalIgnoreCase) &&
-                                    guid != baseFbxGuid)
-                                {
-                                    WriteLog($"    Partial GUID match (first 8 chars): {relativePath} -> {guid}");
-                                }
-                            }
-                            catch (Exception)
-                            {
-                                // Silently continue - some files might not be importable
-                            }
-                        }
-                        
-                        WriteLog($"    Checked {checkedCount} files, found {matchingCount} exact GUID matches");
-                        if (matchingCount > 0)
-                        {
-                            WriteLog($"    Matching files: {string.Join(", ", guidMatches)}");
-                        }
-                    }
-                    catch (Exception diagEx)
-                    {
-                        WriteLog($"    Error searching disk: {diagEx.Message}");
-                        WriteLog($"    Stack trace: {diagEx.StackTrace}");
-                    }
-                    
-                    // Diagnostic 5: Search for GUID in .meta files directly
-                    WriteLog($"  [DIAG] Searching .meta files for GUID:");
-                    try
-                    {
-                        string[] metaFiles = Directory.GetFiles(Application.dataPath, "*.meta", SearchOption.AllDirectories);
-                        WriteLog($"    Found {metaFiles.Length} .meta files");
-                        
-                        int metaMatches = 0;
-                        var matchingMetaFiles = new List<string>();
-                        
-                        foreach (var metaFile in metaFiles.Take(1000)) // Limit to first 1000 for performance
-                        {
-                            try
-                            {
-                                string metaContent = File.ReadAllText(metaFile);
-                                if (metaContent.Contains(baseFbxGuid))
-                                {
-                                    string assetFile = metaFile.Substring(0, metaFile.Length - 5); // Remove .meta
-                                    string relativePath = assetFile.Replace(Application.dataPath, "Assets").Replace('\\', '/');
-                                    
-                                    // Check if it's actually an FBX file
-                                    if (File.Exists(assetFile) && assetFile.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        metaMatches++;
-                                        matchingMetaFiles.Add(relativePath);
-                                        WriteLog($"    *** Found GUID in .meta file: {relativePath}");
-                                        
-                                        // Verify the GUID in the meta file
-                                        var guidMatch = Regex.Match(metaContent, @"guid:\s*([0-9a-f]{32})", RegexOptions.IgnoreCase);
-                                        if (guidMatch.Success)
-                                        {
-                                            string metaGuid = guidMatch.Groups[1].Value;
-                                            if (metaGuid.Equals(baseFbxGuid, StringComparison.OrdinalIgnoreCase))
-                                            {
-                                                WriteLog($"      Confirmed: .meta file contains exact GUID match!");
-                                                if (string.IsNullOrEmpty(baseFbxPath))
-                                                {
-                                                    baseFbxPath = relativePath;
-                                                }
-                                            }
-                                            else
-                                            {
-                                                WriteLog($"      WARNING: .meta file GUID mismatch! Expected: {baseFbxGuid}, Found: {metaGuid}");
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            catch (Exception)
-                            {
-                                // Continue searching
-                            }
-                        }
-                        
-                        WriteLog($"    Found {metaMatches} .meta files containing the GUID");
-                        if (metaMatches > 0)
-                        {
-                            WriteLog($"    Matching .meta files: {string.Join(", ", matchingMetaFiles)}");
-                        }
-                    }
-                    catch (Exception diagEx)
-                    {
-                        WriteLog($"    Error searching .meta files: {diagEx.Message}");
-                    }
-                    
-                    // Diagnostic 6: Check for similar GUIDs (typos, case differences)
-                    WriteLog($"  [DIAG] Checking for similar GUIDs:");
-                    try
-                    {
-                        string guidLower = baseFbxGuid.ToLowerInvariant();
-                        string[] allGuids = AssetDatabase.FindAssets("", new[] { "Assets" });
-                        WriteLog($"    Searching through {allGuids.Length} assets for similar GUIDs...");
-                        
-                        var similarGuids = new List<string>();
-                        foreach (var guid in allGuids.Take(1000))
-                        {
-                            if (guid.ToLowerInvariant() == guidLower && guid != baseFbxGuid)
-                            {
-                                string path = AssetDatabase.GUIDToAssetPath(guid);
-                                if (!string.IsNullOrEmpty(path) && path.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    similarGuids.Add($"{guid} -> {path}");
-                                }
-                            }
-                        }
-                        
-                        if (similarGuids.Count > 0)
-                        {
-                            WriteLog($"    Found {similarGuids.Count} similar GUIDs (case difference?):");
-                            foreach (var similar in similarGuids)
-                            {
-                                WriteLog($"      {similar}");
-                            }
-                        }
-                        else
-                        {
-                            WriteLog($"    No similar GUIDs found");
-                        }
-                    }
-                    catch (Exception diagEx)
-                    {
-                        WriteLog($"    Error checking similar GUIDs: {diagEx.Message}");
-                    }
-                    
-                    // Diagnostic 7: Check AssetDatabase state
-                    WriteLog($"  [DIAG] AssetDatabase State:");
-                    WriteLog($"    Application data path: {Application.dataPath}");
-                    WriteLog($"    Unity version: {Application.unityVersion}");
-                    WriteLog($"    Is playing: {Application.isPlaying}");
-                    WriteLog($"    Is editor: {Application.isEditor}");
-                    
-                    // Diagnostic 8: List all FBX files with their GUIDs (sample)
-                    WriteLog($"  [DIAG] Sample FBX Files and GUIDs (first 10):");
-                    try
-                    {
-                        string[] sampleFbx = Directory.GetFiles(Application.dataPath, "*.fbx", SearchOption.AllDirectories).Take(10).ToArray();
-                        foreach (var fbx in sampleFbx)
-                        {
-                            try
-                            {
-                                string relPath = fbx.Replace(Application.dataPath, "Assets").Replace('\\', '/');
-                                string guid = AssetDatabase.AssetPathToGUID(relPath);
-                                WriteLog($"      {Path.GetFileName(fbx)} -> GUID: {guid}");
-                            }
-                            catch { }
-                        }
-                    }
-                    catch (Exception diagEx)
-                    {
-                        WriteLog($"    Error listing sample FBX files: {diagEx.Message}");
-                    }
-                    
-                    WriteLog($"  [DIAG] Diagnostics complete. baseFbxPath resolved to: {(string.IsNullOrEmpty(baseFbxPath) ? "NULL" : baseFbxPath)}");
-                    
-                    // If still not found, retry with delays
-                    if (string.IsNullOrEmpty(baseFbxPath) || !baseFbxPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
-                    {
-                        WriteLog($"  Scheduling retry after AssetDatabase refresh...");
-                        
-                        // Retry after delay to allow AssetDatabase to finish indexing
-                        EditorApplication.delayCall += () =>
-                        {
-                            EditorApplication.delayCall += () =>
-                            {
-                                AssetDatabase.Refresh();
-                                string retryBaseFbxPath = AssetDatabase.GUIDToAssetPath(baseFbxGuid);
-                                
-                                if (string.IsNullOrEmpty(retryBaseFbxPath) || !retryBaseFbxPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    // Try one more time with a longer delay
-                                    WriteLog($"  [RETRY 1] First retry failed. Resolved path: '{retryBaseFbxPath ?? "null"}'. Trying again with longer delay...");
-                                    Debug.LogWarning($"[YUCP PatchImporter] First retry failed for baseFbxGuid {baseFbxGuid}. Path resolved to: '{retryBaseFbxPath ?? "null"}'");
-                                    
-                                    EditorApplication.delayCall += () =>
-                                    {
-                                        AssetDatabase.Refresh();
-                                        string finalBaseFbxPath = AssetDatabase.GUIDToAssetPath(baseFbxGuid);
-                                        
-                                        if (string.IsNullOrEmpty(finalBaseFbxPath) || !finalBaseFbxPath.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            WriteLog($"  [RETRY 2] Final retry failed. Resolved path: '{finalBaseFbxPath ?? "null"}'");
-                                            
-                                            // Final diagnostic summary
-                                            WriteLog($"  [FINAL DIAG] Summary of failure:");
-                                            WriteLog($"    - baseFbxGuid: {baseFbxGuid}");
-                                            WriteLog($"    - Attempted 3 times (initial + 2 retries)");
-                                            WriteLog($"    - Final resolved path: {(string.IsNullOrEmpty(finalBaseFbxPath) ? "NULL" : finalBaseFbxPath)}");
-                                            
-                                            // Quick check: Is the GUID in any .meta file?
-                                            try
-                                            {
-                                                string[] allMetaFiles = Directory.GetFiles(Application.dataPath, "*.meta", SearchOption.AllDirectories);
-                                                int guidInMetaCount = 0;
-                                                foreach (var meta in allMetaFiles.Take(500))
-                                                {
-                                                    try
-                                                    {
-                                                        if (File.ReadAllText(meta).Contains(baseFbxGuid))
-                                                        {
-                                                            guidInMetaCount++;
-                                                            string assetFile = meta.Substring(0, meta.Length - 5);
-                                                            string relPath = assetFile.Replace(Application.dataPath, "Assets").Replace('\\', '/');
-                                                            WriteLog($"    - GUID found in .meta file: {relPath}");
-                                                            if (guidInMetaCount >= 5) break; // Limit output
-                                                        }
-                                                    }
-                                                    catch { }
-                                                }
-                                                WriteLog($"    - GUID found in {guidInMetaCount} .meta file(s)");
-                                            }
-                                            catch (Exception finalDiagEx)
-                                            {
-                                                WriteLog($"    - Error in final diagnostic: {finalDiagEx.Message}");
-                                            }
-                                            
-                                            WriteLog($"  ERROR: baseFbxGuid {baseFbxGuid} still does not resolve after retries. " +
-                                                $"GUID may be incorrect or base FBX is not in the project.");
-                                            Debug.LogError($"[YUCP PatchImporter] baseFbxGuid {baseFbxGuid} does not resolve to a valid FBX after retries. " +
-                                                $"The base FBX with this GUID may not be in the project, or the GUID is incorrect. " +
-                                                $"Please ensure the base FBX is imported before importing the patch package. " +
-                                                $"Check the log file for detailed diagnostics.");
-                                            return;
-                                        }
-                                        
-                                        // Success on final retry - continue with patching
-                                        WriteLog($"  [RETRY 2] Successfully resolved baseFbxGuid on final retry: {finalBaseFbxPath}");
-                                        Debug.Log($"[YUCP PatchImporter] Successfully resolved baseFbxGuid {baseFbxGuid} on final retry: {finalBaseFbxPath}");
-                                        ApplyPatchWithBasePath(patchObj, patchPath, finalBaseFbxPath, baseFbxGuid, derivedFbxGuid, targetFbxName, originalDerivedFbxPath);
-                                    };
-                                }
-                                else
-                                {
-                                    // Success on first retry
-                                    WriteLog($"  [RETRY 1] Successfully resolved baseFbxGuid on first retry: {retryBaseFbxPath}");
-                                    Debug.Log($"[YUCP PatchImporter] Successfully resolved baseFbxGuid {baseFbxGuid} on first retry: {retryBaseFbxPath}");
-                                    ApplyPatchWithBasePath(patchObj, patchPath, retryBaseFbxPath, baseFbxGuid, derivedFbxGuid, targetFbxName, originalDerivedFbxPath);
-                                }
-                            };
-                        };
-                        return;
                     }
                 }
-                
-                WriteLog($"  Using direct targeting: baseFbxGuid={baseFbxGuid} -> {baseFbxPath}");
-                ApplyPatchWithBasePath(patchObj, patchPath, baseFbxPath, baseFbxGuid, derivedFbxGuid, targetFbxName, originalDerivedFbxPath);
+
+                if (string.IsNullOrEmpty(baseFbxPath))
+                {
+                    WriteLog("  WARNING: No base FBX resolved from entries. DerivedFbxBuilder will attempt to resolve at patch time.");
+                }
+                else
+                {
+                    WriteLog($"  Base FBX hint: {baseFbxPath}");
+                }
+
+                bool success = ApplyPatchWithBasePath(patchObj, patchPath, baseFbxPath, derivedFbxGuid, targetFbxName, originalDerivedFbxPath);
+                if (!success)
+                {
+                    CleanupAfterFailure("ApplyPatchWithBasePath returned false");
+                }
             }
             catch (Exception ex)
             {
                 WriteLog($"  ERROR in ApplyPatch: {ex.Message}\n{ex.StackTrace}");
                 Debug.LogError($"[YUCP PatchImporter] Error applying patch: {ex.Message}");
+                CleanupAfterFailure($"ApplyPatch exception: {ex.GetType().Name}");
             }
         }
-        
-        private static void ApplyPatchWithBasePath(UnityEngine.Object patchObj, string patchPath, string baseFbxPath, string baseFbxGuid, string derivedFbxGuid, string targetFbxName, string originalDerivedFbxPath)
+        private static bool ApplyPatchWithBasePath(UnityEngine.Object patchObj, string patchPath, string baseFbxPath, string derivedFbxGuid, string targetFbxName, string originalDerivedFbxPath)
         {
             try
             {
@@ -1273,7 +967,8 @@ namespace YUCP.PatchCleanup
                 {
                     WriteLog("  ERROR: DerivedFbxBuilder type not found");
                     Debug.LogError($"[YUCP PatchImporter] DerivedFbxBuilder type not found");
-                    return;
+                    CleanupAfterFailure("DerivedFbxBuilder type not found");
+                    return false;
                 }
                 
                 // Get BuildDerivedFbx method
@@ -1282,7 +977,8 @@ namespace YUCP.PatchCleanup
                 {
                     WriteLog("  ERROR: BuildDerivedFbx method not found");
                     Debug.LogError($"[YUCP PatchImporter] BuildDerivedFbx method not found");
-                    return;
+                    CleanupAfterFailure("BuildDerivedFbx method not found");
+                    return false;
                 }
                 
                 // Determine output path - use original path if available, otherwise construct from target name
@@ -1357,7 +1053,8 @@ namespace YUCP.PatchCleanup
                 {
                     WriteLog($"  ERROR: BuildDerivedFbx returned null");
                     Debug.LogError($"[YUCP PatchImporter] Failed to build derived FBX");
-                    return;
+                    CleanupAfterFailure("BuildDerivedFbx returned null");
+                    return false;
                 }
                 
                 WriteLog($"  Successfully created derived FBX: {createdPath}");
@@ -1369,7 +1066,7 @@ namespace YUCP.PatchCleanup
                 createdDerivedFbxPaths.Add(createdPath);
                 
                 // Check if override original references is enabled
-                CheckAndHandleOverrideOriginalReferences(baseFbxPath, baseFbxGuid, createdPath, patchPath);
+                CheckAndHandleOverrideOriginalReferences(baseFbxPath, createdPath, patchPath);
                 
                 // Clean up imported temp files after successful FBX build
                 // Use nested delayCall
@@ -1497,11 +1194,37 @@ namespace YUCP.PatchCleanup
                     // Force a refresh
                     AssetDatabase.Refresh();
                 }
+                
+                return true;
             }
             catch (Exception ex)
             {
                 WriteLog($"  ERROR in ApplyPatchWithBasePath: {ex.Message}\n{ex.StackTrace}");
                 Debug.LogError($"[YUCP PatchImporter] Error applying patch with base path: {ex.Message}");
+                CleanupAfterFailure($"ApplyPatchWithBasePath exception: {ex.GetType().Name}");
+                return false;
+            }
+        }
+
+        private static void CleanupAfterFailure(string reason)
+        {
+            try
+            {
+                WriteLog($"CleanupAfterFailure: {reason}");
+                
+                EditorApplication.delayCall += () =>
+                {
+                    EditorApplication.delayCall += () =>
+                    {
+                        CleanupImportedTempFiles();
+                        CleanupDerivedFbxImporterSettings();
+                        CleanupDllsAfterPatchApplication();
+                    };
+                };
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in CleanupAfterFailure: {ex.Message}\n{ex.StackTrace}");
             }
         }
         
@@ -1797,7 +1520,7 @@ namespace YUCP.PatchCleanup
             }
         }
         
-        private static void CheckAndHandleOverrideOriginalReferences(string baseFbxPath, string baseFbxGuid, string newFbxPath, string patchPath)
+        private static void CheckAndHandleOverrideOriginalReferences(string baseFbxPath, string newFbxPath, string patchPath)
         {
             try
             {
@@ -1836,10 +1559,12 @@ namespace YUCP.PatchCleanup
                     WriteLog("  ERROR: Could not get GUID for new FBX");
                     return;
                 }
+
+                string baseFbxGuid = string.IsNullOrEmpty(baseFbxPath) ? null : AssetDatabase.AssetPathToGUID(baseFbxPath);
                 
                 if (string.IsNullOrEmpty(baseFbxGuid))
                 {
-                    WriteLog("  ERROR: baseFbxGuid is empty, cannot override references");
+                    WriteLog("  ERROR: baseFbxGuid could not be resolved, cannot override references");
                     return;
                 }
                 
@@ -1892,7 +1617,7 @@ namespace YUCP.PatchCleanup
         private class DerivedSettings
         {
             public bool isDerived;
-            public string baseGuid;
+            public List<string> baseGuids = new List<string>();
             public string friendlyName;
             public string category;
             public bool overrideOriginalReferences = false;
@@ -2073,7 +1798,7 @@ namespace YUCP.PatchCleanup
                 
                 // Build list of swaps for display
                 string swapListText = string.Join("\n", swapList.swaps.Select(s => 
-                    $"  • {Path.GetFileName(s.oldPath)} -> {Path.GetFileName(s.newPath)} ({s.timestamp})"
+                    $"  â€¢ {Path.GetFileName(s.oldPath)} -> {Path.GetFileName(s.newPath)} ({s.timestamp})"
                 ));
                 
                 // Confirm reversal
@@ -2119,756 +1844,6 @@ namespace YUCP.PatchCleanup
                 WriteLog($"ERROR in RevertGuidOverride: {ex.Message}\n{ex.StackTrace}");
                 Debug.LogError($"[YUCP PatchImporter] Error reverting GUID override: {ex.Message}");
             }
-        }
-        
-        /// <summary>
-        /// Applies a kitbash (multi-source) patch.
-        /// Builds a synthetic base from the recipe, then applies the hdiff.
-        /// </summary>
-        private static void ApplyKitbashPatch(UnityEngine.Object patchObj, string patchPath)
-        {
-            try
-            {
-                WriteLog($"ApplyKitbashPatch called for: {patchPath}");
-                
-                var patchType = patchObj.GetType();
-                
-                // Get kitbash-specific fields
-                var kitbashRecipeJsonField = patchType.GetField("kitbashRecipeJson");
-                var recipeHashField = patchType.GetField("recipeHash");
-                var requiredSourceGuidsField = patchType.GetField("requiredSourceGuids");
-                var sourcePartIndicesField = patchType.GetField("kitbashSourcePartIndices");
-                var sourceTriangleIndicesField = patchType.GetField("kitbashSourceTriangleIndices");
-                var hdiffFilePathField = patchType.GetField("hdiffFilePath");
-                var derivedFbxGuidField = patchType.GetField("derivedFbxGuid");
-                var originalDerivedFbxPathField = patchType.GetField("originalDerivedFbxPath");
-                var embeddedMetaField = patchType.GetField("embeddedMetaFileContent");
-                var uiHintsField = patchType.GetField("uiHints");
-                
-                string kitbashRecipeJson = kitbashRecipeJsonField?.GetValue(patchObj) as string;
-                string recipeHash = recipeHashField?.GetValue(patchObj) as string;
-                string[] requiredSourceGuids = requiredSourceGuidsField?.GetValue(patchObj) as string[];
-                int[] sourcePartIndices = sourcePartIndicesField?.GetValue(patchObj) as int[];
-                int[] sourceTriangleIndices = sourceTriangleIndicesField?.GetValue(patchObj) as int[];
-                string hdiffFilePath = hdiffFilePathField?.GetValue(patchObj) as string;
-                string derivedFbxGuid = derivedFbxGuidField?.GetValue(patchObj) as string;
-                string originalDerivedFbxPath = originalDerivedFbxPathField?.GetValue(patchObj) as string;
-                string embeddedMetaContent = embeddedMetaField?.GetValue(patchObj) as string;
-                
-                // Get friendly name from UIHints
-                string friendlyName = Path.GetFileNameWithoutExtension(patchPath);
-                if (uiHintsField != null)
-                {
-                    var uiHints = uiHintsField.GetValue(patchObj);
-                    if (uiHints != null)
-                    {
-                        var friendlyNameField = uiHints.GetType().GetField("friendlyName");
-                        if (friendlyNameField != null)
-                        {
-                            var fn = friendlyNameField.GetValue(uiHints) as string;
-                            if (!string.IsNullOrEmpty(fn))
-                                friendlyName = fn;
-                        }
-                    }
-                }
-                
-                // Validate required data
-                if (string.IsNullOrEmpty(kitbashRecipeJson))
-                {
-                    WriteLog("  ERROR: kitbashRecipeJson is missing from patch");
-                    Debug.LogError($"[YUCP PatchImporter] Kitbash patch missing recipe JSON: {patchPath}");
-                    return;
-                }
-                
-                if (requiredSourceGuids == null || requiredSourceGuids.Length == 0)
-                {
-                    WriteLog("  ERROR: requiredSourceGuids is missing from patch");
-                    Debug.LogError($"[YUCP PatchImporter] Kitbash patch missing source GUIDs: {patchPath}");
-                    return;
-                }
-                
-                // Verify all source FBXs are present
-                WriteLog($"  Verifying {requiredSourceGuids.Length} source FBX(s)...");
-                List<string> missingGuids = new List<string>();
-                foreach (var guid in requiredSourceGuids)
-                {
-                    string sourcePath = AssetDatabase.GUIDToAssetPath(guid);
-                    if (string.IsNullOrEmpty(sourcePath))
-                    {
-                        missingGuids.Add(guid);
-                        WriteLog($"    Missing source: {guid}");
-                    }
-                    else
-                    {
-                        WriteLog($"    Found source: {guid} -> {sourcePath}");
-                    }
-                }
-                
-                if (missingGuids.Count > 0)
-                {
-                    string missingList = string.Join(", ", missingGuids);
-                    Debug.LogError($"[YUCP PatchImporter] Kitbash patch requires missing source FBXs: {missingList}.\n" +
-                        "Please ensure all required source FBXs are present in the project.");
-                    WriteLog($"  ERROR: Missing {missingGuids.Count} source FBX(s)");
-                    return;
-                }
-                
-                // Build synthetic base from recipe
-                WriteLog($"  Building synthetic base from recipe (hash: {recipeHash})...");
-                string syntheticBasePath = BuildSyntheticBaseFromRecipe(kitbashRecipeJson, recipeHash, sourcePartIndices, sourceTriangleIndices);
-                
-                if (string.IsNullOrEmpty(syntheticBasePath))
-                {
-                    Debug.LogError($"[YUCP PatchImporter] Failed to build synthetic base for kitbash: {patchPath}");
-                    WriteLog("  ERROR: BuildSyntheticBaseFromRecipe returned null");
-                    return;
-                }
-                
-                WriteLog($"  Synthetic base built at: {syntheticBasePath}");
-                
-                // Now apply the patch using the synthetic base - same flow as single-base
-                // The synthetic base acts as the "base FBX" for patching
-                WriteLog($"  Applying patch with synthetic base...");
-                
-                // Since synthetic base is in Library (not Assets), we need to handle it differently
-                // The patch contains the hdiff that, when applied to the synthetic base, produces the derived FBX
-                // Use the same ApplyPatchWithBasePath but with the synthetic base
-                ApplyPatchWithBasePath(patchObj, patchPath, syntheticBasePath, 
-                    null, // No base GUID for synthetic base (it's generated)
-                    derivedFbxGuid,
-                    friendlyName,
-                    originalDerivedFbxPath);
-                
-                WriteLog($"  Kitbash patch applied successfully");
-                Debug.Log($"[YUCP PatchImporter] Kitbash patch applied: {patchPath}");
-                
-                CleanupDllsAfterPatchApplication();
-            }
-            catch (Exception ex)
-            {
-                WriteLog($"  ERROR in ApplyKitbashPatch: {ex.Message}\n{ex.StackTrace}");
-                Debug.LogError($"[YUCP PatchImporter] Error applying kitbash patch {patchPath}: {ex.Message}");
-            }
-        }
-        
-        /// <summary>
-        /// Builds a synthetic base FBX from a recipe JSON.
-        /// Uses caching by recipe hash.
-        /// </summary>
-        private static string BuildSyntheticBaseFromRecipe(string recipeJson, string recipeHash, int[] sourcePartIndices, int[] sourceTriangleIndices)
-        {
-            try
-            {
-                // Check cache first
-                string cacheDir = Path.Combine(Application.dataPath, "..", "Library", "YUCP", "KitbashCache");
-                Directory.CreateDirectory(cacheDir);
-                
-                string cacheKey = recipeHash;
-                if (sourcePartIndices != null && sourceTriangleIndices != null &&
-                    sourcePartIndices.Length == sourceTriangleIndices.Length &&
-                    sourcePartIndices.Length > 0)
-                {
-                    cacheKey = ComputeMappingHash(recipeHash, sourcePartIndices, sourceTriangleIndices);
-                }
-                string cachedPath = Path.Combine(cacheDir, $"{cacheKey}.fbx");
-                if (File.Exists(cachedPath))
-                {
-                    WriteLog($"    Using cached synthetic base: {cachedPath}");
-                    return cachedPath;
-                }
-                
-                // Check if FBX Exporter is available
-                var exporterType = System.Type.GetType("UnityEditor.Formats.Fbx.Exporter.ModelExporter, Unity.Formats.Fbx.Editor");
-                if (exporterType == null)
-                {
-                    Debug.LogError("[YUCP PatchImporter] Unity FBX Exporter package (com.unity.formats.fbx) is required for kitbash mode but not installed.\n" +
-                        "Please install it via Package Manager: Window > Package Manager > + > Add package by name > com.unity.formats.fbx");
-                    return null;
-                }
-                
-                // Get ExportObject method
-                var exportMethod = exporterType.GetMethod("ExportObject", 
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
-                    null, new Type[] { typeof(string), typeof(UnityEngine.Object) }, null);
-                
-                if (exportMethod == null)
-                {
-                    Debug.LogError("[YUCP PatchImporter] FBX Exporter found but ExportObject method not accessible");
-                    return null;
-                }
-                
-                // Parse recipe JSON to get parts
-                var parts = ParseRecipeJsonParts(recipeJson);
-                if (parts == null || parts.Count == 0)
-                {
-                    WriteLog("    WARNING: Recipe has no valid parts");
-                    return null;
-                }
-                
-                WriteLog($"    Recipe has {parts.Count} parts");
-                
-                // Assemble GameObjects from parts
-                GameObject root = new GameObject("SyntheticBase");
-                try
-                {
-                    Dictionary<int, HashSet<int>> trianglesByPart = null;
-                    if (sourcePartIndices != null && sourceTriangleIndices != null &&
-                        sourcePartIndices.Length == sourceTriangleIndices.Length &&
-                        sourcePartIndices.Length > 0)
-                    {
-                        trianglesByPart = new Dictionary<int, HashSet<int>>();
-                        for (int i = 0; i < sourcePartIndices.Length; i++)
-                        {
-                            int partIndex = sourcePartIndices[i];
-                            int triIndex = sourceTriangleIndices[i];
-                            if (partIndex < 0 || triIndex < 0) continue;
-                            if (!trianglesByPart.TryGetValue(partIndex, out var set))
-                            {
-                                set = new HashSet<int>();
-                                trianglesByPart[partIndex] = set;
-                            }
-                            set.Add(triIndex);
-                        }
-                    }
-
-                    foreach (var part in parts)
-                    {
-                        if (string.IsNullOrEmpty(part.sourceFbxGuid))
-                        {
-                            WriteLog($"      Part '{part.displayName}' has no source GUID, skipping");
-                            continue;
-                        }
-                        
-                        string sourcePath = AssetDatabase.GUIDToAssetPath(part.sourceFbxGuid);
-                        if (string.IsNullOrEmpty(sourcePath))
-                        {
-                            WriteLog($"      Part '{part.displayName}' source not found: {part.sourceFbxGuid}");
-                            continue;
-                        }
-                        
-                        GameObject sourcePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(sourcePath);
-                        if (sourcePrefab == null)
-                        {
-                            WriteLog($"      Failed to load source: {sourcePath}");
-                            continue;
-                        }
-                        
-                        // Find specific mesh path if specified
-                        Transform sourceTransform = sourcePrefab.transform;
-                        if (!string.IsNullOrEmpty(part.meshPath))
-                        {
-                            var found = sourcePrefab.transform.Find(part.meshPath);
-                            if (found != null)
-                                sourceTransform = found;
-                        }
-                        
-                        // Instantiate the part root to preserve bones
-                        GameObject partRoot = UnityEngine.Object.Instantiate(sourcePrefab);
-                        partRoot.name = !string.IsNullOrEmpty(part.displayName) ? part.displayName : sourcePrefab.name;
-                        
-                        Transform targetTransform = partRoot.transform;
-                        if (!string.IsNullOrEmpty(part.meshPath))
-                        {
-                            var found = partRoot.transform.Find(part.meshPath);
-                            if (found != null)
-                                targetTransform = found;
-                        }
-                        
-                        if (trianglesByPart != null && trianglesByPart.TryGetValue(part.index, out var triSet) && triSet.Count > 0)
-                        {
-                            if (!TryFilterMeshOnTransform(targetTransform, triSet))
-                            {
-                                UnityEngine.Object.DestroyImmediate(partRoot);
-                                continue;
-                            }
-                        }
-                        
-                        // Disable other renderers to avoid exporting unrelated meshes
-                        foreach (var renderer in partRoot.GetComponentsInChildren<Renderer>(true))
-                        {
-                            if (renderer.transform != targetTransform)
-                                UnityEngine.Object.DestroyImmediate(renderer);
-                        }
-                        foreach (var filter in partRoot.GetComponentsInChildren<MeshFilter>(true))
-                        {
-                            if (filter.transform != targetTransform)
-                                UnityEngine.Object.DestroyImmediate(filter);
-                        }
-                        
-                        partRoot.transform.SetParent(root.transform);
-                        partRoot.transform.localPosition = part.positionOffset;
-                        partRoot.transform.localRotation = part.rotationOffset;
-                        partRoot.transform.localScale = Vector3.Scale(partRoot.transform.localScale, part.scaleMultiplier);
-                        
-                        WriteLog($"      Added part: {partRoot.name} from {sourcePath}");
-                    }
-                    
-                    // Export to FBX
-                    object result = exportMethod.Invoke(null, new object[] { cachedPath, root });
-                    if (result == null || !File.Exists(cachedPath))
-                    {
-                        WriteLog("    ERROR: FBX export failed");
-                        return null;
-                    }
-                    
-                    WriteLog($"    Synthetic base exported to: {cachedPath}");
-                    return cachedPath;
-                }
-                finally
-                {
-                    // Cleanup
-                    UnityEngine.Object.DestroyImmediate(root);
-                }
-            }
-            catch (Exception ex)
-            {
-                WriteLog($"    ERROR in BuildSyntheticBaseFromRecipe: {ex.Message}\n{ex.StackTrace}");
-                return null;
-            }
-        }
-
-        private static bool TryFilterMeshOnTransform(Transform targetTransform, HashSet<int> triangleSet)
-        {
-            if (targetTransform == null || triangleSet == null || triangleSet.Count == 0)
-                return false;
-
-            var skinned = targetTransform.GetComponent<SkinnedMeshRenderer>();
-            if (skinned != null && skinned.sharedMesh != null)
-            {
-                var filtered = BuildFilteredMesh(skinned.sharedMesh, triangleSet);
-                if (filtered == null) return false;
-                skinned.sharedMesh = filtered;
-                return true;
-            }
-
-            var filter = targetTransform.GetComponent<MeshFilter>();
-            if (filter != null && filter.sharedMesh != null)
-            {
-                var filtered = BuildFilteredMesh(filter.sharedMesh, triangleSet);
-                if (filtered == null) return false;
-                filter.sharedMesh = filtered;
-                return true;
-            }
-
-            WriteLog("    WARNING: No mesh renderer found on target transform");
-            return false;
-        }
-
-        private static Mesh BuildFilteredMesh(Mesh sourceMesh, HashSet<int> triangleSet)
-        {
-            if (sourceMesh == null || triangleSet == null || triangleSet.Count == 0)
-                return null;
-
-            var globalTriangles = new List<int>();
-            int submeshCount = sourceMesh.subMeshCount;
-            var submeshOffsets = new int[submeshCount];
-            var globalToSubmesh = new int[0];
-            int globalTriCount = 0;
-            
-            for (int s = 0; s < submeshCount; s++)
-            {
-                submeshOffsets[s] = globalTriCount;
-                var subTriangles = sourceMesh.GetTriangles(s);
-                globalTriangles.AddRange(subTriangles);
-                globalTriCount += subTriangles.Length / 3;
-            }
-            
-            if (globalTriCount == 0)
-                return null;
-            
-            globalToSubmesh = new int[globalTriCount];
-            for (int s = 0; s < submeshCount; s++)
-            {
-                int start = submeshOffsets[s];
-                int count = sourceMesh.GetTriangles(s).Length / 3;
-                for (int t = 0; t < count; t++)
-                {
-                    globalToSubmesh[start + t] = s;
-                }
-            }
-
-            int[] triangles = globalTriangles.ToArray();
-
-            var vertices = sourceMesh.vertices;
-            var normals = sourceMesh.normals;
-            var tangents = sourceMesh.tangents;
-            var colors = sourceMesh.colors;
-            var colors32 = sourceMesh.colors32;
-            var boneWeights = sourceMesh.boneWeights;
-
-            var outVertices = new List<Vector3>(triangleSet.Count * 3);
-            var sourceVertexIndices = new List<int>(triangleSet.Count * 3);
-            var outNormals = normals != null && normals.Length == vertices.Length ? new List<Vector3>(triangleSet.Count * 3) : null;
-            var outTangents = tangents != null && tangents.Length == vertices.Length ? new List<Vector4>(triangleSet.Count * 3) : null;
-            List<Color> outColors = null;
-            List<Color32> outColors32 = null;
-            if (colors != null && colors.Length == vertices.Length)
-                outColors = new List<Color>(triangleSet.Count * 3);
-            else if (colors32 != null && colors32.Length == vertices.Length)
-                outColors32 = new List<Color32>(triangleSet.Count * 3);
-            var outBoneWeights = boneWeights != null && boneWeights.Length == vertices.Length ? new List<BoneWeight>(triangleSet.Count * 3) : null;
-            var outUvs = new List<Vector4>[8];
-            var srcUvs = new List<Vector4>[8];
-            for (int ch = 0; ch < outUvs.Length; ch++)
-            {
-                var src = new List<Vector4>();
-                sourceMesh.GetUVs(ch, src);
-                if (src != null && src.Count == vertices.Length)
-                {
-                    srcUvs[ch] = src;
-                    outUvs[ch] = new List<Vector4>(triangleSet.Count * 3);
-                }
-            }
-
-            var submeshTriangles = new List<List<int>>(submeshCount);
-            for (int s = 0; s < submeshCount; s++)
-                submeshTriangles.Add(new List<int>());
-
-            var sorted = new List<int>(triangleSet);
-            sorted.Sort();
-
-            foreach (var triIndex in sorted)
-            {
-                int triBase = triIndex * 3;
-                if (triBase + 2 >= triangles.Length)
-                    continue;
-
-                int i0 = triangles[triBase];
-                int i1 = triangles[triBase + 1];
-                int i2 = triangles[triBase + 2];
-
-                int baseIndex = outVertices.Count;
-                outVertices.Add(vertices[i0]);
-                outVertices.Add(vertices[i1]);
-                outVertices.Add(vertices[i2]);
-                sourceVertexIndices.Add(i0);
-                sourceVertexIndices.Add(i1);
-                sourceVertexIndices.Add(i2);
-
-                outNormals?.Add(normals[i0]);
-                outNormals?.Add(normals[i1]);
-                outNormals?.Add(normals[i2]);
-
-                outTangents?.Add(tangents[i0]);
-                outTangents?.Add(tangents[i1]);
-                outTangents?.Add(tangents[i2]);
-
-                if (outColors != null)
-                {
-                    outColors.Add(colors[i0]);
-                    outColors.Add(colors[i1]);
-                    outColors.Add(colors[i2]);
-                }
-                else if (outColors32 != null)
-                {
-                    outColors32.Add(colors32[i0]);
-                    outColors32.Add(colors32[i1]);
-                    outColors32.Add(colors32[i2]);
-                }
-                for (int ch = 0; ch < outUvs.Length; ch++)
-                {
-                    if (outUvs[ch] == null) continue;
-                    var src = srcUvs[ch];
-                    outUvs[ch].Add(src[i0]);
-                    outUvs[ch].Add(src[i1]);
-                    outUvs[ch].Add(src[i2]);
-                }
-
-                outBoneWeights?.Add(boneWeights[i0]);
-                outBoneWeights?.Add(boneWeights[i1]);
-                outBoneWeights?.Add(boneWeights[i2]);
-
-                int submeshIndex = globalToSubmesh[triIndex];
-                submeshTriangles[submeshIndex].Add(baseIndex);
-                submeshTriangles[submeshIndex].Add(baseIndex + 1);
-                submeshTriangles[submeshIndex].Add(baseIndex + 2);
-            }
-
-            var mesh = new Mesh();
-            mesh.name = $"{sourceMesh.name}_KitbashFiltered";
-            mesh.indexFormat = sourceMesh.indexFormat;
-            mesh.SetVertices(outVertices);
-            if (outNormals != null) mesh.SetNormals(outNormals);
-            if (outTangents != null) mesh.SetTangents(outTangents);
-            if (outColors != null) mesh.SetColors(outColors);
-            else if (outColors32 != null) mesh.SetColors(outColors32);
-            for (int ch = 0; ch < outUvs.Length; ch++)
-            {
-                if (outUvs[ch] != null)
-                    mesh.SetUVs(ch, outUvs[ch]);
-            }
-            if (outBoneWeights != null)
-            {
-                mesh.boneWeights = outBoneWeights.ToArray();
-                mesh.bindposes = sourceMesh.bindposes;
-            }
-            mesh.subMeshCount = submeshCount;
-            for (int s = 0; s < submeshCount; s++)
-            {
-                var subTris = submeshTriangles[s];
-                mesh.SetTriangles(subTris, s);
-            }
-            CopyBlendShapes(sourceMesh, mesh, sourceVertexIndices);
-            mesh.RecalculateBounds();
-            return mesh;
-        }
-
-        private static void CopyBlendShapes(Mesh sourceMesh, Mesh targetMesh, List<int> sourceVertexIndices)
-        {
-            int blendShapeCount = sourceMesh.blendShapeCount;
-            if (blendShapeCount == 0) return;
-            
-            var srcDeltaVertices = new Vector3[sourceMesh.vertexCount];
-            var srcDeltaNormals = new Vector3[sourceMesh.vertexCount];
-            var srcDeltaTangents = new Vector3[sourceMesh.vertexCount];
-            
-            int newVertexCount = sourceVertexIndices.Count;
-            var outDeltaVertices = new Vector3[newVertexCount];
-            var outDeltaNormals = new Vector3[newVertexCount];
-            var outDeltaTangents = new Vector3[newVertexCount];
-            
-            for (int i = 0; i < blendShapeCount; i++)
-            {
-                string shapeName = sourceMesh.GetBlendShapeName(i);
-                int frameCount = sourceMesh.GetBlendShapeFrameCount(i);
-                
-                for (int f = 0; f < frameCount; f++)
-                {
-                    sourceMesh.GetBlendShapeFrameVertices(i, f, srcDeltaVertices, srcDeltaNormals, srcDeltaTangents);
-                    float weight = sourceMesh.GetBlendShapeFrameWeight(i, f);
-                    
-                    for (int v = 0; v < newVertexCount; v++)
-                    {
-                        int srcIdx = sourceVertexIndices[v];
-                        outDeltaVertices[v] = srcDeltaVertices[srcIdx];
-                        outDeltaNormals[v] = srcDeltaNormals[srcIdx];
-                        outDeltaTangents[v] = srcDeltaTangents[srcIdx];
-                    }
-                    
-                    targetMesh.AddBlendShapeFrame(shapeName, weight, outDeltaVertices, outDeltaNormals, outDeltaTangents);
-                }
-            }
-        }
-        
-        /// <summary>
-        /// Simple part data for JSON parsing.
-        /// </summary>
-        private class KitbashPartData
-        {
-            public int index;
-            public string sourceFbxGuid;
-            public string displayName;
-            public string meshPath;
-            public Vector3 positionOffset;
-            public Quaternion rotationOffset = Quaternion.identity;
-            public Vector3 scaleMultiplier = Vector3.one;
-        }
-        
-        /// <summary>
-        /// Parses the parts array from recipe JSON.
-        /// </summary>
-        private static List<KitbashPartData> ParseRecipeJsonParts(string recipeJson)
-        {
-            var parts = new List<KitbashPartData>();
-            
-            try
-            {
-                // Manual JSON parsing for parts array
-                // Format: {"parts":[{"sourceFbxGuid":"...","displayName":"...","meshPath":"...",...},...]}
-                
-                int partsStart = recipeJson.IndexOf("\"parts\"");
-                if (partsStart < 0) return parts;
-                
-                int arrayStart = recipeJson.IndexOf('[', partsStart);
-                if (arrayStart < 0) return parts;
-                
-                int arrayEnd = FindMatchingBracket(recipeJson, arrayStart, '[', ']');
-                if (arrayEnd < 0) return parts;
-                
-                string partsArrayJson = recipeJson.Substring(arrayStart, arrayEnd - arrayStart + 1);
-                
-                // Find each object in the array
-                int depth = 0;
-                int objStart = -1;
-                for (int i = 0; i < partsArrayJson.Length; i++)
-                {
-                    char c = partsArrayJson[i];
-                    if (c == '{')
-                    {
-                        if (depth == 0) objStart = i;
-                        depth++;
-                    }
-                    else if (c == '}')
-                    {
-                        depth--;
-                        if (depth == 0 && objStart >= 0)
-                        {
-                            string objJson = partsArrayJson.Substring(objStart, i - objStart + 1);
-                            var part = ParsePartObject(objJson);
-                            if (part != null)
-                            {
-                                part.index = parts.Count;
-                                parts.Add(part);
-                            }
-                            objStart = -1;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                WriteLog($"      ERROR parsing recipe JSON: {ex.Message}");
-            }
-            
-            return parts;
-        }
-        
-        /// <summary>
-        /// Parses a single part object from JSON.
-        /// </summary>
-        private static KitbashPartData ParsePartObject(string json)
-        {
-            var part = new KitbashPartData();
-            
-            part.sourceFbxGuid = ExtractJsonString(json, "sourceFbxGuid");
-            part.displayName = ExtractJsonString(json, "displayName");
-            part.meshPath = ExtractJsonString(json, "meshPath");
-            part.positionOffset = ExtractJsonVector3(json, "positionOffset", Vector3.zero);
-            part.rotationOffset = ExtractJsonQuaternion(json, "rotationOffset", Quaternion.identity);
-            part.scaleMultiplier = ExtractJsonVector3(json, "scaleMultiplier", Vector3.one);
-            
-            return !string.IsNullOrEmpty(part.sourceFbxGuid) ? part : null;
-        }
-        
-        /// <summary>
-        /// Extracts a string value from JSON.
-        /// </summary>
-        private static string ExtractJsonString(string json, string key)
-        {
-            string searchKey = $"\"{key}\"";
-            int keyIndex = json.IndexOf(searchKey);
-            if (keyIndex < 0) return null;
-            
-            int colonIndex = json.IndexOf(':', keyIndex + searchKey.Length);
-            if (colonIndex < 0) return null;
-            
-            // Skip whitespace
-            int valueStart = colonIndex + 1;
-            while (valueStart < json.Length && char.IsWhiteSpace(json[valueStart])) valueStart++;
-            
-            if (valueStart >= json.Length || json[valueStart] != '"') return null;
-            
-            // Find end quote
-            int valueEnd = json.IndexOf('"', valueStart + 1);
-            if (valueEnd < 0) return null;
-            
-            return json.Substring(valueStart + 1, valueEnd - valueStart - 1);
-        }
-
-        private static Vector3 ExtractJsonVector3(string json, string key, Vector3 fallback)
-        {
-            string block = ExtractJsonObject(json, key);
-            if (string.IsNullOrEmpty(block)) return fallback;
-            
-            if (!TryExtractJsonFloat(block, "x", out float x)) x = fallback.x;
-            if (!TryExtractJsonFloat(block, "y", out float y)) y = fallback.y;
-            if (!TryExtractJsonFloat(block, "z", out float z)) z = fallback.z;
-            
-            return new Vector3(x, y, z);
-        }
-
-        private static Quaternion ExtractJsonQuaternion(string json, string key, Quaternion fallback)
-        {
-            string block = ExtractJsonObject(json, key);
-            if (string.IsNullOrEmpty(block)) return fallback;
-            
-            if (!TryExtractJsonFloat(block, "x", out float x)) x = fallback.x;
-            if (!TryExtractJsonFloat(block, "y", out float y)) y = fallback.y;
-            if (!TryExtractJsonFloat(block, "z", out float z)) z = fallback.z;
-            if (!TryExtractJsonFloat(block, "w", out float w)) w = fallback.w;
-            
-            return new Quaternion(x, y, z, w);
-        }
-
-        private static string ExtractJsonObject(string json, string key)
-        {
-            string searchKey = $"\"{key}\"";
-            int keyIndex = json.IndexOf(searchKey);
-            if (keyIndex < 0) return null;
-            
-            int colonIndex = json.IndexOf(':', keyIndex + searchKey.Length);
-            if (colonIndex < 0) return null;
-            
-            int objStart = json.IndexOf('{', colonIndex);
-            if (objStart < 0) return null;
-            
-            int objEnd = FindMatchingBracket(json, objStart, '{', '}');
-            if (objEnd < 0) return null;
-            
-            return json.Substring(objStart, objEnd - objStart + 1);
-        }
-
-        private static bool TryExtractJsonFloat(string json, string key, out float value)
-        {
-            value = 0f;
-            string searchKey = $"\"{key}\"";
-            int keyIndex = json.IndexOf(searchKey);
-            if (keyIndex < 0) return false;
-            
-            int colonIndex = json.IndexOf(':', keyIndex + searchKey.Length);
-            if (colonIndex < 0) return false;
-            
-            int valueStart = colonIndex + 1;
-            while (valueStart < json.Length && char.IsWhiteSpace(json[valueStart])) valueStart++;
-            
-            int valueEnd = valueStart;
-            while (valueEnd < json.Length && ("-+.0123456789eE".IndexOf(json[valueEnd]) >= 0)) valueEnd++;
-            
-            string number = json.Substring(valueStart, valueEnd - valueStart);
-            return float.TryParse(number, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value);
-        }
-
-        private static string ComputeMappingHash(string recipeHash, int[] sourcePartIndices, int[] sourceTriangleIndices)
-        {
-            using (var md5 = System.Security.Cryptography.MD5.Create())
-            {
-                void AddBytes(byte[] bytes)
-                {
-                    md5.TransformBlock(bytes, 0, bytes.Length, null, 0);
-                }
-
-                byte[] recipeBytes = System.Text.Encoding.UTF8.GetBytes(recipeHash ?? "");
-                AddBytes(recipeBytes);
-
-                byte[] partBytes = new byte[sourcePartIndices.Length * sizeof(int)];
-                Buffer.BlockCopy(sourcePartIndices, 0, partBytes, 0, partBytes.Length);
-                AddBytes(partBytes);
-
-                byte[] triBytes = new byte[sourceTriangleIndices.Length * sizeof(int)];
-                Buffer.BlockCopy(sourceTriangleIndices, 0, triBytes, 0, triBytes.Length);
-                AddBytes(triBytes);
-
-                md5.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
-                return BitConverter.ToString(md5.Hash).Replace("-", "").ToLowerInvariant();
-            }
-        }
-        
-        /// <summary>
-        /// Finds the matching closing bracket.
-        /// </summary>
-        private static int FindMatchingBracket(string s, int start, char open, char close)
-        {
-            int depth = 0;
-            for (int i = start; i < s.Length; i++)
-            {
-                if (s[i] == open) depth++;
-                else if (s[i] == close)
-                {
-                    depth--;
-                    if (depth == 0) return i;
-                }
-            }
-            return -1;
         }
     }
 }

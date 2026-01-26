@@ -40,15 +40,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			{
 				try
 				{
-					string userDataJson = importer.userData;
-					if (!string.IsNullOrEmpty(userDataJson))
+					if (DerivedSettingsUtility.TryRead(importer, out settings) && settings != null && settings.isDerived)
 					{
-						settings = JsonUtility.FromJson<DerivedSettings>(userDataJson);
-						if (settings != null && settings.isDerived)
-						{
-							basePath = string.IsNullOrEmpty(settings.baseGuid) ? null : AssetDatabase.GUIDToAssetPath(settings.baseGuid);
-							return true;
-						}
+						basePath = ResolveFirstBasePath(settings);
+						return true;
 					}
 				}
 				catch (Exception ex)
@@ -100,10 +95,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 							{
 								try
 								{
-									settings = JsonUtility.FromJson<DerivedSettings>(userDataJson);
-									if (settings != null && settings.isDerived)
+									if (DerivedSettingsUtility.TryRead(userDataJson, out settings) && settings != null && settings.isDerived)
 									{
-										basePath = string.IsNullOrEmpty(settings.baseGuid) ? null : AssetDatabase.GUIDToAssetPath(settings.baseGuid);
+										basePath = ResolveFirstBasePath(settings);
 										return true;
 									}
 								}
@@ -129,12 +123,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			return false;
 		}
 
-		private class DerivedSettings
+		private static string ResolveFirstBasePath(DerivedSettings settings)
 		{
-			public bool isDerived;
-			public string baseGuid;
-			public string friendlyName;
-			public string category;
+			if (settings?.baseGuids == null) return null;
+			foreach (var guid in settings.baseGuids)
+			{
+				if (string.IsNullOrEmpty(guid)) continue;
+				var path = AssetDatabase.GUIDToAssetPath(guid);
+				if (!string.IsNullOrEmpty(path)) return path;
+			}
+			return null;
 		}
 
     }

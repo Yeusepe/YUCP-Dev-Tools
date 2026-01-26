@@ -56,6 +56,27 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             _progressFill.style.width = Length.Percent(progress * 100);
             _progressText.text = $"{(progress * 100):F0}% - {status}";
+            
+            // Append to step log (avoid duplicates for same status)
+            if (!string.IsNullOrEmpty(status) && (_exportStepLog.Count == 0 || _exportStepLog[_exportStepLog.Count - 1] != status))
+            {
+                _exportStepLog.Add(status);
+                while (_exportStepLog.Count > MaxExportStepLogEntries)
+                    _exportStepLog.RemoveAt(0);
+                _progressDetail.text = string.Join("\n", _exportStepLog);
+                // Scroll to bottom so latest step is visible
+                if (_progressDetailScroll != null)
+                    _progressDetailScroll.verticalScroller.value = _progressDetailScroll.verticalScroller.highValue;
+            }
+            
+            // Force repaint so UI updates during blocking export (otherwise it looks stuck)
+            Repaint();
+        }
+        
+        private void ClearExportStepLog()
+        {
+            _exportStepLog.Clear();
+            _progressDetail.text = "";
         }
 
         private void ExportSelectedProfiles()
@@ -113,6 +134,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             isExporting = true;
             _progressContainer.style.display = DisplayStyle.Flex;
+            ClearExportStepLog();
             UpdateProgress(0f, "Starting export...");
             UpdateBottomBar();
             
@@ -206,6 +228,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             isExporting = true;
             _progressContainer.style.display = DisplayStyle.Flex;
+            ClearExportStepLog();
+            UpdateProgress(0f, $"Starting batch export ({profiles.Count} profile(s))...");
             UpdateBottomBar();
             
             try

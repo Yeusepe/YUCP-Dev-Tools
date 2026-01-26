@@ -366,10 +366,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Derived patch badge and quick actions for FBX
             if (isDerivedFbx)
             {
-                var badge = new Label(string.IsNullOrEmpty(derivedBasePath) ? "[Derived Patch: Base Missing]" : "[Derived Patch]");
+                bool baseMissing = string.IsNullOrEmpty(derivedBasePath);
+                
+                string badgeText;
+                badgeText = baseMissing ? "[Derived Patch: Base Missing]" : "[Derived Patch]";
+                
+                var badge = new Label(badgeText);
                 badge.AddToClassList("yucp-label-secondary");
                 badge.style.marginLeft = 6;
-                badge.style.color = string.IsNullOrEmpty(derivedBasePath) ? new Color(0.95f, 0.75f, 0.2f) : new Color(0.2f, 0.8f, 0.8f);
+                if (baseMissing)
+                {
+                    badge.style.color = new Color(0.95f, 0.75f, 0.2f);
+                }
+                else
+                {
+                    badge.style.color = new Color(0.2f, 0.8f, 0.8f);
+                }
                 assetItem.Add(badge);
                 
                 var actionsRow = new VisualElement();
@@ -411,7 +423,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     {
                         try
                         {
-                            var s = string.IsNullOrEmpty(importer.userData) ? new DerivedSettings() : JsonUtility.FromJson<DerivedSettings>(importer.userData) ?? new DerivedSettings();
+                            var s = DerivedSettingsUtility.TryRead(importer, out var parsed) ? parsed : new DerivedSettings();
                             s.isDerived = false;
                             importer.userData = JsonUtility.ToJson(s);
                             importer.SaveAndReimport();

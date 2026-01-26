@@ -49,6 +49,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private Button _changeBannerButton;
         private EventCallback<GeometryChangedEvent> _bannerButtonGeometryCallback;
         private Label _progressText;
+        private Label _progressDetail;
+        private ScrollView _progressDetailScroll;
+        private List<string> _exportStepLog = new List<string>();
+        private const int MaxExportStepLogEntries = 14;
         private VisualElement _multiSelectInfo;
         private Button _exportSelectedButton;
         private Button _exportAllButton;
