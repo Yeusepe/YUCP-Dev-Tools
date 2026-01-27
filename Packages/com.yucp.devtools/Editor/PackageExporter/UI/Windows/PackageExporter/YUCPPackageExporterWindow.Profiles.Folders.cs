@@ -293,6 +293,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private void StartRenameFolder(string folderName)
         {
             folderBeingRenamed = folderName;
+            folderRenameStartTime = EditorApplication.timeSinceStartup;
             UpdateProfileList();
         }
 

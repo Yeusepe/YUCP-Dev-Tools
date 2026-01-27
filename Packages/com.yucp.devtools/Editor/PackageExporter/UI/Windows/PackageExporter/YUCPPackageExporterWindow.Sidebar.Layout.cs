@@ -45,7 +45,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     {
                         Text = "Delete",
                         IsDanger = true,
-                        OnClick = () => { DeleteProfile(selectedProfile); CloseOverlay(); }
+                        // Bulk-delete aware: one confirm, deletes all selected
+                        OnClick = () => { HandleDelete(); CloseOverlay(); }
                     }
                 }
             };

@@ -23,16 +23,34 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
 
-            // Check if user is typing in a text field
-            bool isTypingInTextField = IsTypingInTextField();
+            // If we're inside a text-editing control, do NOT steal standard editing shortcuts.
+            // (Otherwise Ctrl+A selects profiles instead of selecting text, etc.)
+            var focusedElement = rootVisualElement.focusController?.focusedElement as VisualElement;
+            bool isTextEditingContext = IsTextEditingContext(focusedElement) || IsTextEditingContext(evt.target as VisualElement);
             
             // Get modifier keys
             bool modifierPressed = IsModifierPressed(evt);
             bool shiftPressed = evt.shiftKey;
             bool altPressed = evt.altKey;
 
-            // Standard editing shortcuts (work even when typing in some cases)
-            if (modifierPressed && evt.keyCode == KeyCode.Z && !shiftPressed)
+            // Let text controls handle standard editing shortcuts.
+            if (isTextEditingContext && modifierPressed && !altPressed)
+            {
+                // Note: we intentionally do NOT StopPropagation here.
+                // We want the focused text field to receive Ctrl+A/Z/Y/C/X/V, etc.
+                if (evt.keyCode == KeyCode.A ||
+                    evt.keyCode == KeyCode.C ||
+                    evt.keyCode == KeyCode.X ||
+                    evt.keyCode == KeyCode.V ||
+                    evt.keyCode == KeyCode.Z ||
+                    evt.keyCode == KeyCode.Y)
+                {
+                    return;
+                }
+            }
+            
+            // Standard global shortcuts (only when NOT editing text)
+            if (!isTextEditingContext && modifierPressed && evt.keyCode == KeyCode.Z && !shiftPressed)
             {
                 // Undo (Ctrl+Z / Cmd+Z)
                 Undo.PerformUndo();
@@ -40,8 +58,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
 
-            if ((modifierPressed && evt.keyCode == KeyCode.Y) || 
-                (modifierPressed && shiftPressed && evt.keyCode == KeyCode.Z))
+            if (!isTextEditingContext && ((modifierPressed && evt.keyCode == KeyCode.Y) || 
+                (modifierPressed && shiftPressed && evt.keyCode == KeyCode.Z)))
             {
                 // Redo (Ctrl+Y / Cmd+Shift+Z)
                 Undo.PerformRedo();
@@ -49,17 +67,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
 
-            if (modifierPressed && evt.keyCode == KeyCode.A && !shiftPressed && !altPressed)
+            if (!isTextEditingContext && modifierPressed && evt.keyCode == KeyCode.A && !shiftPressed && !altPressed)
             {
-                // Select All (Ctrl+A / Cmd+A)
+                // Select All Profiles (Ctrl+A / Cmd+A)
                 HandleSelectAll();
                 evt.StopPropagation();
                 return;
             }
-
-            // Don't handle other shortcuts when typing in text fields
-            if (isTypingInTextField)
-                return;
 
             // Profile management shortcuts
             if (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace)
@@ -81,7 +95,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (modifierPressed && shiftPressed && evt.keyCode == KeyCode.D)
             {
                 // Clone (Ctrl+Shift+D / Cmd+Shift+D)
-                HandleDuplicate();
+                HandleClone();
                 evt.StopPropagation();
                 return;
             }
@@ -199,6 +213,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return focusedElement is TextField || 
                    focusedElement is TextInputBaseField<string> ||
                    focusedElement is IMGUIContainer;
+        }
+
+        private bool IsTextEditingContext(VisualElement element)
+        {
+            // Focus is often on internal "text input" child elements, so walk up the hierarchy.
+            for (var current = element; current != null; current = current.parent as VisualElement)
+            {
+                if (current is IMGUIContainer) return true;
+                if (current is TextField) return true;
+                
+                var t = current.GetType();
+                if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(TextInputBaseField<>))
+                    return true;
+            }
+            
+            return false;
         }
 
         private bool IsModifierPressed(KeyDownEvent evt)
@@ -323,11 +353,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             if (!EditorUtility.DisplayDialog("Delete Profile(s)", message, "Delete", "Cancel"))
                 return;
-            
-            foreach (var profile in profilesToDelete)
-            {
-                DeleteProfile(profile);
-            }
+
+            BulkDeleteProfilesInternal(profilesToDelete);
         }
 
         private void HandleDuplicate()
@@ -340,6 +367,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 .ToList();
             
             foreach (var profile in profilesToDuplicate)
+            {
+                DuplicateProfile(profile);
+            }
+        }
+
+        private void HandleClone()
+        {
+            if (selectedProfileIndices.Count == 0)
+                return;
+            
+            var profilesToClone = selectedProfileIndices.OrderBy(i => i)
+                .Select(i => allProfiles[i])
+                .ToList();
+            
+            foreach (var profile in profilesToClone)
             {
                 CloneProfile(profile);
             }

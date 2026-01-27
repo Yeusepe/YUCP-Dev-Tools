@@ -45,6 +45,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 textField.style.flexGrow = 1;
                 textField.style.marginRight = 8;
                 textField.AddToClassList("yucp-folder-rename-field");
+                bool focusEverReceived = false;
                 
                 textField.RegisterCallback<KeyDownEvent>(evt => 
                 {
@@ -59,20 +60,53 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         evt.StopPropagation();
                     }
                 });
+
+                textField.RegisterCallback<FocusInEvent>(_ =>
+                {
+                    focusEverReceived = true;
+                });
                 
                 textField.RegisterCallback<FocusOutEvent>(evt => 
                 {
-                    EndRenameFolder(folderName, textField.value);
+                    // When invoking rename from a context menu, Unity often fires a focus-out immediately
+                    // as the menu closes. Debounce that initial focus churn and re-focus the field.
+                    double sinceStart = folderRenameStartTime >= 0
+                        ? (EditorApplication.timeSinceStartup - folderRenameStartTime)
+                        : double.MaxValue;
+                    
+                    if (sinceStart < 0.25d)
+                    {
+                        // Try to reclaim focus on the next tick once the context menu fully closes.
+                        header.schedule.Execute(() =>
+                        {
+                            if (folderBeingRenamed == folderName && textField.panel != null)
+                            {
+                                textField.Focus();
+                                textField.SelectAll();
+                            }
+                        }).StartingIn(1);
+                        return;
+                    }
+                    
+                    // Only commit if the field actually had focus at least once. This avoids "instant commit"
+                    // if focus was never successfully applied.
+                    if (focusEverReceived && folderBeingRenamed == folderName)
+                    {
+                        EndRenameFolder(folderName, textField.value);
+                    }
                 });
                 
                 header.Add(textField);
                 
                 // Focus and select all
-                header.schedule.Execute(() => 
+                header.schedule.Execute(() =>
                 {
-                    textField.Focus();
-                    textField.SelectAll();
-                });
+                    if (folderBeingRenamed == folderName && textField.panel != null)
+                    {
+                        textField.Focus();
+                        textField.SelectAll();
+                    }
+                }).StartingIn(1);
                 
                 return header;
             }

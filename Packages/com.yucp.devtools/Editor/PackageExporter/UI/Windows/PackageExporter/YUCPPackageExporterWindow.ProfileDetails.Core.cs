@@ -60,6 +60,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _bannerGradientOverlay = null;
             _metadataSection = null;
             _bannerContainer = null;
+            _packageNameField = null;
             
             if (_rightPaneScrollView != null)
             {

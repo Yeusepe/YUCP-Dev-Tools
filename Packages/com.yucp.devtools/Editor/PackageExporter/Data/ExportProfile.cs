@@ -211,6 +211,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             UnityEditor.EditorUtility.SetDirty(this);
         }
 
+        /// <summary>
+        /// Reset export statistics (last export time, export count). Used when cloning as template.
+        /// </summary>
+        public void ResetExportStats()
+        {
+            lastExportTime = "";
+            exportCount = 0;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+
         public void RecordExport()
         {
             lastExportTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");

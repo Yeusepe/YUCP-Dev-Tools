@@ -78,16 +78,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             menu.AddSeparator("");
             
-            // Clone option
+            // Clone option (copy structure, reset distribution fields → fresh template)
             menu.AddItem(new GUIContent("Clone"), false, () => 
             {
                 CloneProfile(profile);
             });
             
-            // Duplicate option (same as clone)
+            // Duplicate option (exact copy, keep everything)
             menu.AddItem(new GUIContent("Duplicate"), false, () => 
             {
-                CloneProfile(profile);
+                DuplicateProfile(profile);
             });
             
             menu.AddSeparator("");

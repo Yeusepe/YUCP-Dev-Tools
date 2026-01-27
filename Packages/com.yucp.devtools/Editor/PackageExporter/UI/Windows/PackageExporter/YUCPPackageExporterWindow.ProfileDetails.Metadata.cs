@@ -60,8 +60,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             // Package Name - large, prominent
             var nameField = new TextField { value = string.IsNullOrEmpty(profile.packageName) ? "Untitled Package" : profile.packageName };
+            nameField.name = "package-name-field";
             nameField.AddToClassList("yucp-metadata-name-field");
             nameField.tooltip = "Unique identifier for your package";
+            _packageNameField = nameField;
             nameField.RegisterValueChangedCallback(evt =>
             {
                 if (profile != null)

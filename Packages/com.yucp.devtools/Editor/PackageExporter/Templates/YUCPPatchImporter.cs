@@ -1219,12 +1219,41 @@ namespace YUCP.PatchCleanup
                         CleanupImportedTempFiles();
                         CleanupDerivedFbxImporterSettings();
                         CleanupDllsAfterPatchApplication();
+                        CleanupTempPackageFolder();
                     };
                 };
             }
             catch (Exception ex)
             {
                 WriteLog($"ERROR in CleanupAfterFailure: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        private static void CleanupTempPackageFolder()
+        {
+            try
+            {
+                string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string tempPackagePath = Path.Combine(projectPath, "Packages", "com.yucp.temp");
+                
+                if (Directory.Exists(tempPackagePath))
+                {
+                    try
+                    {
+                        Directory.Delete(tempPackagePath, true);
+                        WriteLog("Deleted Packages/com.yucp.temp after failure");
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteLog($"Warning: Could not delete Packages/com.yucp.temp: {ex.Message}");
+                    }
+                }
+                
+                AssetDatabase.Refresh();
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in CleanupTempPackageFolder: {ex.Message}\n{ex.StackTrace}");
             }
         }
         

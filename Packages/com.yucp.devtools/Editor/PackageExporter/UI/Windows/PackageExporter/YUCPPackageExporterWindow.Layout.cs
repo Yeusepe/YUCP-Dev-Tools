@@ -162,6 +162,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             // Register keyboard shortcuts handler
             root.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
+
+            // Ensure we actually receive KeyDown events when clicking non-text UI.
+            // UI Toolkit only sends key events to the focused element; many of our list elements are not focusable,
+            // so clicking "empty space" can result in no focus and therefore no shortcuts (Ctrl+A, etc.).
+            root.focusable = true;
+            root.tabIndex = 0;
+            root.RegisterCallback<MouseDownEvent>(evt =>
+            {
+                // If the user clicked a text-editing control, don't steal focus (so Ctrl+A selects text).
+                if (!IsTextEditingContext(evt.target as VisualElement))
+                {
+                    root.Focus();
+                }
+            }, TrickleDown.TrickleDown);
         }
 
     }

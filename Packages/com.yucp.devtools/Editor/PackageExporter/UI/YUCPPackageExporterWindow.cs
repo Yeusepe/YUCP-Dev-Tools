@@ -46,6 +46,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private VisualElement _bannerGradientOverlay;
         private VisualElement _metadataSection;
         private VisualElement _bannerContainer;
+        private TextField _packageNameField;
         private Button _changeBannerButton;
         private EventCallback<GeometryChangedEvent> _bannerButtonGeometryCallback;
         private Label _progressText;
@@ -122,6 +123,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         // Folder renaming state
         private string folderBeingRenamed = null;
+        private double folderRenameStartTime = -1;
         // Client ID provided by the user for fetching official product icons
         private const string BrandfetchClientId = "1bxid64Mup7aczewSAYMX";
         

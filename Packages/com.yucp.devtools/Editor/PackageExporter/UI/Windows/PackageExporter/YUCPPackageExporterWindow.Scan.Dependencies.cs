@@ -144,7 +144,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 ignoreFolders.Remove(folderPath);
                 EditorUtility.SetDirty(profile);
-                UpdateProfileDetails();
+                
+                // Removing an ignore rule should immediately re-evaluate the discovered assets list.
+                // Otherwise the inspector keeps showing the old cached scan until the user manually rescans or reselects.
+                ScanAssetsForInspector(profile, silent: true);
             }
         }
 
