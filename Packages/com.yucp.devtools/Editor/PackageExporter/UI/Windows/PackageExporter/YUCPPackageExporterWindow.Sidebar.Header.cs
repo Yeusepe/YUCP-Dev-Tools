@@ -222,25 +222,37 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private VisualElement CreateSortPopoverContent(bool isOverlay)
         {
+            // The container here was causing "double container" issues because ShowPopover adds "yucp-popover" class too.
+            // We'll keep the container for layout separation but remove the visual class.
             var container = new VisualElement();
-            container.AddToClassList("yucp-popover");
+            // container.AddToClassList("yucp-popover"); // Removed to avoid double border
+            
+            // Allow content to size itself or fit within parent
             container.style.overflow = Overflow.Hidden;
-            container.style.minWidth = 280;
-            container.style.maxWidth = 300;
+            container.style.minWidth = 240; 
+            container.style.maxWidth = 260;
             
             var content = new VisualElement();
             content.AddToClassList("yucp-popover-content");
             content.style.overflow = Overflow.Hidden;
             content.style.minWidth = 0;
             
-            // Sort options
+            // Section Title
+            var sectionTitle = new Label("SORT BY");
+            sectionTitle.AddToClassList("yucp-popover-section-title");
+            content.Add(sectionTitle);
+            
+            // Sort options container
+            var optionsContainer = new VisualElement();
+            optionsContainer.AddToClassList("yucp-popover-section");
+            
             var nameOption = CreateSortOption("Name", ProfileSortOption.Name, currentSortOption == ProfileSortOption.Name, () =>
             {
                 currentSortOption = ProfileSortOption.Name;
                 UpdateProfileList();
                 ClosePopover();
             });
-            content.Add(nameOption);
+            optionsContainer.Add(nameOption);
             
             var versionOption = CreateSortOption("Version", ProfileSortOption.Version, currentSortOption == ProfileSortOption.Version, () =>
             {
@@ -248,7 +260,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 UpdateProfileList();
                 ClosePopover();
             });
-            content.Add(versionOption);
+            optionsContainer.Add(versionOption);
             
             var dateOption = CreateSortOption("Last Export Date", ProfileSortOption.LastExportDate, currentSortOption == ProfileSortOption.LastExportDate, () =>
             {
@@ -256,7 +268,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 UpdateProfileList();
                 ClosePopover();
             });
-            content.Add(dateOption);
+            optionsContainer.Add(dateOption);
+            
+            content.Add(optionsContainer);
+            
+            // Close Action
+            var actionsContainer = new VisualElement();
+            actionsContainer.AddToClassList("yucp-popover-actions");
+            
+            var closeButton = new Button(ClosePopover) { text = "Close" };
+            closeButton.AddToClassList("yucp-button-text");
+            actionsContainer.Add(closeButton);
+            
+            content.Add(actionsContainer);
             
             container.Add(content);
             return container;
@@ -269,20 +293,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (isSelected)
                 optionRow.AddToClassList("selected");
             
-            // Indicator (dot for selected)
-            var indicator = new VisualElement();
-            indicator.AddToClassList("yucp-sort-indicator");
-            if (isSelected)
-            {
-                var dot = new VisualElement();
-                dot.AddToClassList("yucp-sort-indicator-dot");
-                indicator.Add(dot);
-            }
-            optionRow.Add(indicator);
-            
+            // Label comes first now
             var labelElement = new Label(label);
             labelElement.AddToClassList("yucp-sort-option-label");
             optionRow.Add(labelElement);
+            
+            // Indicator (Right aligned via CSS)
+            var indicator = new VisualElement();
+            indicator.AddToClassList("yucp-sort-indicator");
+            
+            // Checkmark
+            var check = new Label("✓");
+            check.AddToClassList("yucp-sort-indicator-check");
+            indicator.Add(check);
+            
+            optionRow.Add(indicator);
             
             optionRow.RegisterCallback<MouseDownEvent>(evt =>
             {

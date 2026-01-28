@@ -44,13 +44,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     EditorUtility.DisplayProgressBar("Scanning Dependencies", "Processing packages...", 0.6f);
                 }
                 
-                // Preserve existing dependency settings (enabled state and exportMode) before clearing
-                var existingSettings = new Dictionary<string, (bool enabled, DependencyExportMode exportMode)>();
+                // Preserve existing dependency settings before clearing (including custom/manual entries)
+                var existingSettings = new Dictionary<string, PackageDependency>(StringComparer.OrdinalIgnoreCase);
                 foreach (var existingDep in profile.dependencies)
                 {
                     if (!string.IsNullOrEmpty(existingDep.packageName))
                     {
-                        existingSettings[existingDep.packageName] = (existingDep.enabled, existingDep.exportMode);
+                        existingSettings[existingDep.packageName] = existingDep;
                     }
                 }
                 
@@ -72,8 +72,27 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     {
                         dep.enabled = settings.enabled;
                         dep.exportMode = settings.exportMode;
+                        dep.isVpmDependency = settings.isVpmDependency;
+                        dep.packageVersion = string.IsNullOrEmpty(dep.packageVersion) ? settings.packageVersion : dep.packageVersion;
+                        dep.displayName = string.IsNullOrEmpty(dep.displayName) ? settings.displayName : dep.displayName;
+                        dep.vpmRepositoryUrl = settings.vpmRepositoryUrl;
                     }
                     profile.dependencies.Add(dep);
+                }
+                
+                // Re-add any manual/custom dependencies not found in installed packages
+                foreach (var existing in existingSettings.Values)
+                {
+                    if (string.IsNullOrEmpty(existing.packageName))
+                        continue;
+                    
+                    bool exists = profile.dependencies.Any(d =>
+                        string.Equals(d.packageName, existing.packageName, StringComparison.OrdinalIgnoreCase));
+                    
+                    if (!exists)
+                    {
+                        profile.dependencies.Add(existing);
+                    }
                 }
                 
                 if (!profile.dependencies.Any(d => d.packageName == "com.yucp.devtools"))

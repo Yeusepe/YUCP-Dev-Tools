@@ -30,6 +30,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         public string displayName = "";
         public DependencyExportMode exportMode = DependencyExportMode.Dependency;
         public bool isVpmDependency = false; // VRChat packages use vpmDependencies instead
+        public string vpmRepositoryUrl = ""; // Optional custom VPM repository index URL
         
         public PackageDependency()
         {
@@ -43,6 +44,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             this.isVpmDependency = isVpm;
             this.enabled = false;
             this.exportMode = DependencyExportMode.Dependency;
+            this.vpmRepositoryUrl = "";
         }
     }
 }

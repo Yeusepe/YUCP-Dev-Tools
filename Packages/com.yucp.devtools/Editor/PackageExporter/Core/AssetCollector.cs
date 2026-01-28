@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using PackageManagerInfo = UnityEditor.PackageManager.PackageInfo;
 using UnityEngine;
 
 namespace YUCP.DevTools.Editor.PackageExporter
@@ -27,7 +28,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (string.IsNullOrWhiteSpace(folder))
                     continue;
                 
-                string fullPath = Path.GetFullPath(folder);
+                string fullPath = ResolveFullPathFromUnityPath(folder);
+                if (string.IsNullOrEmpty(fullPath))
+                    continue;
                 
                 if (!Directory.Exists(fullPath))
                 {
@@ -178,18 +181,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             continue;
                         
                         // Convert Unity-relative path to full path
-                        string fullDepPath;
-                        if (Path.IsPathRooted(dep))
-                        {
-                            // Already a full path
-                            fullDepPath = Path.GetFullPath(dep);
-                        }
-                        else
-                        {
-                            // Unity-relative path - convert to full path
-                            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                            fullDepPath = Path.GetFullPath(Path.Combine(projectRoot, dep.Replace('/', Path.DirectorySeparatorChar)));
-                        }
+                        string fullDepPath = ResolveFullPathFromUnityPath(dep);
+                        if (string.IsNullOrEmpty(fullDepPath))
+                            continue;
                         
                         // Skip if already processed
                         if (processedPaths.Contains(fullDepPath))
@@ -199,6 +193,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         if (ShouldIgnoreFile(fullDepPath, profile))
                         {
                             Debug.Log($"[AssetCollector] Excluding dependency in ignored folder: {dep} ({fullDepPath})");
+                            continue;
+                        }
+
+                        // If dependency is inside an export folder, treat it as direct (not dependency)
+                        if (TryGetContainingExportFolder(fullDepPath, profile, out string sourceFolder))
+                        {
+                            if (!processedPaths.Contains(fullDepPath))
+                            {
+                                processedPaths.Add(fullDepPath);
+                                var directAsset = new DiscoveredAsset(fullDepPath, sourceFolder, isDir: false);
+                                if (!string.IsNullOrEmpty(sourceProfileName))
+                                    directAsset.sourceProfileName = sourceProfileName;
+                                discoveredAssets.Add(directAsset);
+                            }
                             continue;
                         }
                         
@@ -226,6 +234,112 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             
         }
+
+        private static bool TryGetContainingExportFolder(string fullPath, ExportProfile profile, out string sourceFolder)
+        {
+            sourceFolder = null;
+            if (profile?.foldersToExport == null || profile.foldersToExport.Count == 0 || string.IsNullOrEmpty(fullPath))
+                return false;
+
+            string normalizedPath = Path.GetFullPath(fullPath).Replace("\\", "/");
+            string bestMatch = null;
+
+            foreach (string folder in profile.foldersToExport)
+            {
+                if (string.IsNullOrWhiteSpace(folder))
+                    continue;
+
+                string fullFolderPath = GetFullExportFolderPath(folder);
+                if (string.IsNullOrEmpty(fullFolderPath))
+                    continue;
+
+                string normalizedFolder = fullFolderPath.Replace("\\", "/");
+                if (!normalizedFolder.EndsWith("/"))
+                    normalizedFolder += "/";
+
+                bool isMatch =
+                    normalizedPath.Equals(normalizedFolder.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) ||
+                    normalizedPath.StartsWith(normalizedFolder, StringComparison.OrdinalIgnoreCase);
+
+                if (!isMatch)
+                    continue;
+
+                if (bestMatch == null || normalizedFolder.Length > bestMatch.Length)
+                {
+                    bestMatch = normalizedFolder;
+                    sourceFolder = folder;
+                }
+            }
+
+            return sourceFolder != null;
+        }
+
+        private static string GetFullExportFolderPath(string folder)
+        {
+            return ResolveFullPathFromUnityPath(folder);
+        }
+
+        private static string ResolveFullPathFromUnityPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return null;
+
+            if (Path.IsPathRooted(path))
+                return Path.GetFullPath(path);
+
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string normalized = path.Replace("\\", "/").TrimStart('/');
+
+            if (normalized.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+            {
+                var packageInfo = PackageManagerInfo.FindForAssetPath(normalized);
+                if (packageInfo != null && !string.IsNullOrEmpty(packageInfo.resolvedPath) &&
+                    !string.IsNullOrEmpty(packageInfo.assetPath))
+                {
+                    string relativeInPackage = normalized.Substring(packageInfo.assetPath.Length).TrimStart('/');
+                    string resolvedPath = Path.Combine(packageInfo.resolvedPath, relativeInPackage.Replace('/', Path.DirectorySeparatorChar));
+                    return Path.GetFullPath(resolvedPath);
+                }
+            }
+
+            return Path.GetFullPath(Path.Combine(projectRoot, normalized.Replace('/', Path.DirectorySeparatorChar)));
+        }
+
+        private static string GetUnityPathFromFullPath(string fullPath)
+        {
+            if (string.IsNullOrWhiteSpace(fullPath))
+                return null;
+
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            fullPath = Path.GetFullPath(fullPath);
+
+            if (fullPath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                string relativePath = fullPath.Substring(projectRoot.Length).TrimStart('\\', '/');
+                return relativePath.Replace("\\", "/");
+            }
+
+            string packageCacheRoot = Path.Combine(projectRoot, "Library", "PackageCache");
+            if (fullPath.StartsWith(packageCacheRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                string relative = fullPath.Substring(packageCacheRoot.Length).TrimStart('\\', '/');
+                string[] parts = relative.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 0)
+                    return null;
+
+                string packageFolder = parts[0];
+                int atIndex = packageFolder.IndexOf('@');
+                string packageName = atIndex > 0 ? packageFolder.Substring(0, atIndex) : packageFolder;
+
+                string remainder = relative.Substring(packageFolder.Length).TrimStart('\\', '/');
+                if (string.IsNullOrEmpty(remainder))
+                    return $"Packages/{packageName}";
+
+                return $"Packages/{packageName}/{remainder.Replace("\\", "/")}";
+            }
+
+            return null;
+        }
         
         /// <summary>
         /// Check if a folder should be ignored (public method for use by PackageBuilder and others)
@@ -241,6 +355,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (profile.PermanentIgnoreFolders != null && profile.PermanentIgnoreFolders.Count > 0)
             {
                 string folderGuid = AssetDatabase.AssetPathToGUID(GetUnityRelativePath(folderPath));
+                string unityFolderPath = GetUnityPathFromFullPath(folderPath);
+                string normalizedUnityFolderPath = string.IsNullOrEmpty(unityFolderPath)
+                    ? null
+                    : unityFolderPath.Replace("\\", "/").TrimEnd('/');
                 
                 for (int i = 0; i < profile.PermanentIgnoreFolders.Count; i++)
                 {
@@ -266,11 +384,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     // Normalize path separators for comparison
                     fullIgnorePath = fullIgnorePath.Replace("\\", "/");
                     fullFolderPath = fullFolderPath.Replace("\\", "/");
+                    string normalizedIgnorePath = ignorePath.Replace("\\", "/").TrimEnd('/');
                     
                     // Check by path (handles subfolders)
                     if (fullFolderPath.Equals(fullIgnorePath, StringComparison.OrdinalIgnoreCase) ||
                         fullFolderPath.StartsWith(fullIgnorePath + "/", StringComparison.OrdinalIgnoreCase))
                         return true;
+
+                    // Check unity-relative path (handles PackageCache vs Packages/)
+                    if (!string.IsNullOrEmpty(normalizedUnityFolderPath) &&
+                        (normalizedIgnorePath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ||
+                         normalizedIgnorePath.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        if (normalizedUnityFolderPath.Equals(normalizedIgnorePath, StringComparison.OrdinalIgnoreCase) ||
+                            normalizedUnityFolderPath.StartsWith(normalizedIgnorePath + "/", StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
                     
                     // Check by GUID (handles renamed folders)
                     if (i < profile.PermanentIgnoreFolderGuids.Count)

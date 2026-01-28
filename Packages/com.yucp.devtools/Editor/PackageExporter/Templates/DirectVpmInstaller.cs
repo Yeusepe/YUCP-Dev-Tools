@@ -126,17 +126,55 @@ namespace YUCP.DirectVpmInstaller
                     return;
                 }
                 
-                if (vpmRepositories == null || vpmRepositories.Count == 0)
+                // Seed repository list from the bundled package (if any)
+                var repositories = new Dictionary<string, string>();
+                if (vpmRepositories != null && vpmRepositories.Count > 0)
                 {
-                    Debug.LogError("[DirectVpmInstaller] No VPM repositories found in package.json");
-                    // Leave markers for guardian cleanup
-                    CleanupTemporaryFiles(packageJsonPath);
-                    return;
+                    repositories = vpmRepositories.Properties()
+                        .ToDictionary(p => p.Name, p => p.Value.ToString());
                 }
                 
-                // Seed repository list from the bundled package
-                var repositories = vpmRepositories.Properties().ToDictionary(p => p.Name, p => p.Value.ToString());
-
+                // Merge user VCC repositories (do not write them into package.json)
+                try
+                {
+                    string vccSettingsPath = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "VRChatCreatorCompanion",
+                        "settings.json"
+                    );
+                    
+                    if (File.Exists(vccSettingsPath))
+                    {
+                        var settings = JObject.Parse(File.ReadAllText(vccSettingsPath));
+                        var userRepos = settings["userRepos"] as JArray;
+                        
+                        if (userRepos != null)
+                        {
+                            foreach (var repoObj in userRepos)
+                            {
+                                var repo = repoObj as JObject;
+                                if (repo == null) continue;
+                                
+                                string repoUrl = repo["url"]?.ToString();
+                                string repoName = repo["name"]?.ToString();
+                                string repoId = repo["id"]?.ToString();
+                                
+                                if (string.IsNullOrEmpty(repoUrl)) continue;
+                                
+                                string key = !string.IsNullOrEmpty(repoName) ? repoName : repoId;
+                                if (!string.IsNullOrEmpty(key) && !repositories.ContainsKey(key))
+                                {
+                                    repositories[key] = repoUrl;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[DirectVpmInstaller] Failed to read VCC repositories: {ex.Message}");
+                }
+                
                 // Always ensure VRChat Official / Curated repos are available for resolution
                 const string vrchatOfficialName = "VRChat Official";
                 const string vrchatCuratedName = "VRChat Curated";

@@ -20,6 +20,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
 
         private readonly VisualElement _chipsContainer;
         private readonly TextField _inputField;
+        private Button _clearButton; // New clear button
         private readonly ListView _autocompleteList;
         private VisualElement _overlayContainer;
         private VisualElement _externalRoot; // External root for overlay attachment
@@ -36,7 +37,13 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         public string value
         {
             get => _inputField.value;
-            set => _inputField.value = value;
+            set 
+            {
+                _inputField.value = value;
+                // Ensure clear button state is updated when set programmatically
+                if (_clearButton != null)
+                   _clearButton.style.display = string.IsNullOrEmpty(value) ? DisplayStyle.None : DisplayStyle.Flex;
+            }
         }
 
         public TokenizedSearchField()
@@ -58,6 +65,33 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             _inputField = new TextField();
             _inputField.AddToClassList("yucp-tokenized-field-input");
             _inputField.isDelayed = false; // Real-time
+            
+            // Remove default border/background from inner Unity TextField to avoid double-border
+            // We must target the inner input element specifically
+            _inputField.RegisterCallback<AttachToPanelEvent>(evt => 
+            {
+                var inputElement = _inputField.Q("unity-text-input");
+                if (inputElement != null) 
+                {
+                    inputElement.style.borderTopWidth = 0;
+                    inputElement.style.borderBottomWidth = 0;
+                    inputElement.style.borderLeftWidth = 0;
+                    inputElement.style.borderRightWidth = 0;
+                    inputElement.style.backgroundColor = Color.clear;
+                    inputElement.style.marginLeft = 0;
+                    inputElement.style.marginRight = 0;
+                }
+            });
+            
+            _inputField.style.flexGrow = 1;
+            _inputField.style.marginLeft = 0;
+            _inputField.style.marginRight = 0;
+            _inputField.style.backgroundColor = Color.clear;
+            _inputField.style.borderTopWidth = 0;
+            _inputField.style.borderBottomWidth = 0;
+            _inputField.style.borderLeftWidth = 0;
+            _inputField.style.borderRightWidth = 0;
+            
             _inputField.RegisterValueChangedCallback(OnInputChanged);
             _inputField.RegisterCallback<KeyDownEvent>(OnKeyDown);
             
@@ -72,6 +106,38 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             });
 
             Add(_inputField);
+
+            // Clear Button (New)
+            _clearButton = new Button(() => {
+                // Clear text
+                _inputField.value = ""; 
+                
+                // Programmatic value change does NOT trigger callback, so we must invoke manually
+                OnSearchValueChanged?.Invoke("");
+                
+                // Update UI state
+                _clearButton.style.display = DisplayStyle.None;
+                HideOverlay();
+                
+                // Focus back to input
+                _inputField.Focus();
+            });
+            _clearButton.text = "×"; // Multiplication sign for nicer X
+            _clearButton.AddToClassList("yucp-search-clear"); // Reuse existing class or new one
+            _clearButton.style.display = DisplayStyle.None; // Hidden by default
+            
+            // Inline style for clear button if class is missing context
+            _clearButton.style.backgroundColor = Color.clear;
+            _clearButton.style.borderTopWidth = 0;
+            _clearButton.style.borderBottomWidth = 0;
+            _clearButton.style.borderLeftWidth = 0;
+            _clearButton.style.borderRightWidth = 0;
+            _clearButton.style.fontSize = 14;
+            _clearButton.style.color = new Color(0.6f, 0.6f, 0.6f);
+            _clearButton.style.width = 20;
+            // Removed invalid cursor setting
+
+            Add(_clearButton);
 
             // Overlay
             _overlayContainer = new VisualElement();
@@ -258,6 +324,11 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             OnSearchValueChanged?.Invoke(evt.newValue);
             
             string searchText = evt.newValue;
+            
+            // Update clear button
+            if (_clearButton != null)
+                _clearButton.style.display = string.IsNullOrEmpty(searchText) ? DisplayStyle.None : DisplayStyle.Flex;
+
             if (string.IsNullOrWhiteSpace(searchText))
             {
                 HideOverlay();

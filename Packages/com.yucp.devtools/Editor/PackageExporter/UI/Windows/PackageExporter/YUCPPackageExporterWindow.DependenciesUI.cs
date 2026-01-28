@@ -425,6 +425,61 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 card.Add(warningBox);
             }
             
+            // Warning for VPM dependencies without a resolvable download URL
+            bool showVpmMissingWarning = false;
+            bool vpmLookupPerformed = false;
+            bool vpmLookupOk = false;
+            string vpmLookupError = "";
+            string vpmRepoName = "";
+            string vpmRepoUrl = "";
+            bool vpmHasDownloadUrl = false;
+            List<string> vpmCheckedUrls = new List<string>();
+            
+            if (dep.enabled && dep.exportMode == DependencyExportMode.Dependency && dep.isVpmDependency)
+            {
+                vpmLookupOk = DependencyScanner.TryGetVpmDependencyRepoInfo(
+                    dep,
+                    out vpmRepoName,
+                    out vpmRepoUrl,
+                    out vpmHasDownloadUrl,
+                    out vpmCheckedUrls,
+                    out vpmLookupError
+                );
+                vpmLookupPerformed = true;
+                
+                if (vpmLookupOk && !vpmHasDownloadUrl)
+                {
+                    showVpmMissingWarning = true;
+                }
+            }
+            
+            if (showVpmMissingWarning)
+            {
+                var warningBox = new VisualElement();
+                warningBox.name = "dependency-warning-box-vpm";
+                warningBox.AddToClassList("yucp-help-box");
+                warningBox.style.marginTop = 8;
+                warningBox.style.marginBottom = 8;
+                warningBox.style.backgroundColor = new Color(0.7f, 0.25f, 0.25f, 0.25f);
+                warningBox.style.borderLeftWidth = 3;
+                warningBox.style.borderLeftColor = new Color(0.9f, 0.35f, 0.35f, 1f);
+                
+                var warningText = new Label("This dependency is set to 'Dependency' but no download URL was found in any VPM repository. It will be skipped when generating package.json.");
+                warningText.AddToClassList("yucp-help-box-text");
+                warningText.style.color = new StyleColor(new Color(0.9f, 0.9f, 0.9f, 1f));
+                warningBox.Add(warningText);
+                
+                if (vpmCheckedUrls != null && vpmCheckedUrls.Count > 0)
+                {
+                    var checkedLabel = new Label($"Checked: {string.Join(", ", vpmCheckedUrls)}");
+                    checkedLabel.AddToClassList("yucp-help-box-text");
+                    checkedLabel.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f, 1f));
+                    warningBox.Add(checkedLabel);
+                }
+                
+                card.Add(warningBox);
+            }
+            
             // Content area - only show if enabled
             if (dep.enabled)
             {
@@ -491,6 +546,68 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     UpdateProfileDetails(); // Refresh to update card title
                 });
                 card.Add(vpmToggle);
+                
+                if (dep.isVpmDependency)
+                {
+                    var customRepoRow = CreateFormRow("Custom VPM Index URL", tooltip: "Optional repository index URL for this dependency");
+                    var customRepoField = new TextField { value = dep.vpmRepositoryUrl };
+                    customRepoField.AddToClassList("yucp-input");
+                    customRepoField.AddToClassList("yucp-form-field");
+                    customRepoField.RegisterValueChangedCallback(evt =>
+                    {
+                        dep.vpmRepositoryUrl = evt.newValue;
+                        EditorUtility.SetDirty(profile);
+                        UpdateProfileDetails();
+                    });
+                    customRepoRow.Add(customRepoField);
+                    card.Add(customRepoRow);
+                    
+                    string repoInfoText = "Lookup unavailable";
+                    
+                    if (!vpmLookupPerformed)
+                    {
+                        vpmLookupOk = DependencyScanner.TryGetVpmDependencyRepoInfo(
+                            dep,
+                            out vpmRepoName,
+                            out vpmRepoUrl,
+                            out vpmHasDownloadUrl,
+                            out vpmCheckedUrls,
+                            out vpmLookupError
+                        );
+                        vpmLookupPerformed = true;
+                    }
+                    
+                    if (vpmLookupOk)
+                    {
+                        if (vpmHasDownloadUrl && !string.IsNullOrEmpty(vpmRepoUrl))
+                        {
+                            repoInfoText = vpmRepoUrl;
+                        }
+                        else if (!string.IsNullOrEmpty(vpmLookupError))
+                        {
+                            repoInfoText = vpmLookupError;
+                        }
+                        else
+                        {
+                            repoInfoText = "No download URL found in any repository";
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(vpmLookupError))
+                    {
+                        repoInfoText = vpmLookupError;
+                    }
+                    
+                    var repoRow = CreateFormRow("Resolved VPM Index URL", tooltip: "Repository index URL used to resolve this dependency");
+                    var repoLabel = new Label(repoInfoText);
+                    repoLabel.AddToClassList("yucp-label-secondary");
+                    repoLabel.AddToClassList("yucp-form-field");
+                    repoLabel.style.whiteSpace = WhiteSpace.Normal;
+                    repoLabel.style.flexGrow = 1;
+                    repoLabel.style.flexShrink = 1;
+                    repoLabel.style.minWidth = 0;
+                    repoRow.Add(repoLabel);
+                    card.Add(repoRow);
+                }
             }
             
             return card;

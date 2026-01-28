@@ -98,6 +98,78 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
+        private static string BuildExportConfirmationMessage(ExportProfile profile)
+        {
+            var lines = new List<string>();
+            lines.Add($"Export package: {profile.packageName} v{profile.version}");
+            lines.Add("");
+
+            // Content: folders + bundled profiles
+            lines.Add("Content:");
+            lines.Add($"  Export Folders ({profile.foldersToExport.Count}):");
+            if (profile.foldersToExport.Count > 0)
+            {
+                foreach (var f in profile.foldersToExport.Take(5))
+                    lines.Add($"    {f}");
+                if (profile.foldersToExport.Count > 5)
+                    lines.Add($"    ... and {profile.foldersToExport.Count - 5} more");
+            }
+            else
+                lines.Add("    None configured");
+
+            if (profile.HasIncludedProfiles())
+            {
+                var included = profile.GetIncludedProfiles().Where(p => p != null).ToList();
+                if (included.Count > 0)
+                {
+                    var names = included.Select(p => p.packageName).Where(n => !string.IsNullOrEmpty(n)).ToList();
+                    string bundleList = names.Count <= 4
+                        ? string.Join(", ", names)
+                        : string.Join(", ", names.Take(3)) + $", ... +{names.Count - 3} more";
+                    lines.Add($"  Bundled Profiles ({included.Count}): {bundleList}");
+                }
+            }
+            lines.Add("");
+
+            // Assets (if scanned)
+            if (profile.HasScannedAssets && profile.discoveredAssets != null && profile.discoveredAssets.Count > 0)
+            {
+                int includedCount = profile.discoveredAssets.Count(a => !a.isFolder && a.included);
+                int totalCount = profile.discoveredAssets.Count(a => !a.isFolder);
+                lines.Add($"Assets: {includedCount} included ({totalCount} discovered)");
+                lines.Add("");
+            }
+
+            // Dependencies (package deps: bundled into package vs referenced in package.json)
+            var deps = profile.dependencies ?? new List<PackageDependency>();
+            var bundledPkgs = deps.Where(d => d != null && d.enabled && d.exportMode == DependencyExportMode.Bundle).ToList();
+            var refPkgs = deps.Where(d => d != null && d.enabled && d.exportMode == DependencyExportMode.Dependency).ToList();
+            lines.Add("Package Dependencies:");
+            if (bundledPkgs.Count > 0)
+            {
+                var names = bundledPkgs.Select(d => d.packageName).Where(n => !string.IsNullOrEmpty(n)).ToList();
+                string bl = names.Count <= 3 ? string.Join(", ", names) : string.Join(", ", names.Take(2)) + $", ... +{names.Count - 2} more";
+                lines.Add($"  Bundled (into package): {bundledPkgs.Count} — {bl}");
+            }
+            else
+                lines.Add("  Bundled (into package): 0");
+            if (refPkgs.Count > 0)
+            {
+                var names = refPkgs.Select(d => d.packageName).Where(n => !string.IsNullOrEmpty(n)).ToList();
+                string rl = names.Count <= 3 ? string.Join(", ", names) : string.Join(", ", names.Take(2)) + $", ... +{names.Count - 2} more";
+                lines.Add($"  Referenced (package.json): {refPkgs.Count} — {rl}");
+            }
+            else
+                lines.Add("  Referenced (package.json): 0");
+            lines.Add("");
+
+            int obfuscAssemblies = profile.assembliesToObfuscate != null ? profile.assembliesToObfuscate.Count(a => a != null && a.enabled) : 0;
+            lines.Add($"Obfuscation: {(profile.enableObfuscation ? $"Enabled ({profile.obfuscationPreset}, {obfuscAssemblies} assemblies)" : "Disabled")}");
+            lines.Add("");
+            lines.Add($"Output: {profile.GetOutputFilePath()}");
+            return string.Join("\n", lines);
+        }
+
         private void ExportProfile(ExportProfile profile)
         {
             if (profile == null)
@@ -109,22 +181,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
             
-            string foldersList = profile.foldersToExport.Count > 0 
-                ? string.Join("\n", profile.foldersToExport.Take(5)) + (profile.foldersToExport.Count > 5 ? $"\n... and {profile.foldersToExport.Count - 5} more" : "")
-                : "None configured";
-            
-            int bundledDeps = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Bundle);
-            int refDeps = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Dependency);
-            
             bool confirm = EditorUtility.DisplayDialog(
                 "Export Package",
-                $"Export package: {profile.packageName} v{profile.version}\n\n" +
-                $"Export Folders ({profile.foldersToExport.Count}):\n{foldersList}\n\n" +
-                $"Dependencies:\n" +
-                $"  Bundled: {bundledDeps}\n" +
-                $"  Referenced: {refDeps}\n\n" +
-                $"Obfuscation: {(profile.enableObfuscation ? $"Enabled ({profile.obfuscationPreset}, {profile.assembliesToObfuscate.Count(a => a.enabled)} assemblies)" : "Disabled")}\n\n" +
-                $"Output: {profile.GetOutputFilePath()}",
+                BuildExportConfirmationMessage(profile),
                 "Export",
                 "Cancel"
             );

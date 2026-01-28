@@ -120,7 +120,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 actions.Add(editIgnoreButton);
             }
 
-            var ignoreButton = new Button(() => AddFolderToIgnoreList(profile, node.FullPath)) { text = "Ignore" };
+            var ignoreButton = new Button(() => AddFolderToIgnoreList(profile, folderFullPath)) { text = "Ignore" };
             ignoreButton.AddToClassList("yucp-tree-action-btn");
             ignoreButton.tooltip = "Add to Ignore";
             actions.Add(ignoreButton);

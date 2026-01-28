@@ -307,61 +307,69 @@ Button:active {
 }
 
 /* Sort Option Row - List-style selection */
+/* Sort Option Row - Premium dropdown item */
 .yucp-sort-option {
     flex-direction: row;
     align-items: center;
-    padding: 8px 10px;
+    padding: 6px 12px;
     margin-bottom: 2px;
-    border-radius: 6px;
-    transition-duration: 0.15s;
-    transition-property: background-color;
-    min-height: 30px;
+    border-radius: 4px;
+    transition-duration: 0.1s;
+    transition-property: background-color, color;
+    min-height: 28px;
     width: 100%;
     overflow: hidden;
+    cursor: link;
 }
 
 .yucp-sort-option:hover {
-    background-color: rgba(255, 255, 255, 0.04);
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
 }
 
 .yucp-sort-option.selected {
-    background-color: rgba(54, 191, 177, 0.12);
-}
-
-.yucp-sort-indicator {
-    width: 16px;
-    height: 16px;
-    min-width: 16px;
-    margin-right: 10px;
-    border-width: 2px;
-    border-color: rgba(255, 255, 255, 0.2);
-    border-radius: 50%;
-    background-color: transparent;
-    flex-shrink: 0;
-}
-
-.yucp-sort-option.selected .yucp-sort-indicator {
-    border-color: rgba(54, 191, 177, 0.8);
-    background-color: rgba(54, 191, 177, 0.3);
-}
-
-.yucp-sort-indicator-dot {
-    width: 6px;
-    height: 6px;
-    background-color: rgba(54, 191, 177, 1);
-    border-radius: 50%;
-    position: absolute;
-    left: 5px;
-    top: 5px;
+    background-color: rgba(54, 191, 177, 0.15);
 }
 
 .yucp-sort-option-label {
     flex-grow: 1;
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(255, 255, 255, 0.7);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.yucp-sort-option:hover .yucp-sort-option-label {
+    color: #ffffff;
+}
+
+.yucp-sort-option.selected .yucp-sort-option-label {
+    color: #36BFB1;
+    -unity-font-style: bold;
+}
+
+/* Indicator - Right-aligned checkmark placeholder */
+.yucp-sort-indicator {
+    width: 16px;
+    height: 16px;
+    min-width: 16px;
+    margin-left: auto; /* Push to right */
+    padding-left: 8px;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+}
+
+.yucp-sort-option.selected .yucp-sort-indicator {
+    opacity: 1;
+}
+
+/* We will use a Label inside the indicator for the checkmark character */
+.yucp-sort-indicator-check {
+    font-size: 14px;
+    color: #36BFB1;
+    -unity-text-align: middle-center;
 }
 
 /* Chip/Badge - Pill-shaped tags */
@@ -1751,10 +1759,11 @@ Button:active {
 
 
 .yucp-window-narrow .yucp-section .yucp-form-row {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     margin-bottom: 10px;
+    height: auto;
+    min-height: 0;
 }
 
 
@@ -1789,6 +1798,27 @@ Button:active {
 /* ============================================================================
    EXPORT FOLDERS SECTION - Responsive Design
    ============================================================================ */
+
+/* Targeted fix for Dependency Cards form rows in narrow mode */
+.yucp-window-narrow .yucp-dependency-card .yucp-form-row {
+    flex-direction: column;
+    align-items: stretch;
+    margin-bottom: 8px;
+    height: auto;
+    min-height: 0;
+}
+
+.yucp-window-narrow .yucp-dependency-card .yucp-form-label {
+    width: 100%;
+    margin-bottom: 4px;
+    margin-right: 0;
+    white-space: normal;
+}
+
+.yucp-window-narrow .yucp-dependency-card .yucp-form-field {
+    width: 100%;
+    margin-left: 0;
+}
 .yucp-window-narrow .yucp-folder-list {
     padding: 6px;
 }
@@ -3166,7 +3196,6 @@ Button:active {
     white-space: normal;
     margin-top: 8px;
     margin-bottom: 16px;
-    line-height: 16px;
     opacity: 0.9;
 }
 
