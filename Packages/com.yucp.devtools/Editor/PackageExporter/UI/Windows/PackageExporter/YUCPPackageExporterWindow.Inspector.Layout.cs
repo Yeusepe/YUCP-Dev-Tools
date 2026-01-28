@@ -68,7 +68,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             rescanButton.style.justifyContent = Justify.Center;
             rescanButton.style.alignItems = Align.Center;
             rescanButton.style.marginRight = 4;
-            rescanButton.SetEnabled(profile.foldersToExport.Count > 0);
+            rescanButton.SetEnabled(ProfileHasContentToScan(profile));
             header.Add(rescanButton);
             
             var toggleButton = new Button(() => 
@@ -78,7 +78,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 UpdateProfileDetails();
                 
                 // Scan when section is opened
-                if (showExportInspector && !wasOpen && profile != null && profile.foldersToExport.Count > 0)
+                if (showExportInspector && !wasOpen && ProfileHasContentToScan(profile))
                 {
                     EditorApplication.delayCall += () =>
                     {
@@ -97,7 +97,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             section.Add(header);
             
             // Auto-scan when section is visible and needs scanning
-            if (showExportInspector && profile != null && profile.foldersToExport.Count > 0)
+            if (showExportInspector && ProfileHasContentToScan(profile))
             {
                 if (!profile.HasScannedAssets)
                 {

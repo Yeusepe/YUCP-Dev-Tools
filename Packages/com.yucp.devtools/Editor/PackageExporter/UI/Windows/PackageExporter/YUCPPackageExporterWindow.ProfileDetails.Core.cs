@@ -25,6 +25,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
+        /// <summary>
+        /// True if the profile has folders and/or bundled profiles to scan for the export inspector.
+        /// </summary>
+        private static bool ProfileHasContentToScan(ExportProfile profile)
+        {
+            return profile != null
+                && (profile.foldersToExport.Count > 0 || profile.HasIncludedProfiles());
+        }
+
         public void UpdateProfileDetails()
         {
             if (selectedProfile == null)
@@ -272,7 +281,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 _rightPaneScrollView.RegisterCallback<GeometryChangedEvent>(evt => UpdateBannerButtonPosition());
                 _rightPaneScrollView.Add(_changeBannerButton);
                 
-                if (selectedProfile != null && selectedProfile.foldersToExport.Count > 0)
+                if (ProfileHasContentToScan(selectedProfile))
                 {
                     if (!selectedProfile.HasScannedAssets)
                     {
@@ -286,7 +295,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
                 
-                if (selectedProfile.dependencies.Count == 0 && selectedProfile.foldersToExport.Count > 0)
+                if (selectedProfile.dependencies.Count == 0 && ProfileHasContentToScan(selectedProfile))
                 {
                     EditorApplication.delayCall += () =>
                     {
