@@ -36,6 +36,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private VisualElement _profileListContainer;
         private VisualElement _profileListContainerOverlay;
         private VisualElement _profileDetailsContainer;
+        private TopNavBar _topNavBar;
         private VisualElement _emptyState;
         private VisualElement _bottomBar;
         private VisualElement _progressContainer;
@@ -139,6 +140,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         // Exclusion Filters state
         private bool showExclusionFilters = false;
         
+        // Compact View Mode
+        private bool _isCompactMode = false;
+        private const string CompactModeKey = "com.yucp.devtools.packageexporter.compactmode";
+
+        
         // Dependencies filter state
         private string dependenciesSearchFilter = "";
         
@@ -205,5 +211,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private List<FaviconRequestData> faviconRequests = new List<FaviconRequestData>();
         private VisualElement _signingSectionElement;
         private float lastGifUpdateTime = 0f;
+        private const string DerivedFbxWikiUrl = "https://github.com/Yeusepe/YUCP-Dev-Tools";
     }
 }

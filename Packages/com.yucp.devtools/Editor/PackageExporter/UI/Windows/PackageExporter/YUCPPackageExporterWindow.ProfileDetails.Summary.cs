@@ -18,96 +18,105 @@ namespace YUCP.DevTools.Editor.PackageExporter
     {
         private VisualElement CreateSummarySection(ExportProfile profile)
         {
-            var section = new VisualElement();
-            section.AddToClassList("yucp-section");
+            var container = new VisualElement();
+            container.AddToClassList("yucp-summary-bar");
             
-            var title = new Label("Quick Summary");
-            title.AddToClassList("yucp-section-title");
-            section.Add(title);
+
             
-            var statsContainer = new VisualElement();
-            statsContainer.AddToClassList("yucp-stats-container");
+            // 2. Version
+            string ver = string.IsNullOrEmpty(profile.version) ? "—" : profile.version;
+            AddHorizontalStat(container, "VER", ver);
             
-            AddStatItem(statsContainer, "Folders to Export", profile.foldersToExport.Count.ToString());
-            
-            // Bundled Profiles
+            AddSummarySeparator(container);
+
+            // 2b. Bundled Profiles (Restored)
             if (profile.HasIncludedProfiles())
             {
-                var bundledProfiles = profile.GetIncludedProfiles();
-                AddStatItem(statsContainer, "Bundled Profiles", bundledProfiles.Count.ToString());
-                
-                // Show breakdown if we have discovered assets with source info
-                if (profile.discoveredAssets != null && profile.discoveredAssets.Count > 0)
+                int bundledCount = profile.GetIncludedProfiles().Count;
+                if (bundledCount > 0)
                 {
-                    var sourceBreakdown = profile.discoveredAssets
-                        .Where(a => !string.IsNullOrEmpty(a.sourceProfileName))
-                        .GroupBy(a => a.sourceProfileName)
-                        .Select(g => $"{g.Key}: {g.Count()}")
-                        .ToList();
-                    
-                    if (sourceBreakdown.Count > 0)
+                    string bundleLabel = bundledCount == 1 ? "Profile" : "Profiles";
+                    AddHorizontalStat(container, "BUNDLED", $"{bundledCount} {bundleLabel}");
+                    AddSummarySeparator(container);
+                }
+            }
+
+            // 2c. Dependencies (Restored)
+            if (profile.dependencies != null && profile.dependencies.Count > 0)
+            {
+                int enabledDeps = profile.dependencies.Count(d => d.enabled);
+                if (enabledDeps > 0)
+                {
+                    AddHorizontalStat(container, "DEPS", $"{enabledDeps} Linked");
+                    AddSummarySeparator(container);
+                }
+            }
+
+            // 3. Package Size (New)
+            long totalBytes = 0;
+            if (profile.discoveredAssets != null)
+            {
+                // Calculate size of all included files (excluding folders)
+                // Note: We need to access fileSize property of DiscoveredAsset. 
+                // Using reflection or dynamic if DiscoveredAsset definition is not visible, 
+                // but usually it is public in the same assembly. 
+                // Assuming DiscoveredAsset has 'fileSize' and 'isFolder' based on AssetCollector code.
+                foreach (var asset in profile.discoveredAssets)
+                {
+                    if (!asset.isFolder && asset.included)
                     {
-                        // Add parent assets count
-                        int parentAssets = profile.discoveredAssets.Count(a => 
-                            string.IsNullOrEmpty(a.sourceProfileName) || a.sourceProfileName == profile.packageName);
-                        if (parentAssets > 0)
-                        {
-                            sourceBreakdown.Insert(0, $"{profile.packageName}: {parentAssets}");
-                        }
-                        
-                        string breakdownText = string.Join(", ", sourceBreakdown);
-                        if (breakdownText.Length > 60)
-                        {
-                            breakdownText = breakdownText.Substring(0, 57) + "...";
-                        }
-                        AddStatItem(statsContainer, "Assets by Source", breakdownText);
+                        totalBytes += asset.fileSize;
                     }
                 }
             }
+            AddHorizontalStat(container, "SIZE", FormatBytes(totalBytes));
             
-            // Dependencies
-            if (profile.dependencies.Count > 0)
+            AddSummarySeparator(container);
+
+            // 4. Export Folder (Fixed)
+            string outPath = "Desktop"; // Default per AssetCollector logic
+            if (!string.IsNullOrEmpty(profile.exportPath))
             {
-                int bundled = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Bundle);
-                int referenced = profile.dependencies.Count(d => d.enabled && d.exportMode == DependencyExportMode.Dependency);
-                AddStatItem(statsContainer, "Dependencies", $"{bundled} bundled, {referenced} referenced");
+                try {
+                    outPath = new System.IO.DirectoryInfo(profile.exportPath).Name;
+                    if (outPath.Length > 15) outPath = outPath.Substring(0, 14) + "…";
+                } catch {
+                    outPath = "Custom";
+                }
             }
+            AddHorizontalStat(container, "FOLDER", outPath);
             
-            // Obfuscation
-            string obfuscationText = profile.enableObfuscation 
-                ? $"Enabled ({profile.assembliesToObfuscate.Count(a => a.enabled)} assemblies)" 
-                : "Disabled";
-            AddStatItem(statsContainer, "Obfuscation", obfuscationText);
-            
-            // Output path
-            string outputText = string.IsNullOrEmpty(profile.exportPath) ? "Desktop" : profile.exportPath;
-            AddStatItem(statsContainer, "Output", outputText);
-            
-            // Last export
-            if (!string.IsNullOrEmpty(profile.LastExportTime))
-            {
-                AddStatItem(statsContainer, "Last Export", profile.LastExportTime);
-            }
-            
-            section.Add(statsContainer);
-            return section;
+            // 5. Last Export
+            AddSummarySeparator(container);
+            string lastExport = string.IsNullOrEmpty(profile.LastExportTime) ? "Never" : profile.LastExportTime;
+            AddHorizontalStat(container, "LAST BUILD", lastExport);
+
+            return container;
         }
 
-        private void AddStatItem(VisualElement container, string label, string value)
+        private VisualElement AddHorizontalStat(VisualElement container, string label, string value, bool isPrimary = false)
         {
             var item = new VisualElement();
-            item.AddToClassList("yucp-stat-item");
+            item.AddToClassList("yucp-summary-stat");
             
-            var labelElement = new Label(label);
-            labelElement.AddToClassList("yucp-stat-label");
-            item.Add(labelElement);
+            var keyLabel = new Label(label);
+            keyLabel.AddToClassList("yucp-summary-stat-label");
+            item.Add(keyLabel);
             
-            var valueElement = new Label(value);
-            valueElement.AddToClassList("yucp-stat-value");
-            item.Add(valueElement);
+            var valLabel = new Label(value);
+            valLabel.AddToClassList("yucp-summary-stat-value");
+            if (isPrimary) valLabel.AddToClassList("yucp-summary-accent");
+            item.Add(valLabel);
             
             container.Add(item);
+            return item;
         }
 
+        private void AddSummarySeparator(VisualElement container)
+        {
+            var sep = new VisualElement();
+            sep.AddToClassList("yucp-summary-sep");
+            container.Add(sep);
+        }
     }
 }

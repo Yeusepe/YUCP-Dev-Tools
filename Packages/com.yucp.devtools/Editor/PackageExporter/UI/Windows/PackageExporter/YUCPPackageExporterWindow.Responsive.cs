@@ -220,6 +220,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 CloseOverlay();
             }
+            // In narrow mode, if no profile is selected, ensure the sidebar (overlay) is open
+            else if (width < 700f && selectedProfile == null && !_isOverlayOpen)
+            {
+                OpenOverlay();
+            }
         }
 
         private void ToggleOverlay()

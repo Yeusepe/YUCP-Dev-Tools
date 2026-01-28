@@ -15,6 +15,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         public VisualElement TargetElement; // Direct reference (optional override)
         public Action OnStepShown;
         public Action OnStepHidden;
+        public string SecondaryActionLabel;
+        public Action SecondaryAction;
         
         // Set to true if OnStepShown triggers layout changes (like opening sidebar) that need time to complete
         public bool RequiresLayoutDelay = false;

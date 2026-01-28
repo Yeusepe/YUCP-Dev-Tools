@@ -220,13 +220,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     if (profile.HasIncludedProfiles())
                     {
                         var sourceFilterRow = new VisualElement();
-                        sourceFilterRow.style.flexDirection = FlexDirection.Row;
-                        sourceFilterRow.style.alignItems = Align.Center;
-                        sourceFilterRow.style.marginBottom = 8;
+                        sourceFilterRow.AddToClassList("yucp-filter-row");
                         
                         var sourceFilterLabel = new Label("Source:");
-                        sourceFilterLabel.AddToClassList("yucp-label");
-                        sourceFilterLabel.style.marginRight = 8;
+                        sourceFilterLabel.AddToClassList("yucp-filter-label");
                         sourceFilterRow.Add(sourceFilterLabel);
                         
                         // Get unique source profiles
@@ -243,7 +240,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         
                         var sourceFilterDropdown = new DropdownField(sourceProfiles, 0);
                         sourceFilterDropdown.AddToClassList("yucp-input");
-                        sourceFilterDropdown.style.flexGrow = 1;
+                        sourceFilterDropdown.AddToClassList("yucp-filter-dropdown");
                         sourceFilterDropdown.name = "source-filter-dropdown";
                         sourceFilterDropdown.SetValueWithoutNotify(sourceProfileFilter);
                         sourceFilterDropdown.RegisterValueChangedCallback(evt =>

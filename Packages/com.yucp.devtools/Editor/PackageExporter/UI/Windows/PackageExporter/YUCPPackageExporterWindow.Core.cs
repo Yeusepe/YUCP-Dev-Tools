@@ -17,7 +17,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
     public partial class YUCPPackageExporterWindow
     {
         private OnboardingOverlay _onboardingOverlay;
+        private OnboardingOverlay _derivedInspectorOverlay;
         private const string OnboardingPrefKey = "com.yucp.devtools.packageexporter.onboarding.shown";
+        private const string DerivedDemoFbxPath = "Packages/com.yucp.devtools/Editor/PackageExporter/Tests/FBXExportDemo/source/Racoon.fbx";
+        private const string DerivedDemoBaseFbxPath = "Packages/com.yucp.devtools/Editor/PackageExporter/Tests/FBXExportDemo/source/Racoon_Base.fbx";
 
         private void CheckAndStartOnboarding()
         {
@@ -87,6 +90,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     "yucp-bottom-bar"
                 )
             };
+
+            int derivedStepIndex = steps.FindIndex(s => s.TargetElementName == "derived-fbx-section");
+            if (derivedStepIndex >= 0)
+            {
+                steps[derivedStepIndex].SecondaryActionLabel = "Learn more";
+                steps[derivedStepIndex].SecondaryAction = StartDerivedFbxOnboarding;
+            }
             
             // Add sidebar auto-open/close for steps that target elements in the left pane
             // Steps 1 and 2 target "yucp-left-pane" and "global-search-field" which are in the sidebar
@@ -120,6 +130,191 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             _onboardingOverlay.style.display = DisplayStyle.Flex;
             _onboardingOverlay.Start(steps);
+        }
+
+        private void StartDerivedFbxOnboarding()
+        {
+            Application.OpenURL(DerivedFbxWikiUrl);
+        }
+
+/*
+        private void ResumeMainOnboarding()
+        {
+            if (_derivedInspectorOverlay != null)
+            {
+                _derivedInspectorOverlay.RemoveFromHierarchy();
+                _derivedInspectorOverlay = null;
+            }
+            Focus();
+        }
+
+            var derivedSteps = new List<OnboardingStep>
+            {
+                new OnboardingStep(
+                    "Derived FBX Walkthrough",
+                    "This flow shows how **Derived FBX patches** work and how to configure them. We'll use the Racoon demo asset.",
+                    null
+                ),
+                new OnboardingStep(
+                    "Select the Demo FBX",
+                    "We’ve selected **Racoon.fbx**. This Inspector now shows **YUCP Import Options** for patch export.",
+                    null
+                )
+                {
+                    OnStepShown = () =>
+                    {
+                        FocusInspectorOnDemoAsset(inspectorWindow);
+                    }
+                },
+                new OnboardingStep(
+                    "Enable Patch Export",
+                    "Toggle **Enable Patch Export** to mark this FBX as a derived patch.",
+                    null
+                ),
+                new OnboardingStep(
+                    "Add Base FBX",
+                    "Add at least one **Base FBX**. We already created a base copy for this demo.",
+                    null
+                ),
+                new OnboardingStep(
+                    "Optional Metadata",
+                    "You can set **Display Name** and **Category** for how the patch appears to users.",
+                    null
+                ),
+                new OnboardingStep(
+                    "Advanced Settings",
+                    "Use **Replace Original References** only if you intend to swap references to the derived file.",
+                    null
+                ),
+                new OnboardingStep(
+                    "Return to Exporter",
+                    "We’ll continue the main onboarding in the Package Exporter window.",
+                    null
+                )
+            };
+
+            var inspectorRoot = inspectorWindow.rootVisualElement;
+            _derivedInspectorOverlay?.RemoveFromHierarchy();
+            _derivedInspectorOverlay = new OnboardingOverlay(inspectorRoot, ResumeMainOnboarding);
+            _derivedInspectorOverlay.style.display = DisplayStyle.Flex;
+            inspectorRoot.Add(_derivedInspectorOverlay);
+            _derivedInspectorOverlay.Start(
+                derivedSteps,
+                0,
+                onFlowComplete: ResumeMainOnboarding,
+                onFlowSkip: ResumeMainOnboarding,
+                closeOnComplete: true,
+                closeOnSkip: true,
+                recordCompletionPref: false);
+*/
+
+        private EditorWindow GetOrCreateInspectorWindow()
+        {
+            var inspectorType = System.Type.GetType("UnityEditor.InspectorWindow, UnityEditor");
+            if (inspectorType == null) return null;
+
+            var getInspectors = inspectorType.GetMethod("GetInspectors", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            var showWindow = inspectorType.GetMethod("ShowWindow", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            var isLockedProp = inspectorType.GetProperty("isLocked", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+            var isVisibleProp = inspectorType.GetProperty("isVisible", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+            var inspectors = getInspectors?.Invoke(null, null) as System.Collections.IEnumerable;
+            if (inspectors == null || !inspectors.Cast<object>().Any())
+            {
+                showWindow?.Invoke(null, null);
+                inspectors = getInspectors?.Invoke(null, null) as System.Collections.IEnumerable;
+            }
+
+            if (inspectors == null) return null;
+
+            EditorWindow best = null;
+            foreach (var obj in inspectors)
+            {
+                if (obj is EditorWindow window && window.GetType() == inspectorType)
+                {
+                    bool isLocked = isLockedProp != null && (bool)isLockedProp.GetValue(window);
+                    bool isVisible = isVisibleProp != null && (bool)isVisibleProp.GetValue(window);
+
+                    if (best == null)
+                    {
+                        best = window;
+                        continue;
+                    }
+
+                    bool bestLocked = isLockedProp != null && (bool)isLockedProp.GetValue(best);
+                    bool bestVisible = isVisibleProp != null && (bool)isVisibleProp.GetValue(best);
+
+                    if (!isLocked && bestLocked)
+                    {
+                        best = window;
+                        continue;
+                    }
+
+                    if (isVisible && !bestVisible)
+                    {
+                        best = window;
+                        continue;
+                    }
+                }
+            }
+
+            if (best != null)
+            {
+                best.Show();
+                best.Focus();
+                best.Repaint();
+            }
+
+            return best;
+        }
+
+        private void FocusInspectorOnDemoAsset(EditorWindow inspectorWindow)
+        {
+            var demoAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(DerivedDemoFbxPath);
+            if (demoAsset == null) return;
+
+            Selection.objects = new[] { demoAsset };
+            Selection.activeObject = demoAsset;
+            EditorGUIUtility.PingObject(demoAsset);
+
+            var inspectorType = inspectorWindow.GetType();
+            var repaintAll = inspectorType.GetMethod("RepaintAllInspectors", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            repaintAll?.Invoke(null, null);
+
+            inspectorWindow.Repaint();
+        }
+
+        private void EnsureDerivedFbxDemoAsset()
+        {
+            var derivedAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(DerivedDemoFbxPath);
+            if (derivedAsset == null) return;
+
+            var baseAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(DerivedDemoBaseFbxPath);
+            if (baseAsset == null)
+            {
+                AssetDatabase.CopyAsset(DerivedDemoFbxPath, DerivedDemoBaseFbxPath);
+                AssetDatabase.ImportAsset(DerivedDemoBaseFbxPath, ImportAssetOptions.ForceUpdate);
+            }
+
+            var baseGuid = AssetDatabase.AssetPathToGUID(DerivedDemoBaseFbxPath);
+            var importer = AssetImporter.GetAtPath(DerivedDemoFbxPath) as ModelImporter;
+            if (importer == null) return;
+
+            var settings = new DerivedSettings
+            {
+                isDerived = true,
+                friendlyName = "Racoon Derived Demo",
+                category = "Demo",
+                overrideOriginalReferences = false
+            };
+            settings.baseGuids.Clear();
+            if (!string.IsNullOrEmpty(baseGuid))
+            {
+                settings.baseGuids.Add(baseGuid);
+            }
+
+            importer.userData = JsonUtility.ToJson(settings);
+            importer.SaveAndReimport();
         }
 
         private void EnsureDemoProfile()

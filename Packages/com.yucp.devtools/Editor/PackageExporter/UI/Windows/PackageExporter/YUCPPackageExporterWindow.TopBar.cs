@@ -16,133 +16,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
     public partial class YUCPPackageExporterWindow
     {
-        private VisualElement CreateTopBar()
-        {
-            var topBar = new VisualElement();
-            topBar.AddToClassList("yucp-top-bar");
-            
-            // Mobile toggle button (hamburger menu)
-            _mobileToggleButton = new Button(ToggleOverlay);
-            _mobileToggleButton.text = "≡";
-            _mobileToggleButton.AddToClassList("yucp-mobile-toggle");
-            topBar.Add(_mobileToggleButton);
-            
-            
-            // Logo image
-            var packageLogo = AssetDatabase.LoadAssetAtPath<Texture2D>("Packages/com.yucp.devtools/Resources/Icons/PackageLogo.png");
-            if (packageLogo != null)
-            {
-                var logo = new VisualElement();
-                logo.AddToClassList("yucp-package-logo");
-                logo.style.backgroundImage = new StyleBackground(packageLogo);
-                topBar.Add(logo);
-            }
-            
-            // Spacer to push buttons to the right
-            var spacer = new VisualElement();
-            spacer.AddToClassList("yucp-menu-spacer");
-            topBar.Add(spacer);
-            
-            // Menu button groups
-            topBar.Add(CreateMenuButtonGroup());
-            
-            return topBar;
-        }
-
-        private VisualElement CreateMenuButtonGroup()
-        {
-            var container = new VisualElement();
-            container.AddToClassList("yucp-menu-button-group");
-            
-            // Export dropdown button
-            var exportButton = CreateDropdownButton("Export", GetExportMenuItems());
-            container.Add(exportButton);
-            
-            // Texture Array Builder
-            container.Add(CreateActionButton("Texture", "Open Texture Array Builder", () => {
-                var windowType = System.Type.GetType("YUCP.DevTools.Editor.TextureArrayBuilder.TextureArrayBuilderWindow, yucp.devtools.Editor");
-                if (windowType != null)
-                {
-                    var method = windowType.GetMethod("ShowWindow", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                    method?.Invoke(null, null);
-                }
-            }));
-            
-            // Utilities dropdown
-            var utilitiesButton = CreateDropdownButton("Utilities", GetUtilitiesMenuItems());
-            container.Add(utilitiesButton);
-            
-            // Debug dropdown
-            var debugButton = CreateDropdownButton("Debug", GetDebugMenuItems());
-            container.Add(debugButton);
-
-            // Help dropdown
-            var helpButton = CreateDropdownButton("Help", GetHelpMenuItems());
-            container.Add(helpButton);
-            
-            return container;
-        }
-
-        private Button CreateActionButton(string label, string tooltip, Action callback)
-        {
-            var button = new Button(callback);
-            button.text = label;
-            button.tooltip = tooltip;
-            button.AddToClassList("yucp-menu-button");
-            return button;
-        }
-
-        private Button CreateHoverOverlayButton(string text, Action onClick, VisualElement parentContainer)
-        {
-            var button = new Button(onClick);
-            button.text = text;
-            button.AddToClassList("yucp-overlay-hover-button");
-            button.style.display = DisplayStyle.Flex;
-            button.pickingMode = PickingMode.Ignore;
-            
-            parentContainer.RegisterCallback<MouseEnterEvent>(evt =>
-            {
-                button.AddToClassList("yucp-overlay-hover-button-visible");
-                button.pickingMode = PickingMode.Position;
-            });
-            parentContainer.RegisterCallback<MouseLeaveEvent>(evt =>
-            {
-                button.RemoveFromClassList("yucp-overlay-hover-button-visible");
-                button.pickingMode = PickingMode.Ignore;
-            });
-            
-            parentContainer.Add(button);
-            return button;
-        }
-
-        private Button CreateDropdownButton(string label, List<ToolbarMenuItem> items)
-        {
-            var button = new Button();
-            button.clicked += () => ShowDropdownMenu(button, items);
-            button.text = label + " ▼";
-            button.AddToClassList("yucp-menu-button");
-            button.AddToClassList("yucp-menu-dropdown");
-            return button;
-        }
-
-        private void ShowDropdownMenu(VisualElement anchor, List<ToolbarMenuItem> items)
-        {
-            var menu = new GenericMenu();
-            
-            foreach (var item in items)
-            {
-                if (item.IsSeparator)
-                {
-                    menu.AddSeparator("");
-                }
-                else
-                {
-                    menu.AddItem(new GUIContent(item.Label), false, () => item.Callback?.Invoke());
-                }
-            }
-            
-            menu.ShowAsContext();
-        }
+        // Legacy TopBar UI creation methods removed.
+        // Menu item providers are kept for the new context menu.
 
         private List<ToolbarMenuItem> GetExportMenuItems()
         {
@@ -610,5 +485,33 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
+        private VisualElement CreateTopBar()
+        {
+            var bar = new VisualElement();
+            bar.AddToClassList("yucp-top-bar");
+            return bar;
+        }
+
+        private void ToggleCompactMode()
+        {
+            _isCompactMode = !_isCompactMode;
+            EditorPrefs.SetBool(CompactModeKey, _isCompactMode);
+            
+            // Update UI class
+            if (_isCompactMode)
+                rootVisualElement.AddToClassList("yucp-compact-mode");
+            else
+                rootVisualElement.RemoveFromClassList("yucp-compact-mode");
+
+            // Rebuild top bar to update button text (if a top bar exists in the layout)
+            var topBar = rootVisualElement.Q(className: "yucp-top-bar");
+            if (topBar != null)
+            {
+                var parent = topBar.parent;
+                var index = parent.IndexOf(topBar);
+                topBar.RemoveFromHierarchy();
+                parent.Insert(index, CreateTopBar());
+            }
+        }
     }
 }

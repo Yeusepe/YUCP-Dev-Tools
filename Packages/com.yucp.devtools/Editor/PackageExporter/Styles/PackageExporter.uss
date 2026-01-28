@@ -20,12 +20,11 @@
     border-color: rgba(255, 255, 255, 0.08);
     border-radius: 8px;
     padding: 12px;
-    overflow-x: hidden;
-    overflow-y: auto;
+    overflow: hidden;
 }
 
 .yucp-popover-content {
-    overflow-x: hidden;
+    overflow: hidden;
     min-width: 0;
 }
 
@@ -149,9 +148,6 @@ Button:active {
     margin-right: 6px;
 }
 
-.yucp-btn-outline > *:last-child {
-    margin-right: 0;
-}
 
 .yucp-btn-icon {
     width: 14px;
@@ -321,7 +317,7 @@ Button:active {
     transition-property: background-color;
     min-height: 30px;
     width: 100%;
-    overflow-x: hidden;
+    overflow: hidden;
 }
 
 .yucp-sort-option:hover {
@@ -363,7 +359,7 @@ Button:active {
     flex-grow: 1;
     font-size: 12px;
     color: rgba(255, 255, 255, 0.9);
-    overflow-x: hidden;
+    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -386,10 +382,6 @@ Button:active {
 
 .yucp-chip > * {
     margin-right: 6px;
-}
-
-.yucp-chip > *:last-child {
-    margin-right: 0;
 }
 
 .yucp-chip:hover {
@@ -477,10 +469,6 @@ Button:active {
     margin-right: 8px;
 }
 
-.yucp-tags-input-row > *:last-child {
-    margin-right: 0;
-}
-
 .yucp-tags-input-row .yucp-input {
     flex-grow: 1;
     min-width: 200px;
@@ -489,8 +477,7 @@ Button:active {
 /* Popover Scrollable Content */
 .yucp-popover-scroll {
     max-height: 400px;
-    overflow-x: hidden;
-    overflow-y: auto;
+    overflow: hidden;
     min-width: 0;
 }
 
@@ -541,13 +528,11 @@ Button:active {
 .yucp-asset-item {
     flex-direction: row;
     align-items: center;
-    padding: 6px 8px;
-    margin-bottom: 2px;
-    margin-left: 0;
+    padding: 3px 6px;
+    margin-bottom: 1px;
+    min-height: 24px;
     background-color: #2a2a2a;
-    border-left-width: 2px;
-    border-left-color: transparent;
-    border-radius: 6px;
+    border-radius: 4px;
     transition-duration: 0.2s, 0.2s, 0.2s;
     transition-property: background-color, border-left-color, scale;
     transition-timing-function: ease-out, ease-out, ease-out;
@@ -561,22 +546,27 @@ Button:active {
 }
 
 .yucp-asset-item-checkbox {
-    margin-right: 8px;
+    margin-right: 6px;
 }
 
 .yucp-asset-item-icon {
-    width: 20px;
-    height: 20px;
-    margin-right: 8px;
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    margin-right: 6px;
     -unity-text-align: middle-center;
-    font-size: 11px;
+    font-size: 10px;
     color: #36BFB1;
 }
 
 .yucp-asset-item-name {
     flex-grow: 1;
+    min-width: 0;
     font-size: 11px;
     color: #ffffff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .yucp-asset-item-name:hover {
@@ -962,20 +952,20 @@ Button:active {
     align-self: auto;
 }
 
-/* Folder header actions in asset list - Beautiful card design */
+/* Folder header actions in asset list - Compact card design */
 .yucp-inspector-folder-header {
+    flex-direction: row;
+    align-items: center;
     background-color: rgba(26, 26, 26, 0.6);
     border-width: 1px;
-    border-left-width: 3px;
     border-color: rgba(42, 42, 42, 0.8);
-    border-left-color: rgba(54, 191, 177, 0.3);
-    border-radius: 6px;
-    padding: 12px 14px;
-    margin-top: 8px;
-    margin-bottom: 6px;
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin-top: 1px;
+    margin-bottom: 1px;
     overflow: hidden;
     min-width: 0;
-    max-width: 100%;
+    min-height: 26px;
     transition-duration: 0.2s, 0.2s, 0.2s, 0.2s;
     transition-property: background-color, border-color, border-left-color, scale;
     transition-timing-function: ease-out, ease-out, ease-out, ease-out;
@@ -986,41 +976,36 @@ Button:active {
     background-color: rgba(30, 30, 30, 0.8);
     border-color: rgba(54, 191, 177, 0.4);
     border-left-color: rgba(54, 191, 177, 0.6);
-    scale: 1.005 1.005;
+    scale: 1.002 1.002;
 }
 
-/* Parent folders - bold, prominent cards with uniform neutral colorway */
+/* Parent folders - first level under Assets */
 .yucp-inspector-folder-header.yucp-folder-parent {
     background-color: rgba(26, 26, 26, 0.8);
-    border-left-width: 5px;
-    border-left-color: rgba(107, 107, 107, 0.8);
-    padding: 16px 12px;
-    margin-top: 12px;
-    margin-bottom: 10px;
+    padding: 4px 8px;
+    margin-top: 3px;
+    margin-bottom: 1px;
     position: relative;
 }
 
 .yucp-inspector-folder-header.yucp-folder-parent:hover {
     background-color: rgba(30, 30, 30, 0.9);
-    border-left-color: rgba(107, 107, 107, 1.0);
-    scale: 1.005 1.005;
+    scale: 1.002 1.002;
 }
 
-/* Child folders - thin, nested, clearly subordinate with uniform colorway */
+/* Child folders - nested levels, minimal vertical space */
 .yucp-inspector-folder-header.yucp-folder-child {
     background-color: rgba(26, 26, 26, 0.5);
-    border-left-width: 1px;
-    border-left-color: rgba(107, 107, 107, 0.4);
-    padding: 6px 8px;
-    margin-top: 2px;
-    margin-bottom: 2px;
+    padding: 2px 6px;
+    margin-top: 1px;
+    margin-bottom: 1px;
     opacity: 1.0;
     position: relative;
+    min-height: 24px;
 }
 
 .yucp-inspector-folder-header.yucp-folder-child:hover {
     background-color: rgba(30, 30, 30, 0.7);
-    border-left-color: rgba(107, 107, 107, 0.6);
 }
 
 .yucp-inspector-folder-content {
@@ -1029,11 +1014,12 @@ Button:active {
     justify-content: space-between;
     min-width: 0;
     overflow: hidden;
+    flex-grow: 1;
 }
 
 .yucp-inspector-folder-content > * {
-    margin-left: 6px;
-    margin-right: 6px;
+    margin-left: 4px;
+    margin-right: 4px;
 }
 
 .yucp-inspector-folder-content .yucp-folder-expand-button {
@@ -1047,10 +1033,10 @@ Button:active {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: 11px;
     color: #e0e0e0;
     -unity-font-style: bold;
-    letter-spacing: 0.2px;
+    letter-spacing: 0.1px;
     padding: 0;
     margin: 0;
 }
@@ -1070,27 +1056,27 @@ Button:active {
 .yucp-inspector-folder-actions Button {
     flex: 0 0 auto;
     min-width: 0;
-    margin-left: 3px;
-    margin-right: 3px;
+    margin-left: 2px;
+    margin-right: 2px;
     white-space: nowrap;
-    padding-left: 10px;
-    padding-right: 10px;
-    height: 26px;
-    font-size: 11px;
+    padding-left: 6px;
+    padding-right: 6px;
+    height: 22px;
+    font-size: 10px;
 }
 
 /* Hierarchical folder tree styling */
 .yucp-folder-expand-button {
-    width: 20px;
-    height: 20px;
-    min-width: 20px;
+    width: 16px;
+    height: 16px;
+    min-width: 16px;
     padding: 0;
     margin: 0;
-    margin-right: 6px;
+    margin-right: 4px;
     background-color: transparent;
     border-width: 0;
     color: #36BFB1;
-    font-size: 10px;
+    font-size: 9px;
     -unity-text-align: middle-center;
     flex-shrink: 0;
     transition-duration: 0.2s, 0.2s, 0.2s;
@@ -1102,50 +1088,561 @@ Button:active {
 .yucp-folder-expand-button:hover {
     color: #48d1c3;
     background-color: rgba(54, 191, 177, 0.1);
-    border-radius: 3px;
-    scale: 1.1 1.1;
+    border-radius: 2px;
+    scale: 1.05 1.05;
 }
 
 .yucp-folder-count-badge {
-    font-size: 10px;
+    font-size: 9px;
     color: #808080;
-    margin-left: 8px;
-    padding: 2px 6px;
+    margin-left: 4px;
+    padding: 1px 4px;
     background-color: rgba(42, 42, 42, 0.6);
-    border-radius: 10px;
+    border-radius: 8px;
     flex-shrink: 0;
 }
 
-/* Responsive folder header */
-.yucp-window-narrow .yucp-inspector-folder-content {
-    flex-direction: column;
-    align-items: flex-start;
+/* Source Filter Row */
+/* Source Filter Row */
+.yucp-filter-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 12px;
+    padding: 6px 0;
+    background-color: transparent;
+    border-radius: 0;
+    border-width: 0;
 }
 
-.yucp-window-narrow .yucp-inspector-folder-content > * {
-    margin-top: 5px;
-    margin-bottom: 5px;
-    margin-left: 0;
-    margin-right: 0;
+.yucp-filter-label {
+    min-width: 50px;
+    -unity-font-style: bold;
+    color: #e0e0e0;
+    margin-right: 8px;
+    font-size: 11px;
 }
 
-.yucp-window-narrow .yucp-inspector-folder-label {
-    width: 100%;
-    white-space: normal;
+.yucp-filter-dropdown .unity-base-field__input {
+    background-color: transparent;
+    border-width: 0;
+    border-radius: 0;
+    padding: 2px 6px;
+    height: 24px;
+}
+
+.yucp-filter-dropdown {
+    flex-grow: 1;
     margin-bottom: 0;
+    margin-top: 0;
+}
+
+/* Narrow window overrides for filter row */
+.yucp-window-narrow .yucp-filter-row {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 8px 12px;
+}
+
+.yucp-window-narrow .yucp-filter-label {
+    margin-right: 0;
+    margin-bottom: 6px;
+    min-width: auto;
+}
+
+/* ============================================================================
+   TREE VIEW - Clean hierarchical tree with depth indicators
+   ============================================================================ */
+
+/* Row container - consistent for folders and assets */
+.yucp-tree-row {
+    flex-direction: row;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 4px;
+    padding-left: 0;
+    margin-bottom: 0;
+    border-radius: 4px;
+    background-color: transparent;
+    transition-duration: 0.1s;
+    transition-property: background-color;
+}
+
+.yucp-tree-row:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+/* Content group - utilizes colored borders for hierarchy guidelines */
+.yucp-tree-group {
+    margin-left: 6px;
+    padding-left: 8px;
+    border-left-width: 2px;
+    margin-bottom: 2px;
+    border-radius: 0 0 0 4px;
+}
+
+/* Depth 1 - Teal (Brand) */
+.yucp-tree-group-depth-1 {
+    border-left-color: rgba(54, 191, 177, 0.4);
+    background-color: rgba(54, 191, 177, 0.02);
+}
+
+/* Depth 2 - Blue */
+.yucp-tree-group-depth-2 {
+    border-left-color: rgba(66, 135, 245, 0.4);
+    background-color: rgba(66, 135, 245, 0.02);
+}
+
+/* Depth 3 - Purple */
+.yucp-tree-group-depth-3 {
+    border-left-color: rgba(167, 66, 245, 0.4);
+    background-color: rgba(167, 66, 245, 0.02);
+}
+
+/* Depth 4 - Orange */
+.yucp-tree-group-depth-4 {
+    border-left-color: rgba(245, 144, 66, 0.4);
+    background-color: rgba(245, 144, 66, 0.02);
+}
+
+/* Depth 5 - Red/Pink */
+.yucp-tree-group-depth-5 {
+    border-left-color: rgba(245, 66, 102, 0.4);
+    background-color: rgba(245, 66, 102, 0.02);
+}
+
+/* Depth 6 - Cyan */
+.yucp-tree-group-depth-6 {
+    border-left-color: rgba(34, 211, 238, 0.4);
+    background-color: rgba(34, 211, 238, 0.02);
+}
+
+/* Depth 7 - Lime */
+.yucp-tree-group-depth-7 {
+    border-left-color: rgba(132, 204, 22, 0.4);
+    background-color: rgba(132, 204, 22, 0.02);
+}
+
+/* Depth 8 - Amber */
+.yucp-tree-group-depth-8 {
+    border-left-color: rgba(245, 158, 11, 0.4);
+    background-color: rgba(245, 158, 11, 0.02);
+}
+
+/* Depth 9 - Rose */
+.yucp-tree-group-depth-9 {
+    border-left-color: rgba(251, 113, 133, 0.4);
+    background-color: rgba(251, 113, 133, 0.02);
+}
+
+/* Depth 10 - Indigo */
+.yucp-tree-group-depth-10 {
+    border-left-color: rgba(99, 102, 241, 0.4);
+    background-color: rgba(99, 102, 241, 0.02);
+}
+
+/* Depth 11 - Emerald */
+.yucp-tree-group-depth-11 {
+    border-left-color: rgba(16, 185, 129, 0.4);
+    background-color: rgba(16, 185, 129, 0.02);
+}
+
+/* Depth 12 - Sky */
+.yucp-tree-group-depth-12 {
+    border-left-color: rgba(14, 165, 233, 0.4);
+    background-color: rgba(14, 165, 233, 0.02);
+}
+
+/* Depth 13 - Violet */
+.yucp-tree-group-depth-13 {
+    border-left-color: rgba(139, 92, 246, 0.4);
+    background-color: rgba(139, 92, 246, 0.02);
+}
+
+/* Depth 14 - Orange-red */
+.yucp-tree-group-depth-14 {
+    border-left-color: rgba(234, 88, 12, 0.4);
+    background-color: rgba(234, 88, 12, 0.02);
+}
+
+/* Depth 15 - Mint */
+.yucp-tree-group-depth-15 {
+    border-left-color: rgba(52, 211, 153, 0.4);
+    background-color: rgba(52, 211, 153, 0.02);
+}
+
+/* Depth 16 - Slate blue */
+.yucp-tree-group-depth-16 {
+    border-left-color: rgba(71, 85, 105, 0.5);
+    background-color: rgba(71, 85, 105, 0.03);
+}
+
+/* Hover effect for groups to visualize scope */
+.yucp-tree-group:hover {
+    border-left-color: rgba(255, 255, 255, 0.3);
+}
+
+.yucp-tree-group-depth-1:hover { border-left-color: rgba(54, 191, 177, 0.8); background-color: rgba(54, 191, 177, 0.04); }
+.yucp-tree-group-depth-2:hover { border-left-color: rgba(66, 135, 245, 0.8); background-color: rgba(66, 135, 245, 0.04); }
+.yucp-tree-group-depth-3:hover { border-left-color: rgba(167, 66, 245, 0.8); background-color: rgba(167, 66, 245, 0.04); }
+.yucp-tree-group-depth-4:hover { border-left-color: rgba(245, 144, 66, 0.8); background-color: rgba(245, 144, 66, 0.04); }
+.yucp-tree-group-depth-5:hover { border-left-color: rgba(245, 66, 102, 0.8); background-color: rgba(245, 66, 102, 0.04); }
+.yucp-tree-group-depth-6:hover { border-left-color: rgba(34, 211, 238, 0.8); background-color: rgba(34, 211, 238, 0.04); }
+.yucp-tree-group-depth-7:hover { border-left-color: rgba(132, 204, 22, 0.8); background-color: rgba(132, 204, 22, 0.04); }
+.yucp-tree-group-depth-8:hover { border-left-color: rgba(245, 158, 11, 0.8); background-color: rgba(245, 158, 11, 0.04); }
+.yucp-tree-group-depth-9:hover { border-left-color: rgba(251, 113, 133, 0.8); background-color: rgba(251, 113, 133, 0.04); }
+.yucp-tree-group-depth-10:hover { border-left-color: rgba(99, 102, 241, 0.8); background-color: rgba(99, 102, 241, 0.04); }
+.yucp-tree-group-depth-11:hover { border-left-color: rgba(16, 185, 129, 0.8); background-color: rgba(16, 185, 129, 0.04); }
+.yucp-tree-group-depth-12:hover { border-left-color: rgba(14, 165, 233, 0.8); background-color: rgba(14, 165, 233, 0.04); }
+.yucp-tree-group-depth-13:hover { border-left-color: rgba(139, 92, 246, 0.8); background-color: rgba(139, 92, 246, 0.04); }
+.yucp-tree-group-depth-14:hover { border-left-color: rgba(234, 88, 12, 0.8); background-color: rgba(234, 88, 12, 0.04); }
+.yucp-tree-group-depth-15:hover { border-left-color: rgba(52, 211, 153, 0.8); background-color: rgba(52, 211, 153, 0.04); }
+.yucp-tree-group-depth-16:hover { border-left-color: rgba(100, 116, 139, 0.8); background-color: rgba(71, 85, 105, 0.05); }
+
+/* Content area - holds all item content */
+.yucp-tree-content {
+    flex-direction: row;
+    align-items: center;
+    flex-grow: 1;
+    min-width: 0;
+    padding-left: 6px;
+}
+
+/* Expand/collapse button */
+.yucp-tree-expand-btn {
+    width: 18px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0;
+    margin: 0;
+    margin-right: 4px;
+    background-color: transparent;
+    border-width: 0;
+    color: #909090;
+    font-size: 11px;
+    -unity-text-align: middle-center;
+    flex-shrink: 0;
+    border-radius: 3px;
+}
+
+.yucp-tree-expand-btn:hover {
+    color: #36BFB1;
+    background-color: rgba(54, 191, 177, 0.15);
+}
+
+/* Icon (Image element for folders) */
+.yucp-tree-icon {
+    width: 16px;
+    min-width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    flex-shrink: 0;
+}
+
+/* Icon (Label element for assets) */
+.yucp-tree-icon-text {
+    width: 16px;
+    min-width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    font-size: 12px;
+    color: #36BFB1;
+    -unity-text-align: middle-center;
+    flex-shrink: 0;
+}
+
+/* Checkbox for assets */
+.yucp-tree-checkbox {
+    margin-right: 6px;
+    flex-shrink: 0;
+}
+
+/* Main label (folder/asset name) */
+.yucp-tree-label {
+    flex-grow: 0;
+    flex-shrink: 1;
+    min-width: 0;
+    font-size: 11px;
+    color: #e0e0e0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 10px;
+}
+
+.yucp-tree-folder-row .yucp-tree-label {
+    color: #f0f0f0;
+}
+
+.yucp-tree-label:hover {
+    color: #36BFB1;
+}
+
+.yucp-tree-label-dep {
+    color: #a0a0a0;
+    -unity-font-style: italic;
+}
+
+.yucp-tree-label-derived {
+    color: #70b8b8;
+}
+
+/* Count badge (folders) */
+.yucp-tree-badge {
+    font-size: 9px;
+    color: #909090;
+    padding: 1px 6px;
+    background-color: rgba(60, 60, 60, 0.5);
+    border-radius: 10px;
+    flex-shrink: 0;
+    margin-right: 10px;
+    -unity-font-style: normal;
+}
+
+/* Type label (assets) */
+.yucp-tree-type {
+    font-size: 9px;
+    color: #707070;
+    margin-right: 10px;
+    flex-shrink: 0;
+    min-width: 50px;
+}
+
+/* Size label (assets) */
+.yucp-tree-size {
+    font-size: 9px;
+    color: #606060;
+    margin-right: 10px;
+    flex-shrink: 0;
+    min-width: 50px;
+    -unity-text-align: middle-right;
+}
+
+/* Spacer - pushes actions to the right */
+.yucp-tree-spacer {
+    flex-grow: 1;
+}
+
+/* Status badges container */
+.yucp-tree-badges {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    margin-right: 6px;
+}
+
+/* Status badge base */
+.yucp-tree-status-badge {
+    font-size: 8px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    margin-left: 4px;
+    flex-shrink: 0;
+    -unity-font-style: bold;
+    letter-spacing: 0.3px;
+}
+
+.yucp-tree-badge-dep {
+    background-color: rgba(100, 100, 100, 0.4);
+    color: #a0a0a0;
+}
+
+.yucp-tree-badge-derived {
+    background-color: rgba(54, 191, 177, 0.25);
+    color: #50c8bc;
+}
+
+.yucp-tree-badge-warning {
+    background-color: rgba(220, 170, 50, 0.35);
+    color: #e8c040;
+}
+
+.yucp-tree-badge-source {
+    background-color: rgba(100, 150, 200, 0.3);
+    color: #a0c0e0;
+}
+
+/* Actions container - visible on hover */
+/* Actions container - visible on hover, animates expansion */
+.yucp-tree-actions {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    opacity: 0;
+    max-width: 0;
+    overflow: hidden;
+    transition-duration: 0.25s;
+    transition-property: max-width, opacity;
+    transition-timing-function: ease-out;
+    margin-left: 0;
+}
+
+.yucp-tree-row:hover .yucp-tree-actions {
+    opacity: 1;
+    max-width: 140px; /* Enough for ~3-4 small buttons */
+}
+
+/* Action button */
+.yucp-tree-action-btn {
+    height: 18px;
+    min-width: 0;
+    padding: 0 8px;
+    margin-left: 4px;
+    font-size: 9px;
+    background-color: rgba(60, 60, 60, 0.6);
+    border-width: 0;
+    border-radius: 3px;
+    color: #c0c0c0;
+}
+
+.yucp-tree-action-btn:hover {
+    background-color: rgba(54, 191, 177, 0.4);
+    color: #ffffff;
+}
+
+/* ============================================================================
+   TREE VIEW - Responsive (Narrow Mode)
+   ============================================================================ */
+
+.yucp-window-narrow .yucp-tree-row {
+    min-height: 22px;
+    padding: 2px 6px;
+    padding-left: 0;
+}
+
+.yucp-window-narrow .yucp-tree-folder-row {
+    min-height: 24px;
+}
+
+.yucp-window-narrow .yucp-tree-depth-bar {
+    width: 2px;
+    min-width: 2px;
+}
+
+.yucp-window-narrow .yucp-tree-group {
+    margin-left: 2px;
+    margin-bottom: 3px;
+}
+
+.yucp-window-narrow .yucp-tree-content {
+    padding-left: 4px;
+}
+
+.yucp-window-narrow .yucp-tree-expand-btn {
+    width: 16px;
+    min-width: 16px;
+    height: 16px;
+    font-size: 10px;
+    margin-right: 2px;
+}
+
+.yucp-window-narrow .yucp-tree-icon {
+    width: 14px;
+    min-width: 14px;
+    height: 14px;
+    margin-right: 4px;
+}
+
+.yucp-window-narrow .yucp-tree-icon-text {
+    width: 14px;
+    min-width: 14px;
+    height: 14px;
+    font-size: 10px;
+    margin-right: 4px;
+}
+
+.yucp-window-narrow .yucp-tree-label {
+    font-size: 10px;
+    margin-right: 6px;
+}
+
+.yucp-window-narrow .yucp-tree-badge {
+    font-size: 8px;
+    padding: 1px 4px;
+    margin-right: 6px;
+}
+
+.yucp-window-narrow .yucp-tree-type {
+    display: flex;
+    font-size: 9px;
+    width: 30px;
+    min-width: 0;
+    margin-right: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.yucp-window-narrow .yucp-tree-size {
+    font-size: 8px;
+    min-width: 40px;
+    margin-right: 6px;
+}
+
+.yucp-window-narrow .yucp-tree-badges {
+    display: flex;
+    scale: 0.9 0.9;
+    margin-right: 2px;
+}
+
+.yucp-window-narrow .yucp-tree-actions {
+    opacity: 1;
+    max-width: none;
+    width: auto;
+    transition: none; /* Disable expansion animation to prevent jitter in narrow mode */
+}
+
+/* Strongly override generic narrow button styles */
+.yucp-window-narrow .yucp-section .yucp-tree-action-btn,
+.yucp-window-narrow .yucp-tree-action-btn {
+    height: 18px !important;
+    min-height: 18px !important;
+    max-height: 18px !important;
+    min-width: 0 !important;
+    width: auto !important;
+    flex-grow: 0 !important;
+    flex-shrink: 0 !important;
+    padding: 0 4px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    font-size: 8px !important;
+    margin-left: 2px !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    white-space: nowrap !important;
+    background-color: rgba(60, 60, 60, 0.6);
+    border-radius: 3px;
+    align-self: center;
+    border-width: 0 !important;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.yucp-window-narrow .yucp-tree-action-btn:hover {
+    background-color: rgba(54, 191, 177, 0.4);
+    color: #ffffff;
+    scale: 1.05 1.05;
+}
+
+.yucp-window-narrow .yucp-folder-count-badge {
+    margin-left: 4px;
+    flex-shrink: 0;
+    font-size: 9px;
 }
 
 .yucp-window-narrow .yucp-inspector-folder-actions {
-    width: 100%;
+    flex-shrink: 0;
     flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: flex-start;
+    flex-wrap: nowrap;
 }
 
 .yucp-window-narrow .yucp-inspector-folder-actions Button {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-width: 0;
-    margin: 2px;
+    margin: 0 1px;
+    padding-left: 4px;
+    padding-right: 4px;
+    height: 20px;
+    font-size: 9px;
 }
 
 .yucp-window-medium .yucp-inspector-folder-content {
@@ -1158,40 +1655,42 @@ Button:active {
 
 .yucp-window-medium .yucp-inspector-folder-actions Button {
     flex: 0 1 auto;
-    min-width: 100px;
+    min-width: 80px;
 }
 
-/* Asset items - ensure they don't overflow */
+/* Asset items - single row in narrow, truncate name */
 .yucp-window-narrow .yucp-asset-item {
-    flex-wrap: wrap;
-    align-items: flex-start;
+    flex-wrap: nowrap;
+    align-items: center;
 }
 
 .yucp-window-narrow .yucp-asset-item-checkbox {
-    margin-bottom: 4px;
+    margin-bottom: 0;
 }
 
 .yucp-window-narrow .yucp-asset-item-icon {
-    margin-bottom: 4px;
+    margin-bottom: 0;
 }
 
 .yucp-window-narrow .yucp-asset-item-name {
     min-width: 0;
-    flex-basis: 100%;
+    flex-basis: 0;
     flex-grow: 1;
-    margin-top: 4px;
-    margin-bottom: 4px;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .yucp-window-narrow .yucp-asset-item-type {
     flex-shrink: 0;
-    margin-right: 8px;
-    margin-top: 4px;
+    margin-right: 6px;
+    margin-top: 0;
 }
 
 .yucp-window-narrow .yucp-asset-item-size {
     flex-shrink: 0;
-    margin-top: 4px;
+    margin-top: 0;
 }
 
 /* Medium breakpoint - allow some wrapping */
@@ -1207,18 +1706,24 @@ Button:active {
 .yucp-window-narrow .yucp-folder-item {
     flex-wrap: wrap;
     align-items: center;
+    padding: 8px;
 }
 
 .yucp-window-narrow .yucp-folder-item-path {
     flex-basis: auto;
-    width: 100%;
-    margin-bottom: 4px;
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+    margin-bottom: 0;
+    margin-right: 8px;
+    white-space: normal;
 }
 
 .yucp-window-narrow .yucp-folder-item-remove {
-    align-self: flex-end;
-    margin-left: 0;
-    margin-top: 4px;
+    align-self: center;
+    margin-left: auto;
+    margin-top: 0;
+    flex-shrink: 0;
 }
 
 /* Inspector list responsive adjustments */
@@ -1244,10 +1749,19 @@ Button:active {
     margin-right: 0;
 }
 
+
 .yucp-window-narrow .yucp-section .yucp-form-row {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
     margin-bottom: 10px;
+}
+
+
+.yucp-window-narrow .yucp-section .yucp-form-row Button {
+    margin-top: 0;
+    margin-left: 8px;
+    margin-right: 0;
 }
 
 .yucp-window-narrow .yucp-section .yucp-form-label {
@@ -1256,8 +1770,11 @@ Button:active {
     margin-right: 0;
 }
 
+
 .yucp-window-narrow .yucp-section .yucp-form-field {
-    width: 100%;
+    width: auto;
+    flex-grow: 1;
+    min-width: 100px;
     margin-left: 0;
 }
 
@@ -1277,49 +1794,256 @@ Button:active {
 }
 
 .yucp-window-narrow .yucp-folder-item {
-    flex-wrap: wrap;
-    padding: 8px;
-    margin-bottom: 6px;
-    align-items: flex-start;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    height: 32px;
+    min-height: 32px;
+    max-height: 32px;
+    padding: 0 8px;
+    margin-bottom: 2px;
+    overflow: hidden;
 }
 
 .yucp-window-narrow .yucp-folder-item-path {
-    flex: 1 1 100%;
-    width: 100%;
-    margin-bottom: 6px;
-    margin-right: 0;
+    flex: 1 1 auto;
+    width: auto;
     min-width: 0;
+    margin: 0;
+    margin-right: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    -unity-text-align: middle-left;
+    font-size: 11px;
+}
+
+/* Ensure inputs inside folder items (exclusion list) are also compact */
+.yucp-window-narrow .yucp-folder-item .yucp-input {
+    height: 24px;
+    min-height: 24px;   
+    padding: 2px 4px;
+    font-size: 11px;
+    margin: 0;
+    margin-right: 8px;
+    border-radius: 4px;
 }
 
 .yucp-window-narrow .yucp-folder-item-remove {
-    align-self: flex-end;
-    margin-left: 0;
-    margin-top: 0;
-    flex-shrink: 0;
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    min-height: 20px;
+    padding: 0;
+    margin: 0;
+    align-self: center;
+    font-size: 14px;
+    -unity-text-align: middle-center;
 }
 
+/* Fix button widths and stacking in general narrow sections */
 .yucp-window-narrow .yucp-section Button.yucp-button-action {
-    width: 100%;
-    margin-top: 8px;
-    margin-left: 0;
-    margin-right: 0;
+    width: auto;
+    flex: 1 1 auto;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    height: auto;
+    min-height: 28px;
+}
+
+/* Specific fix for Inspector List Header (Exclude All clipping) */
+.yucp-window-narrow .yucp-inspector-list-header {
+    flex-direction: column;
+    align-items: stretch;
+    height: auto;
+    min-height: 0;
+    margin-bottom: 8px;
+}
+
+.yucp-window-narrow .yucp-inspector-list-actions {
+    flex-direction: row;
+    justify-content: space-between;
+    margin-top: 4px;
+}
+
+.yucp-window-narrow .yucp-inspector-list-actions Button {
+    width: 48%; /* Side by side with gap */
+    margin: 0;
+}
+
+/* Fix "Add to ignore" button being too tall/large. 
+   Note: We apply this generally and then override specific icon buttons below to avoid recursive pseudo-class errors in UI Toolkit. */
+.yucp-window-narrow .yucp-section Button {
+    white-space: normal;
+    height: auto;
+    min-height: 28px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+/* Ensure explicit override for remove buttons to prevent conflict with general button styles */
+.yucp-window-narrow .yucp-folder-item-remove,
+.yucp-window-narrow .yucp-folder-item .yucp-folder-item-remove {
+    width: 20px !important;
+    height: 20px !important;
+    min-width: 20px !important;
+    min-height: 20px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border-width: 0 !important;
+    background-color: rgba(255, 255, 255, 0.1);
 }
 
 /* ============================================================================
    EXPORT INSPECTOR - Additional Narrow Responsive Improvements
    ============================================================================ */
+
+/* Filter Row Responsive */
+.yucp-window-narrow .yucp-filter-row {
+    flex-direction: column; /* Stack vertically in narrow mode */
+    align-items: stretch;
+    padding: 0;
+    margin-bottom: 8px;
+}
+
+.yucp-window-narrow .yucp-filter-label {
+    margin-bottom: 6px;
+    margin-right: 0;
+    color: #e0e0e0;
+}
+
+.yucp-window-narrow .yucp-filter-dropdown {
+    width: 100%;
+}
+
 .yucp-window-narrow .yucp-inspector-list {
     min-height: 150px;
     max-height: 300px;
 }
 
 .yucp-window-narrow .yucp-asset-item {
-    padding: 8px;
-    margin-bottom: 4px;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    padding: 0 4px;
+    margin-bottom: 1px;
+    min-height: 28px;
+    max-height: 30px;
+    height: 28px;
+    overflow: hidden;
 }
 
 .yucp-window-narrow .yucp-asset-item-name {
     font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-grow: 1;
+    flex-basis: 0;
+    min-width: 0;
+    margin: 0 4px 0 0;
+}
+
+.yucp-window-narrow .yucp-asset-item-type {
+    display: none; /* Hide type in narrow mode to save space */
+}
+
+.yucp-window-narrow .yucp-asset-item-size {
+    font-size: 9px;
+    white-space: nowrap;
+    margin-left: auto;
+}
+
+.yucp-window-narrow .yucp-asset-item-checkbox {
+    margin-right: 4px;
+}
+
+/* ============================================================================
+   INSPECTOR TREE - Narrow Mode Overrides
+   ============================================================================ */
+
+/* 1. Compact Folder Headers (The tree nodes) */
+.yucp-window-narrow .yucp-inspector-folder-header {
+    min-height: 28px;
+    max-height: 32px;
+    padding: 2px 6px;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    align-items: center;
+    overflow: hidden;
+}
+/* Fix toggle alignment in narrow mode (Dependencies etc) */
+.yucp-window-narrow .yucp-section .yucp-toggle {
+    align-items: center;
+    justify-content: flex-start;
+    flex-direction: row;
+    height: auto;
+    width: auto;
+    margin-bottom: 4px;
+    margin-right: 8px; /* Add spacing between toggles */
+    flex-shrink: 1; /* Allow shrinking */
+}
+
+.yucp-window-narrow .yucp-section .yucp-toggle .unity-toggle__label {
+    min-width: auto;
+    flex-grow: 0; /* Don't expand label unnecessarily */
+    margin-left: 4px;
+    white-space: nowrap; /* Keep label on one line if possible */
+    margin-right: 2px;
+}
+
+.yucp-window-narrow .yucp-section .yucp-toggle .unity-toggle__input {
+    flex-grow: 0;
+    flex-shrink: 0;
+}
+/* Force content row to be compact */
+.yucp-window-narrow .yucp-inspector-folder-content {
+    height: 100%;
+    align-items: center;
+}
+
+.yucp-window-narrow .yucp-inspector-folder-actions {
+    display: flex;
+    scale: 0.9 0.9;
+}
+
+/* 3. Hide type column in asset items (already done but reinforcing) */
+.yucp-window-narrow .yucp-asset-item-type {
+    display: none;
+}
+
+/* 4. Hide Derived Asset extra action rows/badges 
+   Only hide the badges and buttons to prevent row bloat, 
+   do NOT hide the parent or other essential elements. */
+
+.yucp-window-narrow .yucp-asset-item .yucp-label-secondary {
+    display: none; /* Hide source/derived badges in narrow mode */
+}
+
+.yucp-window-narrow .yucp-asset-item .yucp-button {
+    display: flex; /* Restore action buttons */
+    scale: 0.9 0.9;
+}
+
+/* 5. Override inline padding indentation to prevent excessive shifting 
+   Using !important to beat the C# inline style */
+.yucp-window-narrow .yucp-inspector-folder-header,
+.yucp-window-narrow .yucp-asset-item {
+    padding-left: 8px !important; /* Flatten hierarchy visually in narrow mode to save space */
+}
+
+/* Restore minimal indentation for visual hierarchy indication if desired, 
+   or stick to flat. Let's try a small override. */
+.yucp-window-narrow .yucp-inspector-folder-label {
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px; /* Force truncation for long folder names */
 }
 
 .yucp-window-narrow .yucp-asset-item-type,
@@ -1346,7 +2070,7 @@ Button:active {
    HELP BOXES AND VALIDATION - Responsive Design
    ============================================================================ */
 .yucp-window-narrow .yucp-section .yucp-help-box {
-    margin-top: 8px;
+    margin-top: 16px;
     margin-bottom: 8px;
     padding: 10px;
 }
@@ -1686,8 +2410,23 @@ Button:active {
     border-radius: 0;
     background-color: rgba(100, 75, 35, 1);
     border-bottom-width: 2px;
-    border-bottom-color: rgba(80, 60, 25, 1);
+    margin-bottom: 2px;
 }
+
+/* ============================================================================
+   RESPONSIVE DESIGN (NARROW / MOBILE / MEDIUM)
+   ============================================================================ */
+
+/* Hide normal left pane ONLY in narrow mode */
+.yucp-window-narrow .yucp-left-pane {
+    display: none;
+}
+
+.yucp-window-narrow .yucp-resize-handle {
+    display: none;
+}
+
+
 
 .yucp-window-narrow .yucp-support-toast-content {
     flex-direction: row;
@@ -1934,7 +2673,6 @@ Button:active {
     margin-bottom: 12px;
     white-space: normal;
     color: #d4d4d4;
-    line-height: 18px; /* 1.4em approx */
 }
 
 /* Button consistency in onboarding card */
@@ -2027,4 +2765,608 @@ Button:active {
     height: 1px;
     background-color: rgba(255, 255, 255, 0.1);
     margin-bottom: 12px;
+}
+/* ============================================================================
+   TOP NAV BAR - Detailed Navigation
+   ============================================================================ */
+.yucp-right-pane {
+    flex-grow: 1;
+    overflow: hidden; /* Ensure top nav bar clips when sliding up */
+    position: relative;
+    flex-direction: column;
+}
+
+.yucp-top-navbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    align-items: center;
+    padding-top: 20px; 
+    height: auto;
+    background-color: transparent;
+    border-bottom-width: 0;
+}
+
+.yucp-top-navbar-container {
+    flex-direction: row;
+    background-color: rgba(30, 30, 30, 0.98);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    padding: 4px 6px;
+}
+
+.yucp-top-navbar-tab {
+    background-color: transparent;
+    border-width: 0;
+    border-radius: 14px;
+    margin: 0 2px;
+    padding: 0 12px;
+    height: 28px;
+    font-size: 11px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.6);
+    transition-duration: 0.2s;
+    transition-property: background-color, color, scale;
+    transition-timing-function: ease-out;
+    cursor: link;
+    justify-content: center;
+    align-items: center;
+    -unity-text-align: middle-center;
+}
+
+.yucp-top-navbar-tab:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.95);
+    scale: 1.05 1.05;
+}
+
+.yucp-top-navbar-tab.selected {
+    background-color: rgba(54, 191, 177, 0.2);
+    border-width: 1px;
+    border-color: rgba(54, 191, 177, 0.5);
+    color: #36BFB1;
+}
+
+/* ============================================================================
+   NAV GROUPS - Grouped Tabs Logic
+   ============================================================================ */
+.yucp-nav-group {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    margin-right: 2px;
+    border-radius: 14px;
+    overflow: hidden;
+    background-color: rgba(255, 255, 255, 0.03);
+    transition-property: background-color, flex-grow, max-width;
+    transition-duration: 0.2s, 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-in-out, ease-in-out;
+}
+
+.yucp-sidebar-toggle-button {
+    display: none; /* Hidden by default (Wide/Medium) */
+    width: 28px;
+    height: 28px;
+    margin-right: 8px;
+    background-color: transparent;
+    border-width: 0;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 10px;
+    -unity-text-align: middle-center;
+    border-radius: 50%;
+}
+
+.yucp-sidebar-toggle-button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+.yucp-nav-group-label {
+    display: none;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    padding: 0 10px;
+    height: 28px;
+    -unity-text-align: middle-center;
+    background-color: transparent;
+    border-radius: 14px;
+    white-space: nowrap;
+}
+
+.yucp-nav-group-content {
+    flex-direction: row;
+    align-items: center;
+    overflow: hidden;
+}
+
+/* NARROW MODE BEHAVIOR */
+/* Toggle Button: ONLY show in Window Narrow Mode (Mobile) */
+.yucp-window-narrow .yucp-sidebar-toggle-button {
+    display: flex;
+}
+
+/* Nav Groups: Collapse in Window Narrow, Medium, OR Local Narrow */
+.yucp-window-narrow .yucp-nav-group,
+.yucp-window-medium .yucp-nav-group,
+.yucp-navbar-narrow .yucp-nav-group {
+    background-color: rgba(255, 255, 255, 0.03);
+    flex-shrink: 0;
+    max-width: 80px; /* Collapsed width approx */
+}
+
+.yucp-window-narrow .yucp-nav-group-label,
+.yucp-window-medium .yucp-nav-group-label,
+.yucp-navbar-narrow .yucp-nav-group-label {
+    display: flex;
+}
+
+.yucp-window-narrow .yucp-nav-group-content,
+.yucp-window-medium .yucp-nav-group-content,
+.yucp-navbar-narrow .yucp-nav-group-content {
+    flex-basis: 0;
+    max-width: 0;
+    overflow: hidden;
+}
+
+/* EXPANDED STATE (Narrow Mode) */
+.yucp-window-narrow .yucp-nav-group.expanded, 
+.yucp-window-medium .yucp-nav-group.expanded,
+.yucp-navbar-narrow .yucp-nav-group.expanded {
+    background-color: rgba(255, 255, 255, 0.03);
+    flex-grow: 1; /* Was 0, but 1 behaves better for filling space */
+    max-width: 400px; /* Large enough to fit content */
+    justify-content: flex-start; /* Was center, standard flex-start usually safer */
+    overflow: visible; /* Ensure content isn't clipped at edges */
+}
+
+.yucp-window-narrow .yucp-nav-group.expanded .yucp-nav-group-label,
+.yucp-window-medium .yucp-nav-group.expanded .yucp-nav-group-label,
+.yucp-navbar-narrow .yucp-nav-group.expanded .yucp-nav-group-label {
+    display: none;
+}
+
+.yucp-window-narrow .yucp-nav-group.expanded .yucp-nav-group-content,
+.yucp-window-medium .yucp-nav-group.expanded .yucp-nav-group-content,
+.yucp-navbar-narrow .yucp-nav-group.expanded .yucp-nav-group-content {
+    flex-basis: auto;
+    max-width: 999px;
+    justify-content: flex-start;
+    overflow: visible; /* Prevent clipping */
+
+    /* Content animation handled by YUCP.Motion */
+}
+
+/* Ensure tabs inside expanded groups have correct color */
+.yucp-nav-group.expanded .yucp-top-navbar-tab {
+    color: rgba(255, 255, 255, 0.7); /* Standard color */
+}
+.yucp-nav-group.expanded .yucp-top-navbar-tab:hover {
+    color: #ffffff;
+}
+.yucp-nav-group.expanded .yucp-top-navbar-tab.selected {
+    color: #36BFB1;
+}
+
+/* COMPACT MODE OVERRIDES */
+.yucp-compact-mode .yucp-nav-group {
+    border-radius: 12px;
+}
+.yucp-compact-mode .yucp-nav-group-label {
+    height: 24px;
+    font-size: 9px;
+    padding: 0 8px;
+}
+
+/* ============================================================================
+   RIGHT ZONE - Split Action Header
+   ============================================================================ */
+.yucp-top-navbar-right-zone {
+    position: absolute;
+    right: 0;
+    top: 20px; /* Explicitly match navbar padding-top (was 14px) */
+    height: 38px; /* Explicitly match container height */
+    translate: 0 0; /* Removing the 50% centering hack */
+    flex-direction: row;
+    align-items: center;
+    padding-right: 24px;
+}
+
+.yucp-navbar-separator {
+    width: 6px; /* Spacing only */
+    height: 18px;
+    background-color: transparent; /* Removed visible line */
+    margin-right: 0;
+}
+
+.yucp-tools-action-button {
+    flex-direction: row;
+    align-items: center;
+    height: 34px; /* Slightly smaller than 38px Navbar */
+    padding: 0 4px;
+    background-color: rgba(30, 30, 30, 0.98); 
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.12);
+    border-radius: 17px; /* Half of height */
+    transition-duration: 0.25s;
+    transition-property: background-color, border-color, padding, width, max-width;
+    transition-timing-function: ease-out-circ;
+    overflow: hidden;
+    max-width: 34px; /* Start collapsed (circle width) */
+}
+
+.yucp-tools-action-button:hover {
+    background-color: rgba(50, 50, 50, 1); /* Lighter on hover, similar key */
+    border-color: rgba(255, 255, 255, 0.25);
+    padding: 0 12px;
+    max-width: 110px; /* Expand to fit content */
+}
+
+.yucp-tools-action-icon {
+    width: 24px; /* Centered in 34px button (34-4*2 padding approx) or just fixed width */
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.9);
+    -unity-text-align: middle-center;
+}
+
+.yucp-tools-action-button:hover .yucp-tools-action-icon {
+    color: #ffffff;
+}
+
+.yucp-tools-action-label {
+    width: auto;
+    font-size: 11px;
+    color: #ffffff;
+    margin-left: 6px;
+    opacity: 0;
+    transition-duration: 0.15s;
+    transition-property: opacity;
+    white-space: nowrap;
+}
+
+.yucp-tools-action-button:hover .yucp-tools-action-label {
+    opacity: 1;
+}
+
+/* Responsive Top Bar */
+.yucp-window-narrow .yucp-top-navbar-tab,
+.yucp-navbar-narrow .yucp-top-navbar-tab {
+    padding: 0 6px;
+    margin: 0 1px;
+    font-size: 10px;
+}
+
+.yucp-window-narrow .yucp-top-navbar-container,
+.yucp-navbar-narrow .yucp-top-navbar-container {
+    padding: 4px 4px; 
+}
+
+/* ============================================================================
+   COMPACT MODE - High Density Layout
+   ============================================================================ */
+.yucp-compact-mode .yucp-section-container {
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+}
+
+.yucp-compact-mode .yucp-row-item {
+    min-height: 24px;
+    padding: 2px 8px;
+}
+
+.yucp-compact-mode .yucp-asset-item {
+    padding: 2px 8px;
+    margin-bottom: 1px;
+}
+
+.yucp-compact-mode Button {
+    height: 24px;
+    font-size: 11px;
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+.yucp-compact-mode .yucp-input {
+    min-height: 24px;
+    font-size: 11px;
+    padding: 2px 8px;
+}
+
+.yucp-compact-mode .yucp-section-title {
+    margin-bottom: 4px;
+    font-size: 11px;
+}
+
+.yucp-compact-mode .yucp-folder-list {
+    min-height: 60px;
+    padding: 4px;
+}
+
+.yucp-compact-mode .yucp-folder-item {
+    padding: 2px 6px;
+    margin-bottom: 2px;
+}
+
+.yucp-compact-mode .yucp-folder-item-remove {
+    width: 16px;
+    min-width: 16px;
+    height: 16px;
+    font-size: 12px;
+}
+
+/* Adjust top bar in compact mode */
+.yucp-compact-mode .yucp-top-navbar {
+    padding-top: 6px;
+}
+
+.yucp-compact-mode .yucp-top-navbar-container {
+    border-radius: 16px;
+    padding: 2px 4px;
+}
+
+.yucp-compact-mode .yucp-top-navbar-tab {
+    height: 24px;
+    font-size: 10px;
+    padding: 0 8px;
+    border-radius: 12px;
+}
+
+/* Adjust right zone in compact */
+.yucp-compact-mode .yucp-top-navbar-right-zone {
+    padding-right: 12px;
+    top: 6px; 
+    height: 30px;
+}
+.yucp-compact-mode .yucp-tools-action-button {
+    height: 28px;
+    max-width: 28px;
+    border-radius: 14px;
+}
+.yucp-compact-mode .yucp-tools-action-button:hover {
+    max-width: 100px;
+}
+.yucp-compact-mode .yucp-tools-action-label {
+    font-size: 10px;
+}
+
+/* ============================================================================
+   SIDEBAR SUPPORT BANNER - Friendly & Vibrant
+   ============================================================================ */
+.yucp-sidebar-support-banner {
+    margin: 10px 0;
+    margin-bottom: 14px;
+    padding: 16px;
+    background-color: rgba(255, 221, 64, 0.08); /* Transparent Sunny Yellow */
+    border-width: 0;
+    border-radius: 12px;
+}
+
+.yucp-sidebar-support-icon {
+    width: 20px;
+    height: 20px;
+    margin-right: 10px;
+    -unity-background-scale-mode: scale-to-fit;
+    -unity-background-image-tint-color: #FFDD40; /* Vibrant Sunny Yellow */
+}
+
+.yucp-sidebar-support-title {
+    font-size: 14px;
+    -unity-font-style: bold;
+    color: #FFDD40; /* Vibrant Sunny Yellow */
+    white-space: normal;
+    margin: 0; /* Remove all margins for perfect centering */
+    padding: 0; /* Remove padding */
+    align-self: center; /* Ensure vertical centering in flex row */
+}
+
+.yucp-sidebar-support-subtitle {
+    font-size: 12px;
+    color: #E8E8E8; /* Clean Off-White */
+    white-space: normal;
+    margin-top: 8px;
+    margin-bottom: 16px;
+    line-height: 16px;
+    opacity: 0.9;
+}
+
+/* Actions */
+.yucp-sidebar-support-dismiss {
+    background-color: transparent;
+    border-width: 0;
+    color: #AAAAAA;
+    font-size: 11px;
+    padding: 6px 8px;
+    margin: 0;
+    margin-right: 4px;
+    cursor: link;
+    border-radius: 6px;
+}
+
+.yucp-sidebar-support-dismiss:hover {
+    color: #FFFFFF;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.yucp-sidebar-support-button {
+    background-color: #FFDD40; /* Vibrant Sunny Yellow */
+    border-width: 0;
+    color: #222222; /* High contrast dark text */
+    font-size: 12px;
+    -unity-font-style: bold;
+    padding: 8px 20px; /* Generous padding */
+    height: 32px;
+    border-radius: 16px; /* Pill shape */
+    transition-duration: 0.15s;
+    transition-property: scale, background-color;
+}
+
+.yucp-sidebar-support-button:hover {
+    background-color: #FFE660; /* Even Brighter on hover */
+    scale: 1.03 1.03;
+}
+/* ============================================================================
+   BUNDLED PROFILES
+   ============================================================================ */
+.yucp-bundled-profile-card {
+    flex-direction: row;
+    align-items: center;
+    background-color: rgba(60, 60, 60, 0.3);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.yucp-bundled-profile-card:hover {
+    background-color: rgba(60, 60, 60, 0.5);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.yucp-bundled-profile-icon-container {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    margin-right: 12px;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 6px; /* Rounded corners */
+    overflow: hidden;
+    justify-content: center;
+    align-items: center;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.yucp-bundled-profile-icon {
+    width: 32px;
+    height: 32px;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.yucp-bundled-profile-content {
+    flex-direction: column;
+    flex-grow: 1;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.yucp-bundled-profile-name-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.yucp-bundled-profile-name {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: #E0E0E0;
+    margin-right: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.yucp-bundled-profile-details-row {
+    flex-direction: row;
+    align-items: center;
+    opacity: 0.7;
+}
+
+.yucp-bundled-profile-detail-text {
+    font-size: 11px;
+    color: #BBBBBB;
+    margin-right: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.yucp-bundled-profile-remove-btn {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    border-radius: 12px;
+    background-color: transparent;
+    border-width: 0;
+    justify-content: center;
+    align-items: center;
+    color: #888888;
+    font-size: 14px;
+    margin-left: 8px;
+}
+
+.yucp-bundled-profile-remove-btn:hover {
+    background-color: rgba(255, 80, 80, 0.2);
+    color: #FF5050;
+}
+
+
+
+/* ============================================================================
+   QUICK SUMMARY BAR (Horizontal)
+   ============================================================================ */
+.yucp-summary-bar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(30, 30, 30, 0.5);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08); /* Stronger than 0.05 */
+    border-radius: 6px;
+    padding: 6px 16px;
+    margin: 4px 6px;
+    margin-bottom: 12px;
+    flex-wrap: wrap; /* Allow wrap for very narrow windows */
+}
+
+.yucp-summary-stat {
+    flex-direction: row;
+    align-items: center;
+    margin: 2px 0;
+}
+
+.yucp-summary-stat-label {
+    font-size: 10px;
+    color: #888888;
+    margin-right: 6px;
+    -unity-font-style: bold;
+}
+
+.yucp-summary-stat-value {
+    font-size: 11px;
+    color: #D0D0D0;
+    -unity-font-style: normal;
+}
+
+.yucp-summary-accent {
+    color: #36BFB1; /* Brand Teal or User's chosen highlight */
+    -unity-font-style: bold;
+}
+
+.yucp-summary-sep {
+    width: 1px;
+    height: 12px;
+    background-color: rgba(255, 255, 255, 0.1);
+    margin: 0 12px;
+    margin-top: 2px; /* Visual center align */
+}
+
+/* Responsive adjustments */
+.yucp-window-narrow .yucp-summary-bar {
+    padding: 6px 8px;
+    justify-content: space-between;
+}
+
+.yucp-window-narrow .yucp-summary-sep {
+    margin: 0 6px; /* Tighter spacing */
+}
+
+.yucp-window-narrow .yucp-summary-stat-label {
+    margin-right: 4px;
+    font-size: 9px;
+}
+
+.yucp-window-narrow .yucp-summary-stat-value {
+    font-size: 10px;
 }

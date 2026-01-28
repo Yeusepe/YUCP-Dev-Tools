@@ -16,12 +16,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
     public partial class YUCPPackageExporterWindow
     {
+        private static void TagOnboardingTarget(VisualElement element, string targetId)
+        {
+            if (element == null || string.IsNullOrEmpty(targetId)) return;
+            if (!element.ClassListContains(targetId))
+            {
+                element.AddToClassList(targetId);
+            }
+        }
+
         public void UpdateProfileDetails()
         {
             if (selectedProfile == null)
             {
                 _emptyState.style.display = DisplayStyle.Flex;
                 _profileDetailsContainer.style.display = DisplayStyle.None;
+                if (_topNavBar != null) _topNavBar.style.display = DisplayStyle.None;
                 return;
             }
             
@@ -43,6 +53,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             _emptyState.style.display = DisplayStyle.None;
             _profileDetailsContainer.style.display = DisplayStyle.Flex;
+            
+            // Show Top Nav Bar
+            if (_topNavBar != null)
+            {
+                _topNavBar.style.display = DisplayStyle.Flex;
+                _topNavBar.SetActiveTab("General"); // Reset to first tab
+            }
             
             // Reset scroll position when switching profiles to prevent scroll position bug
             var oldScrollView = _profileDetailsContainer.Q<ScrollView>(className: "yucp-inspector-list");
@@ -119,6 +136,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Package Metadata Section
                 _metadataSection = CreateMetadataSection(selectedProfile);
+                TagOnboardingTarget(_metadataSection, "package-identity-section");
+                _metadataSection.name = "section-metadata";
                 contentWrapper.Add(_metadataSection);
                 
                 // Register callback to update button position when metadata section geometry changes
@@ -134,9 +153,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Export Options Section
                 var optionsSection = CreateExportOptionsSection(selectedProfile);
+                TagOnboardingTarget(optionsSection, "versioning-section");
+                optionsSection.name = "section-settings";
                 contentWrapper.Add(optionsSection);
                 
                 var foldersSection = CreateFoldersSection(selectedProfile);
+                foldersSection.name = "section-content";
                 contentWrapper.Add(foldersSection);
                 
                 // Bundled Profiles Section (for composite profiles)
@@ -145,26 +167,34 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Export Inspector Section
                 var inspectorSection = CreateExportInspectorSection(selectedProfile);
+                TagOnboardingTarget(inspectorSection, "export-inspector-section");
+                inspectorSection.name = "section-files";
                 contentWrapper.Add(inspectorSection);
                 
                 // Exclusion Filters Section
                 var exclusionSection = CreateExclusionFiltersSection(selectedProfile);
+                exclusionSection.name = "section-filters";
                 contentWrapper.Add(exclusionSection);
                 
                 // Dependencies Section
                 var dependenciesSection = CreateDependenciesSection(selectedProfile);
+                TagOnboardingTarget(dependenciesSection, "dependencies-section");
+                dependenciesSection.name = "section-dependencies";
                 contentWrapper.Add(dependenciesSection);
                 
                 // Obfuscation Section
                 var obfuscationSection = CreateObfuscationSection(selectedProfile);
+                obfuscationSection.name = "section-advanced";
                 contentWrapper.Add(obfuscationSection);
                 
                 // Quick Actions
                 var actionsSection = CreateQuickActionsSection(selectedProfile);
+                actionsSection.name = "section-actions";
                 contentWrapper.Add(actionsSection);
                 
                 // Package Signing Section
                 var signingSection = CreatePackageSigningSection(selectedProfile);
+                signingSection.name = "section-signing";
                 contentWrapper.Add(signingSection);
                 
                 _profileDetailsContainer.Add(contentWrapper);
@@ -198,36 +228,43 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 };
                 
-                // Track mouse position to detect when hovering between top bar bottom and metadata top
+                // Improved Hover Logic: use the banner section itself if available, or just the top area
                 _rightPaneScrollView.RegisterCallback<MouseMoveEvent>(evt =>
                 {
-                    if (_changeBannerButton == null || _metadataSection == null) return;
+                    if (_changeBannerButton == null) return;
                     
-                    // Find top bar element
-                    var topBar = rootVisualElement.Q(className: "yucp-top-bar");
-                    if (topBar == null) return;
+                    // Simple detection: If we are hovering the top area (where banner is), show button
+                    // The banner is physically at the top of the scroll view before the content wrapper negative margin
+                    // Let's use a simpler heuristic: if Y < 300 (approx banner height) relative to scroll view content
                     
-                    var topBarBounds = topBar.worldBound;
-                    var metadataBounds = _metadataSection.worldBound;
-                    var scrollViewBounds = _rightPaneScrollView.worldBound;
+                    float localY = evt.localMousePosition.y;
                     
-                    // Convert mouse position to world coordinates
-                    var mouseY = scrollViewBounds.y + evt.localMousePosition.y;
+                    // If we have metadata section, use its top as the bottom bound of the banner area
+                    float bottomBound = 300f; // Default fallback
+                    if (_metadataSection != null)
+                    {
+                        bottomBound = _metadataSection.layout.y; 
+                        if (bottomBound < 50) bottomBound = 250f; // Sanity check
+                    }
                     
-                    // Detection window: from bottom of top bar to top of metadata section
-                    var detectionTop = topBarBounds.y + topBarBounds.height;
-                    var detectionBottom = metadataBounds.y;
+                    bool isHoveringBanner = localY < bottomBound;
                     
-                    bool isInDetectionWindow = mouseY >= detectionTop && mouseY <= detectionBottom;
-                    
-                    if (isInDetectionWindow && _changeBannerButton.style.opacity.value < 0.5f)
+                    if (isHoveringBanner && _changeBannerButton.style.opacity.value < 0.5f)
                     {
                         showButton();
                     }
-                    else if (!isInDetectionWindow && _changeBannerButton.style.opacity.value > 0.5f)
+                    else if (!isHoveringBanner && _changeBannerButton.style.opacity.value > 0.5f)
                     {
+                         // Check if we are hovering the button itself (don't hide if moving towards button)
+                         // But pickingMode handles interaction. Visual hide delay?
                         hideButton();
                     }
+                });
+                
+                // Ensure button itself keeps it visible
+                _changeBannerButton.RegisterCallback<MouseEnterEvent>(e => showButton());
+                _changeBannerButton.RegisterCallback<MouseLeaveEvent>(e => {
+                     // We rely on the scrollview mouse move to hide it if we leave the button into non-banner area
                 });
                 
                 

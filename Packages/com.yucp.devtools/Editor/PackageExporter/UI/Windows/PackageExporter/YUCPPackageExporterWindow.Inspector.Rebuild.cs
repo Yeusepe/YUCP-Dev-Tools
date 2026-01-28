@@ -96,12 +96,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (string.IsNullOrEmpty(assetPath))
                 return;
-            
+
             // Normalize the path - ensure it's relative to Assets
-            string relativePath = assetPath;
+            string relativePath = assetPath.Replace('\\', '/');
             if (Path.IsPathRooted(relativePath))
             {
-                // Extract relative part if absolute
                 int assetsIndex = relativePath.LastIndexOf("Assets/", StringComparison.OrdinalIgnoreCase);
                 if (assetsIndex >= 0)
                 {
@@ -109,7 +108,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 else
                 {
-                    // Try to convert absolute path to relative
                     string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                     if (relativePath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase))
                     {
@@ -117,21 +115,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
             }
-            
-            // Ensure it starts with Assets/
+
             if (!relativePath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
             {
                 if (relativePath.StartsWith("Assets", StringComparison.OrdinalIgnoreCase))
-                {
                     relativePath = "Assets/" + relativePath.Substring(6).TrimStart('/');
-                }
                 else
-                {
                     relativePath = "Assets/" + relativePath.TrimStart('/');
-                }
             }
-            
-            // Load and ping the asset
+
+            // Folders and files: LoadAssetAtPath works for both
             var obj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(relativePath);
             if (obj != null)
             {

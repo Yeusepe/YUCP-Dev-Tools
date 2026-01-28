@@ -71,6 +71,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Left group: Sort button only (Filter button removed)
             var leftGroup = new VisualElement();
             leftGroup.AddToClassList("yucp-toolbar-left");
+
+
             
             // Sort button with icon
             string sortLabel = GetSortLabel(currentSortOption);

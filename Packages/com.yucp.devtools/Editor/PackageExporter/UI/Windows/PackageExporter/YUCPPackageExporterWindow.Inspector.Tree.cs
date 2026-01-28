@@ -16,104 +16,137 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
     public partial class YUCPPackageExporterWindow
     {
+        private const int TREE_INDENT_WIDTH = 16;
+        private const int TREE_MAX_DEPTH_COLORS = 16;
 
-
-        private VisualElement CreateFolderHeader(FolderTreeNode node, ExportProfile profile, int depth)
+        private VisualElement CreateFolderHeader(FolderTreeNode node, ExportProfile profile, int depth, bool isLastChild = false)
         {
-            var folderHeader = new VisualElement();
-            folderHeader.AddToClassList("yucp-inspector-folder-header");
-            folderHeader.style.paddingLeft = 12 + (depth * 24);
-            
-            var folderHeaderContent = new VisualElement();
-            folderHeaderContent.AddToClassList("yucp-inspector-folder-content");
-            
+            // Main row container
+            var row = new VisualElement();
+            row.AddToClassList("yucp-tree-row");
+            row.AddToClassList("yucp-tree-folder-row");
+            row.AddToClassList($"yucp-tree-depth-{Mathf.Min(depth, TREE_MAX_DEPTH_COLORS)}");
+            if (isLastChild)
+                row.AddToClassList("yucp-tree-last-child");
+
+
+
+
+
+            // Content container
+            var content = new VisualElement();
+            content.AddToClassList("yucp-tree-content");
+
             // Expand/collapse button
             var expandButton = new Button(() =>
             {
                 node.IsExpanded = !node.IsExpanded;
                 folderExpandedStates[node.FullPath] = node.IsExpanded;
-                
-                VisualElement scrollView = folderHeader.parent;
-                if (scrollView != null && scrollView is ScrollView)
+
+                VisualElement container = FindAssetListContainer(row);
+                if (container != null)
                 {
-                    // Store current scroll position
-                    float scrollValue = (scrollView as ScrollView).verticalScroller.value;
-                    
-                    VisualElement container = scrollView.parent;
-                    if (container != null && container.name == "asset-list-container")
+                    float scrollValue = 0f;
+                    var scrollView = container.Q<ScrollView>();
+                    if (scrollView != null)
+                        scrollValue = scrollView.verticalScroller.value;
+
+                    container.Clear();
+                    RebuildAssetList(profile, container);
+
+                    EditorApplication.delayCall += () =>
                     {
-                        container.Clear();
-                        RebuildAssetList(profile, container);
-                        
-                        // Restore scroll position after layout update
-                        EditorApplication.delayCall += () =>
+                        var newScrollView = container.Q<ScrollView>();
+                        if (newScrollView != null)
                         {
-                            var newScrollView = container.Q<ScrollView>();
-                            if (newScrollView != null)
-                            {
-                                newScrollView.verticalScroller.value = scrollValue;
-                            }
-                        };
-                    }
+                            newScrollView.verticalScroller.value = scrollValue;
+                        }
+                    };
                 }
             });
-            expandButton.AddToClassList("yucp-folder-expand-button");
-            expandButton.text = node.IsExpanded ? "▼" : "▶";
-            folderHeaderContent.Add(expandButton);
-            
+            expandButton.AddToClassList("yucp-tree-expand-btn");
+            expandButton.text = node.IsExpanded ? "▾" : "▸";
+            content.Add(expandButton);
+
+            // Folder icon using Unity's built-in icons
+            var folderIcon = new Image();
+            folderIcon.AddToClassList("yucp-tree-icon");
+            string iconName = node.IsExpanded ? "d_FolderOpened Icon" : "d_Folder Icon";
+            folderIcon.image = EditorGUIUtility.IconContent(iconName).image;
+            content.Add(folderIcon);
+
+            // Folder name label
             var folderLabel = new Label(node.Name);
-            folderLabel.AddToClassList("yucp-inspector-folder-label");
+            folderLabel.AddToClassList("yucp-tree-label");
             folderLabel.RegisterCallback<MouseDownEvent>(evt =>
             {
-                if (evt.button == 0) // Left click
+                if (evt.button == 0)
                 {
+                    evt.StopPropagation();
+                    evt.PreventDefault();
                     PingAsset(node.FullPath);
                 }
             });
-            folderHeaderContent.Add(folderLabel);
-            
+            folderLabel.pickingMode = PickingMode.Position;
+            content.Add(folderLabel);
+
             // Asset count badge
             int totalAssets = CountTotalAssets(node);
             if (totalAssets > 0)
             {
-                var countBadge = new Label($"({totalAssets})");
-                countBadge.AddToClassList("yucp-folder-count-badge");
-                folderHeaderContent.Add(countBadge);
+                var countBadge = new Label($"{totalAssets}");
+                countBadge.AddToClassList("yucp-tree-badge");
+                content.Add(countBadge);
             }
-            
-            // Actions toolbar
-            var folderActions = new VisualElement();
-            folderActions.AddToClassList("yucp-inspector-folder-actions");
-            
-            // .yucpignore Create/Edit button
-            // Convert relative path (e.g., "Assets/Folder") to absolute path
-            // node.FullPath should be relative like "Assets/Folder/Subfolder"
-            string folderFullPath;
-            
-            // Get project root (parent of Assets folder)
+
+            // Spacer to push actions to the right
+            var spacer = new VisualElement();
+            spacer.AddToClassList("yucp-tree-spacer");
+            content.Add(spacer);
+
+            // Actions container
+            var actions = new VisualElement();
+            actions.AddToClassList("yucp-tree-actions");
+
+            // Get folder path for ignore file check
+            string folderFullPath = GetFolderFullPath(node.FullPath);
+            bool hasIgnoreFile = YucpIgnoreHandler.HasIgnoreFile(folderFullPath);
+
+            if (hasIgnoreFile)
+            {
+                var editIgnoreButton = new Button(() => OpenYucpIgnoreFile(folderFullPath)) { text = "Edit" };
+                editIgnoreButton.AddToClassList("yucp-tree-action-btn");
+                editIgnoreButton.tooltip = "Edit .yucpignore";
+                actions.Add(editIgnoreButton);
+            }
+
+            var ignoreButton = new Button(() => AddFolderToIgnoreList(profile, node.FullPath)) { text = "Ignore" };
+            ignoreButton.AddToClassList("yucp-tree-action-btn");
+            ignoreButton.tooltip = "Add to Ignore";
+            actions.Add(ignoreButton);
+
+            content.Add(actions);
+            row.Add(content);
+
+            return row;
+        }
+
+        private string GetFolderFullPath(string nodePath)
+        {
             string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-            
-            // Normalize node.FullPath - ensure it uses forward slashes
-            string pathToProcess = node.FullPath.Replace('\\', '/');
-            
-            // Extract the relative part starting from "Assets/"
-            // This handles cases where the path might already be absolute or have duplicates
+            string pathToProcess = nodePath.Replace('\\', '/');
             string relativePath = pathToProcess;
-            
-            // Find the last occurrence of "Assets/" in the path (in case of duplicates)
+
             int lastAssetsIndex = pathToProcess.LastIndexOf("Assets/", StringComparison.OrdinalIgnoreCase);
             if (lastAssetsIndex >= 0)
             {
-                // Extract everything from "Assets/" onwards
                 relativePath = pathToProcess.Substring(lastAssetsIndex);
             }
             else
             {
-                // No "Assets/" found - check if it starts with "Assets" (without slash)
                 int assetsIndex = pathToProcess.LastIndexOf("Assets", StringComparison.OrdinalIgnoreCase);
                 if (assetsIndex >= 0)
                 {
-                    // Extract from "Assets" and ensure it has a slash
                     relativePath = pathToProcess.Substring(assetsIndex);
                     if (!relativePath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
                     {
@@ -122,12 +155,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 else
                 {
-                    // Doesn't contain "Assets" at all - prepend it
                     relativePath = "Assets/" + pathToProcess.TrimStart('/');
                 }
             }
-            
-            // Final safety check: if relativePath still contains a drive letter, extract just the Assets part
+
             if (relativePath.Contains(":"))
             {
                 int assetsIndex = relativePath.LastIndexOf("Assets/", StringComparison.OrdinalIgnoreCase);
@@ -136,47 +167,25 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     relativePath = relativePath.Substring(assetsIndex);
                 }
             }
-            
-            // Combine with project root to get absolute path
-            // Use Path.Combine which will handle the case where relativePath is already absolute
-            folderFullPath = Path.GetFullPath(Path.Combine(projectRoot, relativePath));
-            
-            // Final validation: if the result still contains duplicates, fix it
+
+            string folderFullPath = Path.GetFullPath(Path.Combine(projectRoot, relativePath));
+
             string expectedAssetsPath = Path.Combine(projectRoot, "Assets");
             if (folderFullPath.Contains(expectedAssetsPath + Path.DirectorySeparatorChar + expectedAssetsPath))
             {
-                // Remove the duplicate
                 int dupIndex = folderFullPath.IndexOf(expectedAssetsPath + Path.DirectorySeparatorChar + expectedAssetsPath);
-                folderFullPath = folderFullPath.Substring(0, dupIndex + expectedAssetsPath.Length) + 
+                folderFullPath = folderFullPath.Substring(0, dupIndex + expectedAssetsPath.Length) +
                                folderFullPath.Substring(dupIndex + expectedAssetsPath.Length + expectedAssetsPath.Length);
             }
-            
-            bool hasIgnoreFile = YucpIgnoreHandler.HasIgnoreFile(folderFullPath);
-            
-            if (hasIgnoreFile)
-            {
-                var editIgnoreButton = new Button(() => OpenYucpIgnoreFile(folderFullPath)) { text = "Edit .yucpignore" };
-                editIgnoreButton.AddToClassList("yucp-button");
-                editIgnoreButton.AddToClassList("yucp-button-small");
-                folderActions.Add(editIgnoreButton);
-            }
-            
-            var ignoreButton = new Button(() => AddFolderToIgnoreList(profile, node.FullPath)) { text = "Add to Ignore" };
-            ignoreButton.AddToClassList("yucp-button");
-            ignoreButton.AddToClassList("yucp-button-small");
-            folderActions.Add(ignoreButton);
-            
-            folderHeaderContent.Add(folderActions);
-            folderHeader.Add(folderHeaderContent);
-            
-            return folderHeader;
+
+            return folderFullPath;
         }
 
         private FolderTreeNode BuildFolderTree(List<DiscoveredAsset> assets)
         {
             var root = new FolderTreeNode("Assets", "Assets");
             root.IsExpanded = true;
-            
+
             foreach (var asset in assets)
             {
                 string folderPath = asset.GetFolderPath();
@@ -185,49 +194,44 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     root.Assets.Add(asset);
                     continue;
                 }
-                
-                // Split path into segments
+
                 string[] segments = folderPath.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
                 if (segments[0] == "Assets")
                 {
                     segments = segments.Skip(1).ToArray();
                 }
-                
+
                 FolderTreeNode current = root;
                 string currentPath = "Assets";
-                
+
                 foreach (string segment in segments)
                 {
                     currentPath = currentPath == "Assets" ? $"Assets/{segment}" : $"{currentPath}/{segment}";
-                    
+
                     var child = current.Children.FirstOrDefault(c => c.Name == segment);
                     if (child == null)
                     {
                         child = new FolderTreeNode(segment, currentPath);
-                        // Default to expanded for better navigation, unless user has collapsed it
-                        child.IsExpanded = folderExpandedStates.ContainsKey(currentPath) 
-                            ? folderExpandedStates[currentPath] 
+                        child.IsExpanded = folderExpandedStates.ContainsKey(currentPath)
+                            ? folderExpandedStates[currentPath]
                             : true;
                         current.Children.Add(child);
                     }
                     else
                     {
-                        // Ensure existing nodes respect saved state
                         if (folderExpandedStates.ContainsKey(currentPath))
                         {
                             child.IsExpanded = folderExpandedStates[currentPath];
                         }
                     }
-                    
+
                     current = child;
                 }
-                
+
                 current.Assets.Add(asset);
             }
-            
-            // Sort children and assets
+
             SortFolderTree(root);
-            
             return root;
         }
 
@@ -235,42 +239,62 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             node.Children = node.Children.OrderBy(c => c.Name).ToList();
             node.Assets = node.Assets.OrderBy(a => a.GetDisplayName()).ToList();
-            
+
             foreach (var child in node.Children)
             {
                 SortFolderTree(child);
             }
         }
 
-        private void RenderFolderTree(FolderTreeNode node, VisualElement container, ExportProfile profile, int depth)
+        private void RenderFolderTree(FolderTreeNode node, VisualElement container, ExportProfile profile, int depth, bool isLastChild = false)
         {
-            // Only render if node has assets or children
             if (node.Assets.Count == 0 && node.Children.Count == 0 && depth > 0)
                 return;
-            
-            if (depth > 0 || (depth == 0 && node.Assets.Count > 0))
+
+            // Create folder header
+            if (depth > 0)
             {
-                if (depth > 0)
-                {
-                    var folderHeader = CreateFolderHeader(node, profile, depth);
-                    container.Add(folderHeader);
-                }
+                var folderHeader = CreateFolderHeader(node, profile, depth, isLastChild && node.Children.Count == 0 && node.Assets.Count == 0);
+                container.Add(folderHeader);
             }
+
+            // Create content group for folder contents (assets + subfolders)
+            bool hasContent = (node.Assets.Count > 0 || node.Children.Count > 0) && (depth == 0 || node.IsExpanded);
+            VisualElement contentGroup = null;
             
+            if (hasContent && depth > 0)
+            {
+                contentGroup = new VisualElement();
+                contentGroup.AddToClassList("yucp-tree-group");
+                contentGroup.AddToClassList($"yucp-tree-group-depth-{Mathf.Min(depth, TREE_MAX_DEPTH_COLORS)}");
+                container.Add(contentGroup);
+            }
+            else
+            {
+                contentGroup = container;
+            }
+
+            // Render assets
             if (node.Assets.Count > 0 && (depth == 0 || node.IsExpanded))
             {
-                foreach (var asset in node.Assets)
+                bool hasChildren = node.Children.Count > 0;
+                for (int i = 0; i < node.Assets.Count; i++)
                 {
-                    var assetItem = CreateAssetItem(asset, profile, depth == 0 ? 0 : depth + 1);
-                    container.Add(assetItem);
+                    var asset = node.Assets[i];
+                    bool isLastAsset = (i == node.Assets.Count - 1) && !hasChildren;
+                    var assetItem = CreateAssetItem(asset, profile, depth == 0 ? 0 : depth + 1, isLastAsset);
+                    contentGroup.Add(assetItem);
                 }
             }
-            
+
+            // Render child folders
             if (node.Children.Count > 0 && (depth == 0 || node.IsExpanded))
             {
-                foreach (var child in node.Children)
+                for (int i = 0; i < node.Children.Count; i++)
                 {
-                    RenderFolderTree(child, container, profile, depth + 1);
+                    var child = node.Children[i];
+                    bool isLast = (i == node.Children.Count - 1);
+                    RenderFolderTree(child, contentGroup, profile, depth + 1, isLast);
                 }
             }
         }
@@ -285,15 +309,27 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return count;
         }
 
-        private VisualElement CreateAssetItem(DiscoveredAsset asset, ExportProfile profile, int depth)
+        private VisualElement CreateAssetItem(DiscoveredAsset asset, ExportProfile profile, int depth, bool isLastChild = false)
         {
-            var assetItem = new VisualElement();
-            assetItem.AddToClassList("yucp-asset-item");
-            assetItem.style.paddingLeft = 12 + (depth * 24);
-            
+            // Main row container
+            var row = new VisualElement();
+            row.AddToClassList("yucp-tree-row");
+            row.AddToClassList("yucp-tree-asset-row");
+            row.AddToClassList($"yucp-tree-depth-{Mathf.Min(depth, TREE_MAX_DEPTH_COLORS)}");
+            if (isLastChild)
+                row.AddToClassList("yucp-tree-last-child");
+
+
+
+
+
+            // Content container
+            var content = new VisualElement();
+            content.AddToClassList("yucp-tree-content");
+
             // Checkbox
             var checkbox = new Toggle { value = asset.included };
-            checkbox.AddToClassList("yucp-asset-item-checkbox");
+            checkbox.AddToClassList("yucp-tree-checkbox");
             checkbox.RegisterValueChangedCallback(evt =>
             {
                 Undo.RecordObject(profile, "Toggle Asset Inclusion");
@@ -301,123 +337,113 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 EditorUtility.SetDirty(profile);
                 AssetDatabase.SaveAssets();
             });
-            assetItem.Add(checkbox);
-            
-            // Icon
+            content.Add(checkbox);
+
+            // Asset icon
             var icon = new Label(GetAssetTypeIcon(asset.assetType));
-            icon.AddToClassList("yucp-asset-item-icon");
-            assetItem.Add(icon);
-            
-            // Name - make it clickable to navigate to asset
+            icon.AddToClassList("yucp-tree-icon-text");
+            content.Add(icon);
+
+            // Asset name
             var nameLabel = new Label(asset.GetDisplayName());
-            nameLabel.AddToClassList("yucp-asset-item-name");
-            // Compute derived flag once for this row
+            nameLabel.AddToClassList("yucp-tree-label");
+
             DerivedSettings derivedSettings;
             string derivedBasePath;
             bool isDerivedFbx = IsDerivedFbx(asset.assetPath, out derivedSettings, out derivedBasePath);
-            if (asset.isDependency)
-            {
-                nameLabel.text += " [Dep]";
-            }
-            if (isDerivedFbx)
-            {
-                nameLabel.text += string.IsNullOrEmpty(derivedBasePath) ? " [Derived: Base Missing]" : " [Derived]";
-            }
             
-            // Add click handler to navigate to asset
+            if (asset.isDependency)
+                nameLabel.AddToClassList("yucp-tree-label-dep");
+            if (isDerivedFbx)
+                nameLabel.AddToClassList("yucp-tree-label-derived");
+
             nameLabel.RegisterCallback<MouseDownEvent>(evt =>
             {
-                if (evt.button == 0) // Left click
+                if (evt.button == 0)
                 {
+                    evt.StopPropagation();
+                    evt.PreventDefault();
                     PingAsset(asset.assetPath);
                 }
             });
-            assetItem.Add(nameLabel);
-            
-            // Type
+            nameLabel.pickingMode = PickingMode.Position;
+            content.Add(nameLabel);
+
+            // Type badge
             string typeText = asset.assetType;
             if (isDerivedFbx && typeText.Equals("Model", StringComparison.OrdinalIgnoreCase))
-            {
-                typeText = "Model (Derived)";
-            }
+                typeText = "Derived";
             var typeLabel = new Label(typeText);
-            typeLabel.AddToClassList("yucp-asset-item-type");
-            assetItem.Add(typeLabel);
-            
+            typeLabel.AddToClassList("yucp-tree-type");
+            content.Add(typeLabel);
+
             // Size
             if (!asset.isFolder && asset.fileSize > 0)
             {
                 var sizeLabel = new Label(FormatBytes(asset.fileSize));
-                sizeLabel.AddToClassList("yucp-asset-item-size");
-                assetItem.Add(sizeLabel);
+                sizeLabel.AddToClassList("yucp-tree-size");
+                content.Add(sizeLabel);
             }
-            
-            // Source profile badge (for composite profiles)
-            if (!string.IsNullOrEmpty(asset.sourceProfileName))
+
+            // Spacer
+            var spacer = new VisualElement();
+            spacer.AddToClassList("yucp-tree-spacer");
+            content.Add(spacer);
+
+            // Status badges
+            var badges = new VisualElement();
+            badges.AddToClassList("yucp-tree-badges");
+
+            if (asset.isDependency)
             {
-                var sourceBadge = new Label($"[{asset.sourceProfileName}]");
-                sourceBadge.AddToClassList("yucp-label-secondary");
-                sourceBadge.style.marginLeft = 6;
-                sourceBadge.style.fontSize = 10;
-                sourceBadge.style.color = new Color(0.6f, 0.8f, 0.9f);
-                assetItem.Add(sourceBadge);
+                var depBadge = new Label("DEP");
+                depBadge.AddToClassList("yucp-tree-status-badge");
+                depBadge.AddToClassList("yucp-tree-badge-dep");
+                depBadge.tooltip = "Dependency";
+                badges.Add(depBadge);
             }
-            
-            // Derived patch badge and quick actions for FBX
+
             if (isDerivedFbx)
             {
                 bool baseMissing = string.IsNullOrEmpty(derivedBasePath);
-                
-                string badgeText;
-                badgeText = baseMissing ? "[Derived Patch: Base Missing]" : "[Derived Patch]";
-                
-                var badge = new Label(badgeText);
-                badge.AddToClassList("yucp-label-secondary");
-                badge.style.marginLeft = 6;
-                if (baseMissing)
-                {
-                    badge.style.color = new Color(0.95f, 0.75f, 0.2f);
-                }
-                else
-                {
-                    badge.style.color = new Color(0.2f, 0.8f, 0.8f);
-                }
-                assetItem.Add(badge);
-                
-                var actionsRow = new VisualElement();
-                actionsRow.style.flexDirection = FlexDirection.Row;
-                actionsRow.style.marginLeft = 6;
-                
+                var derivedBadge = new Label(baseMissing ? "MISSING" : "PATCH");
+                derivedBadge.AddToClassList("yucp-tree-status-badge");
+                derivedBadge.AddToClassList(baseMissing ? "yucp-tree-badge-warning" : "yucp-tree-badge-derived");
+                derivedBadge.tooltip = baseMissing ? "Derived: Base Missing" : "Derived Patch";
+                badges.Add(derivedBadge);
+            }
+
+            if (!string.IsNullOrEmpty(asset.sourceProfileName))
+            {
+                var sourceBadge = new Label(asset.sourceProfileName);
+                sourceBadge.AddToClassList("yucp-tree-status-badge");
+                sourceBadge.AddToClassList("yucp-tree-badge-source");
+                sourceBadge.tooltip = "Source Profile";
+                badges.Add(sourceBadge);
+            }
+
+            content.Add(badges);
+
+            // Actions for derived FBX
+            if (isDerivedFbx)
+            {
+                var actions = new VisualElement();
+                actions.AddToClassList("yucp-tree-actions");
+
                 var optionsButton = new Button(() =>
                 {
-                    string relativePath = asset.assetPath;
-                    if (Path.IsPathRooted(relativePath))
-                    {
-                        string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                        if (relativePath.StartsWith(projectPath, StringComparison.OrdinalIgnoreCase))
-                        {
-                            relativePath = relativePath.Substring(projectPath.Length).Replace('\\', '/').TrimStart('/');
-                        }
-                    }
+                    string relativePath = GetRelativeAssetPath(asset.assetPath);
                     var obj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(relativePath);
                     Selection.activeObject = obj;
                     EditorGUIUtility.PingObject(obj);
-                }) { text = "Options" };
-                optionsButton.AddToClassList("yucp-button");
-                optionsButton.AddToClassList("yucp-button-small");
-                actionsRow.Add(optionsButton);
-                
+                }) { text = "Opt" };
+                optionsButton.AddToClassList("yucp-tree-action-btn");
+                optionsButton.tooltip = "Options";
+                actions.Add(optionsButton);
+
                 var clearButton = new Button(() =>
                 {
-                    string relativePath = asset.assetPath;
-                    if (Path.IsPathRooted(relativePath))
-                    {
-                        string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                        if (relativePath.StartsWith(projectPath, StringComparison.OrdinalIgnoreCase))
-                        {
-                            relativePath = relativePath.Substring(projectPath.Length).Replace('\\', '/').TrimStart('/');
-                        }
-                    }
+                    string relativePath = GetRelativeAssetPath(asset.assetPath);
                     var importer = AssetImporter.GetAtPath(relativePath) as ModelImporter;
                     if (importer != null)
                     {
@@ -429,18 +455,47 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             importer.SaveAndReimport();
                             UpdateProfileDetails();
                         }
-                        catch { /* ignore */ }
+                        catch { }
                     }
-                }) { text = "Clear" };
-                clearButton.AddToClassList("yucp-button");
-                clearButton.AddToClassList("yucp-button-small");
-                actionsRow.Add(clearButton);
-                
-                assetItem.Add(actionsRow);
+                }) { text = "Clr" };
+                clearButton.AddToClassList("yucp-tree-action-btn");
+                clearButton.tooltip = "Clear Derived";
+                actions.Add(clearButton);
+
+                content.Add(actions);
             }
-            
-            return assetItem;
+
+            row.Add(content);
+            return row;
         }
 
+        private string GetRelativeAssetPath(string assetPath)
+        {
+            string relativePath = assetPath;
+            if (Path.IsPathRooted(relativePath))
+            {
+                string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                if (relativePath.StartsWith(projectPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    relativePath = relativePath.Substring(projectPath.Length).Replace('\\', '/').TrimStart('/');
+                }
+            }
+            return relativePath;
+        }
+
+        /// <summary>
+        /// Walk up the visual tree to find the asset-list-container (row may be inside a group).
+        /// </summary>
+        private static VisualElement FindAssetListContainer(VisualElement from)
+        {
+            VisualElement p = from;
+            while (p != null)
+            {
+                if (p.name == "asset-list-container")
+                    return p;
+                p = p.parent;
+            }
+            return null;
+        }
     }
 }

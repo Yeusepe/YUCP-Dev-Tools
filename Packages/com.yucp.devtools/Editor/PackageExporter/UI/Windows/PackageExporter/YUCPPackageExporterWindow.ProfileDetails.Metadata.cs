@@ -295,9 +295,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return section;
         }
 
-
-
-
-
+        private void CreateHoverOverlayButton(string label, Action onClick, VisualElement container)
+        {
+            var btn = new Button(onClick) { text = label };
+            btn.AddToClassList("yucp-overlay-hover-button");
+            container.Add(btn);
+            container.RegisterCallback<MouseEnterEvent>(_ => btn.AddToClassList("yucp-overlay-hover-button-visible"));
+            container.RegisterCallback<MouseLeaveEvent>(_ => btn.RemoveFromClassList("yucp-overlay-hover-button-visible"));
+        }
     }
 }

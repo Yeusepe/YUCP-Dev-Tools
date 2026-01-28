@@ -116,8 +116,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (metadataTop <= 0)
                 metadataTop = 10f;
             
-            // Center vertically between top of banner and metadata section top
-            var centerYInBanner = metadataTop / 2f;
+            // Center vertically between top of banner and metadata section top            
+            var centerYInBanner = metadataTop * 0.70f;
             
             // Calculate button position relative to ScrollView
             var buttonY = bannerBounds.y - scrollViewBounds.y + centerYInBanner - (buttonHeight / 2f);

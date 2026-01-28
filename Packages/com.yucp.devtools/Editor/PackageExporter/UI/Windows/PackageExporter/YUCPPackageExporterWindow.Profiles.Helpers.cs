@@ -70,7 +70,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
             UpdateBottomBar();
             
             // Close overlay when profile is selected (for mobile)
-            CloseOverlay();
+            // Handle overlay visibility based on selection and responsive state
+            float currentWidth = rootVisualElement.resolvedStyle.width;
+            if (currentWidth <= 0) currentWidth = rootVisualElement.layout.width;
+            
+            // If in narrow mode and no profile is selected (i.e. we just deselected), 
+            // we want the sidebar to be visible so the user can select another profile.
+            if (currentWidth > 0 && currentWidth < 700f && selectedProfile == null)
+            {
+                if (!_isOverlayOpen) OpenOverlay();
+            }
+            else
+            {
+                // Otherwise (profile selected OR wide mode), close the overlay
+                if (_isOverlayOpen) CloseOverlay();
+            }
         }
 
         private string GetProfileDisplayName(ExportProfile profile)

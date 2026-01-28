@@ -23,8 +23,15 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         private Button _nextButton;
         private Button _prevButton;
         private Button _skipButton;
+        private Button _secondaryButton;
+        private Action _secondaryActionHandler;
         private VisualElement _rootContainer;
         private Action _onComplete;
+        private Action _onFlowComplete;
+        private Action _onFlowSkip;
+        private bool _closeOnComplete = true;
+        private bool _closeOnSkip = true;
+        private bool _recordCompletionPref = true;
         
         // Animation state
         private Rect _currentSpotlightRect;
@@ -33,6 +40,14 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         private float _animationProgress;
         private double _lastTime;
         private const float ANIMATION_DURATION = 0.4f; // Seconds
+        private const int LayoutStableMaxAttempts = 20;
+        private const int LayoutStableRequired = 2;
+        private const int LayoutCheckIntervalMs = 50;
+        private const int ScrollSettleDelayMs = 450;
+        private const float BoundsEpsilon = 0.5f;
+        private int _trackingToken = 0;
+        private bool _needsLayoutUpdate = true;
+        private OnboardingStep _currentStep;
         
         public OnboardingOverlay(VisualElement rootContainer, Action onComplete)
         {
@@ -113,11 +128,19 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             footer.style.justifyContent = Justify.FlexEnd;
             footer.style.marginTop = 15;
             
-            _skipButton = new Button(EndTour);
+            _skipButton = new Button(SkipFlow);
             _skipButton.text = "Skip";
             _skipButton.AddToClassList("yucp-button-text");
             _skipButton.style.marginRight = Length.Auto(); // Push to left
             footer.Add(_skipButton);
+            
+            _secondaryButton = new Button();
+            _secondaryButton.text = "Learn more";
+            _secondaryButton.AddToClassList("yucp-button");
+            _secondaryButton.AddToClassList("yucp-button-small");
+            _secondaryButton.style.marginRight = 5;
+            _secondaryButton.style.display = DisplayStyle.None;
+            footer.Add(_secondaryButton);
             
             _prevButton = new Button(PreviousStep);
             _prevButton.text = "Back";
@@ -137,11 +160,23 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             return card;
         }
         
-        public void Start(List<OnboardingStep> steps)
+        public void Start(
+            List<OnboardingStep> steps,
+            int startIndex = 0,
+            Action onFlowComplete = null,
+            Action onFlowSkip = null,
+            bool closeOnComplete = true,
+            bool closeOnSkip = true,
+            bool recordCompletionPref = true)
         {
             _steps = steps;
-            _currentStepIndex = 0;
+            _currentStepIndex = Mathf.Clamp(startIndex, 0, Mathf.Max(steps.Count - 1, 0));
             _currentSpotlightRect = new Rect(0, 0, _rootContainer.resolvedStyle.width, _rootContainer.resolvedStyle.height);
+            _onFlowComplete = onFlowComplete;
+            _onFlowSkip = onFlowSkip;
+            _closeOnComplete = closeOnComplete;
+            _closeOnSkip = closeOnSkip;
+            _recordCompletionPref = recordCompletionPref;
             ShowStep(_currentStepIndex);
         }
         
@@ -164,58 +199,93 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             // Enable rich text for labels
             _stepTitle.enableRichText = true;
             _stepDescription.enableRichText = true;
+
+            if (_secondaryButton != null)
+            {
+                if (_secondaryActionHandler != null)
+                {
+                    _secondaryButton.clicked -= _secondaryActionHandler;
+                    _secondaryActionHandler = null;
+                }
+                if (!string.IsNullOrEmpty(step.SecondaryActionLabel) && step.SecondaryAction != null)
+                {
+                    _secondaryButton.text = step.SecondaryActionLabel;
+                    _secondaryActionHandler = step.SecondaryAction;
+                    _secondaryButton.clicked += _secondaryActionHandler;
+                    _secondaryButton.style.display = DisplayStyle.Flex;
+                }
+                else
+                {
+                    _secondaryButton.style.display = DisplayStyle.None;
+                }
+            }
             
             // If this step requires layout delay (e.g., sidebar opening animation),
             // wait before trying to resolve the target element
             int initialDelay = step.RequiresLayoutDelay ? 350 : 0;
             
-            schedule.Execute(() => ResolveAndShowTarget(step, index)).ExecuteLater(initialDelay);
+            schedule.Execute(() => BeginStepTracking(step, index)).ExecuteLater(initialDelay);
         }
         
-        private void ResolveAndShowTarget(OnboardingStep step, int index)
+        private void BeginStepTracking(OnboardingStep step, int index)
         {
-            // Find target
-            Rect targetWorldRect = Rect.zero;
+            _currentStep = step;
+            int token = ++_trackingToken;
+            int resolveDelay = index >= 5 ? 200 : 100;
+            schedule.Execute(() => ResolveTargetForStep(step, token, 0)).ExecuteLater(resolveDelay);
+        }
+
+        private void ResolveTargetForStep(OnboardingStep step, int token, int attempt)
+        {
+            if (token != _trackingToken) return;
+
             var targetElement = ResolveTargetElement(step);
-            
-            if (targetElement != null)
+            if (targetElement == null || !IsUsableTarget(targetElement))
             {
-                // Delay scrolling to ensure layout is complete, especially for steps 5-9 which are in scrollable sections
-                // Use a longer delay for later steps that are deeper in the UI hierarchy
-                int delayMs = index >= 5 ? 200 : 100;
-                
-                schedule.Execute(() =>
+                if (attempt < MaxTargetResolveRetries)
                 {
-                    // Retry resolving the element in case it wasn't ready before
-                    if (!IsUsableTarget(targetElement))
-                    {
-                        targetElement = ResolveTargetElement(step);
-                    }
-                    
-                    if (targetElement != null && IsUsableTarget(targetElement))
-                    {
-                        EnsureElementVisible(targetElement);
-                        ScheduleSpotlightUpdate(targetElement, step);
-                    }
-                    else
-                    {
-                        // Retry once more if element still not found
-                        schedule.Execute(() =>
-                        {
-                            targetElement = ResolveTargetElement(step);
-                            if (targetElement != null && IsUsableTarget(targetElement))
-                            {
-                                EnsureElementVisible(targetElement);
-                                ScheduleSpotlightUpdate(targetElement, step);
-                            }
-                        }).ExecuteLater(200);
-                    }
-                }).ExecuteLater(delayMs);
-                
+                    schedule.Execute(() => ResolveTargetForStep(step, token, attempt + 1)).ExecuteLater(100);
+                    return;
+                }
+
+                ShowFallbackSpotlight(step);
                 return;
             }
 
-            if (targetWorldRect.width == 0 || targetWorldRect.height == 0)
+            ExpandCollapsibleSections(targetElement);
+
+            var scrollView = FindClosestScrollView(targetElement);
+            if (scrollView != null)
+            {
+                float targetOffset = GetScrollOffsetForElement(scrollView, targetElement);
+                if (!float.IsNaN(targetOffset))
+                {
+                    scrollView.verticalScroller.value = targetOffset;
+                    SmoothScroll(scrollView, targetOffset);
+                }
+
+                schedule.Execute(() =>
+                    WaitForStableBounds(step, targetElement, token, 0, Rect.zero, 0)
+                ).ExecuteLater(ScrollSettleDelayMs);
+            }
+            else
+            {
+                schedule.Execute(() =>
+                    WaitForStableBounds(step, targetElement, token, 0, Rect.zero, 0)
+                ).ExecuteLater(LayoutCheckIntervalMs);
+            }
+        }
+
+        private void ShowFallbackSpotlight(OnboardingStep step)
+        {
+            Rect targetWorldRect;
+
+            // Handle specific "no spotlight" case (e.g. welcome screen)
+            if (string.IsNullOrEmpty(step.TargetElementName) && step.TargetElement == null)
+            {
+                targetWorldRect = Rect.zero;
+            }
+            else
             {
                 // Center screen fallback if no target
                 float w = 400;
@@ -224,24 +294,91 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 float y = (_rootContainer.resolvedStyle.height - h) / 2;
                 targetWorldRect = new Rect(x, y, w, h);
             }
-            else
-            {                
-                // Add padding
-                targetWorldRect.x -= step.SpotlightPadding.x;
-                targetWorldRect.y -= step.SpotlightPadding.y;
-                targetWorldRect.width += step.SpotlightPadding.x + step.SpotlightPadding.z;
-                targetWorldRect.height += step.SpotlightPadding.y + step.SpotlightPadding.w;
-            }
-            
-            // Handle specific "no spotlight" case (e.g. welcome screen)
-            if (string.IsNullOrEmpty(step.TargetElementName) && step.TargetElement == null)
-            {
-               targetWorldRect = Rect.zero; 
-            }
-            
+
             _targetSpotlightRect = targetWorldRect;
-            
+            _needsLayoutUpdate = true;
             StartAnimation(targetWorldRect);
+        }
+
+        private void WaitForStableBounds(OnboardingStep step, VisualElement targetElement, int token, int attempt, Rect lastRect, int stableCount)
+        {
+            if (token != _trackingToken) return;
+
+            if (targetElement == null || !IsUsableTarget(targetElement))
+            {
+                if (attempt < MaxTargetResolveRetries)
+                {
+                    var resolved = ResolveTargetElement(step);
+                    schedule.Execute(() =>
+                        WaitForStableBounds(step, resolved ?? targetElement, token, attempt + 1, lastRect, 0)
+                    ).ExecuteLater(LayoutCheckIntervalMs);
+                }
+                else
+                {
+                    ShowFallbackSpotlight(step);
+                }
+                return;
+            }
+
+            Rect currentRect = targetElement.worldBound;
+            if (currentRect.width < 2 || currentRect.height < 2)
+            {
+                if (attempt < LayoutStableMaxAttempts)
+                {
+                    schedule.Execute(() =>
+                        WaitForStableBounds(step, targetElement, token, attempt + 1, lastRect, 0)
+                    ).ExecuteLater(LayoutCheckIntervalMs);
+                }
+                else
+                {
+                    ShowFallbackSpotlight(step);
+                }
+                return;
+            }
+
+            bool isStable = stableCount > 0 && AreRectsSimilar(currentRect, lastRect);
+            int nextStableCount = isStable ? stableCount + 1 : 1;
+
+            if (nextStableCount >= LayoutStableRequired)
+            {
+                ApplySpotlightForTarget(step, currentRect);
+                return;
+            }
+
+            if (attempt < LayoutStableMaxAttempts)
+            {
+                schedule.Execute(() =>
+                    WaitForStableBounds(step, targetElement, token, attempt + 1, currentRect, nextStableCount)
+                ).ExecuteLater(LayoutCheckIntervalMs);
+            }
+            else
+            {
+                ApplySpotlightForTarget(step, currentRect);
+            }
+        }
+
+        private void ApplySpotlightForTarget(OnboardingStep step, Rect targetWorldRect)
+        {
+            Rect overlayWorldBound = this.worldBound;
+            targetWorldRect.x -= overlayWorldBound.x;
+            targetWorldRect.y -= overlayWorldBound.y;
+
+            targetWorldRect.x -= step.SpotlightPadding.x;
+            targetWorldRect.y -= step.SpotlightPadding.y;
+            targetWorldRect.width += step.SpotlightPadding.x + step.SpotlightPadding.z;
+            targetWorldRect.height += step.SpotlightPadding.y + step.SpotlightPadding.w;
+
+            _targetSpotlightRect = targetWorldRect;
+            _needsLayoutUpdate = true;
+            StartAnimation(targetWorldRect);
+        }
+
+        private bool AreRectsSimilar(Rect a, Rect b)
+        {
+            return Mathf.Abs(a.x - b.x) < BoundsEpsilon &&
+                   Mathf.Abs(a.y - b.y) < BoundsEpsilon &&
+                   Mathf.Abs(a.width - b.width) < BoundsEpsilon &&
+                   Mathf.Abs(a.height - b.height) < BoundsEpsilon;
         }
         
         private void StartAnimation(Rect target)
@@ -255,8 +392,11 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         {
             if (!_isAnimating) 
             {
-                 // Even if not animating, ensure layout is correct in case of resize
-                 UpdateLayout(_targetSpotlightRect);
+                 if (_needsLayoutUpdate)
+                 {
+                     UpdateLayout(_targetSpotlightRect);
+                     _needsLayoutUpdate = false;
+                 }
                  return;
             }
             
@@ -271,6 +411,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 _animationProgress = 1f;
                 _isAnimating = false;
                 _currentSpotlightRect = _targetSpotlightRect;
+                _needsLayoutUpdate = false;
             }
             else
             {
@@ -416,7 +557,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             }
             else
             {
-                EndTour();
+                CompleteFlow();
             }
         }
         
@@ -444,7 +585,10 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             }
             
             // Update EditorPrefs
-            EditorPrefs.SetBool("com.yucp.devtools.packageexporter.onboarding.shown", true);
+            if (_recordCompletionPref)
+            {
+                EditorPrefs.SetBool("com.yucp.devtools.packageexporter.onboarding.shown", true);
+            }
             
             // Fade out
             this.style.opacity = 0;
@@ -454,9 +598,28 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 _onComplete?.Invoke();
             }).StartingIn(300);
         }
+
+        private void CompleteFlow()
+        {
+            _onFlowComplete?.Invoke();
+            if (_closeOnComplete)
+            {
+                EndTour();
+            }
+        }
+
+        private void SkipFlow()
+        {
+            _onFlowSkip?.Invoke();
+            if (_closeOnSkip)
+            {
+                EndTour();
+            }
+        }
         
         private int _scrollRetryCount = 0;
         private const int MaxScrollRetries = 10;
+        private const int MaxTargetResolveRetries = 12;
         
         private void EnsureElementVisible(VisualElement element)
         {
@@ -543,14 +706,27 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 if (current.ClassListContains("yucp-section"))
                 {
                     // Find toggle button in this section - look in header
-                    var header = current.Q(className: "yucp-section-header");
+                    var header = current.Q(className: "yucp-inspector-header");
+                    if (header == null)
+                    {
+                        header = current.Q(className: "yucp-section-header");
+                    }
                     if (header == null)
                     {
                         // Try finding any button in the section
                         header = current;
                     }
                     
-                    var toggleButton = header.Q<Button>();
+                    var toggleButton = header.Q<Button>(className: "yucp-section-toggle");
+                    if (toggleButton == null)
+                    {
+                        toggleButton = header.Q<Button>();
+                    }
+                    if (toggleButton != null)
+                    {
+                        TryExpandToggleButton(toggleButton, current);
+                        break;
+                    }
                     if (toggleButton != null && toggleButton.text != null)
                     {
                         // If button shows "▶" (collapsed), click it to expand
@@ -576,6 +752,27 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 }
                 current = current.hierarchy.parent;
             }
+        }
+
+        private void TryExpandToggleButton(Button toggleButton, VisualElement section)
+        {
+            if (toggleButton == null || toggleButton.text == null) return;
+
+            string buttonText = toggleButton.text;
+            bool isCollapsed = buttonText.Contains("\u25B6") || buttonText.Contains("â–¶");
+            if (!isCollapsed) return;
+
+            using (var clickEvent = ClickEvent.GetPooled())
+            {
+                clickEvent.target = toggleButton;
+                toggleButton.SendEvent(clickEvent);
+            }
+
+            section.MarkDirtyRepaint();
+            schedule.Execute(() =>
+            {
+                section.MarkDirtyRepaint();
+            }).ExecuteLater(100);
         }
 
         private float GetScrollOffsetForElement(ScrollView scrollView, VisualElement element)
@@ -709,7 +906,13 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             if (string.IsNullOrEmpty(step.TargetElementName))
                 return null;
             
-            var matches = _rootContainer.Query<VisualElement>().Where(e => e.name == step.TargetElementName).ToList();
+            string targetId = step.TargetElementName;
+            var matches = _rootContainer.Query<VisualElement>()
+                .Where(e =>
+                    e.name == targetId ||
+                    e.ClassListContains(targetId) ||
+                    e.viewDataKey == targetId)
+                .ToList();
             if (matches.Count == 0) return null;
             
             VisualElement best = null;
@@ -777,34 +980,6 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             return false;
         }
 
-        private void ScheduleSpotlightUpdate(VisualElement targetElement, OnboardingStep step)
-        {
-            if (targetElement == null) return;
-            
-            schedule.Execute(() =>
-            {
-                if (!IsUsableTarget(targetElement))
-                {
-                    ScheduleSpotlightUpdate(targetElement, step);
-                    return;
-                }
-                
-                Rect r = targetElement.worldBound;
-                
-                Rect overlayWorldBound = this.worldBound;
-                r.x -= overlayWorldBound.x;
-                r.y -= overlayWorldBound.y;
-                
-                r.x -= step.SpotlightPadding.x;
-                r.y -= step.SpotlightPadding.y;
-                r.width += step.SpotlightPadding.x + step.SpotlightPadding.z;
-                r.height += step.SpotlightPadding.y + step.SpotlightPadding.w;
-                
-                _targetSpotlightRect = r;
-                StartAnimation(r);
-            }).ExecuteLater(160);
-        }
-
         private string ParseRichText(string text)
         {
             if (string.IsNullOrEmpty(text)) return text;
@@ -814,8 +989,17 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
 
         private void OnGeometryChanged(GeometryChangedEvent evt)
         {
-            // Force update layout on resize
-            UpdateLayout(_isAnimating ? _currentSpotlightRect : _targetSpotlightRect);
+            _needsLayoutUpdate = true;
+
+            if (_steps == null || _currentStepIndex < 0 || _currentStepIndex >= _steps.Count)
+            {
+                UpdateLayout(_isAnimating ? _currentSpotlightRect : _targetSpotlightRect);
+                return;
+            }
+
+            var step = _steps[_currentStepIndex];
+            int token = ++_trackingToken;
+            schedule.Execute(() => ResolveTargetForStep(step, token, 0)).ExecuteLater(50);
         }
     }
 }

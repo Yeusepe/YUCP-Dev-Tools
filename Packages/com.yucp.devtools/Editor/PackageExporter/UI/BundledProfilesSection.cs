@@ -119,10 +119,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         Undo.RecordObject(profile, "Change Bundle Profiles");
                         profile.bundleIncludedProfiles = evt.newValue;
                         EditorUtility.SetDirty(profile);
+                        onUpdateDetails?.Invoke();
                     }
                 });
                 optionsContainer.Add(bundleToggle);
-                
+
                 // Also export separately option
                 var separateToggle = new Toggle("Also export bundled profiles separately")
                 {
@@ -137,10 +138,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         Undo.RecordObject(profile, "Change Export Separately");
                         profile.alsoExportIncludedSeparately = evt.newValue;
                         EditorUtility.SetDirty(profile);
+                        onUpdateDetails?.Invoke();
                     }
                 });
                 optionsContainer.Add(separateToggle);
-                
+
+                // Summary line: make it explicit whether export is one package or multiple
+                var summaryLabel = new Label(GetBundledExportSummary(profile));
+                summaryLabel.AddToClassList("yucp-label-secondary");
+                summaryLabel.style.marginTop = 6;
+                summaryLabel.style.whiteSpace = WhiteSpace.Normal;
+                summaryLabel.style.unityFontStyleAndWeight = FontStyle.Normal;
+                optionsContainer.Add(summaryLabel);
+
                 section.Add(optionsContainer);
             }
             
@@ -185,30 +195,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// <summary>
         /// Create a profile card for a bundled profile matching YUCP design
         /// </summary>
+        /// <summary>
+        /// Create a profile card for a bundled profile matching YUCP design
+        /// </summary>
         private static VisualElement CreateProfileCard(ExportProfile parent, ExportProfile bundled, Action onUpdateDetails)
         {
             var card = new VisualElement();
-            card.AddToClassList("yucp-card");
-            card.style.marginBottom = 8;
+            card.AddToClassList("yucp-bundled-profile-card");
             
-            // Top row: Icon, Name, Status, Remove button
-            var topRow = new VisualElement();
-            topRow.style.flexDirection = FlexDirection.Row;
-            topRow.style.alignItems = Align.Center;
-            topRow.style.marginBottom = 6;
-            
-            // Profile icon
+            // 1. Icon (Rounded container)
             var iconContainer = new VisualElement();
-            iconContainer.style.width = 32;
-            iconContainer.style.height = 32;
-            iconContainer.style.marginRight = 12;
-            iconContainer.style.flexShrink = 0;
+            iconContainer.AddToClassList("yucp-bundled-profile-icon-container");
             
             var iconImage = new Image();
             Texture2D profileIcon = bundled.icon;
             if (profileIcon == null)
             {
-                // Use Unity's default script icon
+                // Use Unity's default script icon or default asset
                 profileIcon = EditorGUIUtility.FindTexture("ScriptableObject Icon");
                 if (profileIcon == null)
                 {
@@ -216,33 +219,68 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
             iconImage.image = profileIcon;
-            iconImage.style.width = 32;
-            iconImage.style.height = 32;
-            iconImage.style.backgroundSize = new BackgroundSize(BackgroundSizeType.Cover);
+            iconImage.AddToClassList("yucp-bundled-profile-icon");
             iconContainer.Add(iconImage);
-            topRow.Add(iconContainer);
+            card.Add(iconContainer);
+
+            // 2. Content Column (Name + Details)
+            var contentCol = new VisualElement();
+            contentCol.AddToClassList("yucp-bundled-profile-content");
+
+            // Name Row (Name + Status)
+            var nameRow = new VisualElement();
+            nameRow.AddToClassList("yucp-bundled-profile-name-row");
             
-            // Profile name (clickable)
             var nameLabel = new Label(bundled.packageName ?? "Unnamed Profile");
-            nameLabel.AddToClassList("yucp-label");
-            nameLabel.style.flexGrow = 1;
-            nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-            nameLabel.RegisterCallback<MouseDownEvent>(evt =>
-            {
-                if (evt.button == 0) // Left click
-                {
-                    Selection.activeObject = bundled;
-                    EditorGUIUtility.PingObject(bundled);
-                }
-            });
-            topRow.Add(nameLabel);
-            
-            // Status indicator
+            nameLabel.AddToClassList("yucp-bundled-profile-name");
+            nameRow.Add(nameLabel);
+
+            // Status Badge
             var status = CompositeProfileResolver.GetProfileStatus(bundled);
             var statusBadge = CreateStatusBadge(status);
-            topRow.Add(statusBadge);
+            // Adjust badge margins for this context if needed, but default is left-margin 8 which is fine
+            nameRow.Add(statusBadge);
             
-            // Remove button
+            contentCol.Add(nameRow);
+
+            // Details Row (Version | Folder)
+            var detailsRow = new VisualElement();
+            detailsRow.AddToClassList("yucp-bundled-profile-details-row");
+
+            if (!string.IsNullOrEmpty(bundled.version))
+            {
+                var versionLabel = new Label($"v{bundled.version}");
+                versionLabel.AddToClassList("yucp-bundled-profile-detail-text");
+                detailsRow.Add(versionLabel);
+            }
+
+            if (bundled.foldersToExport != null && bundled.foldersToExport.Count > 0)
+            {
+                // Separator if we have version
+                if (!string.IsNullOrEmpty(bundled.version)) 
+                {
+                    var sep = new Label("•");
+                    sep.AddToClassList("yucp-bundled-profile-detail-text");
+                    sep.style.marginRight = 8;
+                    sep.style.fontSize = 8; // Smaller separator
+                    detailsRow.Add(sep);
+                }
+
+                string firstFolder = bundled.foldersToExport[0];
+                if (firstFolder.Length > 40)
+                {
+                    firstFolder = firstFolder.Substring(0, 15) + "..." + firstFolder.Substring(firstFolder.Length - 15);
+                }
+                
+                var folderLabel = new Label(firstFolder);
+                folderLabel.AddToClassList("yucp-bundled-profile-detail-text");
+                detailsRow.Add(folderLabel);
+            }
+            
+            contentCol.Add(detailsRow);
+            card.Add(contentCol);
+
+            // 3. Remove Button
             var removeButton = new Button(() =>
             {
                 if (EditorUtility.DisplayDialog(
@@ -259,49 +297,39 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             });
             removeButton.text = "×";
-            removeButton.AddToClassList("yucp-button");
-            removeButton.AddToClassList("yucp-button-icon");
-            removeButton.style.width = 32;
-            removeButton.style.height = 32;
-            removeButton.style.marginLeft = 8;
-            topRow.Add(removeButton);
+            removeButton.AddToClassList("yucp-bundled-profile-remove-btn");
+            card.Add(removeButton);
             
-            card.Add(topRow);
-            
-            // Info row: Version and folder
-            var infoRow = new VisualElement();
-            infoRow.style.flexDirection = FlexDirection.Row;
-            infoRow.style.marginLeft = 44; // Align with name (icon width + margin)
-            
-            // Version badge
-            if (!string.IsNullOrEmpty(bundled.version))
+            // Click to Ping
+            card.RegisterCallback<MouseDownEvent>(evt =>
             {
-                var versionBadge = new Label($"v{bundled.version}");
-                versionBadge.AddToClassList("yucp-label-secondary");
-                versionBadge.style.marginRight = 8;
-                infoRow.Add(versionBadge);
-            }
-            
-            // Primary folder path
-            if (bundled.foldersToExport != null && bundled.foldersToExport.Count > 0)
-            {
-                string firstFolder = bundled.foldersToExport[0];
-                if (firstFolder.Length > 50)
+                if (evt.button == 0) // Left click
                 {
-                    firstFolder = firstFolder.Substring(0, 47) + "...";
+                    Selection.activeObject = bundled;
+                    EditorGUIUtility.PingObject(bundled);
                 }
-                
-                var folderLabel = new Label(firstFolder);
-                folderLabel.AddToClassList("yucp-label-secondary");
-                folderLabel.style.flexGrow = 1;
-                infoRow.Add(folderLabel);
-            }
-            
-            card.Add(infoRow);
+            });
             
             return card;
         }
         
+        /// <summary>
+        /// Returns a short summary of how bundled profiles will be exported (one package vs multiple).
+        /// </summary>
+        private static string GetBundledExportSummary(ExportProfile profile)
+        {
+            if (profile == null) return "";
+            bool onePackage = profile.bundleIncludedProfiles;
+            bool alsoSeparate = profile.alsoExportIncludedSeparately;
+            if (onePackage && alsoSeparate)
+                return "Export: One composite package containing all assets, plus each bundled profile as a separate package.";
+            if (onePackage)
+                return "Export: All assets from bundled profiles will be merged into one package.";
+            if (alsoSeparate)
+                return "Export: Each bundled profile will be exported as a separate package (no composite merge).";
+            return "Export: Enable an option above to include bundled profile assets.";
+        }
+
         /// <summary>
         /// Create a status badge for a profile
         /// </summary>
@@ -542,7 +570,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (selectedProfiles.Count > 0)
                 {
                     Undo.RecordObject(parent, "Update Bundled Profiles");
-                    
+
                     // Remove profiles that were unselected
                     var currentBundled = new HashSet<ExportProfile>(parent.GetIncludedProfiles());
                     foreach (var profile in currentBundled)
@@ -552,7 +580,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             parent.RemoveIncludedProfile(profile);
                         }
                     }
-                    
+
                     // Add newly selected profiles
                     foreach (var profile in selectedProfiles)
                     {
@@ -561,11 +589,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             parent.AddIncludedProfile(profile);
                         }
                     }
-                    
+
                     EditorUtility.SetDirty(parent);
                     AssetDatabase.SaveAssets();
-                    onUpdateDetails?.Invoke();
                     CloseOverlay();
+                    // Defer refresh so the overlay is fully closed and the details pane can rebuild
+                    UnityEditor.EditorApplication.delayCall += () =>
+                    {
+                        onUpdateDetails?.Invoke();
+                    };
                 }
             })
             {

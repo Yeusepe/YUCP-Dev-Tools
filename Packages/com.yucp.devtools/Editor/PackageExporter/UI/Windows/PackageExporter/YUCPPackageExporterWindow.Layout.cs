@@ -49,8 +49,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var mainContainer = new VisualElement();
             mainContainer.AddToClassList("yucp-main-container");
             
-            // Top Bar
-            mainContainer.Add(CreateTopBar());
+            // Top Bar - REMOVED in UI Redesign
+            // mainContainer.Add(CreateTopBar());
 
             // Content Container (Left + Right Panes)
             _contentContainer = new VisualElement();
@@ -63,6 +63,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _overlayBackdrop.style.display = DisplayStyle.None;
             _overlayBackdrop.style.visibility = Visibility.Hidden;
             _contentContainer.Add(_overlayBackdrop);
+            
+            // Initialize Compact Mode
+            _isCompactMode = EditorPrefs.GetBool(CompactModeKey, false);
+            if (_isCompactMode)
+            {
+                root.AddToClassList("yucp-compact-mode");
+            }
             
             // Load saved width or use default (shared between overlay and normal pane)
             float savedWidth = EditorPrefs.GetFloat(LeftPaneWidthKey, DefaultLeftPaneWidth);
@@ -111,6 +118,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             root.Add(mainContainer);
             
             // Optional non-intrusive support toast (appears rarely)
+            // MOVED to Sidebar above profile actions
+            /*
             _supportToast = CreateSupportToast();
             if (_supportToast != null)
             {
@@ -129,6 +138,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }).StartingIn(100);
             }
+            */
             
             // Schedule delayed rename checks
             root.schedule.Execute(CheckDelayedRename).Every(100);

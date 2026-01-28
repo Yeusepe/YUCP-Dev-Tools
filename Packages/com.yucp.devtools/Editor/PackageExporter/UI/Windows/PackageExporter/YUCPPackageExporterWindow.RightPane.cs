@@ -34,9 +34,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _profileDetailsContainer.style.flexGrow = 0;
             _profileDetailsContainer.style.flexShrink = 1;
             _profileDetailsContainer.style.flexBasis = StyleKeyword.Auto;
+            _profileDetailsContainer.style.flexBasis = StyleKeyword.Auto;
             _rightPaneScrollView.Add(_profileDetailsContainer);
             
+            // Top Navigation Bar (Sticky Header)
+            _topNavBar = new TopNavBar(OnTopNavClicked, ShowUnifiedMenu, ToggleOverlay);
+            _topNavBar.style.display = DisplayStyle.None; // Hidden by default until profile loaded
+            
+            
+            rightPane.Add(_topNavBar); 
+            
+            
             rightPane.Add(_rightPaneScrollView);
+            
+            _topNavBar.BringToFront();
+            
+            
+            _rightPaneScrollView.verticalScroller.valueChanged += OnRightPaneScroll;
+            
             return rightPane;
         }
 
@@ -243,9 +258,196 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
+        private MotionHandle _topBarMotion;
+
         private void OnExportButtonClicked()
         {
             ToggleExportOptions();
+        }
+
+        private void OnTopNavClicked(string targetId)
+        {
+            if (_profileDetailsContainer == null) return;
+
+            VisualElement target = null;
+            switch(targetId)
+            {
+                case "General":
+                    target = _profileDetailsContainer.Q("section-metadata");
+                    break;
+                case "Options":
+                    target = _profileDetailsContainer.Q("section-settings");
+                    break;
+                case "Folders":
+                    target = _profileDetailsContainer.Q("section-content");
+                    break;
+                case "Files":
+                    target = _profileDetailsContainer.Q("section-files");
+                    if (target == null) target = _profileDetailsContainer.Q("section-filters");
+                    break;
+                case "Dependencies":
+                    target = _profileDetailsContainer.Q("section-dependencies");
+                    break;
+                case "Security":
+                    target = _profileDetailsContainer.Q("section-advanced");
+                    if (target == null) target = _profileDetailsContainer.Q("section-signing");
+                    break;
+                case "Actions":
+                    target = _profileDetailsContainer.Q("section-actions");
+                    break;
+            }
+
+            if (target != null)
+            {
+                ScrollToSection(target);
+            }
+        }
+
+        private void OnRightPaneScroll(float offset)
+        {
+            if (_profileDetailsContainer == null || _topNavBar == null) return;
+            // Only update if visible
+            if (_profileDetailsContainer.style.display == DisplayStyle.None) return;
+
+            var sections = new[]
+            {
+                ("section-metadata", "General"),
+                ("section-settings", "Options"),
+                ("section-content", "Folders"),
+                ("section-files", "Files"),
+                ("section-filters", "Files"),
+                ("section-dependencies", "Dependencies"),
+                ("section-advanced", "Security"),
+                ("section-signing", "Security"),
+                ("section-actions", "Actions")
+            };
+
+            float scrollY = _rightPaneScrollView.verticalScroller.value;
+            float topPadding = GetTopNavHeight() + 12f;
+            string activeTab = null;
+
+            foreach (var (sectionId, tabId) in sections)
+            {
+                var section = _profileDetailsContainer.Q(sectionId);
+                if (section == null) continue;
+
+                float sectionY = GetElementYInContent(_rightPaneScrollView, section);
+                if (float.IsNaN(sectionY)) continue;
+
+                if (sectionY - topPadding <= scrollY + 1f)
+                {
+                    activeTab = tabId;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(activeTab))
+            {
+                _topNavBar.SetActiveTab(activeTab);
+            }
+        }
+
+        private void ScrollToSection(VisualElement target)
+        {
+            if (_rightPaneScrollView == null || target == null) return;
+
+            float topPadding = GetTopNavHeight() + 12f;
+            float targetOffset = GetElementYInContent(_rightPaneScrollView, target) - topPadding;
+
+            if (float.IsNaN(targetOffset)) return;
+
+            float maxScroll = _rightPaneScrollView.verticalScroller.highValue;
+            if (targetOffset < 0) targetOffset = 0;
+            if (targetOffset > maxScroll) targetOffset = maxScroll;
+
+            _rightPaneScrollView.verticalScroller.value = targetOffset;
+        }
+
+        private float GetElementYInContent(ScrollView scrollView, VisualElement element)
+        {
+            if (scrollView == null || element == null) return float.NaN;
+            var content = scrollView.contentContainer;
+
+            try
+            {
+                Vector2 elementLocalPos = content.WorldToLocal(element.worldBound.position);
+                float y = elementLocalPos.y;
+                if (!float.IsNaN(y)) return y;
+            }
+            catch { }
+
+            float sumY = 0f;
+            VisualElement current = element;
+            while (current != null && current != content)
+            {
+                if (!float.IsNaN(current.layout.y))
+                    sumY += current.layout.y;
+                current = current.hierarchy.parent;
+            }
+
+            return sumY;
+        }
+
+        private float GetTopNavHeight()
+        {
+            if (_topNavBar == null) return 0f;
+            float h = _topNavBar.resolvedStyle.height;
+            if (h <= 0) h = _topNavBar.layout.height;
+            return h > 0 ? h : 0f;
+        }
+        
+        private void ShowUnifiedMenu()
+        {
+            var menu = new GenericMenu();
+
+            // Export Submenu
+            foreach (var item in GetExportMenuItems())
+            {
+                 if (item.IsSeparator) menu.AddSeparator("Export/");
+                 else menu.AddItem(new GUIContent($"Export/{item.Label}"), false, () => item.Callback?.Invoke());
+            }
+
+            menu.AddSeparator("");
+
+            // Texture Array Builder
+            menu.AddItem(new GUIContent("Texture Array Builder"), false, () => {
+                var windowType = System.Type.GetType("YUCP.DevTools.Editor.TextureArrayBuilder.TextureArrayBuilderWindow, yucp.devtools.Editor");
+                if (windowType != null)
+                {
+                    var method = windowType.GetMethod("ShowWindow", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    method?.Invoke(null, null);
+                }
+            });
+
+            menu.AddSeparator("");
+
+            // Utilities Submenu
+            foreach (var item in GetUtilitiesMenuItems())
+            {
+                 if (item.IsSeparator) menu.AddSeparator("Utilities/");
+                 else menu.AddItem(new GUIContent($"Utilities/{item.Label}"), false, () => item.Callback?.Invoke());
+            }
+
+            // Debug Submenu
+            foreach (var item in GetDebugMenuItems())
+            {
+                 if (item.IsSeparator) menu.AddSeparator("Debug/");
+                 else menu.AddItem(new GUIContent($"Debug/{item.Label}"), false, () => item.Callback?.Invoke());
+            }
+
+            menu.AddSeparator("");
+
+            // Help Submenu
+            foreach (var item in GetHelpMenuItems())
+            {
+                 if (item.IsSeparator) menu.AddSeparator("Help/");
+                 else menu.AddItem(new GUIContent($"Help/{item.Label}"), false, () => item.Callback?.Invoke());
+            }
+
+            // Compact Mode
+            menu.AddSeparator("");
+            menu.AddItem(new GUIContent("Compact View"), _isCompactMode, ToggleCompactMode);
+
+            menu.ShowAsContext();
         }
     }
 }
