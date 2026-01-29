@@ -79,7 +79,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var warnings = new List<string>();
             
-            // Check for derived patches with missing origin files
+            // Check for derived FBXs with missing origin files
             if (profile.discoveredAssets != null)
             {
                 foreach (var asset in profile.discoveredAssets)
@@ -90,7 +90,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         
                         if (string.IsNullOrEmpty(basePath))
                         {
-                            warnings.Add($"Derived patch '{assetName}' is missing its origin file");
+                            warnings.Add($"Derived FBX '{assetName}' is missing its origin file");
                         }
                         else
                         {
@@ -104,7 +104,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             
                             if (!File.Exists(baseAssetPath))
                             {
-                                warnings.Add($"Derived patch '{assetName}' origin file not found: {basePath}");
+                                warnings.Add($"Derived FBX '{assetName}' origin file not found: {basePath}");
                             }
                         }
                     }

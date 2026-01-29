@@ -266,7 +266,7 @@ Development tools for YUCP package creators and avatar variant management.
 - **Bundled Profiles**: Add other export profiles to bundle their assets together
 - **Custom Version Rules**: Create custom versioning with `Assets > Create > YUCP > Custom Version Rule`
 - **@bump Directives**: Add `// @bump rule_name` comments in code files for automatic version bumping
-- **Derived FBX**: Mark FBX files as derived in Model Importer to export as patches
+- **Derived FBX**: Mark FBX files as derived in Model Importer to export as derived FBXs
 - **Package Signing**: Configure certificates in `Tools > YUCP > Others > Development > Package Signing Settings`
 
 #### Keyboard Shortcuts

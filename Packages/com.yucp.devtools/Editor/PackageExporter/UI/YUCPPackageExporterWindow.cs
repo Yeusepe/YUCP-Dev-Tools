@@ -211,6 +211,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private List<FaviconRequestData> faviconRequests = new List<FaviconRequestData>();
         private VisualElement _signingSectionElement;
         private float lastGifUpdateTime = 0f;
-        private const string DerivedFbxWikiUrl = "https://github.com/Yeusepe/YUCP-Dev-Tools";
+        /// <summary>Main Package Exporter wiki (Help / Documentation).</summary>
+        private const string PackageExporterWikiUrl = "https://github.com/Yeusepe/YUCP-Dev-Tools/wiki/Package-Exporter";
+        /// <summary>Derived FBXs section (onboarding "Learn more" link).</summary>
+        private const string DerivedFbxWikiUrl = "https://github.com/Yeusepe/YUCP-Dev-Tools/wiki/Package-Exporter#derived-fbxs";
     }
 }

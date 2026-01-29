@@ -155,13 +155,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     summaryBox.Add(summaryText);
                     section.Add(summaryBox);
 					
-					// Derived patch summary
+					// Derived FBX summary
 					int derivedCount = profile.discoveredAssets.Count(a => IsDerivedFbx(a.assetPath, out _, out _));
 					if (derivedCount > 0)
 					{
 						var derivedBox = new VisualElement();
 						derivedBox.AddToClassList("yucp-help-box");
-						var derivedText = new Label($"{derivedCount} FBX asset(s) are marked to export as Derived Patch packages.");
+						var derivedText = new Label($"{derivedCount} FBX asset(s) are marked to export as derived FBX packages.");
 						derivedText.AddToClassList("yucp-help-box-text");
 						derivedBox.Add(derivedText);
 						section.Add(derivedBox);

@@ -18,7 +18,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			
 			// Main Section Header
 			GUILayout.Label("YUCP Import Options", EditorStyles.boldLabel);
-			EditorGUILayout.HelpBox("Configure how this asset is exported as a lightweight patch package. Patches allow you to distribute modifications without including the original large assets.", MessageType.Info);
+			EditorGUILayout.HelpBox("Configure how this asset is exported as a lightweight derived FBX package. Derived FBXs allow you to distribute modifications without including the original large assets.", MessageType.Info);
 			
 			EditorGUILayout.Space(5);
 			DerivedSettings settings = null;
@@ -41,7 +41,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				using (new EditorGUILayout.HorizontalScope())
 				{
 					var headerStyle = new GUIStyle(EditorStyles.boldLabel);
-					settings.isDerived = EditorGUILayout.ToggleLeft("Enable Patch Export", settings.isDerived, headerStyle);
+					settings.isDerived = EditorGUILayout.ToggleLeft("Export as Derived FBX", settings.isDerived, headerStyle);
 				}
 
 				if (settings.isDerived)

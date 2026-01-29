@@ -65,8 +65,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     "export-inspector-section" // Need to ensure name exists
                 ),
                 new OnboardingStep(
-                    "Derived Patches", 
-                    "Manage **Derived Patches**. These let you share changes to 3D models (FBX files) without including the original file. It uses a technique called **binary patching** to create a small file containing only your modifications, which is perfect for editing protected or paid assets you can't redistribute.",
+                    "Derived FBXs", 
+                    "Manage **Derived FBXs**. These let you share changes to 3D models (FBX files) without including the original file. It uses a technique called **binary patching** to create a small file containing only your modifications, which is perfect for editing protected or paid assets you can't redistribute.",
                     "derived-fbx-section" // Need to ensure name exists
                 ),
                 new OnboardingStep(
@@ -152,12 +152,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 new OnboardingStep(
                     "Derived FBX Walkthrough",
-                    "This flow shows how **Derived FBX patches** work and how to configure them. We'll use the Racoon demo asset.",
+                    "This flow shows how **derived FBXs** work and how to configure them. We'll use the Racoon demo asset.",
                     null
                 ),
                 new OnboardingStep(
                     "Select the Demo FBX",
-                    "We’ve selected **Racoon.fbx**. This Inspector now shows **YUCP Import Options** for patch export.",
+                    "We’ve selected **Racoon.fbx**. This Inspector now shows **YUCP Import Options** for derived FBX export.",
                     null
                 )
                 {
@@ -167,8 +167,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 },
                 new OnboardingStep(
-                    "Enable Patch Export",
-                    "Toggle **Enable Patch Export** to mark this FBX as a derived patch.",
+                    "Export as Derived FBX",
+                    "Toggle **Export as Derived FBX** to mark this FBX as a derived FBX.",
                     null
                 ),
                 new OnboardingStep(
@@ -178,7 +178,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 ),
                 new OnboardingStep(
                     "Optional Metadata",
-                    "You can set **Display Name** and **Category** for how the patch appears to users.",
+                    "You can set **Display Name** and **Category** for how the derived FBX appears to users.",
                     null
                 ),
                 new OnboardingStep(

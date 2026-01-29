@@ -406,10 +406,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (isDerivedFbx)
             {
                 bool baseMissing = string.IsNullOrEmpty(derivedBasePath);
-                var derivedBadge = new Label(baseMissing ? "MISSING" : "PATCH");
+                var derivedBadge = new Label(baseMissing ? "MISSING" : "DERIVED");
                 derivedBadge.AddToClassList("yucp-tree-status-badge");
                 derivedBadge.AddToClassList(baseMissing ? "yucp-tree-badge-warning" : "yucp-tree-badge-derived");
-                derivedBadge.tooltip = baseMissing ? "Derived: Base Missing" : "Derived Patch";
+                derivedBadge.tooltip = baseMissing ? "Derived: Base Missing" : "Derived FBX";
                 badges.Add(derivedBadge);
             }
 

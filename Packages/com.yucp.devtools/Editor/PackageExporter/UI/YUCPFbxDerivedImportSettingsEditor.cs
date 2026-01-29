@@ -7,7 +7,7 @@ using UnityEngine;
 namespace YUCP.DevTools.Editor.PackageExporter
 {
 	/// <summary>
-	/// Extends the FBX (ModelImporter) inspector with a lightweight "Export As Patch" section.
+	/// Extends the FBX (ModelImporter) inspector with a lightweight "Export as Derived FBX" section.
 	/// Stores settings in AssetImporter.userData as JSON.
 	/// This editor preserves Unity's default ModelImporter inspector (including tabs) and adds the YUCP UI at the end.
 	/// </summary>
@@ -250,7 +250,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				}
 			}
 
-			// Add our custom YUCP Patch Export UI
+			// Add our custom YUCP Derived FBX Export UI
 			if (targets != null && targets.Length > 0 && targets[0] is ModelImporter importer)
 			{
 				YUCPFbxDerivedImportSettingsGUI.Draw(importer);

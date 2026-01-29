@@ -469,7 +469,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     if (!hasDerivedFbxAsset || !hasHdiff)
                     {
-                        Debug.LogWarning("[PackageBuilder] Derived FBX patching is enabled, but expected patch artifacts were not validated for export. " +
+                        Debug.LogWarning("[PackageBuilder] Derived FBX export is enabled, but expected derived FBX artifacts were not validated for export. " +
                                          "This may result in derived FBXs not being recreated on import.");
                     }
                 }
@@ -934,7 +934,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         else
                         {
                             Debug.LogWarning($"[PackageBuilder] FBX {assetPath} is marked as derived but has no base FBX assigned. " +
-                                $"Please add at least one base FBX in the ModelImporter inspector. This FBX will NOT be converted to a PatchPackage.");
+                                $"Please add at least one base FBX in the ModelImporter inspector. This FBX will NOT be converted to a derived FBX package.");
                         }
                     }
                 }
@@ -949,13 +949,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (fbxCount > 0 && derivedFbxPaths.Count == 0)
             {
                 Debug.LogWarning($"[PackageBuilder] Found {fbxCount} FBX(s) in export, but none are marked as 'derived'. " +
-                    $"If any of these FBXs are modifications of a base FBX, mark them as 'Export As Patch (Derived)' in the ModelImporter inspector " +
-                    $"and assign the base FBX. Otherwise, the full FBX will be exported instead of a PatchPackage.");
+                    $"If any of these FBXs are modifications of a base FBX, mark them as 'Export as Derived FBX' in the ModelImporter inspector " +
+                    $"and assign the base FBX. Otherwise, the full FBX will be exported instead of a derived FBX package.");
             }
             
             if (derivedFbxPaths.Count == 0) return false;
             
-            progressCallback?.Invoke(progress, $"Converting {derivedFbxPaths.Count} derived FBX file(s) into PatchPackages...");
+            progressCallback?.Invoke(progress, $"Converting {derivedFbxPaths.Count} derived FBX file(s) into derived FBX packages...");
             
             EnsureAuthoringFolder();
             
@@ -968,7 +968,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 fbxIndex++;
                 string fbxName = Path.GetFileName(modifiedPath);
-                progressCallback?.Invoke(progress, $"Building patch ({fbxIndex}/{fbxTotal}): {fbxName}");
+                progressCallback?.Invoke(progress, $"Building derived FBX ({fbxIndex}/{fbxTotal}): {fbxName}");
                 
                 // Normalize path for AssetImporter
                 string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
@@ -1056,7 +1056,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     if (!PatchBuilder.CreateEncryptedPatchEntries(basePaths, baseGuids, normalizedModifiedPath, hints.friendlyName, out _, out var entries))
                     {
-                        Debug.LogError($"[PackageBuilder] Failed to create encrypted patch for {modifiedPath}. The FBX will be exported as-is.");
+                        Debug.LogError($"[PackageBuilder] Failed to create derived FBX asset for {modifiedPath}. The FBX will be exported as-is.");
                         continue;
                     }
                     
@@ -1217,8 +1217,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[PackageBuilder] Failed to build patch for derived FBX {modifiedPath}: {ex.Message}\n{ex.StackTrace}");
-                    Debug.LogError($"[PackageBuilder] The FBX will be exported as-is instead of being converted to a PatchPackage. " +
+                    Debug.LogError($"[PackageBuilder] Failed to build derived FBX for {modifiedPath}: {ex.Message}\n{ex.StackTrace}");
+                    Debug.LogError($"[PackageBuilder] The FBX will be exported as-is instead of being converted to a derived FBX package. " +
                         $"Please check that the base FBX exists and both FBXs have compatible mesh structures.");
                     // Keep FBX if patch building completely failed - let user export the FBX as-is
                 }
@@ -2177,7 +2177,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // 2c. Inject patch runtime scripts if patch assets are present
                 if (hasPatchAssets)
                 {
-                    progressCallback?.Invoke(0.70f, "Injecting patch runtime scripts...");
+                    progressCallback?.Invoke(0.70f, "Injecting derived FBX runtime scripts...");
                     
                     string[] patchScripts = new string[]
                     {

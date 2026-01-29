@@ -921,6 +921,26 @@ Button:active {
     text-overflow: ellipsis;
 }
 
+/* Form rows in dependency cards: label on top so long titles (e.g. "Custom VPM Index URL") don't overlap */
+.yucp-dependency-card .yucp-form-row {
+    flex-direction: column;
+    align-items: stretch;
+    margin-bottom: 8px;
+}
+
+.yucp-dependency-card .yucp-form-label {
+    width: 100%;
+    margin-bottom: 4px;
+    margin-right: 0;
+    white-space: normal;
+    flex-shrink: 0;
+}
+
+.yucp-dependency-card .yucp-form-field {
+    min-width: 0;
+    margin-left: 0;
+}
+
 .yucp-window-narrow .yucp-dependency-card {
     width: 100%;
     max-width: 100%;

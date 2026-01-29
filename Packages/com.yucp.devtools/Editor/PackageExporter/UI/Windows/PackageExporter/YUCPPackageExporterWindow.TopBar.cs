@@ -165,7 +165,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     Label = "Documentation",
                     Tooltip = "Open online documentation",
-                    Callback = () => Application.OpenURL("https://github.com/Yeusepe/YUCP-Components")
+                    Callback = () => Application.OpenURL(PackageExporterWikiUrl)
                 }
             };
         }

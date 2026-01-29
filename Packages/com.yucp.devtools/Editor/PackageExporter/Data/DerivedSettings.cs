@@ -10,7 +10,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
     public class DerivedSettings
     {
         /// <summary>
-        /// Whether this FBX should be exported as a derived patch.
+        /// Whether this FBX should be exported as a derived FBX.
         /// </summary>
         public bool isDerived;
 

@@ -5,7 +5,7 @@ using UnityEngine;
 namespace YUCP.DevTools.Editor.PackageExporter
 {
 	/// <summary>
-	/// Distributable patch package that describes semantic operations to transform a base FBX (sourceManifestId)
+	/// Distributable derived FBX package that describes semantic operations to transform a base FBX (sourceManifestId)
 	/// into the author's modified version without shipping the original FBX.
 	/// </summary>
 	public class PatchPackage : ScriptableObject
