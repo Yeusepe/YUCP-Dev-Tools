@@ -33,22 +33,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             bool shiftPressed = evt.shiftKey;
             bool altPressed = evt.altKey;
 
-            // Let text controls handle standard editing shortcuts.
-            if (isTextEditingContext && modifierPressed && !altPressed)
+            // When typing in any text field, don't run global shortcuts.
+            // Let the focused control handle the event.
+            if (isTextEditingContext)
             {
-                // Note: we intentionally do NOT StopPropagation here.
-                // We want the focused text field to receive Ctrl+A/Z/Y/C/X/V, etc.
-                if (evt.keyCode == KeyCode.A ||
-                    evt.keyCode == KeyCode.C ||
-                    evt.keyCode == KeyCode.X ||
-                    evt.keyCode == KeyCode.V ||
-                    evt.keyCode == KeyCode.Z ||
-                    evt.keyCode == KeyCode.Y)
-                {
-                    return;
-                }
+                return;
             }
-            
+
             // Standard global shortcuts (only when NOT editing text)
             if (!isTextEditingContext && modifierPressed && evt.keyCode == KeyCode.Z && !shiftPressed)
             {
