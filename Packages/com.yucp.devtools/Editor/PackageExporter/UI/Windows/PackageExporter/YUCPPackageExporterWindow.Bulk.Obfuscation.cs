@@ -166,7 +166,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 var presetRow = CreateFormRow("Obfuscation Preset");
                 var presetField = new EnumField(presets[0]);
-                presetField.AddToClassList("yucp-form-field");
+                presetField.AddToClassList("yucp-dropdown");
                 presetField.RegisterValueChangedCallback(evt =>
                 {
                     ApplyToAllSelected(profile =>

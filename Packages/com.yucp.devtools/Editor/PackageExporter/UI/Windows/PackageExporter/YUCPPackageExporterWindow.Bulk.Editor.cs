@@ -435,7 +435,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 var strategyRow = CreateFormRow("Increment Strategy");
                 var strategyField = new EnumField(strategies[0]);
-                strategyField.AddToClassList("yucp-form-field");
+                strategyField.AddToClassList("yucp-dropdown");
                 strategyField.RegisterValueChangedCallback(evt =>
                 {
                     ApplyToAllSelected(profile =>

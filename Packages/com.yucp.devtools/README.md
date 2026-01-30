@@ -326,6 +326,7 @@ The Model Revision Wizard provides a guided setup process for configuring varian
 For detailed documentation:
 - **Package Exporter Guide**: See `/Editor/PackageExporter/Templates/README_Template.md`
 - **Custom Version Rules**: See `/Editor/PackageExporter/CUSTOM_VERSION_RULES.md`
+- **CLI & GitHub Actions**: See `/Editor/PackageExporter/CLI-and-GitHub-Actions.md`
 - **Version Rule Examples**: See `/Editor/PackageExporter/Examples/README.md`
 - **Model Revision Manager**: See component tooltips and inline help
 - **YUCP Components**: https://github.com/Yeusepe/YUCP-Components

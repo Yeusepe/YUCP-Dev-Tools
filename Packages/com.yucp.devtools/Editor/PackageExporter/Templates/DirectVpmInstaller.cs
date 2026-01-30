@@ -31,7 +31,22 @@ namespace YUCP.DirectVpmInstaller
             CleanupInstallerScript();
 
             // Find any YUCP temp install JSON files
-            string[] tempJsonFiles = Directory.GetFiles(Application.dataPath, "YUCP_TempInstall_*.json", SearchOption.TopDirectoryOnly);
+            string[] tempJsonFiles = Array.Empty<string>();
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string installedRoot = Path.Combine(projectRoot, "Packages", "yucp.installed-packages");
+                if (Directory.Exists(installedRoot))
+                {
+                    tempJsonFiles = Directory.GetFiles(installedRoot, "YUCP_TempInstall_*.json", SearchOption.AllDirectories);
+                }
+            }
+            catch { }
+
+            if (tempJsonFiles.Length == 0)
+            {
+                tempJsonFiles = Directory.GetFiles(Application.dataPath, "YUCP_TempInstall_*.json", SearchOption.TopDirectoryOnly);
+            }
             
             if (tempJsonFiles.Length == 0)
             {
@@ -601,9 +616,18 @@ namespace YUCP.DirectVpmInstaller
                 CleanupInstallerScript();
                 
                 // Find and delete the installer script itself
-                string editorPath = Path.Combine(Application.dataPath, "Editor");
-                if (Directory.Exists(editorPath))
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string[] editorPaths = new string[]
                 {
+                    Path.Combine(Application.dataPath, "Editor"),
+                    Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor")
+                };
+
+                foreach (string editorPath in editorPaths)
+                {
+                    if (!Directory.Exists(editorPath))
+                        continue;
+
                     string[] installerScripts = Directory.GetFiles(editorPath, "YUCP_Installer_*.cs", SearchOption.TopDirectoryOnly);
                     foreach (string installerPath in installerScripts)
                     {
@@ -737,6 +761,16 @@ namespace YUCP.DirectVpmInstaller
 
                 // Read package name from YUCP_PackageInfo.json if present
                 string metadataDiskPath = Path.Combine(Application.dataPath, "YUCP_PackageInfo.json");
+                try
+                {
+                    if (Directory.Exists(installedRoot))
+                    {
+                        string[] candidates = Directory.GetFiles(installedRoot, "YUCP_PackageInfo.json", SearchOption.AllDirectories);
+                        if (candidates.Length > 0)
+                            metadataDiskPath = candidates[0];
+                    }
+                }
+                catch { }
                 string packageFolderName = null;
 
                 if (File.Exists(metadataDiskPath))
@@ -768,7 +802,10 @@ namespace YUCP.DirectVpmInstaller
                 }
 
                 // Move YUCP_PackageInfo.json into the installed-packages container if it exists (disk-level move)
-                if (File.Exists(metadataDiskPath))
+                bool metadataAlreadyInInstalled = !string.IsNullOrEmpty(metadataDiskPath) &&
+                    metadataDiskPath.StartsWith(installedRoot, StringComparison.OrdinalIgnoreCase);
+
+                if (File.Exists(metadataDiskPath) && !metadataAlreadyInInstalled)
                 {
                     string targetMetadataDiskPath = Path.Combine(packageFolderDiskPath, "YUCP_PackageInfo.json");
                     try
@@ -1119,32 +1156,41 @@ namespace YUCP.DirectVpmInstaller
             try
             {
                 // Find and delete all YUCP installer scripts
-                string editorPath = Path.Combine(Application.dataPath, "Editor");
-                if (!Directory.Exists(editorPath))
-                    return;
-                
-                // Find all YUCP installer files (NOT guardian - guardian stays permanently)
-                string[] installerFiles = Directory.GetFiles(editorPath, "YUCP_Installer_*.cs", SearchOption.TopDirectoryOnly);
-                string[] installerTxnFiles = Directory.GetFiles(editorPath, "YUCP_InstallerTxn_*.cs", SearchOption.TopDirectoryOnly);
-                string[] installerHealthToolsFiles = Directory.GetFiles(editorPath, "YUCP_InstallerHealthTools_*.cs", SearchOption.TopDirectoryOnly);
-                string[] installerAsmDefs = Directory.GetFiles(editorPath, "YUCP_Installer_*.asmdef", SearchOption.TopDirectoryOnly);
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string[] editorPaths = new string[]
+                {
+                    Path.Combine(Application.dataPath, "Editor"),
+                    Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor")
+                };
                 
                 int deletedCount = 0;
                 
-                foreach (string file in installerFiles.Concat(installerTxnFiles).Concat(installerHealthToolsFiles).Concat(installerAsmDefs))
+                foreach (string editorPath in editorPaths)
                 {
-                    try
+                    if (!Directory.Exists(editorPath))
+                        continue;
+                    
+                    // Find all YUCP installer files (NOT guardian - guardian stays permanently)
+                    string[] installerFiles = Directory.GetFiles(editorPath, "YUCP_Installer_*.cs", SearchOption.TopDirectoryOnly);
+                    string[] installerTxnFiles = Directory.GetFiles(editorPath, "YUCP_InstallerTxn_*.cs", SearchOption.TopDirectoryOnly);
+                    string[] installerHealthToolsFiles = Directory.GetFiles(editorPath, "YUCP_InstallerHealthTools_*.cs", SearchOption.TopDirectoryOnly);
+                    string[] installerAsmDefs = Directory.GetFiles(editorPath, "YUCP_Installer_*.asmdef", SearchOption.TopDirectoryOnly);
+                    
+                    foreach (string file in installerFiles.Concat(installerTxnFiles).Concat(installerHealthToolsFiles).Concat(installerAsmDefs))
                     {
-                        File.Delete(file);
-                        string metaFile = file + ".meta";
-                        if (File.Exists(metaFile))
-                            File.Delete(metaFile);
-                        
-                        deletedCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[DirectVpmInstaller] Failed to delete installer file '{Path.GetFileName(file)}': {ex.Message}");
+                        try
+                        {
+                            File.Delete(file);
+                            string metaFile = file + ".meta";
+                            if (File.Exists(metaFile))
+                                File.Delete(metaFile);
+                            
+                            deletedCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning($"[DirectVpmInstaller] Failed to delete installer file '{Path.GetFileName(file)}': {ex.Message}");
+                        }
                     }
                 }
                 

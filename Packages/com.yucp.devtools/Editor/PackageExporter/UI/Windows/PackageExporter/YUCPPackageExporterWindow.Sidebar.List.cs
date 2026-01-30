@@ -50,7 +50,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     label.text = GetSortLabel(currentSortOption);
                 }
                 
-                if (currentSortOption != ProfileSortOption.Name)
+                if (currentSortOption != ProfileSortOption.Custom)
                     sortButton.AddToClassList("active");
                 else
                     sortButton.RemoveFromClassList("active");
@@ -171,11 +171,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 p => p
             );
             
-            // If we are sorting by anything other than default Name/Manual, 
+            // If we are sorting by anything other than default Custom/Manual, 
             // OR if we have a search query, we should probably render a Flat List to respect the sort order/search results.
             // UnifiedOrder enforces manual positioning which conflicts with dynamic sorting.
             
-            bool isCustomSort = currentSortOption != ProfileSortOption.Name;
+            bool isCustomSort = currentSortOption != ProfileSortOption.Custom;
             
             if (isCustomSort)
             {
@@ -322,37 +322,71 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             switch (sortOption)
             {
+                case ProfileSortOption.Custom:
+                    return profiles;
+                    
                 case ProfileSortOption.Name:
-                    return profiles.OrderBy(p => GetProfileDisplayName(p)).ToList();
+                    return profiles
+                        .OrderBy(p => GetProfileDisplayNameKey(p))
+                        .ThenByDescending(p => GetExportDateValue(p))
+                        .ThenByDescending(p => GetVersionSortValue(p))
+                        .ThenBy(p => p.name)
+                        .ToList();
+                    
+                case ProfileSortOption.ExportDate:
+                    return profiles
+                        .OrderByDescending(p => GetExportDateValue(p))
+                        .ThenBy(p => GetProfileDisplayNameKey(p))
+                        .ThenBy(p => p.name)
+                        .ToList();
                     
                 case ProfileSortOption.Version:
-                    return profiles.OrderByDescending(p => 
-                    {
-                        // Try to parse version for proper semver sorting
-                        if (VersionUtility.TryParseVersion(p.version, out int major, out int minor, out int patch, out int? build, out string prerelease, out string metadata))
-                        {
-                            // Create a comparable value: major * 1000000 + minor * 1000 + patch + (build ?? 0)
-                            long versionValue = (long)major * 1000000L + (long)minor * 1000L + (long)patch;
-                            if (build.HasValue)
-                                versionValue += build.Value;
-                            return versionValue;
-                        }
-                        return 0L;
-                    }).ToList();
+                    return profiles
+                        .OrderByDescending(p => GetVersionSortValue(p))
+                        .ThenBy(p => GetProfileDisplayNameKey(p))
+                        .ThenByDescending(p => GetExportDateValue(p))
+                        .ThenBy(p => p.name)
+                        .ToList();
                     
-                case ProfileSortOption.LastExportDate:
-                    return profiles.OrderByDescending(p => 
-                    {
-                        if (string.IsNullOrEmpty(p.LastExportTime))
-                            return DateTime.MinValue;
-                        if (DateTime.TryParse(p.LastExportTime, out var date))
-                            return date;
-                        return DateTime.MinValue;
-                    }).ToList();
+                case ProfileSortOption.ExportCount:
+                    return profiles
+                        .OrderByDescending(p => p.ExportCount)
+                        .ThenByDescending(p => GetExportDateValue(p))
+                        .ThenBy(p => GetProfileDisplayNameKey(p))
+                        .ThenBy(p => p.name)
+                        .ToList();
                     
                 default:
                     return profiles;
             }
+        }
+
+        private string GetProfileDisplayNameKey(ExportProfile profile)
+        {
+            return (GetProfileDisplayName(profile) ?? string.Empty).ToLowerInvariant();
+        }
+
+        private DateTime GetExportDateValue(ExportProfile profile)
+        {
+            if (string.IsNullOrEmpty(profile.LastExportTime))
+                return DateTime.MinValue;
+            if (DateTime.TryParse(profile.LastExportTime, out var date))
+                return date;
+            return DateTime.MinValue;
+        }
+
+        private long GetVersionSortValue(ExportProfile profile)
+        {
+            // Try to parse version for proper semver sorting
+            if (VersionUtility.TryParseVersion(profile.version, out int major, out int minor, out int patch, out int? build, out string prerelease, out string metadata))
+            {
+                // Create a comparable value: major * 1000000 + minor * 1000 + patch + (build ?? 0)
+                long versionValue = (long)major * 1000000L + (long)minor * 1000L + (long)patch;
+                if (build.HasValue)
+                    versionValue += build.Value;
+                return versionValue;
+            }
+            return 0L;
         }
 
     }

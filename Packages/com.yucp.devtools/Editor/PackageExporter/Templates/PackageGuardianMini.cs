@@ -118,35 +118,9 @@ namespace YUCP.PackageGuardian.Mini
                     continue;
                 }
 
-                // Conflict: pick a conservative heuristic (keep enabled unless disabled is newer)
-                bool keepDisabled = false;
-                try
-                {
-                    var d = new FileInfo(disabledFile);
-                    var e = new FileInfo(enabledFile);
-                    if (d.LastWriteTimeUtc > e.LastWriteTimeUtc)
-                        keepDisabled = true;
-                }
-                catch { /* default false */ }
-
-                if (keepDisabled)
-                {
-                    // Move existing enabled aside (and its meta) then enable disabled
-                    _currentTransaction.ExecuteFileOperation(enabledFile, enabledFile + ".old", FileOperationType.Move);
-                    if (File.Exists(enabledMeta))
-                        _currentTransaction.ExecuteFileOperation(enabledMeta, enabledMeta + ".old", FileOperationType.Move);
-
-                    EnableWithMeta(disabledFile, enabledFile, disabledMeta, enabledMeta);
-                    Debug.Log($"[Mini Guardian] Updated: {Path.GetFileName(enabledFile)}");
-                }
-                else
-                {
-                    // Remove duplicate disabled + meta
-                    _currentTransaction.ExecuteFileOperation(disabledFile, null, FileOperationType.Delete);
-                    if (File.Exists(disabledMeta))
-                        _currentTransaction.ExecuteFileOperation(disabledMeta, null, FileOperationType.Delete);
-                    Debug.Log($"[Mini Guardian] Removed duplicate: {Path.GetFileName(disabledFile)}");
-                }
+                // Conflict: always keep the enabled file to avoid overwriting user content.
+                Debug.LogWarning($"[Mini Guardian] Conflict detected for '{Path.GetFileName(enabledFile)}'. Keeping existing file and leaving .yucp_disabled in place.");
+                continue;
             }
         }
 
@@ -264,5 +238,4 @@ namespace YUCP.PackageGuardian.Mini
         }
     }
 }
-
 

@@ -522,11 +522,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 });
                 displayNameRow.Add(displayNameField);
                 card.Add(displayNameRow);
+
                 
                 // Export Mode dropdown
                 var exportModeRow = CreateFormRow("Export Mode", tooltip: "How this dependency should be handled");
                 var exportModeField = new EnumField(dep.exportMode);
-                exportModeField.AddToClassList("yucp-form-field");
+                exportModeField.AddToClassList("yucp-dropdown");
                 exportModeField.RegisterValueChangedCallback(evt =>
                 {
                     dep.exportMode = (DependencyExportMode)evt.newValue;

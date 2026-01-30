@@ -75,6 +75,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     "dependencies-section" // Need to ensure name exists
                 ),
                 new OnboardingStep(
+                    "Custom Update Steps",
+                    "Define a safe update playbook for users: automatic actions plus manual prompts and validations. This lets your package update itself without overwriting user changes unless you explicitly allow it.",
+                    "update-steps-section"
+                ),
+                new OnboardingStep(
                     "Bundled Profiles", 
                     "Create composite packages by combining multiple profiles. You can **bundle** profiles (combine all their assets into one package) or export them **side-by-side** (create separate package files at the same time).",
                     "bundled-profiles-section" // Need to ensure name exists
@@ -325,6 +330,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             if (existing != null)
             {
+                EnsureDemoUpdateSteps(existing);
+
                 // Select it so the UI populates
                 Selection.activeObject = existing;
                 selectedProfile = existing;
@@ -358,6 +365,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             profile.author = "You";
             
             profile.foldersToExport = new List<string> { "Packages/com.yucp.devtools/Editor/PackageExporter/Tests/FBXExportDemo" };
+
+            EnsureDemoUpdateSteps(profile);
             
             AssetDatabase.CreateAsset(profile, demoPath);
             AssetDatabase.SaveAssets();
@@ -398,6 +407,62 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }).ExecuteLater(50);
             }
+        }
+
+        private void EnsureDemoUpdateSteps(ExportProfile profile)
+        {
+            if (profile == null) return;
+            if (profile.updateSteps == null)
+                profile.updateSteps = new UpdateStepList();
+
+            if (profile.updateSteps.steps != null && profile.updateSteps.steps.Count > 0)
+                return;
+
+            profile.updateSteps.enabled = true;
+            profile.updateSteps.steps = new List<UpdateStep>
+            {
+                new UpdateStep
+                {
+                    name = "Backup Demo Assets",
+                    phase = UpdatePhase.PreImport,
+                    type = UpdateStepType.BackupAssets,
+                    paths = new List<string>
+                    {
+                        "Packages/com.yucp.devtools/Editor/PackageExporter/Tests/FBXExportDemo"
+                    }
+                },
+                new UpdateStep
+                {
+                    name = "Manual: Confirm Scene Prep",
+                    phase = UpdatePhase.Manual,
+                    type = UpdateStepType.PromptUser,
+                    message = "If you have the demo prefab in a scene, remove it or open a clean scene before updating. Click Continue once done."
+                },
+                new UpdateStep
+                {
+                    name = "Validate Demo Assets Present",
+                    phase = UpdatePhase.PostImport,
+                    type = UpdateStepType.ValidatePresence,
+                    paths = new List<string>
+                    {
+                        "Packages/com.yucp.devtools/Editor/PackageExporter/Tests/FBXExportDemo/source/Racoon.fbx"
+                    },
+                    validationMode = UpdateValidationMode.All,
+                    validationRules = new List<UpdateValidationRule>
+                    {
+                        new UpdateValidationRule
+                        {
+                            name = "Demo FBX exists",
+                            scope = UpdateValidationScope.Assets,
+                            condition = UpdateValidationCondition.Exists,
+                            selector = "path:FBXExportDemo name:Racoon type:Model",
+                            severity = UpdateValidationSeverity.Block
+                        }
+                    }
+                }
+            };
+
+            EditorUtility.SetDirty(profile);
         }
         
         private void SmoothScrollTo(ScrollView scrollView, VisualElement element)

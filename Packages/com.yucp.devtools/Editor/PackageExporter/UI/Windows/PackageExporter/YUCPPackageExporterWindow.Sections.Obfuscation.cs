@@ -45,7 +45,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Protection Level
                 var presetRow = CreateFormRow("Protection Level", tooltip: "Choose how aggressively to obfuscate");
                 var presetField = new EnumField(profile.obfuscationPreset);
-                presetField.AddToClassList("yucp-form-field");
+                presetField.AddToClassList("yucp-dropdown");
                 presetField.RegisterValueChangedCallback(evt =>
                 {
                     if (profile != null)

@@ -224,6 +224,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 "OK"
             );
         }
+
+        [MenuItem("Tools/YUCP/Others/Installation/Revert Last Package Update")]
+        public static void RevertLastPackageUpdate()
+        {
+            bool confirmed = EditorUtility.DisplayDialog(
+                "Revert Last Update",
+                "This will restore files from the last update backup. Continue?",
+                "Revert",
+                "Cancel"
+            );
+
+            if (!confirmed)
+                return;
+
+            if (UpdateTransaction.TryRollbackLast(out string message))
+            {
+                EditorUtility.DisplayDialog("Update Reverted", message, "OK");
+                AssetDatabase.Refresh();
+            }
+            else
+            {
+                EditorUtility.DisplayDialog("Revert Failed", message, "OK");
+            }
+        }
         
         private static void CreateCustomVersionRuleInternal()
         {

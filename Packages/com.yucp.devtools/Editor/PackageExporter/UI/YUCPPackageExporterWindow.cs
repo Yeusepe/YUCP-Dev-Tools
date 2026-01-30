@@ -151,12 +151,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
         // Profile list sort and filter state
         private enum ProfileSortOption
         {
+            Custom,
             Name,
+            ExportDate,
             Version,
-            LastExportDate
+            ExportCount
         }
         
-        private ProfileSortOption currentSortOption = ProfileSortOption.Name;
+        private ProfileSortOption currentSortOption = ProfileSortOption.Custom;
         private List<string> selectedFilterTags = new List<string>();
         private string selectedFilterFolder = null; // null means "All Folders"
         private string _currentSearchText = "";
@@ -168,6 +170,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private bool showFolders = true;
         private bool showDependencies = true;
         private bool showQuickActions = true;
+        private bool showUpdateSteps = true;
         
         private Texture2D logoTexture;
         private Texture2D bannerGradientTexture;
@@ -211,6 +214,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private List<FaviconRequestData> faviconRequests = new List<FaviconRequestData>();
         private VisualElement _signingSectionElement;
         private float lastGifUpdateTime = 0f;
+        private Dictionary<string, bool> _updateStepValidationFoldouts = new Dictionary<string, bool>();
         /// <summary>Main Package Exporter wiki (Help / Documentation).</summary>
         private const string PackageExporterWikiUrl = "https://github.com/Yeusepe/YUCP-Dev-Tools/wiki/Package-Exporter";
         /// <summary>Derived FBXs section (onboarding "Learn more" link).</summary>

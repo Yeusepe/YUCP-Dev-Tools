@@ -190,6 +190,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 TagOnboardingTarget(dependenciesSection, "dependencies-section");
                 dependenciesSection.name = "section-dependencies";
                 contentWrapper.Add(dependenciesSection);
+
+                // Custom Update Steps Section
+                var updateStepsSection = CreateUpdateStepsSection(selectedProfile);
+                TagOnboardingTarget(updateStepsSection, "update-steps-section");
+                updateStepsSection.name = "section-update-steps";
+                contentWrapper.Add(updateStepsSection);
                 
                 // Obfuscation Section
                 var obfuscationSection = CreateObfuscationSection(selectedProfile);

@@ -172,6 +172,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         [Tooltip("Custom tags added to this profile")]
         public List<string> customTags = new List<string>();
+
+        [Header("Custom Update Steps")]
+        [Tooltip("Custom steps to run when updating this package. Steps are only run if enabled.")]
+        public UpdateStepList updateSteps = new UpdateStepList();
         
         /// <summary>
         /// Available preset tag options
@@ -676,6 +680,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         [Tooltip("Cached favicon/icon for the website (auto-fetched)")]
         public Texture2D icon;
+
+        [Tooltip("Editor-only cache path for auto-fetched icons (stored outside Assets)")]
+        public string cachedIconPath;
         
         public ProductLink()
         {
@@ -692,8 +699,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// </summary>
         public Texture2D GetDisplayIcon()
         {
-            return customIcon != null ? customIcon : icon;
+            if (customIcon != null)
+                return customIcon;
+
+            if (icon == null && !string.IsNullOrEmpty(cachedIconPath) && File.Exists(cachedIconPath))
+            {
+                try
+                {
+                    byte[] data = File.ReadAllBytes(cachedIconPath);
+                    var tex = new Texture2D(2, 2);
+                    if (tex.LoadImage(data))
+                    {
+                        icon = tex;
+                    }
+                }
+                catch { }
+            }
+
+            return icon;
         }
     }
 }
-

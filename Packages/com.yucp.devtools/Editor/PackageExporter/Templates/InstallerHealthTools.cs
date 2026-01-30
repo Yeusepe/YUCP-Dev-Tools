@@ -33,12 +33,20 @@ namespace YUCP.DirectVpmInstaller
             
             try
             {
-                string editorPath = Path.Combine(Application.dataPath, "Editor");
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string[] editorPaths = new string[]
+                {
+                    Path.Combine(Application.dataPath, "Editor"),
+                    Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor")
+                };
                 string assetsPath = Application.dataPath;
                 
                 // Clean up installer scripts
-                if (Directory.Exists(editorPath))
+                foreach (string editorPath in editorPaths)
                 {
+                    if (!Directory.Exists(editorPath))
+                        continue;
+
                     // YUCP_Installer_*.cs
                     string[] installerScripts = Directory.GetFiles(editorPath, "YUCP_Installer_*.cs", SearchOption.TopDirectoryOnly);
                     foreach (string script in installerScripts)
@@ -116,7 +124,22 @@ namespace YUCP.DirectVpmInstaller
                 }
                 
                 // Clean up temporary JSON files
-                string[] tempJsonFiles = Directory.GetFiles(assetsPath, "YUCP_TempInstall_*.json", SearchOption.TopDirectoryOnly);
+                string[] tempJsonFiles = Array.Empty<string>();
+                try
+                {
+                    string projectRootLocal = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                    string installedRoot = Path.Combine(projectRootLocal, "Packages", "yucp.installed-packages");
+                    if (Directory.Exists(installedRoot))
+                    {
+                        tempJsonFiles = Directory.GetFiles(installedRoot, "YUCP_TempInstall_*.json", SearchOption.AllDirectories);
+                    }
+                }
+                catch { }
+
+                if (tempJsonFiles.Length == 0)
+                {
+                    tempJsonFiles = Directory.GetFiles(assetsPath, "YUCP_TempInstall_*.json", SearchOption.TopDirectoryOnly);
+                }
                 foreach (string json in tempJsonFiles)
                 {
                     try
@@ -514,8 +537,5 @@ namespace YUCP.DirectVpmInstaller
         private static string Short(string p) => p.Replace(Path.GetDirectoryName(Application.dataPath) + Path.DirectorySeparatorChar, "");
     }
 }
-
-
-
 
 

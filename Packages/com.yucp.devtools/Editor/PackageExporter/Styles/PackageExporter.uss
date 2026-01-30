@@ -191,6 +191,35 @@ Button:active {
     background-color: rgba(42, 42, 42, 1);
 }
 
+/* Dropdown / EnumField - Custom Styling */
+.yucp-dropdown {
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+    background-color: transparent;
+}
+
+.yucp-dropdown .unity-enum-field__input {
+    background-color: rgba(40, 40, 40, 1);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 2px 8px; /* Slightly tighter padding for compact look */
+    color: rgba(255, 255, 255, 0.9);
+    height: 24px;
+    min-height: 24px;
+    margin: 0;
+}
+
+.yucp-dropdown:hover .unity-enum-field__input {
+    border-color: rgba(255, 255, 255, 0.2);
+    background-color: rgba(45, 45, 45, 1);
+}
+
+.yucp-dropdown .unity-enum-field__arrow {
+    -unity-background-image-tint-color: rgba(255, 255, 255, 0.5);
+}
+
 .yucp-search-container {
     flex-direction: row;
     align-items: center;
@@ -3418,4 +3447,55 @@ Button:active {
 
 .yucp-window-narrow .yucp-summary-stat-value {
     font-size: 10px;
+}
+
+/* ============================================================================
+   RESPONSIVE OVERRIDES - UPDATE STEPS (Minimal Clean Fix)
+   ============================================================================ */
+
+/* In narrow mode, allow step headers to wrap naturally */
+.yucp-window-narrow .yucp-step-header {
+    flex-wrap: wrap;
+}
+
+/* Default: content rows are horizontal */
+.yucp-step-content-row {
+    flex-direction: row;
+}
+
+/* Stack inner content rows vertically in narrow mode */  
+.yucp-window-narrow .yucp-step-content-row {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+/* Ensure inputs have proper height when stacked */
+.yucp-window-narrow .yucp-step-content-row .yucp-input {
+    min-height: 28px;
+}
+
+/* Ensure ObjectFields have proper height when stacked */
+.yucp-window-narrow .yucp-step-content-row ObjectField {
+    min-height: 28px;
+}
+
+/* Hide the arrow label when stacked (not needed in vertical flow) */
+.yucp-window-narrow .yucp-step-content-row > Label {
+    display: none;
+}
+
+/* 
+   CRITICAL: Override the global .yucp-folder-item height constraint for Update Steps.
+   The global rule at line ~1880 sets height: 32px for compact folder lists,
+   but Update Steps need to grow to fit their content.
+   NOTE: #section-update-steps uses # because it's an element NAME, not a class.
+*/
+.yucp-window-narrow .yucp-folder-item.yucp-step-item,
+.yucp-window-narrow #section-update-steps .yucp-folder-item {
+    height: auto;
+    min-height: auto;
+    max-height: none;
+    flex-direction: column;
+    flex-wrap: wrap;
+    overflow: visible;
 }

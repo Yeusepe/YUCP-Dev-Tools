@@ -376,13 +376,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Debug.LogWarning($"[YUCP ImportMonitor] DUPLICATE IMPORT DETECTED!");
                     Debug.LogWarning($"[YUCP ImportMonitor] Package is already installed. Leaving {conflictingFiles.Count} conflicting .yucp_disabled file(s) in place.");
                 }
-                else if (detectionResult == "UPDATE")
+                else if (detectionResult == "UPDATE" || detectionResult == "DOWNGRADE")
                 {
-                    // Newer version - delete the OLD enabled files to make room for new ones
+                    // Update detected - do NOT auto-delete. Run custom update steps if provided.
                     Debug.Log($"[YUCP ImportMonitor] UPDATE DETECTED!");
-                    Debug.Log($"[YUCP ImportMonitor] Removing {conflictingFiles.Count} old files to make room for update...");
-                    
-                    DeleteOldEnabledFiles(conflictingFiles);
+                    string reason = "An update was detected. Automatic overwrites are disabled to protect your project.";
+                    UpdateRunner.QueueRunFromMetadata(null, reason, conflictingFiles);
                 }
                 else
                 {
@@ -397,8 +396,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                     else
                     {
-                        Debug.Log($"[YUCP ImportMonitor] {conflictPercentage:P0} of files conflict - assuming UPDATE");
-                        DeleteOldEnabledFiles(conflictingFiles);
+                        Debug.Log($"[YUCP ImportMonitor] {conflictPercentage:P0} of files conflict - assuming UPDATE (safe mode)");
+                        string reason = "An update may be in progress. Automatic overwrites are disabled to protect your project.";
+                        UpdateRunner.QueueRunFromMetadata(null, reason, conflictingFiles);
                     }
                 }
             }
@@ -414,7 +414,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
             try
             {
                 // Try to find temp install JSON
-                string[] tempJsonFiles = Directory.GetFiles(Application.dataPath, "YUCP_TempInstall_*.json", SearchOption.TopDirectoryOnly);
+                string[] tempJsonFiles = Array.Empty<string>();
+                try
+                {
+                    string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                    string installedRoot = Path.Combine(projectRoot, "Packages", "yucp.installed-packages");
+                    if (Directory.Exists(installedRoot))
+                    {
+                        tempJsonFiles = Directory.GetFiles(installedRoot, "YUCP_TempInstall_*.json", SearchOption.AllDirectories);
+                    }
+                }
+                catch { }
+
+                if (tempJsonFiles.Length == 0)
+                {
+                    tempJsonFiles = Directory.GetFiles(Application.dataPath, "YUCP_TempInstall_*.json", SearchOption.TopDirectoryOnly);
+                }
                 
                 if (tempJsonFiles.Length > 0)
                 {
@@ -573,4 +588,3 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
     }
 }
-

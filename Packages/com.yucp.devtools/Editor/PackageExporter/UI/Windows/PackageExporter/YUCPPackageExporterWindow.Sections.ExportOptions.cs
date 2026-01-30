@@ -107,7 +107,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 var strategyRow = CreateFormRow("What to Bump", tooltip: "Choose which number to increment");
                 var strategyField = new EnumField(profile.incrementStrategy);
-                strategyField.AddToClassList("yucp-form-field");
+                strategyField.AddToClassList("yucp-dropdown");
                 strategyField.RegisterValueChangedCallback(evt =>
                 {
                     if (profile != null)

@@ -123,7 +123,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         private readonly Dictionary<string, List<(string Id, string Label)>> _config = new Dictionary<string, List<(string, string)>>
         {
             { "Setup", new List<(string, string)> { ("General", "General"), ("Options", "Options") } },
-            { "Content", new List<(string, string)> { ("Folders", "Folders"), ("Files", "Files"), ("Dependencies", "Dependencies") } },
+            { "Content", new List<(string, string)> { ("Folders", "Folders"), ("Files", "Files"), ("Dependencies", "Dependencies"), ("Updates", "Updates") } },
             { "System", new List<(string, string)> { ("Security", "Security"), ("Actions", "Actions") } }
         };
 

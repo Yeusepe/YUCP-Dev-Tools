@@ -131,28 +131,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                         Debug.Log("[YUCP PackageExporter] Resized favicon to 32x32");
                                     }
                                     
-                                    // Save the icon as an asset so it persists across domain reloads
-                                    string iconAssetPath = PackageBuilder.SaveTextureAsTemporaryAsset(texture, requestData.link.label ?? requestData.domain);
-                                    if (!string.IsNullOrEmpty(iconAssetPath))
+                                    // Cache the icon outside Assets so it doesn't create project residue
+                                    string iconCachePath = PackageBuilder.SaveTextureToLibraryCache(texture, requestData.link.label ?? requestData.domain);
+                                    if (!string.IsNullOrEmpty(iconCachePath))
                                     {
-                                        Texture2D savedIcon = AssetDatabase.LoadAssetAtPath<Texture2D>(iconAssetPath);
-                                        if (savedIcon != null)
-                                        {
-                                            requestData.link.icon = savedIcon;
-                                            Debug.Log($"[YUCP PackageExporter] Saved favicon as asset: {iconAssetPath}");
-                                        }
-                                        else
-                                        {
-                                            // Fallback to in-memory texture if asset loading fails
-                                            requestData.link.icon = texture;
-                                            Debug.LogWarning($"[YUCP PackageExporter] Failed to load saved icon asset, using in-memory texture");
-                                        }
+                                        requestData.link.cachedIconPath = iconCachePath;
+                                        requestData.link.icon = texture;
+                                        Debug.Log($"[YUCP PackageExporter] Cached favicon: {iconCachePath}");
                                     }
                                     else
                                     {
                                         // Fallback to in-memory texture if saving fails
                                         requestData.link.icon = texture;
-                                        Debug.LogWarning($"[YUCP PackageExporter] Failed to save favicon as asset, using in-memory texture");
+                                        Debug.LogWarning($"[YUCP PackageExporter] Failed to cache favicon, using in-memory texture");
                                     }
                                     
                                     // Only set fetched icon if no custom icon is set
@@ -193,28 +184,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                         Debug.Log("[YUCP PackageExporter] Resized favicon to 32x32");
                                     }
                                     
-                                    // Save the icon as an asset so it persists across domain reloads
-                                    string iconAssetPath = PackageBuilder.SaveTextureAsTemporaryAsset(texture, requestData.link.label ?? requestData.domain);
-                                    if (!string.IsNullOrEmpty(iconAssetPath))
+                                    // Cache the icon outside Assets so it doesn't create project residue
+                                    string iconCachePath = PackageBuilder.SaveTextureToLibraryCache(texture, requestData.link.label ?? requestData.domain);
+                                    if (!string.IsNullOrEmpty(iconCachePath))
                                     {
-                                        Texture2D savedIcon = AssetDatabase.LoadAssetAtPath<Texture2D>(iconAssetPath);
-                                        if (savedIcon != null)
-                                        {
-                                            requestData.link.icon = savedIcon;
-                                            Debug.Log($"[YUCP PackageExporter] Saved favicon as asset: {iconAssetPath}");
-                                        }
-                                        else
-                                        {
-                                            // Fallback to in-memory texture if asset loading fails
-                                            requestData.link.icon = texture;
-                                            Debug.LogWarning($"[YUCP PackageExporter] Failed to load saved icon asset, using in-memory texture");
-                                        }
+                                        requestData.link.cachedIconPath = iconCachePath;
+                                        requestData.link.icon = texture;
+                                        Debug.Log($"[YUCP PackageExporter] Cached favicon: {iconCachePath}");
                                     }
                                     else
                                     {
                                         // Fallback to in-memory texture if saving fails
                                         requestData.link.icon = texture;
-                                        Debug.LogWarning($"[YUCP PackageExporter] Failed to save favicon as asset, using in-memory texture");
+                                        Debug.LogWarning($"[YUCP PackageExporter] Failed to cache favicon, using in-memory texture");
                                     }
                                     
                                     // Only set fetched icon if no custom icon is set

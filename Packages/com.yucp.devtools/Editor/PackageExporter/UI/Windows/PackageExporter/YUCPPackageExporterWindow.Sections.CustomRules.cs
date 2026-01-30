@@ -116,7 +116,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Rule Type
             var ruleTypeRow = CreateFormRow("Rule Type", tooltip: "Base behavior for this rule");
             var ruleTypeField = new EnumField(rule.ruleType);
-            ruleTypeField.AddToClassList("yucp-form-field");
+            ruleTypeField.AddToClassList("yucp-dropdown");
             ruleTypeField.RegisterValueChangedCallback(evt =>
             {
                 Undo.RecordObject(rule, "Change Rule Type");

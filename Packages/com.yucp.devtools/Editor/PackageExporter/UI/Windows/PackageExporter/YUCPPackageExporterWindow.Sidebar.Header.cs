@@ -79,7 +79,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             Button sortButton = null;
             sortButton = new Button(() => ShowSortPopover(sortButton, isOverlay));
             sortButton.AddToClassList("yucp-btn-outline");
-            if (currentSortOption != ProfileSortOption.Name)
+            if (currentSortOption != ProfileSortOption.Custom)
                 sortButton.AddToClassList("active");
             
             // Add icon (using text as icon placeholder - can be replaced with actual icon texture)
@@ -202,9 +202,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             return option switch
             {
+                ProfileSortOption.Custom => "Sort: Custom",
                 ProfileSortOption.Name => "Sort: Name",
+                ProfileSortOption.ExportDate => "Sort: Export Date",
                 ProfileSortOption.Version => "Sort: Version",
-                ProfileSortOption.LastExportDate => "Sort: Date",
+                ProfileSortOption.ExportCount => "Sort: Export Count",
                 _ => "Sort"
             };
         }
@@ -215,7 +217,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             // Get button position for popover
             var buttonRect = anchorButton.worldBound;
-            var popoverRect = new Rect(buttonRect.x, buttonRect.yMax + 4, 300, 120);
+            var popoverRect = new Rect(buttonRect.x, buttonRect.yMax + 4, 300, 200);
             
             ShowPopover(popoverRect, popoverContent);
         }
@@ -246,6 +248,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var optionsContainer = new VisualElement();
             optionsContainer.AddToClassList("yucp-popover-section");
             
+            var customOption = CreateSortOption("Custom (Default)", ProfileSortOption.Custom, currentSortOption == ProfileSortOption.Custom, () =>
+            {
+                currentSortOption = ProfileSortOption.Custom;
+                UpdateProfileList();
+                ClosePopover();
+            });
+            optionsContainer.Add(customOption);
+            
             var nameOption = CreateSortOption("Name", ProfileSortOption.Name, currentSortOption == ProfileSortOption.Name, () =>
             {
                 currentSortOption = ProfileSortOption.Name;
@@ -253,6 +263,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 ClosePopover();
             });
             optionsContainer.Add(nameOption);
+            
+            var dateOption = CreateSortOption("Export Date", ProfileSortOption.ExportDate, currentSortOption == ProfileSortOption.ExportDate, () =>
+            {
+                currentSortOption = ProfileSortOption.ExportDate;
+                UpdateProfileList();
+                ClosePopover();
+            });
+            optionsContainer.Add(dateOption);
             
             var versionOption = CreateSortOption("Version", ProfileSortOption.Version, currentSortOption == ProfileSortOption.Version, () =>
             {
@@ -262,13 +280,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             });
             optionsContainer.Add(versionOption);
             
-            var dateOption = CreateSortOption("Last Export Date", ProfileSortOption.LastExportDate, currentSortOption == ProfileSortOption.LastExportDate, () =>
+            var countOption = CreateSortOption("Export Count", ProfileSortOption.ExportCount, currentSortOption == ProfileSortOption.ExportCount, () =>
             {
-                currentSortOption = ProfileSortOption.LastExportDate;
+                currentSortOption = ProfileSortOption.ExportCount;
                 UpdateProfileList();
                 ClosePopover();
             });
-            optionsContainer.Add(dateOption);
+            optionsContainer.Add(countOption);
             
             content.Add(optionsContainer);
             
@@ -309,14 +327,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             optionRow.Add(indicator);
             
-            optionRow.RegisterCallback<MouseDownEvent>(evt =>
+            optionRow.AddManipulator(new Clickable(() =>
             {
-                if (evt.button == 0)
-                {
-                    onClick?.Invoke();
-                    evt.StopPropagation();
-                }
-            });
+                onClick?.Invoke();
+            }));
             
             return optionRow;
         }
