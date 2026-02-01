@@ -248,6 +248,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 EditorUtility.DisplayDialog("Revert Failed", message, "OK");
             }
         }
+
+        [MenuItem("Tools/YUCP/Others/Installation/Restore Archived Assets (_old)")]
+        public static void RestoreArchivedAssets()
+        {
+            UpdateArchiveRestoreWindow.ShowWindow("_old");
+        }
         
         private static void CreateCustomVersionRuleInternal()
         {

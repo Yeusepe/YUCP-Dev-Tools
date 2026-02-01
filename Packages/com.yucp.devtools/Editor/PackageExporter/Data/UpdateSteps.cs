@@ -10,6 +10,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
     {
         public bool enabled = false;
         public List<UpdateStep> steps = new List<UpdateStep>();
+        public string archiveSuffix = "_old";
     }
 
     public enum UpdatePhase

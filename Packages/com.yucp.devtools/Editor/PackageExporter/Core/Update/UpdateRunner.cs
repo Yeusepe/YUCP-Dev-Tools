@@ -12,6 +12,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
     internal static class UpdateRunner
     {
         private static bool _isRunning;
+        private static UpdateMetadata _pendingMetadata;
+        private static List<UpdateStep> _pendingSteps;
+        private static HashCheckResult _pendingHashCheck;
 
         [Serializable]
         private class UpdateMetadata
@@ -19,6 +22,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public string packageName;
             public string version;
             public UpdateStepList updateSteps;
+            public List<MetadataFileHash> fileHashes;
+        }
+
+        [Serializable]
+        private class MetadataFileHash
+        {
+            public string path;
+            public string hash;
         }
 
         public static bool QueueRunFromMetadata(string metadataPath, string reason, IEnumerable<string> detectedConflicts)
@@ -88,6 +99,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
 
             _isRunning = true;
+            if (MaybeShowOverridePrompt(metadata, enabledSteps))
+            {
+                return true;
+            }
+
             EditorApplication.delayCall += () =>
             {
                 try
@@ -104,6 +120,485 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return true;
         }
 
+        private static bool MaybeShowOverridePrompt(UpdateMetadata metadata, List<UpdateStep> steps)
+        {
+            var overrides = DetectPrefabOverrides();
+            var hashCheck = EvaluateHashState(metadata, steps);
+            if (!hashCheck.ShouldPrompt)
+                return false;
+
+            _pendingMetadata = metadata;
+            _pendingSteps = steps;
+            _pendingHashCheck = hashCheck;
+
+            UpdateOverridePromptWindow.ShowWindow(
+                overrides,
+                hashCheck.Reason,
+                hashCheck.ChangedItems,
+                () =>
+                {
+                    var pendingMetadata = _pendingMetadata;
+                    var pendingSteps = _pendingSteps;
+                    _pendingMetadata = null;
+                    _pendingSteps = null;
+                    _pendingHashCheck = null;
+                    EditorApplication.delayCall += () =>
+                    {
+                        try
+                        {
+                            RunSteps(pendingMetadata, pendingSteps);
+                        }
+                        finally
+                        {
+                            _isRunning = false;
+                            EditorUtility.ClearProgressBar();
+                        }
+                    };
+                });
+
+            return true;
+        }
+
+        private static List<string> DetectPrefabOverrides()
+        {
+            var results = new List<string>();
+            try
+            {
+                var allObjects = Resources.FindObjectsOfTypeAll<GameObject>();
+                foreach (var obj in allObjects)
+                {
+                    if (obj == null || EditorUtility.IsPersistent(obj))
+                        continue;
+                    if (!PrefabUtility.IsPartOfPrefabInstance(obj))
+                        continue;
+                    if (!PrefabUtility.HasPrefabInstanceAnyOverrides(obj, false))
+                        continue;
+
+                    string path = GetHierarchyPath(obj);
+                    var prefab = PrefabUtility.GetCorrespondingObjectFromSource(obj);
+                    string prefabPath = prefab != null ? AssetDatabase.GetAssetPath(prefab) : "Unknown Prefab";
+                    results.Add($"{path}  →  {prefabPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP UpdateRunner] Failed to detect prefab overrides: {ex.Message}");
+            }
+
+            return results.Distinct().Take(50).ToList();
+        }
+
+        private static string GetHierarchyPath(GameObject obj)
+        {
+            var parts = new List<string>();
+            var current = obj.transform;
+            while (current != null)
+            {
+                parts.Add(current.name);
+                current = current.parent;
+            }
+            parts.Reverse();
+            return string.Join("/", parts);
+        }
+
+        private class HashCheckResult
+        {
+            public bool ShouldPrompt;
+            public string Reason;
+            public List<string> ChangedItems = new List<string>();
+        }
+
+        private class HashManifest
+        {
+            public string packageName;
+            public string version;
+            public List<HashEntry> entries = new List<HashEntry>();
+        }
+
+        private class HashEntry
+        {
+            public string path;
+            public string hash;
+        }
+
+        private static HashCheckResult EvaluateHashState(UpdateMetadata metadata, List<UpdateStep> steps)
+        {
+            var result = new HashCheckResult();
+
+            string packageKey = MakeSafePackageKey(metadata?.packageName);
+            if (string.IsNullOrEmpty(packageKey))
+            {
+                result.ShouldPrompt = true;
+                result.Reason = "No package identifier was found, so we cannot verify existing asset hashes.";
+                return result;
+            }
+
+            string baselinePath = GetBaselinePath(packageKey);
+            if (!File.Exists(baselinePath))
+            {
+                if (TryAdoptBaselineFromMetadata(metadata, packageKey))
+                {
+                    // Re-evaluate with the newly saved baseline.
+                    return EvaluateHashState(metadata, steps);
+                }
+
+                result.ShouldPrompt = true;
+                result.Reason = "No hash snapshot exists for this package. Please save/move your overrides before continuing.";
+                return result;
+            }
+
+            HashManifest baseline;
+            try
+            {
+                baseline = JsonUtility.FromJson<HashManifest>(File.ReadAllText(baselinePath));
+            }
+            catch
+            {
+                result.ShouldPrompt = true;
+                result.Reason = "Baseline hash snapshot is unreadable. Please save your overrides before continuing.";
+                return result;
+            }
+
+            var baselineMap = baseline?.entries?.ToDictionary(e => e.path, e => e.hash, StringComparer.OrdinalIgnoreCase)
+                              ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var current = BuildCurrentHashMapFromBaseline(baselineMap);
+            if (current.Count == 0)
+            {
+                result.ShouldPrompt = true;
+                result.Reason = "No hashable targets were found for validation. Please save your overrides before continuing.";
+                return result;
+            }
+            var changed = new List<string>();
+
+            foreach (var kvp in current)
+            {
+                if (!baselineMap.TryGetValue(kvp.Key, out string oldHash))
+                {
+                    changed.Add(kvp.Key);
+                    continue;
+                }
+                if (!string.Equals(oldHash, kvp.Value, StringComparison.OrdinalIgnoreCase))
+                {
+                    changed.Add(kvp.Key);
+                }
+            }
+
+            if (changed.Count > 0)
+            {
+                result.ShouldPrompt = false;
+                result.Reason = "Hash mismatches detected";
+                result.ChangedItems = changed.Take(200).ToList();
+                return result;
+            }
+
+            result.ShouldPrompt = false;
+            return result;
+        }
+
+        private static bool TryAdoptBaselineFromMetadata(UpdateMetadata metadata, string packageKey)
+        {
+            if (metadata?.fileHashes == null || metadata.fileHashes.Count == 0)
+                return false;
+
+            var manifest = new HashManifest
+            {
+                packageName = metadata.packageName ?? "",
+                version = metadata.version ?? "",
+                entries = metadata.fileHashes
+                    .Where(h => h != null && !string.IsNullOrEmpty(h.path) && !string.IsNullOrEmpty(h.hash))
+                    .Select(h => new HashEntry { path = h.path, hash = h.hash })
+                    .ToList()
+            };
+
+            if (manifest.entries.Count == 0)
+                return false;
+
+            try
+            {
+                string baselinePath = GetBaselinePath(packageKey);
+                Directory.CreateDirectory(Path.GetDirectoryName(baselinePath) ?? "");
+                File.WriteAllText(baselinePath, JsonUtility.ToJson(manifest, true));
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static bool TryAdoptBaselineFromMetadataPath(string metadataPath)
+        {
+            if (string.IsNullOrEmpty(metadataPath) || !File.Exists(metadataPath))
+                return false;
+
+            try
+            {
+                string json = File.ReadAllText(metadataPath);
+                var metadata = JsonUtility.FromJson<UpdateMetadata>(json);
+                string packageKey = MakeSafePackageKey(metadata?.packageName);
+                if (string.IsNullOrEmpty(packageKey))
+                    return false;
+
+                string baselinePath = GetBaselinePath(packageKey);
+                if (File.Exists(baselinePath))
+                    return false;
+
+                return TryAdoptBaselineFromMetadata(metadata, packageKey);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void SaveBaselineHashes(UpdateMetadata metadata, List<UpdateStep> steps)
+        {
+            string packageKey = MakeSafePackageKey(metadata?.packageName);
+            if (string.IsNullOrEmpty(packageKey))
+                return;
+
+            if (metadata?.fileHashes != null && metadata.fileHashes.Count > 0)
+            {
+                TryAdoptBaselineFromMetadata(metadata, packageKey);
+                return;
+            }
+
+            var map = BuildCurrentHashMap(steps);
+            if (map.Count == 0)
+                return;
+
+            var manifest = new HashManifest
+            {
+                packageName = metadata?.packageName ?? "",
+                version = metadata?.version ?? "",
+                entries = map.Select(kvp => new HashEntry { path = kvp.Key, hash = kvp.Value }).ToList()
+            };
+
+            try
+            {
+                string baselinePath = GetBaselinePath(packageKey);
+                Directory.CreateDirectory(Path.GetDirectoryName(baselinePath) ?? "");
+                File.WriteAllText(baselinePath, JsonUtility.ToJson(manifest, true));
+            }
+            catch { }
+        }
+
+        private static Dictionary<string, string> BuildCurrentHashMap(List<UpdateStep> steps)
+        {
+            var targets = BuildHashTargets(steps);
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var abs in targets)
+            {
+                try
+                {
+                    if (!File.Exists(abs)) continue;
+                    string rel = ToUnityPath(abs);
+                    if (string.IsNullOrEmpty(rel)) continue;
+                    string hash = ComputeHash(abs);
+                    if (!string.IsNullOrEmpty(hash))
+                        map[rel] = hash;
+                }
+                catch { }
+            }
+            return map;
+        }
+
+        private static Dictionary<string, string> BuildCurrentHashMapFromBaseline(Dictionary<string, string> baselineMap)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            foreach (var entry in baselineMap)
+            {
+                try
+                {
+                    string unityPath = entry.Key;
+                    if (string.IsNullOrEmpty(unityPath)) continue;
+                    string abs = Path.Combine(projectRoot, unityPath.Replace('/', Path.DirectorySeparatorChar));
+                    if (!File.Exists(abs)) continue;
+                    string hash = ComputeHash(abs);
+                    if (!string.IsNullOrEmpty(hash))
+                        map[unityPath] = hash;
+                }
+                catch { }
+            }
+            return map;
+        }
+
+        private static List<string> BuildHashTargets(List<UpdateStep> steps)
+        {
+            var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var step in steps)
+            {
+                if (step == null || !step.enabled) continue;
+                if (step.paths != null)
+                {
+                    foreach (var p in step.paths)
+                        roots.Add(p);
+                }
+                if (!string.IsNullOrEmpty(step.scenePath))
+                    roots.Add(step.scenePath);
+            }
+
+            var files = new List<string>();
+            foreach (var root in roots)
+            {
+                if (!UpdateStepPathUtility.TryGetAbsolutePath(root, out string abs))
+                    continue;
+                if (File.Exists(abs))
+                {
+                    files.Add(abs);
+                    if (File.Exists(abs + ".meta")) files.Add(abs + ".meta");
+                    continue;
+                }
+                if (Directory.Exists(abs))
+                {
+                    foreach (var file in Directory.GetFiles(abs, "*", SearchOption.AllDirectories))
+                    {
+                        files.Add(file);
+                    }
+                }
+            }
+
+            return files.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private static string ComputeHash(string filePath)
+        {
+            try
+            {
+                using (var sha = System.Security.Cryptography.SHA256.Create())
+                using (var fs = File.OpenRead(filePath))
+                {
+                    var bytes = sha.ComputeHash(fs);
+                    return BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
+                }
+            }
+            catch { return null; }
+        }
+
+        private static string GetBaselinePath(string packageKey)
+        {
+            string baseDir = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Library", "YUCP", "UpdateBaseline"));
+            return Path.Combine(baseDir, packageKey + ".json");
+        }
+
+        private static string MakeSafePackageKey(string packageName)
+        {
+            if (string.IsNullOrWhiteSpace(packageName))
+                return null;
+            string safe = string.Concat(packageName.Select(c => char.IsLetterOrDigit(c) ? c : '_'));
+            return safe.Trim('_');
+        }
+
+        private static string ToUnityPath(string absolutePath)
+        {
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string normalized = absolutePath.Replace('\\', '/');
+            string normalizedRoot = projectRoot.Replace('\\', '/');
+            if (normalized.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                string rel = normalized.Substring(normalizedRoot.Length);
+                if (rel.StartsWith("/")) rel = rel.Substring(1);
+                return rel;
+            }
+            return null;
+        }
+
+        private static void AutoArchiveChangedAssets(List<string> unityPaths, UpdateTransaction txn, string archiveSuffix)
+        {
+            if (unityPaths == null || unityPaths.Count == 0) return;
+
+            foreach (var unityPath in unityPaths)
+            {
+                if (string.IsNullOrEmpty(unityPath)) continue;
+                string destPath = BuildOldPath(unityPath, archiveSuffix);
+                if (string.IsNullOrEmpty(destPath)) continue;
+
+                if (!UpdateStepPathUtility.TryGetAbsolutePath(unityPath, out var srcAbs) ||
+                    !UpdateStepPathUtility.TryGetAbsolutePath(destPath, out var dstAbs))
+                    continue;
+
+                if (!File.Exists(srcAbs) && !Directory.Exists(srcAbs))
+                    continue;
+
+                txn.BackupPath(srcAbs);
+                if (File.Exists(srcAbs + ".meta"))
+                    txn.BackupPath(srcAbs + ".meta");
+
+                if (File.Exists(dstAbs) || Directory.Exists(dstAbs))
+                {
+                    txn.BackupPath(dstAbs);
+                    if (File.Exists(dstAbs + ".meta"))
+                        txn.BackupPath(dstAbs + ".meta");
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(dstAbs) ?? "");
+
+                if (File.Exists(srcAbs))
+                {
+                    if (File.Exists(dstAbs))
+                        File.Delete(dstAbs);
+                    File.Move(srcAbs, dstAbs);
+
+                    string srcMeta = srcAbs + ".meta";
+                    string dstMeta = dstAbs + ".meta";
+                    if (File.Exists(srcMeta))
+                    {
+                        if (File.Exists(dstMeta))
+                            File.Delete(dstMeta);
+                        File.Move(srcMeta, dstMeta);
+                    }
+                }
+                else if (Directory.Exists(srcAbs))
+                {
+                    if (Directory.Exists(dstAbs))
+                        Directory.Delete(dstAbs, true);
+                    Directory.Move(srcAbs, dstAbs);
+                }
+            }
+        }
+
+        private static string BuildOldPath(string unityPath, string archiveSuffix)
+        {
+            if (string.IsNullOrWhiteSpace(archiveSuffix))
+                archiveSuffix = "_old";
+            string normalized = unityPath.Replace('\\', '/');
+            if (normalized.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = normalized.Split('/');
+                if (parts.Length >= 2)
+                {
+                    string root = parts[0] + "/" + parts[1];
+                    string rest = string.Join("/", parts.Skip(2));
+                    string baseRoot = root + archiveSuffix;
+                    return string.IsNullOrEmpty(rest) ? baseRoot : baseRoot + "/" + rest;
+                }
+                return "Assets" + archiveSuffix + "/" + Path.GetFileName(normalized);
+            }
+
+            if (normalized.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = normalized.Split('/');
+                if (parts.Length >= 2)
+                {
+                    string root = parts[0] + "/" + parts[1];
+                    string rest = string.Join("/", parts.Skip(2));
+                    string baseRoot = root + archiveSuffix;
+                    return string.IsNullOrEmpty(rest) ? baseRoot : baseRoot + "/" + rest;
+                }
+            }
+
+            return null;
+        }
+
+        private static string GetArchiveSuffix(UpdateMetadata metadata)
+        {
+            if (metadata?.updateSteps == null)
+                return "_old";
+            var suffix = metadata.updateSteps.archiveSuffix;
+            return string.IsNullOrWhiteSpace(suffix) ? "_old" : suffix.Trim();
+        }
+
         private static void RunSteps(UpdateMetadata metadata, List<UpdateStep> steps)
         {
             var ordered = OrderStepsByPhase(steps);
@@ -116,6 +611,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (!PerformDefaultBackup(txn, backupTargets))
                 {
                     throw new Exception("Safety backup failed.");
+                }
+
+                var hashCheck = EvaluateHashState(metadata, ordered);
+                if (hashCheck.ChangedItems.Count > 0)
+                {
+                    string suffix = GetArchiveSuffix(metadata);
+                    AutoArchiveChangedAssets(hashCheck.ChangedItems, txn, suffix);
                 }
 
                 for (int i = 0; i < ordered.Count; i++)
@@ -132,6 +634,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 success = true;
                 txn.Commit();
+                SaveBaselineHashes(metadata, ordered);
                 EditorUtility.DisplayDialog("Update Steps Complete",
                     "All update steps finished successfully.\n\nA rollback backup was saved (Tools/YUCP/Others/Installation/Revert Last Package Update).",
                     "OK");

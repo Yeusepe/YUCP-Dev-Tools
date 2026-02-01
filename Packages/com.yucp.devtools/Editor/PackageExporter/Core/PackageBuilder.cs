@@ -598,7 +598,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 
                 // Generate package metadata JSON
-                string packageMetadataJson = GeneratePackageMetadataJson(profile, embedContext);
+                string packageMetadataJson = GeneratePackageMetadataJson(profile, embedContext, validAssets);
                 
                 // Inject package.json, auto-installer, bundled packages, and metadata into the .unitypackage
                 if (!string.IsNullOrEmpty(packageJsonContent) || bundledPackagePaths.Count > 0 || !string.IsNullOrEmpty(packageMetadataJson))
@@ -1544,7 +1544,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// <summary>
         /// Generate YUCP_PackageInfo.json metadata for the export
         /// </summary>
-        private static string GeneratePackageMetadataJson(ExportProfile profile, PackageEmbedContext embedContext)
+        private static string GeneratePackageMetadataJson(ExportProfile profile, PackageEmbedContext embedContext, List<string> exportedAssets)
         {
             try
             {
@@ -1670,6 +1670,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
 
+                // Embed export-time hashes (baseline for update validation)
+                if (exportedAssets != null && exportedAssets.Count > 0)
+                {
+                    metadataJson.fileHashes = BuildExportHashes(exportedAssets);
+                }
+
                 // Serialize to JSON
                 return JsonUtility.ToJson(metadataJson, true);
             }
@@ -1693,6 +1699,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public string versionRule;
             public string versionRuleName;
             public UpdateStepList updateSteps;
+            public List<FileHashJson> fileHashes;
         }
 
         [Serializable]
@@ -1701,6 +1708,52 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public string label;
             public string url;
             public string icon; // Path to custom icon texture
+        }
+
+        [Serializable]
+        private class FileHashJson
+        {
+            public string path;
+            public string hash;
+        }
+
+        private static List<FileHashJson> BuildExportHashes(List<string> exportedAssets)
+        {
+            var list = new List<FileHashJson>();
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+
+            foreach (var unityPath in exportedAssets)
+            {
+                if (string.IsNullOrEmpty(unityPath)) continue;
+                if (!unityPath.StartsWith("Assets/") && !unityPath.StartsWith("Packages/")) continue;
+
+                string abs = Path.Combine(projectRoot, unityPath.Replace('/', Path.DirectorySeparatorChar));
+                if (!File.Exists(abs)) continue;
+
+                string hash = ComputeFileHash(abs);
+                if (string.IsNullOrEmpty(hash)) continue;
+
+                list.Add(new FileHashJson { path = unityPath, hash = hash });
+            }
+
+            return list;
+        }
+
+        private static string ComputeFileHash(string filePath)
+        {
+            try
+            {
+                using (var sha = System.Security.Cryptography.SHA256.Create())
+                using (var fs = File.OpenRead(filePath))
+                {
+                    var bytes = sha.ComputeHash(fs);
+                    return BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
+                }
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>

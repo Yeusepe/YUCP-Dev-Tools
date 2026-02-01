@@ -90,6 +90,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				return; // Skip patch application during export
 			}
 			
+			// Adopt baseline hashes on first import if metadata is present
+			try
+			{
+				foreach (var asset in importedAssets)
+				{
+					if (asset.Replace('\\','/').Equals("Assets/YUCP_PackageInfo.json", StringComparison.OrdinalIgnoreCase))
+					{
+						UpdateRunner.TryAdoptBaselineFromMetadataPath(Path.GetFullPath(asset));
+						break;
+					}
+				}
+			}
+			catch { }
+
 			// Handle .yucp_disabled conflicts (existing behavior)
 			var disabledFiles = importedAssets.Where(a => a.EndsWith(".yucp_disabled")).ToArray();
 			if (disabledFiles.Length > 0)

@@ -59,6 +59,32 @@ namespace YUCP.DevTools.Editor.PackageExporter
             enableRow.Add(enableLabel);
             section.Add(enableRow);
 
+            var archiveRow = new VisualElement();
+            archiveRow.style.flexDirection = FlexDirection.Row;
+            archiveRow.style.alignItems = Align.Center;
+            archiveRow.style.marginBottom = 8;
+
+            var archiveLabel = new Label("Archive Suffix");
+            archiveLabel.style.minWidth = 110;
+            archiveLabel.style.fontSize = 11;
+            archiveLabel.style.opacity = 0.7f;
+            archiveRow.Add(archiveLabel);
+
+            var archiveField = new TextField();
+            archiveField.value = string.IsNullOrEmpty(profile.updateSteps.archiveSuffix) ? "_old" : profile.updateSteps.archiveSuffix;
+            archiveField.isDelayed = true;
+            archiveField.AddToClassList("yucp-input");
+            archiveField.style.flexGrow = 1;
+            archiveField.RegisterValueChangedCallback(evt =>
+            {
+                Undo.RecordObject(profile, "Change Archive Suffix");
+                profile.updateSteps.archiveSuffix = string.IsNullOrWhiteSpace(evt.newValue) ? "_old" : evt.newValue.Trim();
+                EditorUtility.SetDirty(profile);
+            });
+            archiveRow.Add(archiveField);
+
+            section.Add(archiveRow);
+
             if (!profile.updateSteps.enabled)
             {
                 var disabledNote = new Label("Custom update steps are disabled for this profile.");
