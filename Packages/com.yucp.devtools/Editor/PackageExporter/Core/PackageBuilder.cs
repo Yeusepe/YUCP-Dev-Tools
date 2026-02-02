@@ -2105,7 +2105,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // 0. Disable main assets by default to avoid Unity overwriting existing files on import.
                 // This only affects already-exported assets (not injected items below).
-                DisablePackageEntriesByDefault(tempExtractDir);
+                bool enableCustomUpdateSteps = profile != null && profile.updateSteps != null && profile.updateSteps.enabled;
+                if (enableCustomUpdateSteps)
+                {
+                    DisablePackageEntriesByDefault(tempExtractDir);
+                }
 
                 // 1. Inject package.json (temporary, will be deleted by installer)
                 if (!string.IsNullOrEmpty(packageJsonContent))
@@ -2654,6 +2658,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             // Check if this is a script file that could cause compilation errors
                             string extension = Path.GetExtension(filePath).ToLower();
                             bool isCompilableScript = extension == ".cs" || extension == ".asmdef";
+                            bool shouldDisableScript = isCompilableScript && enableCustomUpdateSteps;
                             
                             // Skip ConfuserEx project files
                             if (extension == ".crproj")
@@ -2733,7 +2738,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             }
                             
                             string unityPathname = $"Packages/{packageName}/{relativePath.Replace('\\', '/')}";
-                            if (isCompilableScript)
+                            if (shouldDisableScript)
                             {
                                 unityPathname += ".yucp_disabled";
                             }
@@ -2757,7 +2762,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             }
                             catch { /* best-effort */ }
                             
-                            if (isCompilableScript)
+                            if (shouldDisableScript)
                             {
                                 // Generate new GUID for disabled files (prevents GUID conflicts on re-import)
                                 fileGuid = Guid.NewGuid().ToString("N");
