@@ -141,19 +141,124 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void AddFolderToIgnoreList(ExportProfile profile, string folderPath)
         {
-            var ignoreFolders = profile.PermanentIgnoreFolders;
-            if (!ignoreFolders.Contains(folderPath))
+            if (profile == null || string.IsNullOrWhiteSpace(folderPath))
             {
-                ignoreFolders.Add(folderPath);
+                return;
+            }
+
+            string unityPath = NormalizeUnityPathForIgnore(folderPath);
+            string storedPath = !string.IsNullOrEmpty(unityPath) ? unityPath : Path.GetFullPath(folderPath);
+            string folderGuid = !string.IsNullOrEmpty(unityPath) ? AssetDatabase.AssetPathToGUID(unityPath) : null;
+
+            var ignoreFolders = profile.PermanentIgnoreFolders;
+            bool alreadyIgnored = false;
+
+            for (int i = 0; i < ignoreFolders.Count; i++)
+            {
+                if (ignoreFolders[i].Equals(storedPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    alreadyIgnored = true;
+                    break;
+                }
+
+                if (i < profile.PermanentIgnoreFolderGuids.Count &&
+                    !string.IsNullOrEmpty(profile.PermanentIgnoreFolderGuids[i]) &&
+                    !string.IsNullOrEmpty(folderGuid) &&
+                    profile.PermanentIgnoreFolderGuids[i].Equals(folderGuid, StringComparison.OrdinalIgnoreCase))
+                {
+                    ignoreFolders[i] = storedPath;
+                    alreadyIgnored = true;
+                    break;
+                }
+            }
+
+            if (!alreadyIgnored)
+            {
+                ignoreFolders.Add(storedPath);
+                profile.PermanentIgnoreFolderGuids.Add(folderGuid ?? "");
                 EditorUtility.SetDirty(profile);
-                
+
                 // Automatically rescan without popup
                 ScanAssetsForInspector(profile, silent: true);
             }
             else
             {
-                EditorUtility.DisplayDialog("Already Ignored", $"'{folderPath}' is already in the ignore list.", "OK");
+                EditorUtility.DisplayDialog("Already Ignored", $"'{storedPath}' is already in the ignore list.", "OK");
             }
+        }
+
+        private static string NormalizeUnityPathForIgnore(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            string normalized = path.Replace('\\', '/').Trim();
+
+            if (normalized.StartsWith("Assets/Packages/", StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized.Substring("Assets/".Length);
+            }
+
+            if (normalized.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ||
+                normalized.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+            {
+                return normalized;
+            }
+
+            if (Path.IsPathRooted(normalized))
+            {
+                string unityPath = GetUnityPathFromFullPath(normalized);
+                if (!string.IsNullOrEmpty(unityPath))
+                {
+                    return unityPath;
+                }
+            }
+
+            return null;
+        }
+
+        private static string GetUnityPathFromFullPath(string fullPath)
+        {
+            if (string.IsNullOrWhiteSpace(fullPath))
+            {
+                return null;
+            }
+
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            fullPath = Path.GetFullPath(fullPath);
+
+            if (fullPath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                string relativePath = fullPath.Substring(projectRoot.Length).TrimStart('\\', '/');
+                return relativePath.Replace("\\", "/");
+            }
+
+            string packageCacheRoot = Path.Combine(projectRoot, "Library", "PackageCache");
+            if (fullPath.StartsWith(packageCacheRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                string relative = fullPath.Substring(packageCacheRoot.Length).TrimStart('\\', '/');
+                string[] parts = relative.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 0)
+                {
+                    return null;
+                }
+
+                string packageFolder = parts[0];
+                int atIndex = packageFolder.IndexOf('@');
+                string packageName = atIndex > 0 ? packageFolder.Substring(0, atIndex) : packageFolder;
+
+                string remainder = relative.Substring(packageFolder.Length).TrimStart('\\', '/');
+                if (string.IsNullOrEmpty(remainder))
+                {
+                    return $"Packages/{packageName}";
+                }
+
+                return $"Packages/{packageName}/{remainder.Replace("\\", "/")}";
+            }
+
+            return null;
         }
 
         private void RemoveFromIgnoreList(ExportProfile profile, string folderPath)

@@ -15,6 +15,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
     [CustomEditor(typeof(ExportProfile))]
     public class ExportProfileEditor : UnityEditor.Editor
     {
+    private static readonly HashSet<ExportProfileEditor> ActiveEditors = new HashSet<ExportProfileEditor>();
+    private static readonly HashSet<int> ProfilesNeedingRescan = new HashSet<int>();
+
     private bool showMetadata = true;
     private bool showFolders = true;
     private bool showExportInspector = false;
@@ -38,6 +41,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         private void OnEnable()
         {
+            ActiveEditors.Add(this);
             lastFoldersHash = "";
             
             var profile = (ExportProfile)target;
@@ -52,6 +56,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 };
             }
+        }
+
+        private void OnDisable()
+        {
+            ActiveEditors.Remove(this);
         }
         
         public override void OnInspectorGUI()
@@ -1186,7 +1195,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             string currentFoldersHash = GetFoldersHash(profile.foldersToExport);
             bool foldersChanged = !string.IsNullOrEmpty(lastFoldersHash) && currentFoldersHash != lastFoldersHash;
-            bool needsScan = !profile.HasScannedAssets || foldersChanged;
+            bool projectChanged = ConsumeProjectChangeRescanFlag(profile);
+            bool needsScan = !profile.HasScannedAssets || foldersChanged || projectChanged;
             
             if (needsScan)
             {
@@ -1204,6 +1214,133 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 lastFoldersHash = currentFoldersHash;
             }
+        }
+
+        internal static void NotifyAssetsChanged(string[] changedPaths)
+        {
+            if (changedPaths == null || changedPaths.Length == 0)
+            {
+                return;
+            }
+
+            foreach (var editor in ActiveEditors)
+            {
+                if (editor == null)
+                {
+                    continue;
+                }
+
+                var profile = editor.target as ExportProfile;
+                if (profile == null || profile.foldersToExport == null || profile.foldersToExport.Count == 0)
+                {
+                    continue;
+                }
+
+                if (IsChangeRelevant(profile, changedPaths))
+                {
+                    ProfilesNeedingRescan.Add(profile.GetInstanceID());
+                    editor.Repaint();
+                }
+            }
+        }
+
+        private static bool ConsumeProjectChangeRescanFlag(ExportProfile profile)
+        {
+            if (profile == null)
+            {
+                return false;
+            }
+
+            int id = profile.GetInstanceID();
+            if (ProfilesNeedingRescan.Contains(id))
+            {
+                ProfilesNeedingRescan.Remove(id);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsChangeRelevant(ExportProfile profile, string[] changedPaths)
+        {
+            if (profile == null || profile.foldersToExport == null || changedPaths == null)
+            {
+                return false;
+            }
+
+            var normalizedFolders = new List<string>();
+            foreach (var folder in profile.foldersToExport)
+            {
+                string normalized = NormalizeUnityPath(folder);
+                if (!string.IsNullOrEmpty(normalized))
+                {
+                    normalized = normalized.TrimEnd('/') + "/";
+                    normalizedFolders.Add(normalized);
+                }
+            }
+
+            if (normalizedFolders.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (var changedPath in changedPaths)
+            {
+                if (string.IsNullOrWhiteSpace(changedPath))
+                {
+                    continue;
+                }
+
+                string normalizedChanged = NormalizeUnityPath(changedPath);
+                if (string.IsNullOrEmpty(normalizedChanged))
+                {
+                    continue;
+                }
+
+                foreach (var folder in normalizedFolders)
+                {
+                    string folderWithoutSlash = folder.TrimEnd('/');
+                    if (normalizedChanged.Equals(folderWithoutSlash, StringComparison.OrdinalIgnoreCase) ||
+                        normalizedChanged.StartsWith(folder, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static string NormalizeUnityPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            string normalized = path.Replace('\\', '/').Trim();
+
+            if (normalized.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ||
+                normalized.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+            {
+                return normalized;
+            }
+
+            if (!Path.IsPathRooted(normalized))
+            {
+                return null;
+            }
+
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/');
+            string fullPath = Path.GetFullPath(normalized).Replace('\\', '/');
+
+            if (fullPath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                string relative = fullPath.Substring(projectRoot.Length).TrimStart('/');
+                return relative;
+            }
+
+            return null;
         }
         
         /// <summary>
@@ -1417,4 +1554,3 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
     }
 }
-

@@ -133,52 +133,31 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private string GetFolderFullPath(string nodePath)
         {
+            if (string.IsNullOrWhiteSpace(nodePath))
+            {
+                return nodePath;
+            }
+
+            string pathToProcess = nodePath.Replace('\\', '/').Trim();
+
+            if (pathToProcess.StartsWith("Assets/Packages/", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Packages/" + pathToProcess.Substring("Assets/Packages/".Length);
+            }
+
+            if (pathToProcess.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ||
+                pathToProcess.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+            {
+                return pathToProcess;
+            }
+
+            if (Path.IsPathRooted(pathToProcess))
+            {
+                return pathToProcess;
+            }
+
             string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-            string pathToProcess = nodePath.Replace('\\', '/');
-            string relativePath = pathToProcess;
-
-            int lastAssetsIndex = pathToProcess.LastIndexOf("Assets/", StringComparison.OrdinalIgnoreCase);
-            if (lastAssetsIndex >= 0)
-            {
-                relativePath = pathToProcess.Substring(lastAssetsIndex);
-            }
-            else
-            {
-                int assetsIndex = pathToProcess.LastIndexOf("Assets", StringComparison.OrdinalIgnoreCase);
-                if (assetsIndex >= 0)
-                {
-                    relativePath = pathToProcess.Substring(assetsIndex);
-                    if (!relativePath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
-                    {
-                        relativePath = "Assets/" + relativePath.Substring(6).TrimStart('/');
-                    }
-                }
-                else
-                {
-                    relativePath = "Assets/" + pathToProcess.TrimStart('/');
-                }
-            }
-
-            if (relativePath.Contains(":"))
-            {
-                int assetsIndex = relativePath.LastIndexOf("Assets/", StringComparison.OrdinalIgnoreCase);
-                if (assetsIndex >= 0)
-                {
-                    relativePath = relativePath.Substring(assetsIndex);
-                }
-            }
-
-            string folderFullPath = Path.GetFullPath(Path.Combine(projectRoot, relativePath));
-
-            string expectedAssetsPath = Path.Combine(projectRoot, "Assets");
-            if (folderFullPath.Contains(expectedAssetsPath + Path.DirectorySeparatorChar + expectedAssetsPath))
-            {
-                int dupIndex = folderFullPath.IndexOf(expectedAssetsPath + Path.DirectorySeparatorChar + expectedAssetsPath);
-                folderFullPath = folderFullPath.Substring(0, dupIndex + expectedAssetsPath.Length) +
-                               folderFullPath.Substring(dupIndex + expectedAssetsPath.Length + expectedAssetsPath.Length);
-            }
-
-            return folderFullPath;
+            return Path.GetFullPath(Path.Combine(projectRoot, "Assets", pathToProcess));
         }
 
         private FolderTreeNode BuildFolderTree(List<DiscoveredAsset> assets)
