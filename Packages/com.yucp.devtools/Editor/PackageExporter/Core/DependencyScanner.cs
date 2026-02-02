@@ -739,17 +739,37 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 if (dep == null)
                     continue;
-                
+
+                // 1) Respect explicit custom repo URL if provided on the dependency.
                 if (!string.IsNullOrWhiteSpace(dep.vpmRepositoryUrl))
                 {
                     string url = dep.vpmRepositoryUrl.Trim();
-                    if (!IsValidDownloadUrl(url))
-                        continue;
-                    
-                    string key = $"{dep.packageName} (Custom)";
-                    if (!repos.ContainsKey(key))
+                    if (IsValidDownloadUrl(url))
                     {
-                        repos[key] = url;
+                        string key = $"{dep.packageName} (Custom)";
+                        if (!repos.ContainsKey(key))
+                        {
+                            repos[key] = url;
+                        }
+                    }
+                }
+
+                // 2) Otherwise, embed the discovered repo URL (if any) so users without that repo can still install.
+                if (TryGetVpmDependencyRepoInfo(
+                        dep,
+                        out var repoName,
+                        out var repoUrl,
+                        out var hasDownloadUrl,
+                        out _,
+                        out _))
+                {
+                    if (hasDownloadUrl && IsValidDownloadUrl(repoUrl))
+                    {
+                        string key = string.IsNullOrWhiteSpace(repoName) ? "VPM Repo" : repoName.Trim();
+                        if (!repos.ContainsKey(key))
+                        {
+                            repos[key] = repoUrl;
+                        }
                     }
                 }
             }
