@@ -140,6 +140,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             string pathToProcess = nodePath.Replace('\\', '/').Trim();
 
+            if (pathToProcess.Equals("Assets/Packages", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Packages";
+            }
+
             if (pathToProcess.StartsWith("Assets/Packages/", StringComparison.OrdinalIgnoreCase))
             {
                 return "Packages/" + pathToProcess.Substring("Assets/Packages/".Length);

@@ -28,6 +28,78 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             CreateCustomVersionRuleInternal();
         }
+
+        [MenuItem("Assets/YUCP/Package Exporter/Create Package For Exporter", priority = 120)]
+        public static void CreatePackageForExporterFromFolder()
+        {
+            string selectedPath = AssetDatabase.GetAssetPath(Selection.activeObject);
+            if (string.IsNullOrEmpty(selectedPath) || !Directory.Exists(selectedPath))
+            {
+                EditorUtility.DisplayDialog(
+                    "Create Package",
+                    "Please select a folder in the Project window.",
+                    "OK"
+                );
+                return;
+            }
+
+            string folderName = Path.GetFileName(selectedPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.IsNullOrWhiteSpace(folderName))
+            {
+                folderName = "NewPackage";
+            }
+
+            string profilesDir = selectedPath;
+            if (selectedPath.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+            {
+                profilesDir = "Assets/YUCP/ExportProfiles";
+                if (!Directory.Exists(profilesDir))
+                {
+                    Directory.CreateDirectory(profilesDir);
+                    AssetDatabase.Refresh();
+                }
+            }
+
+            var profile = ScriptableObject.CreateInstance<ExportProfile>();
+            profile.profileName = folderName;
+            profile.packageName = folderName;
+            profile.version = "1.0.0";
+
+            profile.foldersToExport.Add(selectedPath);
+            profile.includeDependencies = true;
+            profile.recurseFolders = true;
+            profile.generatePackageJson = true;
+            profile.profileSaveLocation = profilesDir;
+
+            try
+            {
+                profile.discoveredAssets = AssetCollector.ScanExportFolders(profile, includeDependencies: true);
+                profile.MarkScanned();
+                DependencyScanner.AutoDetectUsedDependencies(profile);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP] Failed to auto-map package contents: {ex.Message}");
+            }
+
+            string assetPath = AssetDatabase.GenerateUniqueAssetPath(
+                Path.Combine(profilesDir, $"{folderName}_ExportProfile.asset"));
+
+            AssetDatabase.CreateAsset(profile, assetPath);
+            AssetDatabase.SaveAssets();
+
+            Selection.activeObject = profile;
+            EditorGUIUtility.PingObject(profile);
+
+            Debug.Log($"[YUCP] Created export profile from folder: {assetPath}");
+        }
+
+        [MenuItem("Assets/YUCP/Package Exporter/Create Package For Exporter", true)]
+        private static bool CreatePackageForExporterFromFolderValidate()
+        {
+            string selectedPath = AssetDatabase.GetAssetPath(Selection.activeObject);
+            return !string.IsNullOrEmpty(selectedPath) && Directory.Exists(selectedPath);
+        }
         
         private static void CreateExportProfileInternal(bool useCurrentFolder = false)
         {

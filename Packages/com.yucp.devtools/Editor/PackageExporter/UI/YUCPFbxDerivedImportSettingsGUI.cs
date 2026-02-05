@@ -171,17 +171,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				
 				EditorGUILayout.Space(5);
 
-				// Fix File References
-				EditorGUILayout.LabelField("Maintenance (Repair)", EditorStyles.miniBoldLabel);
-				
-				EditorGUILayout.BeginHorizontal();
-				if (GUILayout.Button("Repair File Identity (GUID)", GUILayout.Height(24)))
-				{
-					RegenerateAndRelinkGuids(importer, settings);
-				}
-				EditorGUILayout.EndHorizontal();
-				
-				DrawHelpText("Use this ONLY if you replaced the file manually and links are broken. It assigns a new ID to this file and updates references.");
+				// Restore Original
+				EditorGUILayout.LabelField("Restore Original FBX", EditorStyles.miniBoldLabel);
+				DrawRestoreOriginalAction(importer);
 
 				EditorGUI.indentLevel--;
 			}
@@ -268,135 +260,57 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			if (!confirmed)
 				return;
 			
-			try
+			var repairResult = GuidRepairUtility.RepairDerivedGuid(currentFbxPath, true);
+			if (!repairResult.success)
 			{
-				EditorUtility.DisplayProgressBar("Fixing File References", "Preparing...", 0.1f);
-				
-				// Store the old GUID before regenerating (this is the current derived FBX's GUID)
-				string oldDerivedGuid = currentGuid;
-				
-				// Generate a new GUID using Unity's GUID system
-				// Use Unity's GUID.Generate() to ensure compatibility with Unity's GUID format
-				UnityEditor.GUID unityGuid = UnityEditor.GUID.Generate();
-				string newDerivedGuid = unityGuid.ToString(); // This gives us the 32-character hex string
-				
-				EditorUtility.DisplayProgressBar("Fixing File References", "Updating file ID...", 0.3f);
-				
-				// Use the precise method that preserves ALL .meta file content (materials, importer settings, etc.)
-				// and only changes the GUID value
-				if (!MetaFileManager.ChangeGuidPreservingContent(currentFbxPath, newDerivedGuid))
-				{
-					EditorUtility.ClearProgressBar();
-					EditorUtility.DisplayDialog("Error", "Failed to update the file. Please check the Console window for details and make sure the file is not locked or in use.", "OK");
-					return;
-				}
-				
-				EditorUtility.DisplayProgressBar("Fixing File References", "Refreshing Unity...", 0.5f);
-				
-				// Refresh WITHOUT forcing reimport to avoid Unity regenerating the .meta file
-				// We just need Unity to pick up the GUID change, not reimport the asset
-				AssetDatabase.Refresh(ImportAssetOptions.Default);
-				
-				// Wait a moment for Unity to process
-				System.Threading.Thread.Sleep(300);
-				
-				// Verify the new GUID was set correctly
-				string verifyGuid = AssetDatabase.AssetPathToGUID(currentFbxPath);
-				if (string.IsNullOrEmpty(verifyGuid))
-				{
-					EditorUtility.ClearProgressBar();
-					EditorUtility.DisplayDialog("Error", "Could not verify the file was updated. Please check if the file exists and try again.", "OK");
-					return;
-				}
-				
-				// Check if Unity picked up our new GUID or regenerated its own
-				if (verifyGuid != newDerivedGuid)
-				{
-					// Unity might have regenerated a different GUID due to caching
-					// Let's read what's actually in the .meta file
-					string metaGuid = MetaFileManager.ReadGuid(currentFbxPath);
-					if (!string.IsNullOrEmpty(metaGuid) && metaGuid == newDerivedGuid)
-					{
-						// Our GUID is in the file, but Unity isn't seeing it - cache issue
-						Debug.LogWarning($"[YUCP] GUID mismatch - .meta file has {newDerivedGuid} but Unity reports {verifyGuid}. This is likely a Unity cache issue.");
-						// Use the GUID from the file since that's what we wrote
-						// Unity should pick it up eventually or after restart
-					}
-					else
-					{
-						// Unity overwrote our GUID - use what Unity assigned
-						newDerivedGuid = verifyGuid;
-						Debug.LogWarning($"[YUCP] Unity assigned a different GUID: {verifyGuid} instead of our {newDerivedGuid}");
-					}
-				}
-				
-				if (newDerivedGuid == oldDerivedGuid)
-				{
-					EditorUtility.ClearProgressBar();
-					EditorUtility.DisplayDialog("Warning", 
-						$"The file ID did not change. Unity might be using cached information.\n\n" +
-						$"Try one of these:\n" +
-						$"- Close and reopen Unity\n" +
-						$"- Restart your computer\n" +
-						$"- Contact support if the problem persists", 
-						"OK");
-					return;
-				}
-				
-				Debug.Log($"[YUCP] Regenerated GUID for derived FBX {currentFbxPath}: {oldDerivedGuid} -> {newDerivedGuid}");
-				
-				EditorUtility.DisplayProgressBar("Fixing File References", "Updating connections in prefabs and scenes...", 0.7f);
-				
-				// Update all references that were pointing to the old derived GUID to point to the new one
-				int updatedCount = GuidReferenceUpdater.UpdateReferences(oldDerivedGuid, newDerivedGuid, currentFbxPath);
-				
-				// Note: We don't update references from base GUIDs to new derived GUID here
-				// because the goal is to allow the original FBX to be reimported with its base GUID.
-				// References to the base GUID should remain pointing to the base GUID so they work
-				// when the original FBX is reimported.
-				
-				EditorUtility.DisplayProgressBar("Fixing File References", "Finishing up...", 0.9f);
-				
-				AssetDatabase.Refresh();
-				
-				EditorUtility.ClearProgressBar();
-				
-				string resultMessage = $"Success!\n\n";
-				resultMessage += $"File: {Path.GetFileName(currentFbxPath)}\n";
-				resultMessage += $"Files updated: {updatedCount}\n\n";
-				
-				if (hasBaseGuid && !baseStillExists)
-				{
-					resultMessage += $"Next steps to restore your original FBX:\n\n";
-					resultMessage += $"1. Move this derived FBX file to a different folder\n";
-					resultMessage += $"2. Put your original FBX file back at this location\n";
-					resultMessage += $"3. Unity will automatically reimport it\n";
-					resultMessage += $"4. The system will recognize your original file again\n\n";
-					resultMessage += $"All your materials and settings will be preserved!";
-				}
-				else
-				{
-					resultMessage += $"Next steps:\n\n";
-					resultMessage += $"1. You can now move this derived FBX to a different location\n";
-					resultMessage += $"2. Put your original FBX file back at this location\n";
-					resultMessage += $"3. Update the \"Base FBX\" field above to point to your original file\n\n";
-					resultMessage += $"All your materials and settings will be preserved!";
-				}
-				
-				EditorUtility.DisplayDialog(
-					"Complete!",
-					resultMessage,
-					"OK"
-				);
-				
-				Debug.Log($"[YUCP] GUID regeneration complete. Updated {updatedCount} file(s). Derived FBX now has GUID {newDerivedGuid}, ready for original FBX to be reimported.");
+				EditorUtility.DisplayDialog("Error", repairResult.errorMessage, "OK");
+				return;
 			}
-			catch (Exception ex)
+
+			if (!string.IsNullOrEmpty(repairResult.warningMessage))
 			{
-				EditorUtility.ClearProgressBar();
-				Debug.LogError($"[YUCP] Error regenerating GUID: {ex.Message}\n{ex.StackTrace}");
-				EditorUtility.DisplayDialog("Error", $"Failed to regenerate GUID: {ex.Message}", "OK");
+				Debug.LogWarning($"[YUCP] {repairResult.warningMessage}");
 			}
+
+			string resultMessage = $"Success!\n\n";
+			resultMessage += $"File: {Path.GetFileName(currentFbxPath)}\n";
+			resultMessage += $"Files updated: {repairResult.updatedCount}\n\n";
+				
+			if (hasBaseGuid && !baseStillExists)
+			{
+				resultMessage += $"Next steps to restore your original FBX:\n\n";
+				resultMessage += $"1. Move this derived FBX file to a different folder\n";
+				resultMessage += $"2. Put your original FBX file back at this location\n";
+				resultMessage += $"3. Unity will automatically reimport it\n";
+				resultMessage += $"4. The system will recognize your original file again\n\n";
+				resultMessage += $"All your materials and settings will be preserved!";
+			}
+			else
+			{
+				resultMessage += $"Next steps:\n\n";
+				resultMessage += $"1. You can now move this derived FBX to a different location\n";
+				resultMessage += $"2. Put your original FBX file back at this location\n";
+				resultMessage += $"3. Update the \"Base FBX\" field above to point to your original file\n\n";
+				resultMessage += $"All your materials and settings will be preserved!";
+			}
+			
+			EditorUtility.DisplayDialog(
+				"Complete!",
+				resultMessage,
+				"OK"
+			);
+		}
+
+		private static void DrawRestoreOriginalAction(ModelImporter importer)
+		{
+			DrawHelpText("Use this only if you replaced the original FBX and want to bring the original back.");
+			
+			EditorGUILayout.BeginHorizontal();
+			if (GUILayout.Button("Restore Original FBX (Guided)", GUILayout.Height(24)))
+			{
+				DerivedFbxGuidRepairWizard.Open(importer);
+			}
+			EditorGUILayout.EndHorizontal();
 		}
 	}
 }

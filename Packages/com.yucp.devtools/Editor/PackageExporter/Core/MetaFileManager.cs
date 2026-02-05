@@ -39,6 +39,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			
 			return null;
 		}
+
+		/// <summary>
+		/// Extracts a GUID from .meta file content.
+		/// </summary>
+		public static string ExtractGuidFromMetaContent(string metaContent)
+		{
+			if (string.IsNullOrEmpty(metaContent))
+				return null;
+			
+			var match = Regex.Match(metaContent, @"guid:\s*([a-f0-9]{32})", RegexOptions.IgnoreCase);
+			if (match.Success)
+			{
+				return match.Groups[1].Value;
+			}
+			
+			return null;
+		}
 		
 		/// <summary>
 		/// Writes a GUID to a .meta file, preserving all other settings (materials, importer settings, etc.).
