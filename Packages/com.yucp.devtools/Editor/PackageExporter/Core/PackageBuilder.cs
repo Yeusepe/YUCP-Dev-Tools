@@ -1953,6 +1953,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var processedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var allDependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var toProcess = new Queue<string>();
+            
+            // Build set of explicitly excluded paths from Export Inspector toggles (user unchecked items)
+            var explicitlyExcludedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (profile.HasScannedAssets && profile.discoveredAssets != null)
+            {
+                foreach (var a in profile.discoveredAssets)
+                {
+                    if (!a.isFolder && !a.included)
+                    {
+                        string unityPath = GetRelativePackagePath(a.assetPath);
+                        if (!string.IsNullOrEmpty(unityPath))
+                        {
+                            explicitlyExcludedPaths.Add(unityPath.Replace('\\', '/'));
+                        }
+                    }
+                }
+            }
             const int maxDepth = 5; // Prevent infinite loops while still catching nested deps
             
             // Mark original assets as processed and add to queue for dependency collection
@@ -2007,6 +2024,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         if (ShouldExcludeAsset(dep, profile))
                         {
                             Debug.Log($"[PackageBuilder] Excluding dependency (in ignore list): {dep}");
+                            continue;
+                        }
+                        
+                        // Respect Export Inspector toggles: do not add dependencies the user explicitly unchecked
+                        string depNormalized = dep.Replace('\\', '/');
+                        if (explicitlyExcludedPaths.Contains(depNormalized))
+                        {
+                            Debug.Log($"[PackageBuilder] Excluding dependency (unchecked in Export Inspector): {dep}");
                             continue;
                         }
                         

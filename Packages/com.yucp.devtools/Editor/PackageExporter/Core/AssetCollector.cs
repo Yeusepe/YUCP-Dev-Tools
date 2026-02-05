@@ -191,10 +191,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         
                         // Skip if in an ignored folder - check before adding
                         if (ShouldIgnoreFile(fullDepPath, profile))
-                        {
-                            Debug.Log($"[AssetCollector] Excluding dependency in ignored folder: {dep} ({fullDepPath})");
                             continue;
-                        }
 
                         // If dependency is inside an export folder, treat it as direct (not dependency)
                         if (TryGetContainingExportFolder(fullDepPath, profile, out string sourceFolder))
@@ -654,6 +651,52 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             
             return false;
+        }
+        
+        /// <summary>
+        /// Preserve user's included/excluded toggles when replacing discoveredAssets with a new scan.
+        /// Matches assets by path and applies the previous included state to the updated list.
+        /// </summary>
+        public static void PreserveIncludedState(List<DiscoveredAsset> previous, List<DiscoveredAsset> updated)
+        {
+            if (previous == null || previous.Count == 0 || updated == null)
+                return;
+            
+            var includedByPath = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var a in previous)
+            {
+                if (!a.isFolder && !string.IsNullOrEmpty(a.assetPath))
+                {
+                    string key = GetNormalizedPathKey(a.assetPath);
+                    if (!string.IsNullOrEmpty(key))
+                        includedByPath[key] = a.included;
+                }
+            }
+            
+            foreach (var a in updated)
+            {
+                if (!a.isFolder && !string.IsNullOrEmpty(a.assetPath))
+                {
+                    string key = GetNormalizedPathKey(a.assetPath);
+                    if (!string.IsNullOrEmpty(key) && includedByPath.TryGetValue(key, out bool included))
+                        a.included = included;
+                }
+            }
+        }
+        
+        private static string GetNormalizedPathKey(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return null;
+            try
+            {
+                string full = Path.GetFullPath(path).Replace('\\', '/');
+                return string.IsNullOrEmpty(full) ? null : full;
+            }
+            catch
+            {
+                return path.Replace('\\', '/');
+            }
         }
         
         /// <summary>

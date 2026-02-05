@@ -1365,7 +1365,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             try
             {
-                profile.discoveredAssets = AssetCollector.ScanExportFolders(profile, profile.includeDependencies);
+                var previousAssets = profile.discoveredAssets;
+                var newAssets = AssetCollector.ScanExportFolders(profile, profile.includeDependencies);
+                AssetCollector.PreserveIncludedState(previousAssets, newAssets);
+                profile.discoveredAssets = newAssets;
                 profile.MarkScanned();
                 lastFoldersHash = GetFoldersHash(profile.foldersToExport);
                 EditorUtility.SetDirty(profile);

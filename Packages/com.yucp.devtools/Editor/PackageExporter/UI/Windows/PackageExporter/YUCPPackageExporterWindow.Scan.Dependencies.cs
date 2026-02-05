@@ -196,13 +196,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             string normalized = path.Replace('\\', '/').Trim();
 
+            if (normalized.Equals("Assets/Packages", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Packages";
+            }
+
             if (normalized.StartsWith("Assets/Packages/", StringComparison.OrdinalIgnoreCase))
             {
-                normalized = normalized.Substring("Assets/".Length);
+                normalized = "Packages/" + normalized.Substring("Assets/Packages/".Length);
             }
 
             if (normalized.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ||
-                normalized.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+                normalized.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals("Packages", StringComparison.OrdinalIgnoreCase))
             {
                 return normalized;
             }
