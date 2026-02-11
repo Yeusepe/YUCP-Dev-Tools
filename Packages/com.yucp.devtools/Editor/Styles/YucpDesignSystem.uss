@@ -797,13 +797,12 @@
    ============================================================================ */
 .yucp-validation-error {
     background-color: rgba(226, 74, 74, 0.25);
-    border-left-width: 3px;
-    border-left-color: #E24A4A;
+    border-left-width: 0;
     border-radius: 6px;
     padding: 12px;
     margin: 8px 0;
     transition-duration: 0.2s;
-    transition-property: opacity, border-left-color;
+    transition-property: opacity;
     transition-timing-function: ease-out;
 }
 
@@ -814,13 +813,12 @@
 
 .yucp-validation-warning {
     background-color: rgba(226, 165, 74, 0.25);
-    border-left-width: 3px;
-    border-left-color: #E2A54A;
+    border-left-width: 0;
     border-radius: 6px;
     padding: 12px;
     margin: 8px 0;
     transition-duration: 0.2s;
-    transition-property: opacity, border-left-color;
+    transition-property: opacity;
     transition-timing-function: ease-out;
 }
 
@@ -831,13 +829,12 @@
 
 .yucp-validation-success {
     background-color: rgba(54, 191, 177, 0.25);
-    border-left-width: 3px;
-    border-left-color: #36BFB1;
+    border-left-width: 0;
     border-radius: 6px;
     padding: 12px;
     margin: 8px 0;
     transition-duration: 0.2s;
-    transition-property: opacity, border-left-color;
+    transition-property: opacity;
     transition-timing-function: ease-out;
 }
 
@@ -967,13 +964,12 @@
    ============================================================================ */
 .yucp-help-box {
     background-color: rgba(91, 163, 255, 0.1);
-    border-left-width: 3px;
-    border-left-color: #5BA3FF;
+    border-left-width: 0;
     padding: 12px;
     margin: 8px 0;
     border-radius: 6px;
     transition-duration: 0.2s;
-    transition-property: opacity, border-left-color;
+    transition-property: opacity;
     transition-timing-function: ease-out;
 }
 

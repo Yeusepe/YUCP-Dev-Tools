@@ -322,8 +322,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             card.style.paddingBottom = 8;
             card.style.paddingLeft = 12;
             card.style.paddingRight = 12;
-            card.style.borderLeftWidth = 3;
-            card.style.borderLeftColor = dep.enabled ? new Color(0.21f, 0.75f, 0.73f, 1f) : new Color(0.3f, 0.3f, 0.3f, 1f);
+            card.style.borderLeftWidth = 0;
             card.style.width = Length.Percent(100);
             card.style.maxWidth = Length.Percent(100);
             card.style.minWidth = 0;
@@ -414,8 +413,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 warningBox.style.marginTop = 8;
                 warningBox.style.marginBottom = 8;
                 warningBox.style.backgroundColor = new Color(0.7f, 0.65f, 0.1f, 0.3f); // Yellow warning color (more yellow, less green)
-                warningBox.style.borderLeftWidth = 3;
-                warningBox.style.borderLeftColor = new Color(0.9f, 0.85f, 0.2f, 1f); // Yellow border
                 
                 var warningText = new Label(warningMessage);
                 warningText.AddToClassList("yucp-help-box-text");
@@ -461,8 +458,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 warningBox.style.marginTop = 8;
                 warningBox.style.marginBottom = 8;
                 warningBox.style.backgroundColor = new Color(0.7f, 0.25f, 0.25f, 0.25f);
-                warningBox.style.borderLeftWidth = 3;
-                warningBox.style.borderLeftColor = new Color(0.9f, 0.35f, 0.35f, 1f);
                 
                 var warningText = new Label("This dependency is set to 'Dependency' but no download URL was found in any VPM repository. It will be skipped when generating package.json.");
                 warningText.AddToClassList("yucp-help-box-text");
