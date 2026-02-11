@@ -106,6 +106,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private int insertDraggedItemAtIndex = -1; // Where item will be inserted (calculated from mouse position)
         // private float draggedItemHoldOffset = 0f; // Offset from mouse to item center when drag started (vFavorites approach) - kept for potential future use
         private int draggingVisualIndex = -1; // Visual index of dragged item in list
+        /// <summary>List container where the current drag started (main sidebar or overlay). Used so overlay uses same folder/profile logic as main.</summary>
+        private VisualElement _draggingListContainer = null;
         
         // Stack-to-create folder state
         private VisualElement stackTargetElement = null;

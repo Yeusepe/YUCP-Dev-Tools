@@ -61,7 +61,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
             
-            var listContainer = _profileListContainer;
+            var listContainer = _draggingListContainer ?? _profileListContainer;
             if (listContainer == null) return;
             
             // Calculate deltaTime (vFavorites approach)

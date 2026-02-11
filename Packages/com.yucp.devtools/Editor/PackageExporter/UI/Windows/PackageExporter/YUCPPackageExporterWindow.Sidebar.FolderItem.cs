@@ -146,6 +146,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         header.AddToClassList("yucp-profile-item-dragging");
                         
                         var listContainer = header.parent;
+                        _draggingListContainer = listContainer; // Use this container for entire drag (overlay vs main)
                         if (listContainer != null)
                         {
                             // Store original position in world space
@@ -237,7 +238,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             draggedItemContainer.style.top = mousePos.y - dragOffset.y;
                         }
                         
-                        var listContainer = _profileListContainer;
+                        var listContainer = _draggingListContainer ?? _profileListContainer;
                         if (listContainer != null)
                         {
                             // Calculate insertDraggedItemAtIndex for folders (same logic as profiles)
@@ -327,7 +328,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         header.RemoveFromClassList("yucp-profile-item-dragging");
                         header.style.scale = new Scale(Vector2.one);
                         
-                        var listContainer = _profileListContainer;
+                        var listContainer = _draggingListContainer ?? _profileListContainer;
                         if (listContainer != null)
                         {
                             int targetIndex = potentialDropIndex >= 0 ? potentialDropIndex : -1;
@@ -387,6 +388,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     draggingElement = null;
                     hasDragged = false;
                     potentialDropIndex = -1;
+                    _draggingListContainer = null;
                     evt.StopPropagation();
                 }
             });

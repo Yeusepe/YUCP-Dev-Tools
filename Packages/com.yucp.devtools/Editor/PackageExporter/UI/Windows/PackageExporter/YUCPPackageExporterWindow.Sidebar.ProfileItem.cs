@@ -322,6 +322,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         item.AddToClassList("yucp-profile-item-dragging");
                         
                         var listContainer = item.parent;
+                        _draggingListContainer = listContainer; // Use this container for entire drag (overlay vs main)
                         if (listContainer != null)
                         {
                             // Store original position in world space
@@ -431,11 +432,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             
                             Vector2 mousePos = evt.mousePosition;
                             
-                            // Get list container
-                            var listContainer = _profileListContainer;
+                            // Get list container (overlay or main, set when drag started)
+                            var listContainer = _draggingListContainer ?? _profileListContainer;
                             if (listContainer == null)
                             {
-                                // Try to find it from root
                                 listContainer = rootVisualElement.Q<VisualElement>(className: "yucp-profile-list-container");
                             }
                             
@@ -546,8 +546,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         // We were dragging - handle drop (vFavorites approach)
                         item.RemoveFromClassList("yucp-profile-item-dragging");
                         
-                        // Get list container
-                        var listContainer = _profileListContainer;
+                        // Get list container (overlay or main, set when drag started)
+                        var listContainer = _draggingListContainer ?? _profileListContainer;
                         if (listContainer == null)
                         {
                             listContainer = rootVisualElement.Q<VisualElement>(className: "yucp-profile-list-container");
@@ -726,6 +726,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     draggingElement = null;
                     hasDragged = false;
                     potentialDropIndex = -1;
+                    _draggingListContainer = null;
                     evt.StopPropagation();
                 }
             });
