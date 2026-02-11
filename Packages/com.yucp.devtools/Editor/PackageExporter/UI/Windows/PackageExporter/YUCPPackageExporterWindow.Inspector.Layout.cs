@@ -41,7 +41,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 Undo.RecordObject(profile, "Rescan Assets");
                 ScanAssetsForInspector(profile, silent: true);
             });
-            rescanButton.tooltip = "Rescan Assets";
+            if (!_isCompactMode) rescanButton.tooltip = "Rescan Assets";
             rescanButton.AddToClassList("yucp-button");
             rescanButton.AddToClassList("yucp-button-small");
             
@@ -117,6 +117,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Help box
                 var helpBox = new VisualElement();
                 helpBox.AddToClassList("yucp-help-box");
+                helpBox.AddToClassList("yucp-help-box-info");
                 var helpText = new Label("The Export Inspector shows all assets discovered from your export folders. Scan to discover assets, then deselect unwanted items or add folders to the permanent ignore list.");
                 helpText.AddToClassList("yucp-help-box-text");
                 helpBox.Add(helpText);
@@ -134,6 +135,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     var infoBox = new VisualElement();
                     infoBox.AddToClassList("yucp-help-box");
+                    infoBox.AddToClassList("yucp-help-box-info");
                     var infoText = new Label("Scanning assets... This will complete automatically.");
                     infoText.AddToClassList("yucp-help-box-text");
                     infoBox.Add(infoText);
@@ -150,6 +152,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
 					var summaryBox = new VisualElement();
                     summaryBox.AddToClassList("yucp-help-box");
+                    summaryBox.AddToClassList("yucp-help-box-info");
                     var summaryText = new Label(AssetCollector.GetAssetSummary(profile.discoveredAssets));
                     summaryText.AddToClassList("yucp-help-box-text");
                     summaryBox.Add(summaryText);
@@ -161,6 +164,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					{
 						var derivedBox = new VisualElement();
 						derivedBox.AddToClassList("yucp-help-box");
+						derivedBox.AddToClassList("yucp-help-box-info");
 						var derivedText = new Label($"{derivedCount} FBX asset(s) are marked to export as derived FBX packages.");
 						derivedText.AddToClassList("yucp-help-box-text");
 						derivedBox.Add(derivedText);
@@ -617,6 +621,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     var ignoreHelpBox = new VisualElement();
                     ignoreHelpBox.AddToClassList("yucp-help-box");
+                    ignoreHelpBox.AddToClassList("yucp-help-box-info");
                     var ignoreHelpText = new Label("Folders in this list will be permanently ignored from all exports (like .gitignore).");
                     ignoreHelpText.AddToClassList("yucp-help-box-text");
                     ignoreHelpBox.Add(ignoreHelpText);
@@ -644,7 +649,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             var removeIgnoreButton = new Button(() => RemoveFromIgnoreList(profile, ignoreFolder)) { text = "×" };
                             removeIgnoreButton.AddToClassList("yucp-button");
                             removeIgnoreButton.AddToClassList("yucp-folder-item-remove");
-                            removeIgnoreButton.tooltip = "Remove from ignore list";
+                            if (!_isCompactMode) removeIgnoreButton.tooltip = "Remove from ignore list";
                             ignoreItem.Add(removeIgnoreButton);
                             
                             section.Add(ignoreItem);

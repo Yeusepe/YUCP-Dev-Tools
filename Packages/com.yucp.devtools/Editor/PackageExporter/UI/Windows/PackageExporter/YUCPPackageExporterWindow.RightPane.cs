@@ -38,7 +38,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _rightPaneScrollView.Add(_profileDetailsContainer);
             
             // Top Navigation Bar (Sticky Header)
-            _topNavBar = new TopNavBar(OnTopNavClicked, ShowUnifiedMenu, ToggleOverlay);
+            _topNavBar = new TopNavBar(OnTopNavClicked, ShowUnifiedMenu, ToggleOverlay, _isCompactMode);
             _topNavBar.style.display = DisplayStyle.None; // Hidden by default until profile loaded
             
             
@@ -447,9 +447,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                  else menu.AddItem(new GUIContent($"Help/{item.Label}"), false, () => item.Callback?.Invoke());
             }
 
-            // Compact Mode
+            // View Options
             menu.AddSeparator("");
             menu.AddItem(new GUIContent("Compact View"), _isCompactMode, ToggleCompactMode);
+            menu.AddItem(new GUIContent("Show Help Boxes"), _showInfoHelpBoxes, ToggleShowInfoHelpBoxes);
 
             menu.ShowAsContext();
         }

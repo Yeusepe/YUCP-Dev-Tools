@@ -710,7 +710,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return row;
         }
 
-        private VisualElement CreateRuleToggleRow(string label, string tooltip, bool value, Action<bool> setter)
+        private VisualElement CreateRuleToggleRow(string label, string tooltip, bool value, Action<bool> setter, bool isWarningOrError = false)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -725,7 +725,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var text = new Label(label);
             text.style.fontSize = 10;
             text.style.opacity = 0.7f;
-            text.tooltip = tooltip;
+            if (!string.IsNullOrEmpty(tooltip) && (!_isCompactMode || isWarningOrError))
+            {
+                text.tooltip = tooltip;
+            }
             row.Add(text);
 
             return row;

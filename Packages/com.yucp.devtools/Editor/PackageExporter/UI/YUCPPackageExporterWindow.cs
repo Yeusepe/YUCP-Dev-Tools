@@ -146,6 +146,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private bool _isCompactMode = false;
         private const string CompactModeKey = "com.yucp.devtools.packageexporter.compactmode";
 
+        // Show Info Help Boxes (can be turned off from menu, independent of compact mode)
+        private bool _showInfoHelpBoxes = true;
+        private const string ShowInfoHelpBoxesKey = "com.yucp.devtools.packageexporter.showinfohelpboxes";
+
         
         // Dependencies filter state
         private string dependenciesSearchFilter = "";

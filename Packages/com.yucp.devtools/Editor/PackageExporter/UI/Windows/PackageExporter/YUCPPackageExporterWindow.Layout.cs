@@ -71,6 +71,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 root.AddToClassList("yucp-compact-mode");
             }
             
+            // Initialize Show Info Help Boxes
+            _showInfoHelpBoxes = EditorPrefs.GetBool(ShowInfoHelpBoxesKey, true);
+            UpdateHideInfoHelpState();
+            
             // Load saved width or use default (shared between overlay and normal pane)
             float savedWidth = EditorPrefs.GetFloat(LeftPaneWidthKey, DefaultLeftPaneWidth);
             savedWidth = Mathf.Clamp(savedWidth, MinLeftPaneWidth, MaxLeftPaneWidth);

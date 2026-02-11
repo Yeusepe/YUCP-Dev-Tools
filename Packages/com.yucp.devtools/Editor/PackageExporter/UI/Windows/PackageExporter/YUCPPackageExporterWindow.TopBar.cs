@@ -492,6 +492,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return bar;
         }
 
+        private void UpdateHideInfoHelpState()
+        {
+            bool hideInfoHelp = _isCompactMode || !_showInfoHelpBoxes;
+            if (hideInfoHelp)
+                rootVisualElement.AddToClassList("yucp-hide-info-help");
+            else
+                rootVisualElement.RemoveFromClassList("yucp-hide-info-help");
+        }
+
         private void ToggleCompactMode()
         {
             _isCompactMode = !_isCompactMode;
@@ -503,6 +512,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             else
                 rootVisualElement.RemoveFromClassList("yucp-compact-mode");
 
+            UpdateHideInfoHelpState();
+            _topNavBar?.UpdateTooltipVisibility(_isCompactMode);
+            UpdateProfileDetails();
+
             // Rebuild top bar to update button text (if a top bar exists in the layout)
             var topBar = rootVisualElement.Q(className: "yucp-top-bar");
             if (topBar != null)
@@ -512,6 +525,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 topBar.RemoveFromHierarchy();
                 parent.Insert(index, CreateTopBar());
             }
+        }
+
+        private void ToggleShowInfoHelpBoxes()
+        {
+            _showInfoHelpBoxes = !_showInfoHelpBoxes;
+            EditorPrefs.SetBool(ShowInfoHelpBoxesKey, _showInfoHelpBoxes);
+            UpdateHideInfoHelpState();
+            UpdateProfileDetails();
         }
     }
 }

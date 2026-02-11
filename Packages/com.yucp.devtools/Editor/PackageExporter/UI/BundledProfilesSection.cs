@@ -43,6 +43,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Help text explaining what bundled profiles do
             var helpBox = new VisualElement();
             helpBox.AddToClassList("yucp-help-box");
+            helpBox.AddToClassList("yucp-help-box-info");
             helpBox.style.marginTop = 8;
             var helpText = new Label("Bundled profiles allow you to combine multiple packages into one. When you export this profile, all assets from the bundled profiles will be included in the exported package.");
             helpText.AddToClassList("yucp-help-box-text");

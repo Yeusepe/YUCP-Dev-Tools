@@ -128,8 +128,10 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         };
 
         private Action _onSidebarToggle;
+        private Button _sidebarBtn;
+        private Button _toolsBtn;
 
-        public TopNavBar(Action<string> onTabClicked, Action onMenuClicked = null, Action onSidebarToggle = null)
+        public TopNavBar(Action<string> onTabClicked, Action onMenuClicked = null, Action onSidebarToggle = null, bool hideInfoTooltips = false)
         {
             _onTabClicked = onTabClicked;
             _onMenuClicked = onMenuClicked;
@@ -165,12 +167,11 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             // Sidebar Toggle (Mobile/Narrow only)
             if (_onSidebarToggle != null)
             {
-                var sidebarBtn = new Button(_onSidebarToggle);
-                sidebarBtn.AddToClassList("yucp-sidebar-toggle-button");
-                // Use a hamburger icon or similar
-                sidebarBtn.text = "|||"; 
-                sidebarBtn.tooltip = "Toggle Sidebar";
-                _innerContainer.Add(sidebarBtn);
+                _sidebarBtn = new Button(_onSidebarToggle);
+                _sidebarBtn.AddToClassList("yucp-sidebar-toggle-button");
+                _sidebarBtn.text = "|||";
+                if (!hideInfoTooltips) _sidebarBtn.tooltip = "Toggle Sidebar";
+                _innerContainer.Add(_sidebarBtn);
             }
 
             // Create Groups
@@ -194,21 +195,21 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             // Tools Button (Structural)
             if (_onMenuClicked != null)
             {
-                var toolsBtn = new Button(_onMenuClicked);
-                toolsBtn.AddToClassList("yucp-tools-action-button");
-                toolsBtn.tooltip = "Tools & Options";
+                _toolsBtn = new Button(_onMenuClicked);
+                _toolsBtn.AddToClassList("yucp-tools-action-button");
+                if (!hideInfoTooltips) _toolsBtn.tooltip = "Tools & Options";
                 
                 // Icon (Visible always)
                 var icon = new Label("⋮"); 
                 icon.AddToClassList("yucp-tools-action-icon");
-                toolsBtn.Add(icon);
+                _toolsBtn.Add(icon);
                 
                 // Label (Revealed on hover)
                 var label = new Label("Tools");
                 label.AddToClassList("yucp-tools-action-label");
-                toolsBtn.Add(label);
+                _toolsBtn.Add(label);
 
-                rightZone.Add(toolsBtn);
+                rightZone.Add(_toolsBtn);
             }
             
             // Restore selection logic on mouse leave
@@ -232,6 +233,14 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 UpdateResponsiveState(resolvedStyle.width);
                 ApplyGroupStates(animate: false);
             }).StartingIn(50);
+        }
+
+        public void UpdateTooltipVisibility(bool hideInfoTooltips)
+        {
+            if (_sidebarBtn != null)
+                _sidebarBtn.tooltip = hideInfoTooltips ? "" : "Toggle Sidebar";
+            if (_toolsBtn != null)
+                _toolsBtn.tooltip = hideInfoTooltips ? "" : "Tools & Options";
         }
 
         private void UpdateResponsiveState(float width)

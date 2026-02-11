@@ -37,9 +37,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var content = new VisualElement();
             content.AddToClassList("yucp-tree-content");
 
-            // Expand/collapse button
-            var expandButton = new Button(() =>
+            // Expand/collapse button (shift+click = collapse this folder and all subfolders)
+            var expandButton = new Button();
+            expandButton.AddToClassList("yucp-tree-expand-btn");
+            expandButton.text = node.IsExpanded ? "▾" : "▸";
+            expandButton.RegisterCallback<ClickEvent>(evt =>
             {
+                if (evt.shiftKey)
+                {
+                    CollapseFolderAndDescendants(node, profile, row);
+                    return;
+                }
                 node.IsExpanded = !node.IsExpanded;
                 folderExpandedStates[node.FullPath] = node.IsExpanded;
 
@@ -64,8 +72,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     };
                 }
             });
-            expandButton.AddToClassList("yucp-tree-expand-btn");
-            expandButton.text = node.IsExpanded ? "▾" : "▸";
             content.Add(expandButton);
 
             // Folder icon using Unity's built-in icons
@@ -116,13 +122,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 var editIgnoreButton = new Button(() => OpenYucpIgnoreFile(folderFullPath)) { text = "Edit" };
                 editIgnoreButton.AddToClassList("yucp-tree-action-btn");
-                editIgnoreButton.tooltip = "Edit .yucpignore";
+                if (!_isCompactMode) editIgnoreButton.tooltip = "Edit .yucpignore";
                 actions.Add(editIgnoreButton);
             }
 
             var ignoreButton = new Button(() => AddFolderToIgnoreList(profile, folderFullPath)) { text = "Ignore" };
             ignoreButton.AddToClassList("yucp-tree-action-btn");
-            ignoreButton.tooltip = "Add to Ignore";
+            if (!_isCompactMode) ignoreButton.tooltip = "Add to Ignore";
             actions.Add(ignoreButton);
 
             content.Add(actions);
@@ -383,7 +389,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 var depBadge = new Label("DEP");
                 depBadge.AddToClassList("yucp-tree-status-badge");
                 depBadge.AddToClassList("yucp-tree-badge-dep");
-                depBadge.tooltip = "Dependency";
+                if (!_isCompactMode) depBadge.tooltip = "Dependency";
                 badges.Add(depBadge);
             }
 
@@ -393,7 +399,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 var derivedBadge = new Label(baseMissing ? "MISSING" : "DERIVED");
                 derivedBadge.AddToClassList("yucp-tree-status-badge");
                 derivedBadge.AddToClassList(baseMissing ? "yucp-tree-badge-warning" : "yucp-tree-badge-derived");
-                derivedBadge.tooltip = baseMissing ? "Derived: Base Missing" : "Derived FBX";
+                derivedBadge.tooltip = baseMissing ? "Derived: Base Missing" : (_isCompactMode ? "" : "Derived FBX");
                 badges.Add(derivedBadge);
             }
 
@@ -402,7 +408,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 var sourceBadge = new Label(asset.sourceProfileName);
                 sourceBadge.AddToClassList("yucp-tree-status-badge");
                 sourceBadge.AddToClassList("yucp-tree-badge-source");
-                sourceBadge.tooltip = "Source Profile";
+                if (!_isCompactMode) sourceBadge.tooltip = "Source Profile";
                 badges.Add(sourceBadge);
             }
 
@@ -422,7 +428,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     EditorGUIUtility.PingObject(obj);
                 }) { text = "Opt" };
                 optionsButton.AddToClassList("yucp-tree-action-btn");
-                optionsButton.tooltip = "Options";
+                if (!_isCompactMode) optionsButton.tooltip = "Options";
                 actions.Add(optionsButton);
 
                 var clearButton = new Button(() =>
@@ -443,7 +449,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }) { text = "Clr" };
                 clearButton.AddToClassList("yucp-tree-action-btn");
-                clearButton.tooltip = "Clear Derived";
+                if (!_isCompactMode) clearButton.tooltip = "Clear Derived";
                 actions.Add(clearButton);
 
                 content.Add(actions);
@@ -480,6 +486,46 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 p = p.parent;
             }
             return null;
+        }
+
+        /// <summary>
+        /// Collects the folder path and all descendant folder paths from the given node.
+        /// </summary>
+        private static void CollectFolderPaths(FolderTreeNode node, List<string> paths)
+        {
+            paths.Add(node.FullPath);
+            foreach (var child in node.Children)
+                CollectFolderPaths(child, paths);
+        }
+
+        /// <summary>
+        /// Collapse the folder we shift-clicked and all folders inside it. Called when shift+clicking an expand/collapse arrow.
+        /// </summary>
+        private void CollapseFolderAndDescendants(FolderTreeNode node, ExportProfile profile, VisualElement fromRow)
+        {
+            var pathsToCollapse = new List<string>();
+            CollectFolderPaths(node, pathsToCollapse);
+            foreach (var path in pathsToCollapse)
+                folderExpandedStates[path] = false;
+
+            VisualElement container = FindAssetListContainer(fromRow);
+            if (container == null)
+                return;
+
+            float scrollValue = 0f;
+            var scrollView = container.Q<ScrollView>();
+            if (scrollView != null)
+                scrollValue = scrollView.verticalScroller.value;
+
+            container.Clear();
+            RebuildAssetList(profile, container);
+
+            EditorApplication.delayCall += () =>
+            {
+                var newScrollView = container.Q<ScrollView>();
+                if (newScrollView != null)
+                    newScrollView.verticalScroller.value = scrollValue;
+            };
         }
     }
 }

@@ -171,6 +171,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             var helpBox = new VisualElement();
             helpBox.AddToClassList("yucp-help-box");
+            helpBox.AddToClassList("yucp-help-box-info");
             var helpText = new Label("Bundle: Include dependency files directly in the exported package\nDependency: Add to package.json for automatic download when package is installed");
             helpText.AddToClassList("yucp-help-box-text");
             helpBox.Add(helpText);
@@ -179,6 +180,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Disclaimer about automatic installation
             var disclaimerBox = new VisualElement();
             disclaimerBox.AddToClassList("yucp-help-box");
+            disclaimerBox.AddToClassList("yucp-help-box-info");
             disclaimerBox.style.marginTop = 8;
             disclaimerBox.style.backgroundColor = new Color(0.2f, 0.4f, 0.6f, 0.2f);
             var disclaimerText = new Label("Everything you select here will be asked for the user to install when importing the package, and will be installed automatically if clicked \"Install\" on their end");
@@ -302,6 +304,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 var hintBox = new VisualElement();
                 hintBox.AddToClassList("yucp-help-box");
+                hintBox.AddToClassList("yucp-help-box-info");
                 hintBox.style.marginTop = 8;
                 var hintText = new Label("Add export folders first, then use 'Auto-Detect Used' to find dependencies");
                 hintText.AddToClassList("yucp-help-box-text");
@@ -534,7 +537,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // VPM Package toggle
                 var vpmToggle = new Toggle("VPM Package") { value = dep.isVpmDependency };
                 vpmToggle.AddToClassList("yucp-toggle");
-                vpmToggle.tooltip = "Is this a VRChat Package Manager dependency?";
+                if (!_isCompactMode) vpmToggle.tooltip = "Is this a VRChat Package Manager dependency?";
                 vpmToggle.RegisterValueChangedCallback(evt =>
                 {
                     dep.isVpmDependency = evt.newValue;

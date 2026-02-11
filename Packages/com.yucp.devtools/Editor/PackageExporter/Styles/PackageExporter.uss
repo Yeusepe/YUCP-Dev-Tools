@@ -3029,6 +3029,11 @@ Button:active {
 }
 
 /* COMPACT MODE OVERRIDES */
+/* Hide informational help boxes in compact view or when user turns them off (keep warnings/errors visible) */
+.yucp-compact-mode .yucp-help-box-info,
+.yucp-hide-info-help .yucp-help-box-info {
+    display: none;
+}
 .yucp-compact-mode .yucp-nav-group {
     border-radius: 12px;
 }

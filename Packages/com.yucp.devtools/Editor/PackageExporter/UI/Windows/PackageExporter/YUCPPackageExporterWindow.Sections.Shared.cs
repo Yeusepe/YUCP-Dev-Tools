@@ -16,14 +16,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
     public partial class YUCPPackageExporterWindow
     {
-        private VisualElement CreateFormRow(string labelText, string tooltip = "")
+        private VisualElement CreateFormRow(string labelText, string tooltip = "", bool isWarningOrError = false)
         {
             var row = new VisualElement();
             row.AddToClassList("yucp-form-row");
             
             var label = new Label(labelText);
             label.AddToClassList("yucp-form-label");
-            if (!string.IsNullOrEmpty(tooltip))
+            if (!string.IsNullOrEmpty(tooltip) && (!_isCompactMode || isWarningOrError))
             {
                 label.tooltip = tooltip;
             }
