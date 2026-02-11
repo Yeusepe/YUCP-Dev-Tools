@@ -7,6 +7,7 @@ using UnityEditor.UIElements;
 using YUCP.Components;
 using YUCP.Components.Resources;
 using YUCP.DevTools;
+using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.DevTools.Editor
 {
@@ -21,180 +22,133 @@ namespace YUCP.DevTools.Editor
         private VisualElement rootContainer;
         private VisualElement variantsContainer;
         private VisualElement statusContainer;
+        private int previousVariantCount;
         
         public override VisualElement CreateInspectorGUI()
         {
-            revisionBase = (ModelRevisionBase)target;
+            serializedObject.Update();
             
-            // Create root container with YUCP header
+            revisionBase = (ModelRevisionBase)target;
+            previousVariantCount = revisionBase.registeredVariants?.Count ?? 0;
+            
+            // Create root container
             rootContainer = new VisualElement();
+            YUCPUIToolkitHelper.LoadDesignSystemStyles(rootContainer);
             rootContainer.Add(YUCPComponentHeader.CreateHeaderOverlay("Model Revision Base"));
             
-            // Create main content
-            var content = new VisualElement();
-            content.style.paddingLeft = 10;
-            content.style.paddingRight = 10;
-            content.style.paddingTop = 5;
-            content.style.paddingBottom = 10;
+            // Base configuration card
+            var baseCard = YUCPUIToolkitHelper.CreateCard("Base Configuration", "Core prefab references for synchronization");
+            var baseContent = YUCPUIToolkitHelper.GetCardContent(baseCard);
+            baseContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("basePrefab"), "Base Prefab"));
+            baseContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("sourceVariant"), "Source Variant"));
+            baseContent.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("version"), "Version"));
+            rootContainer.Add(baseCard);
             
-            // Base configuration section
-            CreateBaseConfigurationSection(content);
+            // Registered variants card
+            var variantsCard = YUCPUIToolkitHelper.CreateCard("Registered Variants", "Variant prefabs linked to this base");
+            var variantsCardContent = YUCPUIToolkitHelper.GetCardContent(variantsCard);
             
-            // Variants section
-            CreateVariantsSection(content);
+            var variantsHeader = new VisualElement();
+            variantsHeader.style.flexDirection = FlexDirection.Row;
+            variantsHeader.style.justifyContent = Justify.FlexEnd;
+            variantsHeader.style.marginBottom = 8;
             
-            // Status section
-            CreateStatusSection(content);
+            var addButton = YUCPUIToolkitHelper.CreateButton("Add Selected", () => AddVariant(), YUCPUIToolkitHelper.ButtonVariant.Primary);
+            addButton.style.height = 24;
+            variantsHeader.Add(addButton);
+            variantsCardContent.Add(variantsHeader);
             
-            // Quick actions section
-            CreateQuickActionsSection(content);
-            
-            rootContainer.Add(content);
-            return rootContainer;
-        }
-        
-        private void CreateBaseConfigurationSection(VisualElement parent)
-        {
-            var section = new VisualElement();
-            section.style.marginBottom = 15;
-            
-            var title = new Label("Base Configuration");
-            title.style.fontSize = 14;
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.color = new Color(0.8f, 0.8f, 0.8f);
-            title.style.marginBottom = 8;
-            section.Add(title);
-            
-            // Base prefab field
-            var basePrefabField = new ObjectField("Base Prefab");
-            basePrefabField.objectType = typeof(GameObject);
-            basePrefabField.bindingPath = "basePrefab";
-            basePrefabField.style.marginBottom = 5;
-            section.Add(basePrefabField);
-            
-            // Source variant field
-            var sourceVariantField = new ObjectField("Source Variant");
-            sourceVariantField.objectType = typeof(GameObject);
-            sourceVariantField.bindingPath = "sourceVariant";
-            sourceVariantField.style.marginBottom = 5;
-            section.Add(sourceVariantField);
-            
-            // Version info
-            var versionField = new TextField("Version");
-            versionField.bindingPath = "version";
-            versionField.style.marginBottom = 5;
-            section.Add(versionField);
-            
-            parent.Add(section);
-        }
-        
-        private void CreateVariantsSection(VisualElement parent)
-        {
-            var section = new VisualElement();
-            section.style.marginBottom = 15;
-            
-            var header = new VisualElement();
-            header.style.flexDirection = FlexDirection.Row;
-            header.style.justifyContent = Justify.SpaceBetween;
-            header.style.alignItems = Align.Center;
-            header.style.marginBottom = 8;
-            
-            var title = new Label("Registered Variants");
-            title.style.fontSize = 14;
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.color = new Color(0.8f, 0.8f, 0.8f);
-            header.Add(title);
-            
-            var addButton = new Button(() => AddVariant()) { text = "Add Variant" };
-            addButton.style.width = 100;
-            addButton.style.height = 25;
-            addButton.style.backgroundColor = new Color(0.3f, 0.7f, 0.3f);
-            addButton.style.color = Color.white;
-            header.Add(addButton);
-            
-            section.Add(header);
-            
-            // Variants container
             variantsContainer = new VisualElement();
-            variantsContainer.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.5f);
-            variantsContainer.style.borderTopLeftRadius = 5;
-            variantsContainer.style.borderTopRightRadius = 5;
-            variantsContainer.style.borderBottomLeftRadius = 5;
-            variantsContainer.style.borderBottomRightRadius = 5;
-            variantsContainer.style.paddingLeft = 8;
-            variantsContainer.style.paddingRight = 8;
-            variantsContainer.style.paddingTop = 5;
-            variantsContainer.style.paddingBottom = 5;
-            variantsContainer.style.marginBottom = 5;
-            
+            variantsContainer.name = "variants-container";
             RefreshVariantsList();
-            section.Add(variantsContainer);
+            variantsCardContent.Add(variantsContainer);
+            rootContainer.Add(variantsCard);
             
-            parent.Add(section);
-        }
-        
-        private void CreateStatusSection(VisualElement parent)
-        {
-            var section = new VisualElement();
-            section.style.marginBottom = 15;
+            // Sync settings card
+            var syncCard = YUCPUIToolkitHelper.CreateCard("Sync Settings", "Global synchronization configuration");
+            var syncContent = YUCPUIToolkitHelper.GetCardContent(syncCard);
             
-            var title = new Label("Status & Validation");
-            title.style.fontSize = 14;
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.color = new Color(0.8f, 0.8f, 0.8f);
-            title.style.marginBottom = 8;
-            section.Add(title);
+            var syncSettingsFoldout = YUCPUIToolkitHelper.CreateFoldout("Settings Details", false);
+            syncSettingsFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("syncSettings")));
+            syncContent.Add(syncSettingsFoldout);
+            rootContainer.Add(syncCard);
+            
+            // Mappings card
+            var mappingsCard = YUCPUIToolkitHelper.CreateCard("Mappings", "Blendshape, component, and bone mappings");
+            var mappingsContent = YUCPUIToolkitHelper.GetCardContent(mappingsCard);
+            
+            var blendshapeFoldout = YUCPUIToolkitHelper.CreateFoldout($"Blendshape Mappings ({revisionBase.blendshapeMappings.Count})", false);
+            blendshapeFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("blendshapeMappings")));
+            mappingsContent.Add(blendshapeFoldout);
+            
+            var componentFoldout = YUCPUIToolkitHelper.CreateFoldout($"Component Mappings ({revisionBase.componentMappings.Count})", false);
+            componentFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("componentMappings")));
+            mappingsContent.Add(componentFoldout);
+            
+            var boneFoldout = YUCPUIToolkitHelper.CreateFoldout($"Bone Path Cache ({revisionBase.bonePathCache.Count})", false);
+            boneFoldout.Add(YUCPUIToolkitHelper.CreateField(serializedObject.FindProperty("bonePathCache")));
+            mappingsContent.Add(boneFoldout);
+            
+            rootContainer.Add(mappingsCard);
+            
+            // Status card
+            var statusCard = YUCPUIToolkitHelper.CreateCard("Status & Validation", "Current configuration status");
+            var statusCardContent = YUCPUIToolkitHelper.GetCardContent(statusCard);
             
             statusContainer = new VisualElement();
-            statusContainer.style.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.5f);
-            statusContainer.style.borderTopLeftRadius = 5;
-            statusContainer.style.borderTopRightRadius = 5;
-            statusContainer.style.borderBottomLeftRadius = 5;
-            statusContainer.style.borderBottomRightRadius = 5;
-            statusContainer.style.paddingLeft = 8;
-            statusContainer.style.paddingRight = 8;
-            statusContainer.style.paddingTop = 5;
-            statusContainer.style.paddingBottom = 5;
-            
+            statusContainer.name = "status-container";
             RefreshStatusInfo();
-            section.Add(statusContainer);
+            statusCardContent.Add(statusContainer);
+            rootContainer.Add(statusCard);
             
-            parent.Add(section);
-        }
-        
-        private void CreateQuickActionsSection(VisualElement parent)
-        {
-            var section = new VisualElement();
-            
-            var title = new Label("Quick Actions");
-            title.style.fontSize = 14;
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.color = new Color(0.8f, 0.8f, 0.8f);
-            title.style.marginBottom = 8;
-            section.Add(title);
+            // Quick actions card
+            var actionsCard = YUCPUIToolkitHelper.CreateCard("Quick Actions", "Common operations");
+            var actionsContent = YUCPUIToolkitHelper.GetCardContent(actionsCard);
             
             var buttonContainer = new VisualElement();
             buttonContainer.style.flexDirection = FlexDirection.Row;
             buttonContainer.style.justifyContent = Justify.SpaceBetween;
             
-            var openWizardButton = new Button(() => OpenWizard()) { text = "Open Wizard" };
+            var openWizardButton = YUCPUIToolkitHelper.CreateButton("Open Wizard", () => OpenWizard(), YUCPUIToolkitHelper.ButtonVariant.Primary);
             openWizardButton.style.flexGrow = 1;
             openWizardButton.style.marginRight = 5;
-            openWizardButton.style.height = 30;
-            openWizardButton.style.backgroundColor = new Color(0.2f, 0.5f, 0.8f);
-            openWizardButton.style.color = Color.white;
+            openWizardButton.style.height = 32;
             buttonContainer.Add(openWizardButton);
             
-            var validateButton = new Button(() => ValidateConfiguration()) { text = "Validate" };
+            var validateButton = YUCPUIToolkitHelper.CreateButton("Validate", () => ValidateConfiguration(), YUCPUIToolkitHelper.ButtonVariant.Secondary);
             validateButton.style.flexGrow = 1;
             validateButton.style.marginLeft = 5;
-            validateButton.style.height = 30;
-            validateButton.style.backgroundColor = new Color(0.8f, 0.6f, 0.2f);
-            validateButton.style.color = Color.white;
+            validateButton.style.height = 32;
             buttonContainer.Add(validateButton);
             
-            section.Add(buttonContainer);
-            parent.Add(section);
+            actionsContent.Add(buttonContainer);
+            
+            // Reset button row
+            var resetRow = new VisualElement();
+            resetRow.style.marginTop = 10;
+            
+            var resetButton = YUCPUIToolkitHelper.CreateButton("Reset All Mappings", () => ResetMappings(), YUCPUIToolkitHelper.ButtonVariant.Danger);
+            resetButton.style.height = 28;
+            resetRow.Add(resetButton);
+            
+            actionsContent.Add(resetRow);
+            rootContainer.Add(actionsCard);
+            
+            // Dynamic updates
+            rootContainer.schedule.Execute(() =>
+            {
+                serializedObject.Update();
+                
+                int currentVariantCount = revisionBase.registeredVariants?.Count ?? 0;
+                if (currentVariantCount != previousVariantCount)
+                {
+                    RefreshVariantsList();
+                    previousVariantCount = currentVariantCount;
+                }
+            }).Every(500);
+            
+            rootContainer.Bind(serializedObject);
+            return rootContainer;
         }
         
         private void RefreshVariantsList()
@@ -203,10 +157,9 @@ namespace YUCP.DevTools.Editor
             
             if (revisionBase.registeredVariants == null || revisionBase.registeredVariants.Count == 0)
             {
-                var noVariantsLabel = new Label("No variants registered");
-                noVariantsLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
-                noVariantsLabel.style.unityFontStyleAndWeight = FontStyle.Italic;
-                variantsContainer.Add(noVariantsLabel);
+                variantsContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    "No variants registered. Select a prefab in the scene and click 'Add Selected' to register it.",
+                    YUCPUIToolkitHelper.MessageType.Info));
                 return;
             }
             
@@ -221,19 +174,15 @@ namespace YUCP.DevTools.Editor
         private VisualElement CreateVariantItem(GameObject variant, int index)
         {
             var item = new VisualElement();
+            item.AddToClassList("yucp-card");
             item.style.flexDirection = FlexDirection.Row;
             item.style.justifyContent = Justify.SpaceBetween;
             item.style.alignItems = Align.Center;
-            item.style.marginBottom = 3;
-            item.style.paddingLeft = 5;
-            item.style.paddingRight = 5;
-            item.style.paddingTop = 3;
-            item.style.paddingBottom = 3;
-            item.style.backgroundColor = new Color(0.15f, 0.15f, 0.15f, 0.8f);
-            item.style.borderTopLeftRadius = 3;
-            item.style.borderTopRightRadius = 3;
-            item.style.borderBottomLeftRadius = 3;
-            item.style.borderBottomRightRadius = 3;
+            item.style.paddingLeft = 10;
+            item.style.paddingRight = 10;
+            item.style.paddingTop = 8;
+            item.style.paddingBottom = 8;
+            item.style.marginBottom = 5;
             
             var leftSide = new VisualElement();
             leftSide.style.flexDirection = FlexDirection.Row;
@@ -241,41 +190,52 @@ namespace YUCP.DevTools.Editor
             
             // Status indicator
             var statusIndicator = new VisualElement();
-            statusIndicator.style.width = 8;
-            statusIndicator.style.height = 8;
-            statusIndicator.style.borderTopLeftRadius = 4;
-            statusIndicator.style.borderTopRightRadius = 4;
-            statusIndicator.style.borderBottomLeftRadius = 4;
-            statusIndicator.style.borderBottomRightRadius = 4;
-            statusIndicator.style.marginRight = 8;
+            statusIndicator.style.width = 10;
+            statusIndicator.style.height = 10;
+            statusIndicator.style.borderTopLeftRadius = 5;
+            statusIndicator.style.borderTopRightRadius = 5;
+            statusIndicator.style.borderBottomLeftRadius = 5;
+            statusIndicator.style.borderBottomRightRadius = 5;
+            statusIndicator.style.marginRight = 10;
             
-            // Set status color
+            string statusText = "";
+            
             if (variant == null)
             {
-                statusIndicator.style.backgroundColor = Color.red;
+                statusIndicator.style.backgroundColor = new Color(0.886f, 0.29f, 0.29f); // Red
+                statusText = "Missing";
             }
             else
             {
                 var variantComponent = variant.GetComponent<ModelRevisionVariant>();
                 if (variantComponent == null)
                 {
-                    statusIndicator.style.backgroundColor = Color.yellow;
+                    statusIndicator.style.backgroundColor = new Color(0.886f, 0.647f, 0.29f); // Orange
+                    statusText = "No Component";
                 }
                 else
                 {
                     switch (variantComponent.status)
                     {
                         case VariantStatus.Synced:
-                            statusIndicator.style.backgroundColor = Color.green;
+                            statusIndicator.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f); // Teal
+                            statusText = "Synced";
                             break;
                         case VariantStatus.HasOverrides:
-                            statusIndicator.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f);
+                            statusIndicator.style.backgroundColor = new Color(0.4f, 0.7f, 1f); // Blue
+                            statusText = "Overrides";
                             break;
                         case VariantStatus.HasConflicts:
-                            statusIndicator.style.backgroundColor = Color.red;
+                            statusIndicator.style.backgroundColor = new Color(0.886f, 0.29f, 0.29f); // Red
+                            statusText = "Conflicts";
+                            break;
+                        case VariantStatus.OutOfSync:
+                            statusIndicator.style.backgroundColor = new Color(0.886f, 0.647f, 0.29f); // Orange
+                            statusText = "Out of Sync";
                             break;
                         default:
-                            statusIndicator.style.backgroundColor = Color.gray;
+                            statusIndicator.style.backgroundColor = new Color(0.5f, 0.5f, 0.5f); // Gray
+                            statusText = "Unknown";
                             break;
                     }
                 }
@@ -283,11 +243,21 @@ namespace YUCP.DevTools.Editor
             
             leftSide.Add(statusIndicator);
             
-            // Variant name
-            var nameLabel = new Label(variant != null ? variant.name : "Missing Reference");
-            nameLabel.style.color = variant != null ? Color.white : Color.red;
-            leftSide.Add(nameLabel);
+            // Info container
+            var infoContainer = new VisualElement();
             
+            var nameLabel = new Label(variant != null ? variant.name : "Missing Reference");
+            nameLabel.style.fontSize = 12;
+            nameLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            nameLabel.style.color = variant != null ? Color.white : new Color(0.886f, 0.29f, 0.29f);
+            infoContainer.Add(nameLabel);
+            
+            var statusLabel = new Label(statusText);
+            statusLabel.style.fontSize = 10;
+            statusLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
+            infoContainer.Add(statusLabel);
+            
+            leftSide.Add(infoContainer);
             item.Add(leftSide);
             
             // Right side buttons
@@ -296,20 +266,28 @@ namespace YUCP.DevTools.Editor
             
             if (variant != null)
             {
-                var editButton = new Button(() => EditVariant(variant)) { text = "Edit" };
-                editButton.style.width = 50;
-                editButton.style.height = 20;
-                editButton.style.marginRight = 3;
-                editButton.style.backgroundColor = new Color(0.3f, 0.3f, 0.3f);
+                var editButton = new Button(() => EditVariant(variant)) { text = "Select" };
+                editButton.style.height = 22;
+                editButton.style.marginRight = 5;
+                editButton.style.backgroundColor = new Color(0.25f, 0.25f, 0.25f);
                 editButton.style.color = Color.white;
+                editButton.style.borderTopLeftRadius = 4;
+                editButton.style.borderTopRightRadius = 4;
+                editButton.style.borderBottomLeftRadius = 4;
+                editButton.style.borderBottomRightRadius = 4;
                 rightSide.Add(editButton);
             }
             
             var removeButton = new Button(() => RemoveVariant(index)) { text = "×" };
-            removeButton.style.width = 20;
-            removeButton.style.height = 20;
-            removeButton.style.backgroundColor = new Color(0.7f, 0.2f, 0.2f);
+            removeButton.style.width = 24;
+            removeButton.style.height = 22;
+            removeButton.style.fontSize = 14;
+            removeButton.style.backgroundColor = new Color(0.6f, 0.2f, 0.2f);
             removeButton.style.color = Color.white;
+            removeButton.style.borderTopLeftRadius = 4;
+            removeButton.style.borderTopRightRadius = 4;
+            removeButton.style.borderBottomLeftRadius = 4;
+            removeButton.style.borderBottomRightRadius = 4;
             rightSide.Add(removeButton);
             
             item.Add(rightSide);
@@ -325,29 +303,32 @@ namespace YUCP.DevTools.Editor
             
             if (issues.Count == 0)
             {
-                var successLabel = new Label("[OK] Configuration is valid");
-                successLabel.style.color = Color.green;
-                statusContainer.Add(successLabel);
+                statusContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                    "Configuration is valid",
+                    YUCPUIToolkitHelper.MessageType.Info));
             }
             else
             {
                 foreach (var issue in issues)
                 {
-                    var issueLabel = new Label($"[!] {issue}");
-                    issueLabel.style.color = Color.yellow;
-                    issueLabel.style.marginBottom = 2;
-                    statusContainer.Add(issueLabel);
+                    statusContainer.Add(YUCPUIToolkitHelper.CreateHelpBox(
+                        issue,
+                        YUCPUIToolkitHelper.MessageType.Warning));
                 }
             }
             
-            // Show last transfer info
-            if (revisionBase.lastTransferReport != null)
+            // Last modified info
+            if (!string.IsNullOrEmpty(revisionBase.lastModified))
             {
-                var lastTransferLabel = new Label($"Last transfer: {revisionBase.lastTransferReport.timestamp}");
-                lastTransferLabel.style.color = new Color(0.6f, 0.6f, 0.6f);
-                lastTransferLabel.style.fontSize = 11;
-                lastTransferLabel.style.marginTop = 5;
-                statusContainer.Add(lastTransferLabel);
+                var lastModifiedContainer = new VisualElement();
+                lastModifiedContainer.style.marginTop = 10;
+                
+                var modifiedLabel = new Label($"Last modified: {revisionBase.lastModified}");
+                modifiedLabel.style.color = new Color(0.5f, 0.5f, 0.5f);
+                modifiedLabel.style.fontSize = 11;
+                lastModifiedContainer.Add(modifiedLabel);
+                
+                statusContainer.Add(lastModifiedContainer);
             }
         }
         
@@ -360,6 +341,7 @@ namespace YUCP.DevTools.Editor
                 return;
             }
             
+            Undo.RecordObject(revisionBase, "Add Variant");
             revisionBase.RegisterVariant(selected);
             RefreshVariantsList();
             RefreshStatusInfo();
@@ -370,6 +352,7 @@ namespace YUCP.DevTools.Editor
         {
             if (index >= 0 && index < revisionBase.registeredVariants.Count)
             {
+                Undo.RecordObject(revisionBase, "Remove Variant");
                 revisionBase.UnregisterVariant(revisionBase.registeredVariants[index]);
                 RefreshVariantsList();
                 RefreshStatusInfo();
@@ -385,14 +368,26 @@ namespace YUCP.DevTools.Editor
         
         private void OpenWizard()
         {
-            // This will be implemented when we create the ModelRevisionWizard
-            EditorUtility.DisplayDialog("Wizard", "Model Revision Wizard will be opened here.", "OK");
+            var wizard = ModelRevisionWizard.ShowWindow();
+            wizard.SetTargetBase(revisionBase);
         }
         
         private void ValidateConfiguration()
         {
             RefreshStatusInfo();
             EditorUtility.SetDirty(revisionBase);
+        }
+        
+        private void ResetMappings()
+        {
+            if (EditorUtility.DisplayDialog("Reset All Mappings",
+                "Are you sure you want to reset all mappings? This will clear all blendshape, component, and bone mappings.",
+                "Yes", "Cancel"))
+            {
+                Undo.RecordObject(revisionBase, "Reset Mappings");
+                revisionBase.ResetMappings();
+                EditorUtility.SetDirty(revisionBase);
+            }
         }
     }
 }

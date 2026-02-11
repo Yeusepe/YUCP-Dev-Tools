@@ -62,18 +62,91 @@ namespace YUCP.DevTools
         public string notes = "";
     }
 
+    /// <summary>
+    /// Mapping between GameObjects in source and target prefabs.
+    /// </summary>
     [Serializable]
-    public class TransferReport
+    public class GameObjectMapping
     {
-        public string timestamp;
-        public string sourceVariant;
-        public List<string> targetVariants = new List<string>();
-        public List<string> successfulTransfers = new List<string>();
-        public List<string> warnings = new List<string>();
-        public List<string> errors = new List<string>();
-        public int totalMappings;
-        public int successfulMappings;
-        public int failedMappings;
+        public string sourcePath;
+        public string targetPath;
+        public bool syncTransform = true;
+        public bool syncComponents = true;
+        public bool enabled = true;
+    }
+
+    /// <summary>
+    /// Rules for syncing a specific component type.
+    /// </summary>
+    [Serializable]
+    public class ComponentSyncRule
+    {
+        public string componentTypeName;
+        public bool enabled = true;
+        public List<string> excludedProperties = new List<string>();
+        public List<string> includedPropertiesOnly = new List<string>();
+        public bool remapBoneReferences = true;
+    }
+
+    /// <summary>
+    /// Individual property mapping for component sync.
+    /// </summary>
+    [Serializable]
+    public class PropertyMapping
+    {
+        public string propertyPath;
+        public bool enabled = true;
+        public string sourceValue;
+        public string targetValue;
+        public bool requiresRemapping;
+    }
+
+    /// <summary>
+    /// Settings for the full sync operation.
+    /// </summary>
+    [Serializable]
+    public class SyncSettings
+    {
+        [Header("Hierarchy Sync")]
+        public bool syncHierarchy = true;
+        public bool addMissingObjects = true;
+        public bool removeExtraObjects = false;
+        public bool alignObjectNames = false;
+
+        [Header("Component Sync")]
+        public bool syncComponents = true;
+        public bool syncPhysBones = true;
+        public bool syncContacts = true;
+        public bool syncVRCFury = true;
+        public bool syncCustomScripts = false;
+
+        [Header("Transform Sync")]
+        public bool syncTransforms = false;
+        public bool syncPosition = true;
+        public bool syncRotation = true;
+        public bool syncScale = true;
+
+        [Header("Blendshape Sync")]
+        public bool syncBlendshapes = true;
+        public float autoMapConfidenceThreshold = 0.7f;
+
+        [Header("Build Settings")]
+        public bool applyAtBuildTime = true;
+
+        [Header("Component Rules")]
+        public List<ComponentSyncRule> componentRules = new List<ComponentSyncRule>();
+    }
+
+    /// <summary>
+    /// Bone path cache entry.
+    /// </summary>
+    [Serializable]
+    public class BonePathCache
+    {
+        public string sourcePath;
+        public string targetPath;
+        public float confidence = 1f;
+        public bool isManualOverride = false;
     }
 
     public enum MappingStatus
@@ -90,5 +163,12 @@ namespace YUCP.DevTools
         NameBased,
         PathBased,
         Hybrid
+    }
+
+    public enum SyncDirection
+    {
+        SourceToTarget,
+        TargetToSource,
+        Bidirectional
     }
 }

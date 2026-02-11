@@ -45,12 +45,17 @@ namespace YUCP.DevTools
         [Tooltip("Animation clip remappings")]
         public List<AnimationRemapping> animationRemappings = new List<AnimationRemapping>();
         
-        [Header("Transfer History")]
-        [Tooltip("Last transfer report")]
-        public TransferReport lastTransferReport;
+        [Header("Sync Settings")]
+        [Tooltip("Settings for the full sync operation")]
+        public SyncSettings syncSettings = new SyncSettings();
         
-        [Tooltip("Transfer history (keeps last 10)")]
-        public List<TransferReport> transferHistory = new List<TransferReport>();
+        [Header("GameObject Mappings")]
+        [Tooltip("Explicit GameObject path mappings between source and target")]
+        public List<GameObjectMapping> gameObjectMappings = new List<GameObjectMapping>();
+        
+        [Header("Bone Path Cache")]
+        [Tooltip("Cached bone path resolutions")]
+        public List<BonePathCache> bonePathCache = new List<BonePathCache>();
         
         [Header("Debug Info")]
         [Tooltip("Last modified timestamp")]
@@ -159,17 +164,68 @@ namespace YUCP.DevTools
         }
         
         /// <summary>
-        /// Add a transfer report to history
+        /// Get a cached bone path mapping
         /// </summary>
-        public void AddTransferReport(TransferReport report)
+        public string GetCachedBonePath(string sourcePath)
         {
-            lastTransferReport = report;
-            transferHistory.Insert(0, report);
-            
-            // Keep only last 10 reports
-            if (transferHistory.Count > 10)
+            var cached = bonePathCache.Find(c => c.sourcePath == sourcePath);
+            return cached?.targetPath;
+        }
+        
+        /// <summary>
+        /// Cache a bone path resolution
+        /// </summary>
+        public void CacheBonePath(string sourcePath, string targetPath, float confidence = 1f, bool isManual = false)
+        {
+            var existing = bonePathCache.Find(c => c.sourcePath == sourcePath);
+            if (existing != null)
             {
-                transferHistory.RemoveAt(transferHistory.Count - 1);
+                existing.targetPath = targetPath;
+                existing.confidence = confidence;
+                existing.isManualOverride = isManual;
+            }
+            else
+            {
+                bonePathCache.Add(new BonePathCache
+                {
+                    sourcePath = sourcePath,
+                    targetPath = targetPath,
+                    confidence = confidence,
+                    isManualOverride = isManual
+                });
+            }
+        }
+        
+        /// <summary>
+        /// Get a GameObject mapping by source path
+        /// </summary>
+        public GameObjectMapping GetGameObjectMapping(string sourcePath)
+        {
+            return gameObjectMappings.Find(m => m.sourcePath == sourcePath);
+        }
+        
+        /// <summary>
+        /// Add or update a GameObject mapping
+        /// </summary>
+        public void SetGameObjectMapping(string sourcePath, string targetPath, bool syncTransform = true, bool syncComponents = true)
+        {
+            var existing = GetGameObjectMapping(sourcePath);
+            if (existing != null)
+            {
+                existing.targetPath = targetPath;
+                existing.syncTransform = syncTransform;
+                existing.syncComponents = syncComponents;
+            }
+            else
+            {
+                gameObjectMappings.Add(new GameObjectMapping
+                {
+                    sourcePath = sourcePath,
+                    targetPath = targetPath,
+                    syncTransform = syncTransform,
+                    syncComponents = syncComponents,
+                    enabled = true
+                });
             }
         }
         
@@ -181,8 +237,8 @@ namespace YUCP.DevTools
             blendshapeMappings.Clear();
             componentMappings.Clear();
             animationRemappings.Clear();
-            transferHistory.Clear();
-            lastTransferReport = null;
+            gameObjectMappings.Clear();
+            bonePathCache.Clear();
             
             Debug.Log($"[ModelRevisionBase] Reset all mappings for: {name}");
         }
