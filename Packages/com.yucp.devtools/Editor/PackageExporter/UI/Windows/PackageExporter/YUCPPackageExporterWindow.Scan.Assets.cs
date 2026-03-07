@@ -48,6 +48,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 AssetCollector.PreserveIncludedState(profile.discoveredAssets, allAssets);
                 profile.discoveredAssets = allAssets;
+                profile.ApplyExcludedPathsToDiscoveredAssets();
                 profile.MarkScanned();
                 EditorUtility.SetDirty(profile);
                 

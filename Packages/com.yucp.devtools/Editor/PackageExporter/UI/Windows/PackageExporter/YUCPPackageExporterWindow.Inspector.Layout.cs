@@ -143,6 +143,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 else
                 {
+                    // Apply persistent excluded paths (ensures state is correct after load/restart)
+                    profile.ApplyExcludedPathsToDiscoveredAssets();
+                    
                     // Statistics
                     var statsLabel = new Label("Asset Statistics");
                     statsLabel.AddToClassList("yucp-label");
@@ -328,9 +331,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     var includeAllButton = new Button(() => 
                     {
                         Undo.RecordObject(profile, "Include All Assets");
-                        foreach (var asset in profile.discoveredAssets)
-                            asset.included = true;
-                        EditorUtility.SetDirty(profile);
+                        profile.IncludeAllDiscoveredAssets();
                         AssetDatabase.SaveAssets();
                         UpdateProfileDetails();
                     }) { text = "Include All" };
@@ -342,9 +343,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     var excludeAllButton = new Button(() => 
                     {
                         Undo.RecordObject(profile, "Exclude All Assets");
-                        foreach (var asset in profile.discoveredAssets)
-                            asset.included = false;
-                        EditorUtility.SetDirty(profile);
+                        profile.ExcludeAllDiscoveredAssets();
                         AssetDatabase.SaveAssets();
                         UpdateProfileDetails();
                     }) { text = "Exclude All" };

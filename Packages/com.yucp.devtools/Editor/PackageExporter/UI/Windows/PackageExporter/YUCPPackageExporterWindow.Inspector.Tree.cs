@@ -324,7 +324,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 Undo.RecordObject(profile, "Toggle Asset Inclusion");
                 asset.included = evt.newValue;
-                EditorUtility.SetDirty(profile);
+                if (evt.newValue)
+                    profile.IncludeAssetPath(asset.assetPath);
+                else
+                    profile.ExcludeAssetPath(asset.assetPath);
                 AssetDatabase.SaveAssets();
             });
             content.Add(checkbox);

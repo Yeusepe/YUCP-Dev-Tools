@@ -73,6 +73,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Discovered assets from export folders (populated by scanning)")]
         public List<DiscoveredAsset> discoveredAssets = new List<DiscoveredAsset>();
         
+        [Tooltip("Persistent list of asset paths explicitly excluded by user (survives rescans and restarts)")]
+        [SerializeField] private List<string> excludedAssetPaths = new List<string>();
+        
         [Tooltip("Inspector height in pixels (per-profile preference)")]
         [SerializeField] private float inspectorHeight = 500f;
         
@@ -108,6 +111,109 @@ namespace YUCP.DevTools.Editor.PackageExporter
         { 
             discoveredAssets.Clear();
             hasScannedAssets = false;
+        }
+        
+        /// <summary>
+        /// Persistent excluded paths - survives rescans and restarts.
+        /// </summary>
+        public List<string> ExcludedAssetPaths => excludedAssetPaths ??= new List<string>();
+        
+        /// <summary>
+        /// Apply persistent excluded paths to discovered assets. Call after scan or when loading.
+        /// </summary>
+        public void ApplyExcludedPathsToDiscoveredAssets()
+        {
+            if (discoveredAssets == null || excludedAssetPaths == null || excludedAssetPaths.Count == 0)
+                return;
+            var excludedSet = new HashSet<string>(excludedAssetPaths, StringComparer.OrdinalIgnoreCase);
+            foreach (var a in discoveredAssets)
+            {
+                if (a.isFolder || string.IsNullOrEmpty(a.assetPath))
+                    continue;
+                string key = NormalizePathForExclusion(a.assetPath);
+                if (!string.IsNullOrEmpty(key) && excludedSet.Contains(key))
+                    a.included = false;
+            }
+        }
+        
+        /// <summary>
+        /// Mark an asset path as excluded (persistent).
+        /// </summary>
+        public void ExcludeAssetPath(string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath) || excludedAssetPaths == null)
+                return;
+            string key = NormalizePathForExclusion(assetPath);
+            if (!string.IsNullOrEmpty(key) && !excludedAssetPaths.Any(p => string.Equals(p, key, StringComparison.OrdinalIgnoreCase)))
+            {
+                excludedAssetPaths.Add(key);
+                UnityEditor.EditorUtility.SetDirty(this);
+            }
+        }
+        
+        /// <summary>
+        /// Mark an asset path as included (remove from excluded list).
+        /// </summary>
+        public void IncludeAssetPath(string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath) || excludedAssetPaths == null)
+                return;
+            string key = NormalizePathForExclusion(assetPath);
+            if (!string.IsNullOrEmpty(key))
+                excludedAssetPaths.RemoveAll(p => string.Equals(p, key, StringComparison.OrdinalIgnoreCase));
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+        
+        /// <summary>
+        /// Exclude all discovered assets (persistent).
+        /// </summary>
+        public void ExcludeAllDiscoveredAssets()
+        {
+            if (discoveredAssets == null || excludedAssetPaths == null)
+                return;
+            var excludedSet = new HashSet<string>(excludedAssetPaths, StringComparer.OrdinalIgnoreCase);
+            foreach (var a in discoveredAssets)
+            {
+                if (!a.isFolder && !string.IsNullOrEmpty(a.assetPath))
+                {
+                    string key = NormalizePathForExclusion(a.assetPath);
+                    if (!string.IsNullOrEmpty(key) && excludedSet.Add(key))
+                        excludedAssetPaths.Add(key);
+                    a.included = false;
+                }
+            }
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+        
+        /// <summary>
+        /// Include all discovered assets (clear excluded list).
+        /// </summary>
+        public void IncludeAllDiscoveredAssets()
+        {
+            if (excludedAssetPaths != null)
+            {
+                excludedAssetPaths.Clear();
+                UnityEditor.EditorUtility.SetDirty(this);
+            }
+            if (discoveredAssets != null)
+            {
+                foreach (var a in discoveredAssets)
+                    a.included = true;
+            }
+        }
+        
+        private static string NormalizePathForExclusion(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return null;
+            try
+            {
+                return System.IO.Path.GetFullPath(path).Replace('\\', '/');
+            }
+            catch
+            {
+                return path.Replace('\\', '/');
+            }
         }
         
         [Header("Unity Export Options")]
