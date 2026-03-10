@@ -11,7 +11,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
     /// </summary>
     public static class MenuItems
     {
-        [MenuItem("Assets/Create/YUCP/Export Profile", priority = 100)]
+        // The CreateAssetMenu attribute on ExportProfile provides
+        // the 'Assets/Create/YUCP/Export Profile' entry. Avoid duplicating it here.
         public static void CreateExportProfile()
         {
             CreateExportProfileInternal();
@@ -23,7 +24,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             CreateExportProfileInternal(useCurrentFolder: true);
         }
         
-        [MenuItem("Assets/Create/YUCP/Custom Version Rule", priority = 102)]
+        // The CreateAssetMenu attribute on CustomVersionRule provides
+        // the 'Assets/Create/YUCP/Custom Version Rule' entry. Avoid duplicating it here.
         public static void CreateCustomVersionRule()
         {
             CreateCustomVersionRuleInternal();

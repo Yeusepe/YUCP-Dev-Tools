@@ -14,7 +14,6 @@ namespace YUCP.Motion.Editor
     /// </summary>
     public class SimpleReorderSample : EditorWindow
     {
-        [MenuItem("Tools/YUCP/Others/Motion/Open Reorder Demo")]
         public static void Open()
         {
             SimpleReorderSample window = GetWindow<SimpleReorderSample>();

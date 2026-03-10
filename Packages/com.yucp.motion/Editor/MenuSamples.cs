@@ -22,7 +22,9 @@ namespace YUCP.Motion.Editor
             EditorWindowDemo.Open();
         }
         
-        [MenuItem("Tools/YUCP/Others/Motion/Open Reorder Demo")]
+        // NOTE: SimpleReorderSample.Open provides its own MenuItem in
+        // SimpleReorderSample.cs. Keep this method but remove the MenuItem
+        // attribute to avoid duplicate menu registrations.
         public static void OpenReorderDemo()
         {
             SimpleReorderSample.Open();

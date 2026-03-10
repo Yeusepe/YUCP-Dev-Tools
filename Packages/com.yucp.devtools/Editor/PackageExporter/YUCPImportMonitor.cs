@@ -4,6 +4,8 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
+using YUCP.DevTools.Editor.PackageSigning.Core;
+using YUCP.DevTools.Editor.PackageSigning.Data;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -104,6 +106,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			}
 			catch { }
 
+			// ── Layer 3: Consumer registry verification ────────────────────────────
+			// When Assets/_Signing/PackageManifest.json is imported, verify its hash
+			// against the YUCP Gumroad registry before the import proceeds further.
+			foreach (var asset in importedAssets)
+			{
+				string normalised = asset.Replace('\\', '/');
+				if (normalised.EndsWith("_Signing/PackageManifest.json", StringComparison.OrdinalIgnoreCase))
+				{
+					CheckPackageManifestOnImport(asset);
+				}
+			}
+
 			// Handle .yucp_disabled conflicts (existing behavior)
 			var disabledFiles = importedAssets.Where(a => a.EndsWith(".yucp_disabled")).ToArray();
 			if (disabledFiles.Length > 0)
@@ -161,6 +175,85 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			}
         }
 		
+		/// <summary>
+		/// Layer 3 consumer verification: loads PackageManifest.json and fires a
+		/// background check against the YUCP registry.
+		///
+		/// Severity mapping (mirrors plan.md):
+		///   unknown / not registered  → yellow warning, allow import
+		///   ownershipConflict = true  → red EditorUtility.DisplayDialog (blocks import flow)
+		///   status == "revoked"       → red EditorUtility.DisplayDialog with reason
+		///   status == "active"        → silent pass
+		/// </summary>
+		private static void CheckPackageManifestOnImport(string manifestAssetPath)
+		{
+			try
+			{
+				string fullPath = Path.GetFullPath(manifestAssetPath);
+				if (!File.Exists(fullPath)) return;
+
+				string json = File.ReadAllText(fullPath);
+				PackageManifest manifest =
+					JsonUtility.FromJson<PackageManifest>(json);
+
+				if (string.IsNullOrEmpty(manifest?.archiveSha256)) return;
+
+				string serverUrl = PackageSigningService.GetServerUrl();
+				if (string.IsNullOrEmpty(serverUrl)) return;
+
+				var service = new PackageSigningService(serverUrl);
+				// Fire-and-forget — Task-based, no EditorCoroutines dependency needed
+				_ = service.CheckPackageStatusAsync(
+					manifest.archiveSha256,
+					status =>
+					{
+						if (!status.known)
+						{
+							Debug.LogWarning(
+								$"[YUCP] Package '{manifest.packageId}' (hash {manifest.archiveSha256[..8]}…) is not in the YUCP registry. " +
+								"Proceed with caution — this package has not been verified.");
+							return;
+						}
+
+						if (status.ownershipConflict)
+						{
+							string msg =
+								$"⚠️ YUCP OWNERSHIP CONFLICT\n\n" +
+								$"Package '{manifest.packageId}' was signed by a different YUCP account than the registered owner.\n\n" +
+								$"Registered owner: {status.registeredOwnerYucpUserId}\n" +
+								$"Signing cert:     {status.signingYucpUserId}\n\n" +
+								"This may be an impersonation attempt. Do NOT use this package.";
+							EditorUtility.DisplayDialog("YUCP Security Warning", msg, "I Understand");
+							Debug.LogError($"[YUCP] OWNERSHIP CONFLICT for package '{manifest.packageId}'. " + msg);
+							return;
+						}
+
+						if (status.status == "revoked")
+						{
+							string msg =
+								$"⛔ YUCP CERTIFICATE REVOKED\n\n" +
+								$"The signing certificate for package '{manifest.packageId}' has been revoked.\n\n" +
+								$"Reason: {status.revocationReason ?? "No reason provided"}\n\n" +
+								"This package should NOT be used.";
+							EditorUtility.DisplayDialog("YUCP Revoked Certificate", msg, "OK");
+							Debug.LogError($"[YUCP] Revoked cert for package '{manifest.packageId}': {status.revocationReason}");
+							return;
+						}
+
+						if (status.status == "active")
+						{
+							Debug.Log($"[YUCP] ✓ Package '{manifest.packageId}' registry check passed.");
+						}
+					},
+					err => Debug.LogWarning($"[YUCP] Registry check failed for '{manifest.archiveSha256[..8]}…': {err}")
+				);
+			}
+			catch (Exception ex)
+			{
+				Debug.LogWarning($"[YUCP ImportMonitor] Registry check error: {ex.Message}");
+			}
+		}
+
 		private static void ApplyImportedPatches(System.Collections.Generic.List<PatchPackage> patches)
 		{
 			// Check if patches have already been applied

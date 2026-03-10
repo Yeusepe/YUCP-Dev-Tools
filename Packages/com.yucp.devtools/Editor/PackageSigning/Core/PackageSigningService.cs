@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Text;
 using UnityEngine;
+using UnityEditor;
 using UnityEngine.Networking;
 using PackageVerifierData = YUCP.Components.Editor.PackageVerifier.Data;
 using PackageSigningData = YUCP.DevTools.Editor.PackageSigning.Data;
@@ -18,6 +19,19 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         public PackageSigningService(string serverUrl)
         {
             _serverUrl = serverUrl.TrimEnd('/');
+        }
+
+        /// <summary>
+        /// Returns the configured server URL from SigningSettings, or null if not set.
+        /// Used by YUCPImportMonitor for consumer-side registry verification.
+        /// </summary>
+        public static string GetServerUrl()
+        {
+            string[] guids = AssetDatabase.FindAssets("t:SigningSettings");
+            if (guids.Length == 0) return null;
+            string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+            var settings = AssetDatabase.LoadAssetAtPath<PackageSigningData.SigningSettings>(path);
+            return string.IsNullOrEmpty(settings?.serverUrl) ? null : settings.serverUrl;
         }
 
         /// <summary>
@@ -147,12 +161,44 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         /// <summary>
         /// Check package status by hash
         /// </summary>
+        /// <summary>
+        /// Task-based HTTP check against the YUCP registry — no coroutine runner needed.
+        /// Fire-and-forget from YUCPImportMonitor: _ = service.CheckPackageStatusAsync(...)
+        /// </summary>
+        public async System.Threading.Tasks.Task CheckPackageStatusAsync(
+            string archiveSha256,
+            Action<PackageStatusResponse> onSuccess,
+            Action<string> onError)
+        {
+            try
+            {
+                using var client = new System.Net.Http.HttpClient { Timeout = System.TimeSpan.FromSeconds(10) };
+                string url = $"{_serverUrl}/v1/packages/{archiveSha256}";
+                System.Net.Http.HttpResponseMessage response = await client.GetAsync(url);
+                string json = await response.Content.ReadAsStringAsync();
+
+                if (response.IsSuccessStatusCode)
+                {
+                    PackageStatusResponse status = JsonUtility.FromJson<PackageStatusResponse>(json);
+                    onSuccess?.Invoke(status);
+                }
+                else
+                {
+                    onError?.Invoke($"HTTP {(int)response.StatusCode}: {response.ReasonPhrase}");
+                }
+            }
+            catch (Exception ex)
+            {
+                onError?.Invoke($"Registry check error: {ex.Message}");
+            }
+        }
+
         public IEnumerator CheckPackageStatus(
             string archiveSha256,
             Action<PackageStatusResponse> onSuccess,
             Action<string> onError)
         {
-            using (UnityWebRequest request = UnityWebRequest.Get($"{_serverUrl}/v1/packages/by-hash/{archiveSha256}"))
+            using (UnityWebRequest request = UnityWebRequest.Get($"{_serverUrl}/v1/packages/{archiveSha256}"))
             {
                 yield return request.SendWebRequest();
 
@@ -174,6 +220,89 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                     onError?.Invoke($"HTTP {request.responseCode}: {request.error}");
                 }
             }
+        }
+
+        /// <summary>
+        /// Request a signing certificate from the YUCP CA using a YUCP OAuth access token.
+        /// Returns the raw certificate JSON on success for import via CertificateManager.ImportAndVerifyFromJson.
+        ///
+        /// Body sent: { devPublicKey, publisherName }
+        /// Server extracts yucpUserId from the Bearer token.
+        /// Response: { success: true, certificate: CertEnvelope }
+        /// </summary>
+        public async System.Threading.Tasks.Task<(bool success, string error, string certJson)>
+            RequestCertificateAsync(string accessToken, string devPublicKey, string publisherName)
+        {
+            try
+            {
+                // Log token type to help diagnose "no token payload" — JWTs have 2 dots
+                int dotCount = 0;
+                foreach (char c in accessToken) if (c == '.') dotCount++;
+                bool isJwt = dotCount == 2;
+                UnityEngine.Debug.Log($"[YUCP Cert] RequestCertificateAsync token_type={(isJwt?"JWT":"opaque")} length={accessToken.Length} url={_serverUrl}/v1/certificates");
+
+                using var http = new System.Net.Http.HttpClient();
+                http.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
+
+                string body = $"{{\"devPublicKey\":\"{EscapeJson(devPublicKey)}\",\"publisherName\":\"{EscapeJson(publisherName)}\"}}";
+                UnityEngine.Debug.Log($"[YUCP Cert] Body: {body}");
+                var content = new System.Net.Http.StringContent(body, Encoding.UTF8, "application/json");
+
+                var resp = await http.PostAsync($"{_serverUrl}/v1/certificates", content);
+                string json = await resp.Content.ReadAsStringAsync();
+                UnityEngine.Debug.Log($"[YUCP Cert] Response {(int)resp.StatusCode}: {json.Substring(0, Math.Min(300, json.Length))}");
+
+                if (!resp.IsSuccessStatusCode)
+                {
+                    string errMsg = ExtractErrorMessage(json) ?? $"Server error ({(int)resp.StatusCode}).";
+                    return (false, errMsg, null);
+                }
+
+                // Response: { "success": true, "certificate": { "cert": {...}, "signature": {...} } }
+                // Extract the "certificate" object
+                int certIdx = json.IndexOf("\"certificate\"", StringComparison.Ordinal);
+                if (certIdx >= 0)
+                {
+                    int braceIdx = json.IndexOf('{', certIdx);
+                    if (braceIdx >= 0)
+                    {
+                        int depth = 0, end = braceIdx;
+                        for (int i = braceIdx; i < json.Length; i++)
+                        {
+                            if (json[i] == '{') depth++;
+                            else if (json[i] == '}') { depth--; if (depth == 0) { end = i; break; } }
+                        }
+                        return (true, null, json.Substring(braceIdx, end - braceIdx + 1));
+                    }
+                }
+                return (false, "Invalid response format from server.", null);
+            }
+            catch (Exception ex)
+            {
+                return (false, $"Network error: {ex.Message}", null);
+            }
+        }
+
+        private static string EscapeJson(string s) =>
+            s?.Replace("\\", "\\\\").Replace("\"", "\\\"") ?? "";
+
+        private static string ExtractErrorMessage(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return null;
+            foreach (var key in new[] { "error", "message" })
+            {
+                var search = $"\"{key}\"";
+                int idx = json.IndexOf(search, StringComparison.Ordinal);
+                if (idx < 0) continue;
+                int colonIdx = json.IndexOf(':', idx + search.Length);
+                if (colonIdx < 0) continue;
+                int quoteIdx = json.IndexOf('"', colonIdx + 1);
+                if (quoteIdx < 0) continue;
+                int endIdx = json.IndexOf('"', quoteIdx + 1);
+                if (endIdx < 0) continue;
+                return json.Substring(quoteIdx + 1, endIdx - quoteIdx - 1);
+            }
+            return null;
         }
 
         private string CanonicalizePayload(SigningRequestPayload payload)
@@ -219,6 +348,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             public string packageId;
             public string version;
             public string revocationReason;
+            // v2 fields: impersonation / registry conflict detection (Layer 1 + 3)
+            public bool ownershipConflict;
+            public string registeredOwnerYucpUserId;
+            public string signingYucpUserId;
         }
 
         /// <summary>

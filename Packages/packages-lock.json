@@ -232,6 +232,12 @@
       "source": "embedded",
       "dependencies": {}
     },
+    "com.yucp.motion": {
+      "version": "file:com.yucp.motion",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
     "d4rkpl4y3r.d4rkavataroptimizer": {
       "version": "file:d4rkpl4y3r.d4rkavataroptimizer",
       "depth": 0,
@@ -259,6 +265,12 @@
       "dependencies": {
         "com.unity.modules.animation": "1.0.0"
       }
+    },
+    "vrchat.blackstartx.gesture-manager": {
+      "version": "file:vrchat.blackstartx.gesture-manager",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
     },
     "com.unity.modules.ai": {
       "version": "1.0.0",

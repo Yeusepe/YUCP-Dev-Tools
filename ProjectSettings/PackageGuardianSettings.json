@@ -1,0 +1,25 @@
+{
+    "MonoBehaviour": {
+        "m_Enabled": true,
+        "m_EditorHideFlags": 0,
+        "m_Name": "",
+        "m_EditorClassIdentifier": "",
+        "autoSnapshotOnSave": false,
+        "autoStashOnUPM": true,
+        "autoStashOnAssetImport": true,
+        "autoStashOnSceneSave": true,
+        "authorName": "Unity User",
+        "authorEmail": "user@unity.com",
+        "trackedRoots": [
+            "Assets",
+            "Packages"
+        ],
+        "enableLargeFileSupport": false,
+        "largeFileThreshold": 52428800,
+        "enableFsync": false,
+        "enabled": false,
+        "themeOverride": 0,
+        "language": 0,
+        "showFirstImportWarning": false
+    }
+}
