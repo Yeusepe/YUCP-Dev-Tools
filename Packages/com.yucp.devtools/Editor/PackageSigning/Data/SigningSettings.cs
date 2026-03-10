@@ -23,7 +23,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         
         [Header("YUCP Root Public Key")]
         [TextArea(3, 10)]
-        public string yucpRootPublicKeyBase64 = ""; // Will be set from server/plan
+        public string yucpRootPublicKeyBase64 = "y+8Zs9/mS1MFZFeF4CFjwqe0nsLW8lCcwmyvBx6H0Zo=";
         
         /// <summary>
         /// Store full certificate JSON

@@ -217,36 +217,18 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                     EditorPrefs.SetString(KeyToken,  accessToken);
                     EditorPrefs.SetInt(KeyExpiry, (int)expiryTs);
 
-                    // Parse JWT payload for sub → userId (fast, no round-trip)
-                    string jwtSub = ParseJwtClaim(accessToken, "sub");
-                    if (!string.IsNullOrEmpty(jwtSub))
-                        EditorPrefs.SetString(KeyUserId, jwtSub);
+                    // Parse identity directly from the JWT payload claims.
+                    // The token includes name, email, sub, auth_user_id as custom claims —
+                    // no extra network call needed (Auth0/Okta pattern: embed stable profile
+                    // data in the token itself via customAccessTokenClaims on the server).
+                    string jwtSub   = ParseJwtClaim(accessToken, "sub");
+                    string jwtName  = ParseJwtClaim(accessToken, "name");
+                    string jwtEmail = ParseJwtClaim(accessToken, "email");
 
-                    // GET /v1/me — current creator profile (like Spotify GET /v1/me)
-                    //     Returns { sub, name, email }
-                    http.DefaultRequestHeaders.Authorization =
-                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+                    if (!string.IsNullOrEmpty(jwtSub))   EditorPrefs.SetString(KeyUserId, jwtSub);
+                    if (!string.IsNullOrEmpty(jwtName))  EditorPrefs.SetString(KeyDisplayName, jwtName);
 
-                    Debug.Log("[YUCP OAuth] Fetching profile from /v1/me…");
-                    HttpResponseMessage userInfoResp =
-                        await http.GetAsync($"{serverUrl.TrimEnd('/')}/v1/me");
-
-                    string userInfoJson = await userInfoResp.Content.ReadAsStringAsync();
-                    Debug.Log($"[YUCP OAuth] /v1/me {(int)userInfoResp.StatusCode}: {userInfoJson}");
-
-                    if (userInfoResp.IsSuccessStatusCode)
-                    {
-                        // Returns { sub, name, email }
-                        string name = ExtractJsonString(userInfoJson, "name");
-                        string sub  = ExtractJsonString(userInfoJson, "sub");
-                        if (!string.IsNullOrEmpty(name)) EditorPrefs.SetString(KeyDisplayName, name);
-                        if (!string.IsNullOrEmpty(sub))  EditorPrefs.SetString(KeyUserId, sub);
-                        Debug.Log($"[YUCP OAuth] Signed in as '{name}' (sub={sub}).");
-                    }
-                    else
-                    {
-                        Debug.LogWarning($"[YUCP OAuth] /v1/me returned {(int)userInfoResp.StatusCode} — display name not available.");
-                    }
+                    Debug.Log($"[YUCP OAuth] Signed in as '{jwtName}' (sub={jwtSub}, email={jwtEmail}).");
                 }
 
                 Debug.Log("[YUCP OAuth] Sign-in complete.");
