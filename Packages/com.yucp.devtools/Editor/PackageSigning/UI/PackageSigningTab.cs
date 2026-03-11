@@ -27,13 +27,22 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private bool _isRequestingCert;
 
         // ── Product catalog cache ──────────────────────────────────────────────────
-        // Loaded once per sign-in from GET /v1/products and used to populate dropdowns.
-        private struct ProductEntry { public string displayName; public string providerProductRef; }
-        private List<ProductEntry> _gumroadProducts;
-        private List<ProductEntry> _jinxxyProducts;
-        private bool _productsLoading;
-        private VisualElement _gumroadDropdownSlot;
-        private VisualElement _jinxxyDropdownSlot;
+        // Loaded once per sign-in from GET /v1/products. The server groups by canonical
+        // productId so one entry = one logical product across all providers.
+        private class CanonicalProduct
+        {
+            public string productId;
+            public string displayName;
+            public string owner;   // null = own product; non-null = collaborator's product (owner's name)
+            public List<ProviderRef> providers = new List<ProviderRef>();
+            public string GetRef(string p) { foreach (var r in providers) if (r.provider == p) return r.providerRef; return null; }
+        }
+        private struct ProviderRef { public string provider; public string providerRef; }
+        private List<CanonicalProduct> _canonicalProducts;
+        private bool  _productsLoading;
+        private bool  _productPickerExpanded;
+        private VisualElement _productPickerSlot;
+        private VisualElement _productListPanel;
 
         // ── Design tokens ──────────────────────────────────────────────────────────
         // Use the same lighter surface as the rest of the Package Exporter UI
@@ -461,7 +470,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 nameCol.Add(MakeLabel("v" + _profile.version, 10, TextMute, mb: 0));
             pkgRow.Add(nameCol);
 
-            // Package server status badge (async loaded)
             var badgeSlot = new VisualElement();
             badgeSlot.style.alignSelf = Align.Center;
             if (!string.IsNullOrEmpty(_profile.packageId))
@@ -470,20 +478,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             body.Add(pkgRow);
 
-            // Product ID pickers — show dropdown if products loaded, text field as fallback
-            _gumroadDropdownSlot = new VisualElement();
-            _jinxxyDropdownSlot  = new VisualElement();
+            // Canonical product picker
+            _productPickerSlot = new VisualElement();
+            body.Add(_productPickerSlot);
+            RebuildProductPicker();
 
-            body.Add(BuildProductRow("Gumroad", _gumroadDropdownSlot,
-                _profile.gumroadProductId ?? "",
-                v => { if (_profile != null) { Undo.RecordObject(_profile, "Set Gumroad ID"); _profile.gumroadProductId = v; EditorUtility.SetDirty(_profile); } }));
-
-            body.Add(BuildProductRow("Jinxxy",  _jinxxyDropdownSlot,
-                _profile.jinxxyProductId  ?? "",
-                v => { if (_profile != null) { Undo.RecordObject(_profile, "Set Jinxxy ID");  _profile.jinxxyProductId  = v; EditorUtility.SetDirty(_profile); } }));
-
-            // Start loading products in the background once we have an access token
-            if (_gumroadProducts == null && _jinxxyProducts == null && !_productsLoading)
+            if (_canonicalProducts == null && !_productsLoading)
                 LoadCreatorProducts();
 
             return body;
@@ -510,92 +510,398 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 _ => { });
         }
 
-        private VisualElement BuildProductRow(string label, VisualElement dropdownSlot, string currentRef, Action<string> onChange)
+        // ── Custom product picker ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// Returns the active set of selected product IDs, migrating from the legacy
+        /// single-product field if <c>licenseProductIds</c> is empty.
+        /// </summary>
+        private List<string> GetSelectedProductIds()
         {
-            var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.alignItems    = Align.Center;
-            row.style.marginBottom  = 8;
-
-            var lbl = MakeLabel(label, 10, TextMute, mb: 0);
-            lbl.style.width   = 60;
-            lbl.style.flexShrink = 0;
-            row.Add(lbl);
-
-            dropdownSlot.style.flexGrow = 1;
-            BuildProductDropdown(dropdownSlot, label, currentRef, onChange);
-            row.Add(dropdownSlot);
-            return row;
+            if (_profile == null) return new List<string>();
+            // Lazy migration: if the new list is empty but the old single-ID field is set, import it
+            if ((_profile.licenseProductIds == null || _profile.licenseProductIds.Count == 0)
+                && !string.IsNullOrEmpty(_profile.licenseProductId))
+            {
+                if (_profile.licenseProductIds == null) _profile.licenseProductIds = new List<string>();
+                _profile.licenseProductIds.Add(_profile.licenseProductId);
+                EditorUtility.SetDirty(_profile);
+            }
+            return _profile.licenseProductIds ?? new List<string>();
         }
 
-        private void BuildProductDropdown(VisualElement slot, string provider, string currentRef, Action<string> onChange)
+        private void RebuildProductPicker()
         {
-            slot.Clear();
-            var products = provider == "Gumroad" ? _gumroadProducts : _jinxxyProducts;
+            if (_productPickerSlot == null) return;
+            _productPickerSlot.Clear();
+            _productListPanel = null;
 
+            // Section header: "Linked Product" + refresh button
+            var header = new VisualElement();
+            header.style.flexDirection  = FlexDirection.Row;
+            header.style.alignItems     = Align.Center;
+            header.style.justifyContent = Justify.SpaceBetween;
+            header.style.marginBottom   = 8;
+            header.Add(MakeLabel("Linked Product", 10, TextMute, bold: true, mb: 0));
+
+            var refreshLbl = new Label("↻");
+            refreshLbl.style.fontSize       = 12;
+            refreshLbl.style.color          = new StyleColor(TextMute);
+            refreshLbl.style.paddingLeft    = refreshLbl.style.paddingRight = 4;
+            refreshLbl.style.unityTextAlign = TextAnchor.MiddleCenter;
+            refreshLbl.RegisterCallback<MouseEnterEvent>(_ => refreshLbl.style.color = new StyleColor(TextSec));
+            refreshLbl.RegisterCallback<MouseLeaveEvent>(_ => refreshLbl.style.color = new StyleColor(TextMute));
+            refreshLbl.RegisterCallback<ClickEvent>(_ =>
+            {
+                _canonicalProducts = null; _productsLoading = false; _productPickerExpanded = false;
+                LoadCreatorProducts();
+            });
+            header.Add(refreshLbl);
+            _productPickerSlot.Add(header);
+
+            // Loading state
             if (_productsLoading)
             {
-                slot.Add(MakeLabel("Loading…", 11, TextMute, mb: 0));
+                var loadCard = MakePickerShell();
+                loadCard.Add(MakeLabel("Loading products…", 11, TextMute, mb: 0));
+                _productPickerSlot.Add(loadCard);
                 return;
             }
 
-            if (products != null && products.Count > 0)
+            // Empty state
+            if (_canonicalProducts == null || _canonicalProducts.Count == 0)
             {
-                // Build display choices: names shown, refs stored as values
-                var choices = products.Select(p => p.displayName).ToList();
-                var refs    = products.Select(p => p.providerProductRef).ToList();
+                var emptyCard = MakePickerShell();
+                emptyCard.style.paddingTop = emptyCard.style.paddingBottom = 10;
+                emptyCard.Add(MakeLabel("No products found", 11, TextSec, bold: true, mb: 3));
+                emptyCard.Add(MakeLabel("Add your store products at yucp.app, then refresh.", 10, TextMute, wrap: true));
+                _productPickerSlot.Add(emptyCard);
+                return;
+            }
 
-                // Find currently selected index
-                int selectedIdx = refs.IndexOf(currentRef);
-                if (selectedIdx < 0) selectedIdx = 0;
+            // Custom picker: trigger + collapsible list
+            _productPickerSlot.Add(BuildPickerTrigger());
+            _productListPanel = BuildPickerList();
+            _productListPanel.style.display = _productPickerExpanded ? DisplayStyle.Flex : DisplayStyle.None;
+            _productPickerSlot.Add(_productListPanel);
+        }
 
-                var dropdown = new DropdownField(choices, selectedIdx);
-                dropdown.style.flexGrow = 1;
-                dropdown.style.fontSize = 11;
-                dropdown.style.height   = 24;
-                ApplyInputStyle(dropdown);
-                dropdown.RegisterValueChangedCallback(e =>
+        // Shared shell for loading/empty cards
+        private VisualElement MakePickerShell()
+        {
+            var c = new VisualElement();
+            c.style.paddingLeft = c.style.paddingRight = 12;
+            c.style.paddingTop  = c.style.paddingBottom = 9;
+            c.style.backgroundColor = new Color(0.125f, 0.125f, 0.125f);
+            c.style.borderTopLeftRadius = c.style.borderTopRightRadius =
+                c.style.borderBottomLeftRadius = c.style.borderBottomRightRadius = 5;
+            c.style.borderLeftWidth = c.style.borderRightWidth =
+                c.style.borderTopWidth = c.style.borderBottomWidth = 1;
+            c.style.borderLeftColor = c.style.borderRightColor =
+                c.style.borderTopColor = c.style.borderBottomColor = Border;
+            return c;
+        }
+
+        // The always-visible trigger button showing the current selection
+        private VisualElement BuildPickerTrigger()
+        {
+            var selectedIds = GetSelectedProductIds();
+            var selectedProducts = _canonicalProducts?
+                .Where(p => selectedIds.Contains(p.productId))
+                .ToList() ?? new List<CanonicalProduct>();
+
+            bool open         = _productPickerExpanded;
+            var  accentBorder = open ? Teal : Border;
+            var  normalBg     = new Color(0.125f, 0.125f, 0.125f);
+            var  hoverBg      = new Color(0.155f, 0.155f, 0.155f);
+
+            var trigger = new VisualElement();
+            trigger.style.flexDirection  = FlexDirection.Row;
+            trigger.style.alignItems     = Align.Center;
+            trigger.style.paddingLeft    = 12;
+            trigger.style.paddingRight   = 10;
+            trigger.style.paddingTop     = 9;
+            trigger.style.paddingBottom  = 9;
+            trigger.style.backgroundColor = normalBg;
+            trigger.style.borderTopLeftRadius    = 5;
+            trigger.style.borderTopRightRadius   = 5;
+            trigger.style.borderBottomLeftRadius  = open ? 0 : 5;
+            trigger.style.borderBottomRightRadius = open ? 0 : 5;
+            trigger.style.borderLeftWidth  = trigger.style.borderRightWidth  =
+                trigger.style.borderTopWidth = 1;
+            trigger.style.borderBottomWidth = 1;
+            trigger.style.borderLeftColor  = trigger.style.borderRightColor  =
+                trigger.style.borderTopColor = accentBorder;
+            trigger.style.borderBottomColor = open ? normalBg : accentBorder; // seam-less when open
+
+            // Left column: product name(s) + provider badges
+            var leftCol = new VisualElement();
+            leftCol.style.flexGrow = 1;
+            if (selectedProducts.Count == 0)
+            {
+                leftCol.Add(MakeLabel("Select products…", 12, TextMute, mb: 0));
+            }
+            else if (selectedProducts.Count == 1)
+            {
+                var sp = selectedProducts[0];
+                leftCol.Add(MakeLabel(sp.displayName, 12, TextPri, bold: true, mb: 0));
+                if (!string.IsNullOrEmpty(sp.owner))
+                    leftCol.Add(MakeLabel("via " + sp.owner, 9, new Color(0.68f, 0.55f, 0.27f), mb: 0));
+                if (sp.providers?.Count > 0)
                 {
-                    int idx = choices.IndexOf(e.newValue);
-                    if (idx >= 0) onChange?.Invoke(refs[idx]);
-                });
-                slot.Add(dropdown);
+                    var badgeRow = BuildProviderBadgeRow(sp.providers);
+                    badgeRow.style.marginTop = 4;
+                    leftCol.Add(badgeRow);
+                }
             }
             else
             {
-                // Fall back to plain text field when no products are available
-                var field = new TextField { value = currentRef };
-                field.style.flexGrow = 1;
-                field.style.fontSize = 11;
-                field.style.height   = 24;
-                ApplyInputStyle(field);
-                field.RegisterValueChangedCallback(e => onChange?.Invoke(e.newValue));
-                slot.Add(field);
+                leftCol.Add(MakeLabel($"{selectedProducts.Count} products selected", 12, TextPri, bold: true, mb: 3));
+                foreach (var sp in selectedProducts)
+                {
+                    var row = new VisualElement();
+                    row.style.flexDirection = FlexDirection.Row;
+                    row.style.alignItems    = Align.Center;
+                    row.style.marginBottom  = 2;
+                    row.Add(MakeLabel("· " + sp.displayName, 10, TextSec, mb: 0));
+                    if (sp.providers?.Count > 0)
+                    {
+                        var badgeRow = BuildProviderBadgeRow(sp.providers);
+                        badgeRow.style.marginLeft = 6;
+                        row.Add(badgeRow);
+                    }
+                    leftCol.Add(row);
+                }
+            }
+            trigger.Add(leftCol);
+
+            // Chevron
+            var chevron = new Label(open ? "▴" : "▾");
+            chevron.style.color          = new StyleColor(TextMute);
+            chevron.style.fontSize       = 10;
+            chevron.style.marginLeft     = 6;
+            chevron.style.unityTextAlign = TextAnchor.MiddleCenter;
+            trigger.Add(chevron);
+
+            trigger.RegisterCallback<MouseEnterEvent>(_ => { if (!_productPickerExpanded) trigger.style.backgroundColor = hoverBg; });
+            trigger.RegisterCallback<MouseLeaveEvent>(_ => { if (!_productPickerExpanded) trigger.style.backgroundColor = normalBg; });
+            trigger.RegisterCallback<ClickEvent>(_ =>
+            {
+                _productPickerExpanded = !_productPickerExpanded;
+                if (_productListPanel != null)
+                    _productListPanel.style.display = _productPickerExpanded ? DisplayStyle.Flex : DisplayStyle.None;
+                EditorApplication.delayCall += () => RebuildProductPicker();
+            });
+
+            return trigger;
+        }
+
+        // Collapsible list of all products
+        private VisualElement BuildPickerList()
+        {
+            var panel = new VisualElement();
+            panel.style.backgroundColor = new Color(0.105f, 0.105f, 0.105f);
+            panel.style.borderLeftWidth  = panel.style.borderRightWidth  = 1;
+            panel.style.borderBottomWidth = 1;
+            panel.style.borderTopWidth    = 0;
+            panel.style.borderLeftColor   = panel.style.borderRightColor  =
+                panel.style.borderBottomColor = Teal;
+            panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 5;
+            panel.style.overflow = Overflow.Hidden;
+
+            panel.Add(BuildPickerItem(null)); // "No product" entry
+            foreach (var product in _canonicalProducts)
+            {
+                panel.Add(MakeListDivider());
+                panel.Add(BuildPickerItem(product));
+            }
+            return panel;
+        }
+
+        private VisualElement MakeListDivider()
+        {
+            var d = new VisualElement();
+            d.style.height          = 1;
+            d.style.backgroundColor = Border;
+            return d;
+        }
+
+        private VisualElement BuildPickerItem(CanonicalProduct product)
+        {
+            bool isNone     = product == null;
+            var  selectedIds = GetSelectedProductIds();
+            bool isSelected = !isNone && selectedIds.Contains(product.productId);
+
+            var normalBg = isSelected ? new Color(0.165f, 0.165f, 0.165f) : new Color(0f, 0f, 0f, 0f);
+            var hoverBg  = new Color(0.185f, 0.185f, 0.185f);
+
+            var item = new VisualElement();
+            item.style.paddingLeft   = 12;
+            item.style.paddingRight  = 12;
+            item.style.paddingTop    = 8;
+            item.style.paddingBottom = 8;
+            item.style.backgroundColor = normalBg;
+            item.style.flexDirection = FlexDirection.Row;
+            item.style.alignItems    = Align.FlexStart;
+
+            if (isNone)
+            {
+                var noLbl = MakeLabel("— Clear selection —", 11, TextMute, mb: 0);
+                noLbl.style.unityFontStyleAndWeight = FontStyle.Italic;
+                item.Add(noLbl);
+            }
+            else
+            {
+                // Checkbox indicator
+                var checkBox = new VisualElement();
+                checkBox.style.width  = 14; checkBox.style.height = 14;
+                checkBox.style.flexShrink = 0;
+                checkBox.style.marginRight = 8; checkBox.style.marginTop = 2;
+                checkBox.style.borderTopLeftRadius = checkBox.style.borderTopRightRadius =
+                    checkBox.style.borderBottomLeftRadius = checkBox.style.borderBottomRightRadius = 3;
+                checkBox.style.borderLeftWidth = checkBox.style.borderRightWidth =
+                    checkBox.style.borderTopWidth = checkBox.style.borderBottomWidth = 1;
+                checkBox.style.backgroundColor = isSelected ? Teal : new Color(0f, 0f, 0f, 0f);
+                checkBox.style.borderLeftColor = checkBox.style.borderRightColor =
+                    checkBox.style.borderTopColor = checkBox.style.borderBottomColor = isSelected ? Teal : Border;
+                if (isSelected)
+                {
+                    var checkMark = MakeLabel("✓", 9, new Color(0.05f, 0.05f, 0.05f), bold: true, mb: 0);
+                    checkMark.style.unityTextAlign = TextAnchor.MiddleCenter;
+                    checkBox.Add(checkMark);
+                }
+                item.Add(checkBox);
+
+                var content = new VisualElement();
+                content.style.flexGrow = 1;
+
+                var nameRow = new VisualElement();
+                nameRow.style.flexDirection  = FlexDirection.Row;
+                nameRow.style.alignItems     = Align.Center;
+                nameRow.style.justifyContent = Justify.SpaceBetween;
+                nameRow.style.marginBottom   = (product.providers?.Count > 0) ? 4 : 0;
+                nameRow.Add(MakeLabel(product.displayName, 11, isSelected ? TextPri : TextSec, bold: isSelected, mb: 0));
+                content.Add(nameRow);
+
+                if (!string.IsNullOrEmpty(product.owner))
+                {
+                    var collabRow = new VisualElement();
+                    collabRow.style.flexDirection = FlexDirection.Row;
+                    collabRow.style.alignItems    = Align.Center;
+                    collabRow.style.marginBottom  = 3;
+                    var collabDot = new VisualElement();
+                    collabDot.style.width  = 4; collabDot.style.height = 4;
+                    collabDot.style.borderTopLeftRadius = collabDot.style.borderTopRightRadius =
+                        collabDot.style.borderBottomLeftRadius = collabDot.style.borderBottomRightRadius = 2;
+                    collabDot.style.backgroundColor = Amber;
+                    collabDot.style.marginRight = 4; collabDot.style.flexShrink = 0;
+                    collabRow.Add(collabDot);
+                    collabRow.Add(MakeLabel("via " + product.owner, 9, new Color(0.68f, 0.55f, 0.27f), mb: 0));
+                    content.Add(collabRow);
+                }
+                if (product.providers?.Count > 0)
+                    content.Add(BuildProviderBadgeRow(product.providers));
+
+                item.Add(content);
+            }
+
+            item.RegisterCallback<MouseEnterEvent>(_ => item.style.backgroundColor = hoverBg);
+            item.RegisterCallback<MouseLeaveEvent>(_ => item.style.backgroundColor = isSelected ? new Color(0.165f, 0.165f, 0.165f) : new Color(0f, 0f, 0f, 0f));
+            item.RegisterCallback<ClickEvent>(_ =>
+            {
+                if (_profile == null) return;
+                Undo.RecordObject(_profile, isNone ? "Clear License Products" : "Toggle License Product");
+
+                if (isNone)
+                {
+                    _profile.licenseProductIds.Clear();
+                    _profile.licenseProductId = "";
+                    _profile.gumroadProductId = "";
+                    _profile.jinxxyProductId  = "";
+                }
+                else
+                {
+                    var ids = GetSelectedProductIds();
+                    if (ids.Contains(product.productId))
+                        ids.Remove(product.productId);
+                    else
+                        ids.Add(product.productId);
+                    _profile.licenseProductIds = ids;
+                    // Keep licenseProductId as the first selection for back-compat
+                    _profile.licenseProductId  = ids.Count > 0 ? ids[0] : "";
+                    // Sync provider-specific refs from the first selected product
+                    var first = _canonicalProducts?.Find(p => p.productId == _profile.licenseProductId);
+                    _profile.gumroadProductId  = first?.GetRef("gumroad") ?? "";
+                    _profile.jinxxyProductId   = first?.GetRef("jinxxy")  ?? "";
+                }
+
+                EditorUtility.SetDirty(_profile);
+                EditorApplication.delayCall += () => RebuildProductPicker();
+            });
+            return item;
+        }
+
+        // Row of provider pill badges for a product
+        private VisualElement BuildProviderBadgeRow(List<ProviderRef> providers)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.flexWrap      = Wrap.Wrap;
+            foreach (var p in providers) row.Add(MakeProviderBadge(p.provider));
+            return row;
+        }
+
+        // Provider pill: full name with branded color. New providers get a graceful default style.
+        private VisualElement MakeProviderBadge(string provider)
+        {
+            var (label, textColor, bgColor) = GetProviderStyle(provider);
+            var badge = new VisualElement();
+            badge.style.paddingLeft   = 6; badge.style.paddingRight = 6;
+            badge.style.paddingTop    = 2; badge.style.paddingBottom = 2;
+            badge.style.backgroundColor = bgColor;
+            badge.style.borderTopLeftRadius = badge.style.borderTopRightRadius =
+                badge.style.borderBottomLeftRadius = badge.style.borderBottomRightRadius = 3;
+            badge.style.marginRight = 4; badge.style.marginTop = 2;
+            badge.Add(MakeLabel(label, 9, textColor, bold: true, mb: 0));
+            return badge;
+        }
+
+        private static (string label, Color text, Color bg) GetProviderStyle(string provider)
+        {
+            switch (provider?.ToLowerInvariant())
+            {
+                case "gumroad": return ("Gumroad", new Color(0.95f, 0.65f, 0.82f), new Color(0.45f, 0.10f, 0.25f, 0.55f));
+                case "jinxxy":  return ("Jinxxy",  new Color(0.60f, 0.70f, 0.98f), new Color(0.18f, 0.23f, 0.60f, 0.55f));
+                case "discord": return ("Discord", new Color(0.60f, 0.65f, 0.98f), new Color(0.22f, 0.25f, 0.60f, 0.55f));
+                case "vrchat":  return ("VRChat",  new Color(0.45f, 0.85f, 0.80f), new Color(0.08f, 0.32f, 0.32f, 0.60f));
+                case "manual":  return ("Manual",  new Color(0.75f, 0.75f, 0.75f), new Color(0.22f, 0.22f, 0.22f, 0.55f));
+                default:
+                    string name = !string.IsNullOrEmpty(provider)
+                        ? char.ToUpperInvariant(provider[0]) + provider.Substring(1) : "Unknown";
+                    return (name, new Color(0.70f, 0.70f, 0.70f), new Color(0.20f, 0.20f, 0.20f, 0.55f));
             }
         }
 
-        private void RebuildProductDropdowns()
-        {
-            if (_gumroadDropdownSlot == null || _jinxxyDropdownSlot == null) return;
-
-            BuildProductDropdown(_gumroadDropdownSlot, "Gumroad", _profile?.gumroadProductId ?? "",
-                v => { if (_profile != null) { Undo.RecordObject(_profile, "Set Gumroad ID"); _profile.gumroadProductId = v; EditorUtility.SetDirty(_profile); } });
-
-            BuildProductDropdown(_jinxxyDropdownSlot, "Jinxxy", _profile?.jinxxyProductId ?? "",
-                v => { if (_profile != null) { Undo.RecordObject(_profile, "Set Jinxxy ID");  _profile.jinxxyProductId  = v; EditorUtility.SetDirty(_profile); } });
-        }
+        // ── Product load helpers ───────────────────────────────────────────────────
 
         [Serializable]
-        private class ProductEntryJson
+        private class ProductProviderJson
         {
-            public string productId;
             public string provider;
             public string providerProductRef;
-            public string displayName;
         }
 
         [Serializable]
-        private class ProductsResponse { public ProductEntryJson[] products; }
+        private class CanonicalProductJson
+        {
+            public string productId;
+            public string displayName;
+            public string owner;   // null = own; set = collaborator's product
+            public ProductProviderJson[] providers;
+        }
+
+        [Serializable]
+        private class ProductsResponse { public CanonicalProductJson[] products; }
 
         private async void LoadCreatorProducts()
         {
@@ -604,7 +910,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             string serverUrl = GetServerUrl();
             _productsLoading = true;
-            RebuildProductDropdowns();
+            EditorApplication.delayCall += () => RebuildProductPicker();
 
             try
             {
@@ -620,43 +926,43 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 if (request.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
                 {
                     var parsed = JsonUtility.FromJson<ProductsResponse>(request.downloadHandler.text);
+                    _canonicalProducts = new List<CanonicalProduct>();
                     if (parsed?.products != null)
                     {
-                        _gumroadProducts = parsed.products
-                            .Where(p => p.provider == "gumroad")
-                            .Select(p => new ProductEntry
+                        foreach (var p in parsed.products)
+                        {
+                            var entry = new CanonicalProduct
                             {
-                                displayName       = string.IsNullOrEmpty(p.displayName) ? p.providerProductRef : p.displayName,
-                                providerProductRef = p.providerProductRef
-                            })
-                            .ToList();
-
-                        _jinxxyProducts = parsed.products
-                            .Where(p => p.provider == "jinxxy")
-                            .Select(p => new ProductEntry
+                                productId   = p.productId,
+                                displayName = !string.IsNullOrEmpty(p.displayName) ? p.displayName : p.productId,
+                                owner       = string.IsNullOrEmpty(p.owner) ? null : p.owner,
+                                providers   = new List<ProviderRef>(),
+                            };
+                            if (p.providers != null)
                             {
-                                displayName       = string.IsNullOrEmpty(p.displayName) ? p.providerProductRef : p.displayName,
-                                providerProductRef = p.providerProductRef
-                            })
-                            .ToList();
+                                foreach (var prov in p.providers)
+                                {
+                                    if (!string.IsNullOrEmpty(prov.provider))
+                                        entry.providers.Add(new ProviderRef { provider = prov.provider, providerRef = prov.providerProductRef ?? "" });
+                                }
+                            }
+                            _canonicalProducts.Add(entry);
+                        }
                     }
                 }
                 else
                 {
-                    // No products or auth failed — leave lists empty so text fields are shown
-                    _gumroadProducts = new List<ProductEntry>();
-                    _jinxxyProducts  = new List<ProductEntry>();
+                    _canonicalProducts = new List<CanonicalProduct>();
                 }
             }
             catch
             {
-                _gumroadProducts = new List<ProductEntry>();
-                _jinxxyProducts  = new List<ProductEntry>();
+                _canonicalProducts = new List<CanonicalProduct>();
             }
             finally
             {
                 _productsLoading = false;
-                EditorApplication.delayCall += () => RebuildProductDropdowns();
+                EditorApplication.delayCall += () => RebuildProductPicker();
             }
         }
 
@@ -717,6 +1023,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 // Toggle
                 var toggle = new Toggle { value = isLicensed };
                 toggle.style.flexShrink = 0;
+
                 toggle.RegisterValueChangedCallback(e =>
                 {
                     var target = prof; // capture
@@ -987,7 +1294,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             float letterSpacing = 0f, float mb = 0f, bool wrap = false,
             TextAnchor align = TextAnchor.UpperLeft)
         {
-            var l = new Label(text);
+            // Sanitize text to remove characters that SDF font assets may not contain
+            // (notably emoji which are outside the BMP and often missing from editor SDF fonts).
+            var clean = RemoveSurrogatePairs(text);
+            var l = new Label(clean);
             l.style.fontSize              = size;
             l.style.color                 = color;
             l.style.marginBottom          = mb;
@@ -996,6 +1306,35 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             if (letterSpacing > 0f) l.style.letterSpacing = letterSpacing;
             if (wrap) l.style.whiteSpace  = WhiteSpace.Normal;
             return l;
+        }
+
+        // Remove surrogate pair characters (emoji and other non-BMP glyphs) because
+        // UI Toolkit SDF font assets used in the Editor often don't include them
+        // and will log a warning. This keeps labels clean and avoids spamming the console.
+        private static string RemoveSurrogatePairs(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s;
+            var sb = new System.Text.StringBuilder(s.Length);
+            for (int i = 0; i < s.Length; i++)
+            {
+                char c = s[i];
+                // Skip high surrogate and its following low surrogate (surrogate pair)
+                if (char.IsHighSurrogate(c))
+                {
+                    // If next is low surrogate, skip both
+                    if (i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]))
+                    {
+                        i++; // skip next low surrogate
+                        continue;
+                    }
+                    // otherwise skip the isolated high surrogate
+                    continue;
+                }
+                // Skip isolated low surrogate as well
+                if (char.IsLowSurrogate(c)) continue;
+                sb.Append(c);
+            }
+            return sb.ToString();
         }
 
         private static void ApplyInputStyle(TextField f)

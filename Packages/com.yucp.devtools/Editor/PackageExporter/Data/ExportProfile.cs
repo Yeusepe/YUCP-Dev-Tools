@@ -35,6 +35,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         [Tooltip("Jinxxy Product ID (for Jinxxy integration)")]
         public string jinxxyProductId = "";
+
+        [Tooltip("Canonical YUCP product ID from the product catalog (auto-filled when picking a product)")]
+        public string licenseProductId = "";
+
+        [Tooltip("Multiple canonical YUCP product IDs — buyers owning any one of these products are granted access.")]
+        public List<string> licenseProductIds = new List<string>();
+
+        [Tooltip("Discord guild ID whose members with the required role get access (for Discord role verification)")]
+        public string licenseDiscordGuildId = "";
+
+        [Tooltip("Discord role ID required for Discord-based license verification")]
+        public string licenseDiscordRoleId = "";
         
         [Tooltip("Author name(s) - separate multiple authors with commas")]
         public string author = "";

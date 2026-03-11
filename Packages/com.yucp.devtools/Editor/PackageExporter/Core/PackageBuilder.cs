@@ -1722,8 +1722,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         {
                             packageId = p.packageId,
                             packageName = p.packageName ?? p.packageId,
+                            productId = p.licenseProductId ?? "",
                             gumroadPermalink = p.gumroadProductId ?? "",
                             jinxxyProductId = p.jinxxyProductId ?? "",
+                            discordGuildId = p.licenseDiscordGuildId ?? "",
+                            discordRoleId  = p.licenseDiscordRoleId  ?? "",
+                            creatorAuthUserId = YUCP.DevTools.Editor.PackageSigning.Core.YucpOAuthService.GetUserId() ?? "",
                         });
                     }
                 }
@@ -1767,14 +1771,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Serializable]
         private class LicensePackageJson
         {
-            /// <summary>YUCP packageId (e.g. "yeusepe/MyAvatar").</summary>
             public string packageId;
-            /// <summary>Friendly display name for the UI.</summary>
             public string packageName;
-            /// <summary>Gumroad product permalink (slug).</summary>
+            public string productId;
             public string gumroadPermalink;
-            /// <summary>Jinxxy product ID.</summary>
             public string jinxxyProductId;
+            public string discordGuildId;
+            public string discordRoleId;
+            /// <summary>Creator's YUCP auth user ID — embedded so importer can query Discord entitlements.</summary>
+            public string creatorAuthUserId;
         }
 
         [Serializable]

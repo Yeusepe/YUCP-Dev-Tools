@@ -232,6 +232,12 @@
       "source": "embedded",
       "dependencies": {}
     },
+    "com.yucp.importer": {
+      "version": "file:com.yucp.importer",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
     "com.yucp.motion": {
       "version": "file:com.yucp.motion",
       "depth": 0,
