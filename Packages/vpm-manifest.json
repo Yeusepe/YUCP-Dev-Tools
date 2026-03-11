@@ -38,7 +38,7 @@
       }
     },
     "com.vrcfury.vrcfury": {
-      "version": "1.1279.0",
+      "version": "1.1280.0",
       "dependencies": {}
     },
     "com.vrchat.core.vpm-resolver": {
@@ -67,7 +67,7 @@
       "dependencies": {}
     },
     "com.yucp.components": {
-      "version": "0.3.23",
+      "version": "0.3.31",
       "dependencies": {
         "com.vrcfury.vrcfury": ">=1.1258.0",
         "com.vrchat.core.vpm-resolver": ">=0.1.27"
