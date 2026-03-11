@@ -23,6 +23,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		[SerializeField] public Policy policy = new Policy();
 		[SerializeField] public UIHints uiHints = new UIHints();
 		[SerializeField] public SeedMaps seedMaps = new SeedMaps();
+
+		/// <summary>
+		/// When true, the consumer must hold a verified license for <see cref="licensePackageId"/>
+		/// before DerivedFbxBuilder will decrypt and apply this asset.
+		/// Set automatically by PackageBuilder when the export profile has requiresLicenseVerification.
+		/// </summary>
+		[SerializeField] public bool requiresLicense = false;
+
+		/// <summary>
+		/// YUCP package ID (e.g. "yeusepe/MyAvatar") whose license must be verified.
+		/// Checked against the "yucp.license.{licensePackageId}" SessionState key.
+		/// </summary>
+		[SerializeField] public string licensePackageId = "";
 		
 		[Serializable]
 		public struct Policy

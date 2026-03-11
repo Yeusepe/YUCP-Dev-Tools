@@ -347,6 +347,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             
             using (UnityWebRequest request = UnityWebRequest.Get(url))
             {
+                request.SetRequestHeader("Accept-Encoding", "identity");
                 yield return request.SendWebRequest();
 
                 Debug.Log($"[PackageInfoService] Status request completed. Result: {request.result}, Response Code: {request.responseCode}");

@@ -74,6 +74,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 request.uploadHandler = new UploadHandlerRaw(requestBytes);
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Accept-Encoding", "identity");
 
                 yield return request.SendWebRequest();
 
@@ -200,6 +201,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         {
             using (UnityWebRequest request = UnityWebRequest.Get($"{_serverUrl}/v1/packages/{archiveSha256}"))
             {
+                request.SetRequestHeader("Accept-Encoding", "identity");
                 yield return request.SendWebRequest();
 
                 if (request.result == UnityWebRequest.Result.Success)

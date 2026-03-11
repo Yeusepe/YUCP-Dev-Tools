@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -24,6 +25,15 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private readonly ExportProfile _profile;
         private bool _isSigningIn;
         private bool _isRequestingCert;
+
+        // ── Product catalog cache ──────────────────────────────────────────────────
+        // Loaded once per sign-in from GET /v1/products and used to populate dropdowns.
+        private struct ProductEntry { public string displayName; public string providerProductRef; }
+        private List<ProductEntry> _gumroadProducts;
+        private List<ProductEntry> _jinxxyProducts;
+        private bool _productsLoading;
+        private VisualElement _gumroadDropdownSlot;
+        private VisualElement _jinxxyDropdownSlot;
 
         // ── Design tokens ──────────────────────────────────────────────────────────
         // Use the same lighter surface as the rest of the Package Exporter UI
@@ -365,6 +375,13 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 card.Add(BuildPackageInfo());
             }
 
+            // ── License Protection ─────────────────────────────────────────────────
+            if (_profile != null)
+            {
+                card.Add(MakeDivider());
+                card.Add(BuildLicenseProtectionSection());
+            }
+
             // ── Footer actions ─────────────────────────────────────────────────────
             card.Add(MakeDivider());
             var footer = new VisualElement();
@@ -453,11 +470,21 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             body.Add(pkgRow);
 
-            // Product ID fields
-            body.Add(BuildProductField("Gumroad", _profile.gumroadProductId ?? "",
+            // Product ID pickers — show dropdown if products loaded, text field as fallback
+            _gumroadDropdownSlot = new VisualElement();
+            _jinxxyDropdownSlot  = new VisualElement();
+
+            body.Add(BuildProductRow("Gumroad", _gumroadDropdownSlot,
+                _profile.gumroadProductId ?? "",
                 v => { if (_profile != null) { Undo.RecordObject(_profile, "Set Gumroad ID"); _profile.gumroadProductId = v; EditorUtility.SetDirty(_profile); } }));
-            body.Add(BuildProductField("Jinxxy",  _profile.jinxxyProductId  ?? "",
+
+            body.Add(BuildProductRow("Jinxxy",  _jinxxyDropdownSlot,
+                _profile.jinxxyProductId  ?? "",
                 v => { if (_profile != null) { Undo.RecordObject(_profile, "Set Jinxxy ID");  _profile.jinxxyProductId  = v; EditorUtility.SetDirty(_profile); } }));
+
+            // Start loading products in the background once we have an access token
+            if (_gumroadProducts == null && _jinxxyProducts == null && !_productsLoading)
+                LoadCreatorProducts();
 
             return body;
         }
@@ -483,7 +510,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 _ => { });
         }
 
-        private VisualElement BuildProductField(string label, string value, Action<string> onChange)
+        private VisualElement BuildProductRow(string label, VisualElement dropdownSlot, string currentRef, Action<string> onChange)
         {
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
@@ -491,18 +518,225 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             row.style.marginBottom  = 8;
 
             var lbl = MakeLabel(label, 10, TextMute, mb: 0);
-            lbl.style.width     = 60;
+            lbl.style.width   = 60;
             lbl.style.flexShrink = 0;
             row.Add(lbl);
 
-            var field = new TextField { value = value };
-            field.style.flexGrow  = 1;
-            field.style.fontSize  = 11;
-            field.style.height    = 24;
-            ApplyInputStyle(field);
-            field.RegisterValueChangedCallback(e => onChange?.Invoke(e.newValue));
-            row.Add(field);
+            dropdownSlot.style.flexGrow = 1;
+            BuildProductDropdown(dropdownSlot, label, currentRef, onChange);
+            row.Add(dropdownSlot);
             return row;
+        }
+
+        private void BuildProductDropdown(VisualElement slot, string provider, string currentRef, Action<string> onChange)
+        {
+            slot.Clear();
+            var products = provider == "Gumroad" ? _gumroadProducts : _jinxxyProducts;
+
+            if (_productsLoading)
+            {
+                slot.Add(MakeLabel("Loading…", 11, TextMute, mb: 0));
+                return;
+            }
+
+            if (products != null && products.Count > 0)
+            {
+                // Build display choices: names shown, refs stored as values
+                var choices = products.Select(p => p.displayName).ToList();
+                var refs    = products.Select(p => p.providerProductRef).ToList();
+
+                // Find currently selected index
+                int selectedIdx = refs.IndexOf(currentRef);
+                if (selectedIdx < 0) selectedIdx = 0;
+
+                var dropdown = new DropdownField(choices, selectedIdx);
+                dropdown.style.flexGrow = 1;
+                dropdown.style.fontSize = 11;
+                dropdown.style.height   = 24;
+                ApplyInputStyle(dropdown);
+                dropdown.RegisterValueChangedCallback(e =>
+                {
+                    int idx = choices.IndexOf(e.newValue);
+                    if (idx >= 0) onChange?.Invoke(refs[idx]);
+                });
+                slot.Add(dropdown);
+            }
+            else
+            {
+                // Fall back to plain text field when no products are available
+                var field = new TextField { value = currentRef };
+                field.style.flexGrow = 1;
+                field.style.fontSize = 11;
+                field.style.height   = 24;
+                ApplyInputStyle(field);
+                field.RegisterValueChangedCallback(e => onChange?.Invoke(e.newValue));
+                slot.Add(field);
+            }
+        }
+
+        private void RebuildProductDropdowns()
+        {
+            if (_gumroadDropdownSlot == null || _jinxxyDropdownSlot == null) return;
+
+            BuildProductDropdown(_gumroadDropdownSlot, "Gumroad", _profile?.gumroadProductId ?? "",
+                v => { if (_profile != null) { Undo.RecordObject(_profile, "Set Gumroad ID"); _profile.gumroadProductId = v; EditorUtility.SetDirty(_profile); } });
+
+            BuildProductDropdown(_jinxxyDropdownSlot, "Jinxxy", _profile?.jinxxyProductId ?? "",
+                v => { if (_profile != null) { Undo.RecordObject(_profile, "Set Jinxxy ID");  _profile.jinxxyProductId  = v; EditorUtility.SetDirty(_profile); } });
+        }
+
+        [Serializable]
+        private class ProductEntryJson
+        {
+            public string productId;
+            public string provider;
+            public string providerProductRef;
+            public string displayName;
+        }
+
+        [Serializable]
+        private class ProductsResponse { public ProductEntryJson[] products; }
+
+        private async void LoadCreatorProducts()
+        {
+            string accessToken = YucpOAuthService.GetAccessToken();
+            if (string.IsNullOrEmpty(accessToken)) return;
+
+            string serverUrl = GetServerUrl();
+            _productsLoading = true;
+            RebuildProductDropdowns();
+
+            try
+            {
+                using var request = UnityEngine.Networking.UnityWebRequest.Get(serverUrl.TrimEnd('/') + "/v1/products");
+                request.SetRequestHeader("Authorization", "Bearer " + accessToken);
+                request.SetRequestHeader("Accept", "application/json");
+                request.SetRequestHeader("Accept-Encoding", "identity");
+
+                var operation = request.SendWebRequest();
+                while (!operation.isDone)
+                    await System.Threading.Tasks.Task.Delay(50);
+
+                if (request.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
+                {
+                    var parsed = JsonUtility.FromJson<ProductsResponse>(request.downloadHandler.text);
+                    if (parsed?.products != null)
+                    {
+                        _gumroadProducts = parsed.products
+                            .Where(p => p.provider == "gumroad")
+                            .Select(p => new ProductEntry
+                            {
+                                displayName       = string.IsNullOrEmpty(p.displayName) ? p.providerProductRef : p.displayName,
+                                providerProductRef = p.providerProductRef
+                            })
+                            .ToList();
+
+                        _jinxxyProducts = parsed.products
+                            .Where(p => p.provider == "jinxxy")
+                            .Select(p => new ProductEntry
+                            {
+                                displayName       = string.IsNullOrEmpty(p.displayName) ? p.providerProductRef : p.displayName,
+                                providerProductRef = p.providerProductRef
+                            })
+                            .ToList();
+                    }
+                }
+                else
+                {
+                    // No products or auth failed — leave lists empty so text fields are shown
+                    _gumroadProducts = new List<ProductEntry>();
+                    _jinxxyProducts  = new List<ProductEntry>();
+                }
+            }
+            catch
+            {
+                _gumroadProducts = new List<ProductEntry>();
+                _jinxxyProducts  = new List<ProductEntry>();
+            }
+            finally
+            {
+                _productsLoading = false;
+                EditorApplication.delayCall += () => RebuildProductDropdowns();
+            }
+        }
+
+        // ── License Protection section ─────────────────────────────────────────────
+
+        private VisualElement BuildLicenseProtectionSection()
+        {
+            var body = MakePad(16, 18, 10, 16);
+
+            // Header row
+            var headerRow = new VisualElement();
+            headerRow.style.flexDirection  = FlexDirection.Row;
+            headerRow.style.alignItems     = Align.Center;
+            headerRow.style.justifyContent = Justify.SpaceBetween;
+            headerRow.style.marginBottom   = 10;
+            headerRow.Add(MakeLabel("License Protection", 11, TextMute, bold: true, mb: 0));
+            body.Add(headerRow);
+
+            // Collect all profiles: main + bundled
+            var allProfiles = new List<ExportProfile>();
+            if (_profile != null)
+            {
+                allProfiles.Add(_profile);
+                if (_profile.HasIncludedProfiles())
+                    allProfiles.AddRange(_profile.GetIncludedProfiles().Where(p => p != null));
+            }
+
+            foreach (var prof in allProfiles)
+            {
+                if (prof == null) continue;
+                bool isLicensed = prof.requiresLicenseVerification;
+
+                var row = new VisualElement();
+                row.style.flexDirection  = FlexDirection.Row;
+                row.style.alignItems     = Align.Center;
+                row.style.justifyContent = Justify.SpaceBetween;
+                row.style.marginBottom   = 6;
+                row.style.paddingLeft    = 4;
+                row.style.paddingRight   = 4;
+                row.style.paddingTop     = 6;
+                row.style.paddingBottom  = 6;
+                row.style.backgroundColor = new Color(0.12f, 0.12f, 0.12f, 0.6f);
+                row.style.borderTopLeftRadius = row.style.borderTopRightRadius =
+                    row.style.borderBottomLeftRadius = row.style.borderBottomRightRadius = 4;
+
+                // Package name
+                string displayName = !string.IsNullOrEmpty(prof.packageName)
+                    ? prof.packageName
+                    : (!string.IsNullOrEmpty(prof.packageId) ? prof.packageId : "Unnamed");
+
+                var nameCol = new VisualElement();
+                nameCol.style.flexGrow = 1;
+                nameCol.Add(MakeLabel(displayName, 11, TextPri, mb: 0));
+                if (!string.IsNullOrEmpty(prof.packageId))
+                    nameCol.Add(MakeLabel(prof.packageId, 9, TextMute, mb: 0));
+                row.Add(nameCol);
+
+                // Toggle
+                var toggle = new Toggle { value = isLicensed };
+                toggle.style.flexShrink = 0;
+                toggle.RegisterValueChangedCallback(e =>
+                {
+                    var target = prof; // capture
+                    Undo.RecordObject(target, "Toggle License Protection");
+                    target.requiresLicenseVerification = e.newValue;
+                    EditorUtility.SetDirty(target);
+                });
+                row.Add(toggle);
+
+                body.Add(row);
+            }
+
+            // Info note
+            var note = MakeLabel(
+                "When enabled, derived FBX assets require a verified purchase before they are applied.",
+                9, TextMute, wrap: true);
+            note.style.marginTop = 4;
+            body.Add(note);
+
+            return body;
         }
 
         // ── Account bar (shared across states 2 & 3) ──────────────────────────────
@@ -765,6 +999,19 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         }
 
         private static void ApplyInputStyle(TextField f)
+        {
+            f.style.backgroundColor        = new Color(0.102f, 0.102f, 0.102f);
+            f.style.borderTopLeftRadius    = f.style.borderTopRightRadius    =
+                f.style.borderBottomLeftRadius = f.style.borderBottomRightRadius = 5;
+            f.style.borderTopWidth = f.style.borderBottomWidth =
+                f.style.borderLeftWidth = f.style.borderRightWidth = 1;
+            f.style.borderTopColor = f.style.borderBottomColor =
+                f.style.borderLeftColor = f.style.borderRightColor =
+                    new Color(0.20f, 0.20f, 0.20f);
+        }
+
+        // Overload for DropdownField so dropdowns receive the same input styling
+        private static void ApplyInputStyle(DropdownField f)
         {
             f.style.backgroundColor        = new Color(0.102f, 0.102f, 0.102f);
             f.style.borderTopLeftRadius    = f.style.borderTopRightRadius    =

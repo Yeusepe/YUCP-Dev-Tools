@@ -378,7 +378,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Convert derived FBXs after dependencies are collected so derived FBXs referenced only by exported
                 // assets (i.e., not directly in export folders) still get converted into patch artifacts.
-                hasPatchAssets = ConvertDerivedFbxToPatchAssets(assetsToExport, progressCallback, progress: 0.535f);
+                hasPatchAssets = ConvertDerivedFbxToPatchAssets(assetsToExport, progressCallback, progress: 0.535f, profile: profile);
                 
                 progressCallback?.Invoke(0.54f, $"Total assets after dependency collection: {assetsToExport.Count}");
                 
@@ -410,10 +410,39 @@ namespace YUCP.DevTools.Editor.PackageExporter
                  if (profile.generatePackageJson)
                  {
                      progressCallback?.Invoke(0.58f, "Generating package.json...");
+
+                     // Collect all profiles (main + bundled) to check if any require license verification
+                     bool anyProfileRequiresLicense = profile.requiresLicenseVerification;
+                     if (!anyProfileRequiresLicense && profile.HasIncludedProfiles())
+                     {
+                         foreach (var sub in profile.GetIncludedProfiles())
+                         {
+                             if (sub != null && sub.requiresLicenseVerification) { anyProfileRequiresLicense = true; break; }
+                         }
+                     }
+
+                     // Build effective dependency list — inject com.yucp.importer when any profile requires license
+                     var effectiveDeps = new List<PackageDependency>(profile.dependencies ?? new List<PackageDependency>());
+                     if (anyProfileRequiresLicense)
+                     {
+                         bool alreadyListed = effectiveDeps.Any(d => d.packageName == "com.yucp.importer");
+                         if (!alreadyListed)
+                         {
+                             effectiveDeps.Add(new PackageDependency
+                             {
+                                 packageName = "com.yucp.importer",
+                                 packageVersion = "0.1.0",
+                                 displayName = "YUCP Importer",
+                                 enabled = true,
+                                 exportMode = DependencyExportMode.Dependency,
+                                 isVpmDependency = true,
+                             });
+                         }
+                     }
                      
                      packageJsonContent = DependencyScanner.GeneratePackageJson(
                          profile,
-                         profile.dependencies,
+                         effectiveDeps,
                          null
                      );
                  }
@@ -910,7 +939,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// Stores settings in the FBX importer userData JSON.
         /// Returns true if any patch assets were created.
         /// </summary>
-        private static bool ConvertDerivedFbxToPatchAssets(List<string> assetsToExport, Action<float, string> progressCallback, float progress)
+        private static bool ConvertDerivedFbxToPatchAssets(List<string> assetsToExport, Action<float, string> progressCallback, float progress, ExportProfile profile = null)
         {
             if (assetsToExport == null || assetsToExport.Count == 0) return false;
             
@@ -1124,6 +1153,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     derivedAsset.overrideOriginalReferences = overrideOriginalReferences;
                     
                     PatchBuilder.EmbedMetaFile(normalizedModifiedPath, derivedAsset);
+
+                    // Propagate license gate from the export profile
+                    if (profile != null && profile.requiresLicenseVerification && !string.IsNullOrEmpty(profile.packageId))
+                    {
+                        derivedAsset.requiresLicense = true;
+                        derivedAsset.licensePackageId = profile.packageId;
+                    }
                     
                     // Use derived FBX GUID as filename identifier
                     string fileName = $"DerivedFbxAsset_{derivedFbxGuid.Substring(0, 8)}_{SanitizeFileName(hints.friendlyName)}.asset";
@@ -1676,6 +1712,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     metadataJson.fileHashes = BuildExportHashes(exportedAssets);
                 }
 
+                // Embed license requirements for all profiles (main + bundled)
+                var licensePackages = new List<LicensePackageJson>();
+                void AddLicenseProfile(ExportProfile p)
+                {
+                    if (p != null && p.requiresLicenseVerification && !string.IsNullOrEmpty(p.packageId))
+                    {
+                        licensePackages.Add(new LicensePackageJson
+                        {
+                            packageId = p.packageId,
+                            packageName = p.packageName ?? p.packageId,
+                            gumroadPermalink = p.gumroadProductId ?? "",
+                            jinxxyProductId = p.jinxxyProductId ?? "",
+                        });
+                    }
+                }
+                AddLicenseProfile(profile);
+                if (profile.HasIncludedProfiles())
+                {
+                    foreach (var sub in profile.GetIncludedProfiles())
+                        AddLicenseProfile(sub);
+                }
+                if (licensePackages.Count > 0)
+                    metadataJson.licensePackages = licensePackages;
+
                 // Serialize to JSON
                 return JsonUtility.ToJson(metadataJson, true);
             }
@@ -1700,6 +1760,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public string versionRuleName;
             public UpdateStepList updateSteps;
             public List<FileHashJson> fileHashes;
+            /// <summary>Per-profile license requirements embedded at export time.</summary>
+            public List<LicensePackageJson> licensePackages;
+        }
+
+        [Serializable]
+        private class LicensePackageJson
+        {
+            /// <summary>YUCP packageId (e.g. "yeusepe/MyAvatar").</summary>
+            public string packageId;
+            /// <summary>Friendly display name for the UI.</summary>
+            public string packageName;
+            /// <summary>Gumroad product permalink (slug).</summary>
+            public string gumroadPermalink;
+            /// <summary>Jinxxy product ID.</summary>
+            public string jinxxyProductId;
         }
 
         [Serializable]

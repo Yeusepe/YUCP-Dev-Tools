@@ -236,6 +236,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         [Tooltip("Generate/update package.json with dependency information")]
         public bool generatePackageJson = true;
+
+        [Header("License Protection")]
+        [Tooltip("Require consumers to verify a purchase license before derived FBX assets are applied.\n" +
+                 "Enables the YUCP Importer license gate; adds com.yucp.importer as a VPM dependency.")]
+        public bool requiresLicenseVerification = false;
         
         [Header("Assembly Obfuscation")]
         [Tooltip("Enable ConfuserEx obfuscation for selected assemblies")]

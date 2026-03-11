@@ -24,7 +24,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				Debug.LogError("[DerivedFbxBuilder] Invalid inputs: derivedAsset is null");
 				return null;
 			}
-			
+
+			// License gate: if the asset requires a verified license, check SessionState
+			// before decrypting. LicenseTokenCache (in com.yucp.importer) sets
+			// "yucp.license.{packageId}" when a valid token is verified.
+			if (derivedAsset.requiresLicense && !string.IsNullOrEmpty(derivedAsset.licensePackageId))
+			{
+				string sessionKey = $"yucp.license.{derivedAsset.licensePackageId}";
+				string licenseToken = SessionState.GetString(sessionKey, null);
+				if (string.IsNullOrEmpty(licenseToken))
+				{
+					Debug.LogError(
+						$"[DerivedFbxBuilder] License required for package '{derivedAsset.licensePackageId}'. " +
+						"Please import the package through the YUCP Package Manager to verify your license.");
+					return null;
+				}
+			}
+
 			if (derivedAsset.entries == null || derivedAsset.entries.Count == 0)
 			{
 				Debug.LogError("[DerivedFbxBuilder] DerivedFbxAsset has no patch entries. Cannot apply patch.");
