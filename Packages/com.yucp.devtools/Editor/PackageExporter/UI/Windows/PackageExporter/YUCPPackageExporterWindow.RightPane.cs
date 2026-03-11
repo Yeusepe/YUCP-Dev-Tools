@@ -328,7 +328,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             float scrollY = _rightPaneScrollView.verticalScroller.value;
             float topPadding = GetTopNavHeight() + 12f;
-            string activeTab = null;
+
+            // Determine viewport center in content coordinates for robust section detection
+            float viewportHeight = _rightPaneScrollView.resolvedStyle.height;
+            if (viewportHeight <= 0) viewportHeight = _rightPaneScrollView.layout.height;
+            if (viewportHeight <= 0) viewportHeight = 400f; // fallback
+            float viewportCenter = scrollY + (viewportHeight * 0.5f);
+
+            string bestTab = null;
+            float bestDist = float.MaxValue;
 
             foreach (var (sectionId, tabId) in sections)
             {
@@ -338,15 +346,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 float sectionY = GetElementYInContent(_rightPaneScrollView, section);
                 if (float.IsNaN(sectionY)) continue;
 
-                if (sectionY - topPadding <= scrollY + 1f)
+                float sectionH = section.resolvedStyle.height;
+                if (sectionH <= 0) sectionH = section.layout.height;
+                if (sectionH <= 0) sectionH = 200f; // fallback
+
+                float sectionMid = sectionY + (sectionH * 0.5f);
+                float dist = Math.Abs(sectionMid - viewportCenter);
+                if (dist < bestDist)
                 {
-                    activeTab = tabId;
+                    bestDist = dist;
+                    bestTab = tabId;
                 }
             }
 
-            if (!string.IsNullOrEmpty(activeTab))
+            if (!string.IsNullOrEmpty(bestTab))
             {
-                _topNavBar.SetActiveTab(activeTab);
+                _topNavBar.SetActiveTab(bestTab);
             }
         }
 
