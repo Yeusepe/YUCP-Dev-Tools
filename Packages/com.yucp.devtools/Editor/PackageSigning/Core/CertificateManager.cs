@@ -80,7 +80,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             var certData  = cert.cert;
             var signature = cert.signature;
 
-            if (signature.algorithm != "Ed25519" || signature.keyId != "yucp-root-2025")
+            if (!string.Equals(signature.algorithm, "Ed25519", StringComparison.OrdinalIgnoreCase) || signature.keyId != "yucp-root-2025")
                 return new CertificateVerificationResult { valid = false, error = "Invalid signature algorithm or key ID" };
 
             var settings = GetSigningSettings();

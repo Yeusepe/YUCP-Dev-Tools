@@ -10,7 +10,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
     public class SigningSettings : ScriptableObject
     {
         [Header("Server Configuration")]
-        public string serverUrl = "https://signing.yucp.club";
+        public string serverUrl = "https://api.creators.yucp.club";
         
         [Header("Certificate")]
         [SerializeField] private string _certificateJson; // Full certificate JSON stored here

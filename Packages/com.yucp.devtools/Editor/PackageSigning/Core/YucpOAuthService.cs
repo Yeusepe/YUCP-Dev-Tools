@@ -232,7 +232,13 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 }
 
                 Debug.Log("[YUCP OAuth] Sign-in complete.");
-                onSuccess?.Invoke();
+
+                    // Refresh the CA root public key from the server so SigningSettings
+                    // is always server-authoritative — no hardcoded keys in the package.
+                    var signingService = new PackageSigningService(serverUrl);
+                    await signingService.FetchAndCacheRootPublicKeyAsync();
+
+                    onSuccess?.Invoke();
             }
             catch (Exception ex)
             {

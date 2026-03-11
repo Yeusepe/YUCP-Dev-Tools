@@ -223,6 +223,45 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         }
 
         /// <summary>
+        /// Tries to restore an existing active certificate from the server for this machine's key.
+        /// Call this before RequestCertificateAsync — if the server already has a cert for this
+        /// machine, return it directly without consuming a rate-limit slot.
+        /// Returns the raw certificate JSON on success, null if none found.
+        /// </summary>
+        public async System.Threading.Tasks.Task<string> RestoreCertificateAsync(
+            string accessToken, string devPublicKey)
+        {
+            try
+            {
+                using var http = new System.Net.Http.HttpClient();
+                http.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
+                http.DefaultRequestHeaders.Add("X-Dev-Public-Key", devPublicKey);
+
+                var resp = await http.GetAsync($"{_serverUrl}/v1/certificates/me");
+                if (!resp.IsSuccessStatusCode) return null;
+
+                string json = await resp.Content.ReadAsStringAsync();
+
+                // Extract "certificate" object from { "certificate": {...} }
+                int certIdx = json.IndexOf("\"certificate\"", StringComparison.Ordinal);
+                if (certIdx < 0) return null;
+                int braceIdx = json.IndexOf('{', certIdx);
+                if (braceIdx < 0) return null;
+                int depth = 0, end = braceIdx;
+                for (int i = braceIdx; i < json.Length; i++)
+                {
+                    if (json[i] == '{') depth++;
+                    else if (json[i] == '}') { depth--; if (depth == 0) { end = i; break; } }
+                }
+                return json.Substring(braceIdx, end - braceIdx + 1);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Request a signing certificate from the YUCP CA using a YUCP OAuth access token.
         /// Returns the raw certificate JSON on success for import via CertificateManager.ImportAndVerifyFromJson.
         ///
@@ -280,6 +319,56 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             catch (Exception ex)
             {
                 return (false, $"Network error: {ex.Message}", null);
+            }
+        }
+
+        /// <summary>
+        /// Fetches the YUCP CA root public key from GET /v1/keys and caches it in SigningSettings.
+        /// Called automatically after a successful sign-in so the key is always server-authoritative.
+        /// </summary>
+        public async System.Threading.Tasks.Task<bool> FetchAndCacheRootPublicKeyAsync()
+        {
+            try
+            {
+                using var http = new System.Net.Http.HttpClient();
+                var resp = await http.GetAsync($"{_serverUrl}/v1/keys");
+                if (!resp.IsSuccessStatusCode) return false;
+
+                string json = await resp.Content.ReadAsStringAsync();
+
+                // Parse x field from first key: { "keys": [{ "x": "...", "kid": "..." }] }
+                int xIdx = json.IndexOf("\"x\"", StringComparison.Ordinal);
+                if (xIdx < 0) return false;
+                int colonIdx = json.IndexOf(':', xIdx + 3);
+                if (colonIdx < 0) return false;
+                int q1 = json.IndexOf('"', colonIdx + 1);
+                if (q1 < 0) return false;
+                int q2 = json.IndexOf('"', q1 + 1);
+                if (q2 < 0) return false;
+                string publicKey = json.Substring(q1 + 1, q2 - q1 - 1);
+
+                if (string.IsNullOrEmpty(publicKey)) return false;
+
+                // Persist in SigningSettings asset
+                string[] guids = AssetDatabase.FindAssets("t:PackageSigningData.SigningSettings");
+                if (guids.Length == 0) guids = AssetDatabase.FindAssets("t:SigningSettings");
+                if (guids.Length == 0) return false;
+
+                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+                var settings = AssetDatabase.LoadAssetAtPath<PackageSigningData.SigningSettings>(path);
+                if (settings == null) return false;
+
+                settings.yucpRootPublicKeyBase64 = publicKey;
+                EditorUtility.SetDirty(settings);
+                AssetDatabase.SaveAssets();
+
+                UnityEngine.Debug.Log($"[YUCP Keys] Root public key cached from server (kid from /v1/keys).");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogWarning($"[YUCP Keys] Could not fetch root public key: {ex.Message}");
+                return false;
             }
         }
 

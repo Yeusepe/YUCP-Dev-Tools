@@ -798,6 +798,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         }
 
         private string GetServerUrl() =>
-            _settings?.serverUrl ?? "https://signing.yucp.club";
+            _settings?.serverUrl ?? "https://api.creators.yucp.club";
     }
 }
