@@ -287,6 +287,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             // Set User-Agent to avoid blocking by some services
             requestData.request.SetRequestHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+            requestData.request.SetRequestHeader("Accept-Encoding", "identity");
             
             var operation = requestData.request.SendWebRequest();
             

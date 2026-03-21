@@ -45,16 +45,56 @@ namespace YUCP.PatchCleanup
         }
         
         private static HashSet<string> processedPatches = new HashSet<string>();
+        private static Dictionary<string, int> patchRetryCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private static bool hasCheckedOnLoad = false;
         private static HashSet<string> importedTempFiles = new HashSet<string>();
         private static HashSet<string> createdDerivedFbxPaths = new HashSet<string>();
         private static bool s_hasCleanedOnLoad = false;
         private static string _currentPatchPathForRetry = null;
+        private const int MaxPatchRetryCount = 8;
+        private const string ExportInProgressKey = "YUCP.PackageBuilder.ExportingTempPatchAssets";
 
         private class PatchEntryInfo
         {
             public string baseGuid;
             public string hdiffFilePath;
+        }
+
+        private static bool IsExporterGeneratingTempPatchAssets()
+        {
+            try
+            {
+                if (EditorPrefs.GetBool(ExportInProgressKey, false))
+                {
+                    return true;
+                }
+
+                string[] typeNames =
+                {
+                    "YUCP.DevTools.Editor.PackageExporter.PackageBuilder, com.yucp.devtools.Editor",
+                    "YUCP.DevTools.Editor.PackageExporter.PackageBuilder, Assembly-CSharp-Editor"
+                };
+
+                foreach (string typeName in typeNames)
+                {
+                    var packageBuilderType = System.Type.GetType(typeName);
+                    if (packageBuilderType == null)
+                    {
+                        continue;
+                    }
+
+                    var isExportingField = packageBuilderType.GetField("s_isExporting", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                    if (isExportingField != null && isExportingField.FieldType == typeof(bool))
+                    {
+                        return (bool)isExportingField.GetValue(null);
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
         }
 
         private static List<PatchEntryInfo> ReadPatchEntries(UnityEngine.Object patchObj)
@@ -82,9 +122,94 @@ namespace YUCP.PatchCleanup
 
             return results;
         }
+
+        private static void ClearPatchRetryState(string patchPath)
+        {
+            if (string.IsNullOrEmpty(patchPath))
+            {
+                return;
+            }
+
+            if (patchRetryCounts != null)
+            {
+                patchRetryCounts.Remove(patchPath);
+            }
+        }
+
+        private static void ReleasePatchForRetry(string patchPath, string reason)
+        {
+            if (string.IsNullOrEmpty(patchPath))
+            {
+                return;
+            }
+
+            if (processedPatches == null)
+            {
+                processedPatches = new HashSet<string>();
+            }
+
+            processedPatches.Remove(patchPath);
+
+            if (patchRetryCounts == null)
+            {
+                patchRetryCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            int retryCount = 0;
+            patchRetryCounts.TryGetValue(patchPath, out retryCount);
+            retryCount++;
+            patchRetryCounts[patchPath] = retryCount;
+
+            if (retryCount > MaxPatchRetryCount)
+            {
+                WriteLog($"  Giving up on patch retry after {MaxPatchRetryCount} attempts. patch='{patchPath}', reason='{reason}'");
+                Debug.LogWarning($"[YUCP PatchImporter] Stopped retrying patch '{patchPath}' after {MaxPatchRetryCount} attempts. Last reason: {reason}");
+                return;
+            }
+
+            WriteLog($"  Scheduling retry {retryCount}/{MaxPatchRetryCount} for patch '{patchPath}'. Reason: {reason}");
+            hasCheckedOnLoad = false;
+            EditorApplication.delayCall += () =>
+            {
+                EditorApplication.delayCall += () =>
+                {
+                    TryApplyPatch(patchPath);
+                };
+            };
+        }
+
+        private static void LogTempRuntimeState(string patchPath)
+        {
+            try
+            {
+                string tempEditorPath = Path.Combine(Application.dataPath, "..", "Packages", "com.yucp.temp", "Editor");
+                if (!Directory.Exists(tempEditorPath))
+                {
+                    WriteLog($"  Temp runtime folder missing while processing '{patchPath}': {tempEditorPath}");
+                    return;
+                }
+
+                string[] runtimeFiles = Directory.GetFiles(tempEditorPath, "*", SearchOption.TopDirectoryOnly)
+                    .Select(Path.GetFileName)
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                WriteLog($"  Temp runtime contents while processing '{patchPath}': {string.Join(", ", runtimeFiles)}");
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"  Failed to inspect temp runtime state for '{patchPath}': {ex.Message}");
+            }
+        }
         
         private static void CheckForPatchesOnLoad()
         {
+            if (IsExporterGeneratingTempPatchAssets())
+            {
+                WriteLog("CheckForPatchesOnLoad skipped because the exporter is generating temp patch assets.");
+                return;
+            }
+
             if (hasCheckedOnLoad) return;
             hasCheckedOnLoad = true;
             
@@ -168,10 +293,6 @@ namespace YUCP.PatchCleanup
                             WriteLog($"  Skipping (already processed): {path}");
                             continue;
                         }
-                        
-                        if (processedPatches == null)
-                            processedPatches = new HashSet<string>();
-                        processedPatches.Add(path);
                         
                         TryApplyPatch(path);
                         appliedCount++;
@@ -427,21 +548,12 @@ namespace YUCP.PatchCleanup
         {
             WriteLog($"OnPostprocessAllAssets called with {importedAssets?.Length ?? 0} imported assets");
             
-            // Skip if we're in the middle of an export
-            try
+            // Skip temp patch processing while the exporter is generating scratch assets.
+            if (IsExporterGeneratingTempPatchAssets())
             {
-                var packageBuilderType = System.Type.GetType("YUCP.DevTools.Editor.PackageExporter.PackageBuilder, Assembly-CSharp-Editor");
-                if (packageBuilderType != null)
-                {
-                    var isExportingField = packageBuilderType.GetField("s_isExporting", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-                    if (isExportingField != null && (bool)isExportingField.GetValue(null))
-                    {
-                        WriteLog("Export in progress, skipping patch detection");
-                        return;
-                    }
-                }
+                WriteLog("Export in progress, skipping patch detection");
+                return;
             }
-            catch { }
             
             if (processedPatches == null)
                 processedPatches = new HashSet<string>();
@@ -541,6 +653,11 @@ namespace YUCP.PatchCleanup
             _currentPatchPathForRetry = patchPath;
             try
             {
+                if (processedPatches == null)
+                    processedPatches = new HashSet<string>();
+
+                processedPatches.Add(patchPath);
+
                 // First, fix script GUID and namespace references if needed (must happen before type lookup)
                 string derivedFbxAssetScriptPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs";
                 string derivedFbxAssetScriptGuid = AssetDatabase.AssetPathToGUID(derivedFbxAssetScriptPath);
@@ -731,26 +848,15 @@ namespace YUCP.PatchCleanup
                         // Script exists but type not found - assembly needs to compile
                         // Retry after a delay to allow compilation
                         WriteLog("  Script file exists, waiting for assembly compilation...");
-                        EditorApplication.delayCall += () =>
-                        {
-                            EditorApplication.delayCall += () =>
-                            {
-                                // Retry after compilation
-                                if (processedPatches != null && processedPatches.Contains(patchPath))
-                                {
-                                    processedPatches.Remove(patchPath);
-                                }
-                                WriteLog($"  Retrying patch application after compilation delay: {patchPath}");
-                                TryApplyPatch(patchPath);
-                            };
-                        };
+                        ReleasePatchForRetry(patchPath, "DerivedFbxAsset type not compiled yet");
                         return;
                     }
                     else
                     {
-                        // Script doesn't exist - this is a real error
+                        LogTempRuntimeState(patchPath);
                         WriteLog("  ERROR: DerivedFbxAsset script file not found");
-                        Debug.LogWarning($"[YUCP PatchImporter] DerivedFbxAsset type not found for patch {patchPath}. Script file missing. Ensure patch scripts are in temp package if patches are needed.");
+                        Debug.LogWarning($"[YUCP PatchImporter] DerivedFbxAsset runtime files are missing while processing patch {patchPath}. Retrying in case Unity is still importing the temp runtime.");
+                        ReleasePatchForRetry(patchPath, "DerivedFbxAsset.cs missing from Packages/com.yucp.temp/Editor");
                         return;
                     }
                 }
@@ -849,6 +955,7 @@ namespace YUCP.PatchCleanup
                 }
                 
                 WriteLog($"  Patch asset loaded successfully: {patch.GetType().FullName}");
+                ClearPatchRetryState(patchPath);
                 ApplyPatch(patch, patchPath);
             }
             catch (Exception ex)

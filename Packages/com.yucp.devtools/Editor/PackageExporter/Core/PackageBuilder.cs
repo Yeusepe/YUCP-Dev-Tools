@@ -29,6 +29,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private const string InstalledPackagesRoot = "Packages/yucp.installed-packages";
         private const string EmbeddedArtifactsFolderName = "Embedded";
         private const string TempInstallFolderName = "_temp";
+        private const string TempPatchExportMarkerKey = "YUCP.PackageBuilder.ExportingTempPatchAssets";
         
         private static bool IsDefaultGridPlaceholder(Texture2D texture)
         {
@@ -77,6 +78,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 exportAssetPath = null;
                 if (texture == null) return null;
 
+                // Always export metadata textures as embedded PNGs when possible. This avoids
+                // importer-side decoding failures for source formats like GIF and makes package
+                // metadata self-contained instead of depending on original asset paths.
+                string cachePath = SaveTextureToLibraryCache(texture, baseName);
+                if (!string.IsNullOrEmpty(cachePath))
+                {
+                    return RegisterEmbeddedFile(cachePath, subfolder, baseName);
+                }
+
                 string assetPath = AssetDatabase.GetAssetPath(texture);
                 if (!string.IsNullOrEmpty(assetPath) && assetPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
                 {
@@ -84,8 +94,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     return assetPath;
                 }
 
-                string cachePath = SaveTextureToLibraryCache(texture, baseName);
-                return RegisterEmbeddedFile(cachePath, subfolder, baseName);
+                return null;
             }
 
             public string RegisterEmbeddedFile(string sourcePath, string subfolder, string baseName)
@@ -114,6 +123,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             // Set exporting flag
             s_isExporting = true;
+            EditorPrefs.SetBool(TempPatchExportMarkerKey, true);
             
             try
             {
@@ -931,6 +941,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 // Clear exporting flag
                 s_isExporting = false;
+                EditorPrefs.DeleteKey(TempPatchExportMarkerKey);
             }
         }
         
@@ -1556,8 +1567,56 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 string fileName = $"{sanitizedName}_{texture.GetInstanceID()}.png";
                 string filePath = Path.Combine(tempDir, fileName);
                 
-                // Encode texture to PNG bytes
-                byte[] pngData = texture.EncodeToPNG();
+                byte[] pngData = null;
+
+                // Prefer direct encoding, but fall back to a readable copy for imported
+                // textures that have Read/Write disabled in their import settings.
+                try
+                {
+                    pngData = texture.EncodeToPNG();
+                }
+                catch (UnityException)
+                {
+                    Texture2D readableCopy = null;
+                    RenderTexture renderTexture = null;
+                    RenderTexture previousActive = RenderTexture.active;
+
+                    try
+                    {
+                        renderTexture = RenderTexture.GetTemporary(
+                            Mathf.Max(1, texture.width),
+                            Mathf.Max(1, texture.height),
+                            0,
+                            RenderTextureFormat.ARGB32,
+                            RenderTextureReadWrite.Linear);
+
+                        Graphics.Blit(texture, renderTexture);
+                        RenderTexture.active = renderTexture;
+
+                        readableCopy = new Texture2D(
+                            Mathf.Max(1, texture.width),
+                            Mathf.Max(1, texture.height),
+                            TextureFormat.RGBA32,
+                            false);
+                        readableCopy.ReadPixels(new Rect(0, 0, renderTexture.width, renderTexture.height), 0, 0);
+                        readableCopy.Apply(false, false);
+                        pngData = readableCopy.EncodeToPNG();
+                    }
+                    finally
+                    {
+                        RenderTexture.active = previousActive;
+                        if (renderTexture != null)
+                        {
+                            RenderTexture.ReleaseTemporary(renderTexture);
+                        }
+
+                        if (readableCopy != null)
+                        {
+                            UnityEngine.Object.DestroyImmediate(readableCopy);
+                        }
+                    }
+                }
+
                 if (pngData == null || pngData.Length == 0)
                 {
                     Debug.LogWarning($"[PackageBuilder] Failed to encode texture to PNG for '{baseName}'");
@@ -3216,9 +3275,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 progressCallback?.Invoke(0.724f, "Sending signing request to server...");
 
                 // Send to server using synchronous HTTP request
+                // Pass the raw stored cert JSON so the Bearer token exactly matches what the CA signed.
+                string rawCertJson = settings.GetCertificateJson();
+                // Resolve server URL: profile override takes precedence over global signing settings.
+                string resolvedServerUrl = !string.IsNullOrEmpty(profile?.signingServerUrl)
+                    ? profile.signingServerUrl
+                    : settings.serverUrl;
                 PackageSigningData.SigningResponse signingResponse = SendSigningRequestSynchronously(
-                    settings.serverUrl,
-                    payloadObj,
+                    resolvedServerUrl,
+                    rawCertJson,
+                    payloadObj.manifest?.packageId ?? "",
+                    payloadObj.manifest?.archiveSha256 ?? "",
+                    payloadObj.manifest?.version ?? "",
                     devSignature,
                     progressCallback
                 );
@@ -3400,141 +3468,86 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
 
         /// <summary>
-        /// Send signing request to server synchronously
+        /// Send signing request to server synchronously.
+        /// Calls POST /v1/signatures (transparency log). The server authenticates via the YUCP
+        /// certificate envelope as a Bearer token and records the package hash.
+        /// Returns a synthetic SigningResponse built from the local certificate (the cert IS the
+        /// trust anchor — no separate CA signature is returned by the server).
         /// </summary>
         private static PackageSigningData.SigningResponse SendSigningRequestSynchronously(
             string serverUrl,
-            SigningRequestPayload payload,
+            string rawCertJson,
+            string packageId,
+            string contentHash,
+            string packageVersion,
             byte[] devSignature,
             Action<float, string> progressCallback)
         {
             try
             {
-                // Manually construct JSON request body to ensure fileHashes dictionary is included
-                // Unity's JsonUtility doesn't serialize Dictionary fields, so we need to build it manually
-                string canonicalizedPayload = CanonicalizeSigningPayload(payload);
-                string devSignatureBase64 = System.Convert.ToBase64String(devSignature);
-                
-                // Build the request JSON manually: {"payload":{...},"devSignature":"..."}
-                string requestJson = $"{{\"payload\":{canonicalizedPayload},\"devSignature\":\"{EscapeJsonString(devSignatureBase64)}\"}}";
-                byte[] requestBytes = System.Text.Encoding.UTF8.GetBytes(requestJson);
+                if (string.IsNullOrEmpty(rawCertJson))
+                {
+                    Debug.LogError("[PackageBuilder] No certificate JSON available");
+                    return null;
+                }
 
-                string url = $"{serverUrl.TrimEnd('/')}/v2/sign-manifest";
+                // POST /v1/signatures
+                // Auth: Bearer <base64(raw cert JSON as UTF-8)>
+                // The server uses atob() then JSON.parse() so we must base64-encode the raw
+                // JSON string exactly as it was stored (which is what the CA signed).
+                string certBase64 = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(rawCertJson));
 
-                // Use UnityWebRequest and wait for it
+                string bodyJson = $"{{\"packageId\":\"{EscapeJsonString(packageId)}\","
+                                + $"\"contentHash\":\"{EscapeJsonString(contentHash)}\","
+                                + $"\"packageVersion\":\"{EscapeJsonString(packageVersion)}\"}}";
+                byte[] requestBytes = System.Text.Encoding.UTF8.GetBytes(bodyJson);
+
+                string url = $"{serverUrl.TrimEnd('/')}/v1/signatures";
+                Debug.Log($"[PackageBuilder] Posting to transparency log: {url}");
+
                 using (var request = new UnityEngine.Networking.UnityWebRequest(url, "POST"))
                 {
-                    request.uploadHandler = new UnityEngine.Networking.UploadHandlerRaw(requestBytes);
+                    request.uploadHandler   = new UnityEngine.Networking.UploadHandlerRaw(requestBytes);
                     request.downloadHandler = new UnityEngine.Networking.DownloadHandlerBuffer();
-                    request.SetRequestHeader("Content-Type", "application/json");
+                    request.SetRequestHeader("Content-Type",    "application/json");
+                    request.SetRequestHeader("Authorization",   $"Bearer {certBase64}");
+                    request.SetRequestHeader("Accept-Encoding", "identity");
                     request.timeout = 30;
 
                     var operation = request.SendWebRequest();
-
-                    // Wait for request to complete
                     while (!operation.isDone)
                     {
-                        progressCallback?.Invoke(0.725f + (operation.progress * 0.002f), "Waiting for server response...");
+                        progressCallback?.Invoke(0.725f + operation.progress * 0.002f, "Waiting for server response...");
                         System.Threading.Thread.Sleep(50);
                     }
 
+                    string responseText = request.downloadHandler.text;
+
                     if (request.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
                     {
-                        string responseJson = request.downloadHandler.text;
-                        
-                        // Parse the full response including certificateChain
-                        PackageSigningData.SigningResponse response = JsonUtility.FromJson<PackageSigningData.SigningResponse>(responseJson);
-                        
-                        // Unity's JsonUtility doesn't properly deserialize nested arrays,
-                        // so we need to manually parse certificateChain if present
-                        if (response != null && responseJson.Contains("certificateChain"))
+                        Debug.Log($"[PackageBuilder] Transparency log recorded: {responseText}");
+
+                        // Parse publisherId from the stored cert JSON to populate the synthetic response
+                        var parsedCert = JsonUtility.FromJson<PackageSigningData.YucpCertificate>(rawCertJson);
+                        var response = new PackageSigningData.SigningResponse
                         {
-                            try
-                            {
-                                // Use a simple JSON parsing approach for the certificateChain array
-                                // Extract the certificateChain array from the JSON
-                                int chainStart = responseJson.IndexOf("\"certificateChain\":[");
-                                if (chainStart >= 0)
-                                {
-                                    int bracketCount = 0;
-                                    int arrayStart = responseJson.IndexOf('[', chainStart);
-                                    int arrayEnd = arrayStart;
-                                    
-                                    for (int i = arrayStart; i < responseJson.Length; i++)
-                                    {
-                                        if (responseJson[i] == '[') bracketCount++;
-                                        if (responseJson[i] == ']') bracketCount--;
-                                        if (bracketCount == 0)
-                                        {
-                                            arrayEnd = i;
-                                            break;
-                                        }
-                                    }
-                                    
-                                    if (arrayEnd > arrayStart)
-                                    {
-                                        string chainJson = responseJson.Substring(arrayStart, arrayEnd - arrayStart + 1);
-                                        // Parse the certificate chain array using a wrapper class (Unity JsonUtility needs wrapper for arrays)
-                                        CertificateChainWrapper wrapper = JsonUtility.FromJson<CertificateChainWrapper>("{\"Items\":" + chainJson + "}");
-                                        if (wrapper != null && wrapper.Items != null)
-                                        {
-                                            // Unity's JsonUtility may not properly deserialize enum strings in nested objects,
-                                            // so we manually fix the certificateType enum values from the JSON
-                                            foreach (var cert in wrapper.Items)
-                                            {
-                                                if (cert != null)
-                                                {
-                                                    // Find this certificate's certificateType in the JSON
-                                                    int certStart = chainJson.IndexOf($"\"keyId\":\"{cert.keyId}\"");
-                                                    if (certStart >= 0)
-                                                    {
-                                                        // Look for certificateType field after this keyId
-                                                        int typeStart = chainJson.IndexOf("\"certificateType\":\"", certStart);
-                                                        if (typeStart >= 0 && typeStart < certStart + 500) // Within reasonable distance
-                                                        {
-                                                            typeStart += "\"certificateType\":\"".Length;
-                                                            int typeEnd = chainJson.IndexOf("\"", typeStart);
-                                                            if (typeEnd > typeStart)
-                                                            {
-                                                                string typeStr = chainJson.Substring(typeStart, typeEnd - typeStart);
-                                                                if (System.Enum.TryParse<PackageVerifierData.CertificateType>(typeStr, true, out var parsedType))
-                                                                {
-                                                                    cert.certificateType = parsedType;
-                                                                }
-                                                                else
-                                                                {
-                                                                    Debug.LogWarning($"[PackageBuilder] Failed to parse certificateType '{typeStr}' for {cert.keyId}");
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            response.certificateChain = wrapper.Items;
-                                        }
-                                        else
-                                        {
-                                            Debug.LogWarning("[PackageBuilder] Failed to parse certificate chain array from wrapper");
-                                        }
-                                    }
-                                }
-                            }
-                            catch (System.Exception ex)
-                            {
-                                Debug.LogWarning($"[PackageBuilder] Failed to parse certificateChain from response: {ex.Message}");
-                            }
-                        }
-                        
+                            algorithm        = "Ed25519",
+                            keyId            = parsedCert?.cert?.publisherId ?? "",
+                            signature        = System.Convert.ToBase64String(devSignature),
+                            certificateIndex = 0,
+                        };
                         return response;
                     }
                     else
                     {
-                        string error = request.downloadHandler.text;
-                        if (string.IsNullOrEmpty(error))
-                        {
-                            error = $"HTTP {request.responseCode}: {request.error}";
-                        }
-                        Debug.LogError($"[PackageBuilder] Signing request failed: HTTP {request.responseCode}, Error: {error}");
+                        string error = string.IsNullOrEmpty(responseText)
+                            ? $"HTTP {request.responseCode}: {request.error}"
+                            : responseText;
+
+                        if (error.TrimStart().StartsWith("<"))
+                            error = $"HTTP {request.responseCode} (server returned HTML — likely wrong URL or auth)";
+
+                        Debug.LogError($"[PackageBuilder] Signing request failed: {error}");
                         return null;
                     }
                 }
@@ -3545,6 +3558,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return null;
             }
         }
+
 
         /// <summary>
         /// Inject signing data folder into the package

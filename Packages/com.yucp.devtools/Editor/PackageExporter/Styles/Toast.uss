@@ -1,0 +1,30 @@
+/* Toast styles for Package Exporter */
+.yucp-toast {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 380px;
+    max-width: 90%;
+    padding: 12px 16px;
+    border-radius: 10px;
+    /* box-shadow removed - unsupported in USS */
+    background-color: #2b2b2b;
+    color: #ffffff;
+    font-size: 13px;
+    /* z-index removed - USS doesn't support z-index */
+    opacity: 0;
+    transition-duration: 0.18s;
+    transition-property: opacity, transform;
+    transition-timing-function: ease-out;
+}
+
+.yucp-toast-info { background-color: #2f80ed; }
+.yucp-toast-success { background-color: #36BFB1; }
+.yucp-toast-warning { background-color: #E2A54A; }
+.yucp-toast-error { background-color: #ff5c5c; }
+
+.yucp-toast-header { flex-direction: row; align-items: center; margin-bottom: 8px; }
+.yucp-toast-title { font-size: 14px; -unity-font-style: bold; color: #ffffff; flex-grow: 1; }
+.yucp-toast-close { position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border-radius: 12px; background-color: rgba(0,0,0,0.16); color: #fff; border-width: 0; }
+.yucp-toast-close:hover { background-color: rgba(255,255,255,0.06); }
+.yucp-toast-message { white-space: normal; color: #ffffff; }

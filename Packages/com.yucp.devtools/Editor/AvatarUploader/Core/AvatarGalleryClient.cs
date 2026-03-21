@@ -358,6 +358,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 				}
 
 				// X-Unity-Version - Unity manages this automatically, don't set it manually
+				request.SetRequestHeader("Accept-Encoding", "identity");
 			}
 			catch (Exception ex)
 			{

@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEditor;
@@ -28,6 +27,23 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             public string publisherName;
         }
 
+        // Server returns { products: [ { productId, displayName, providers: [{provider, providerProductRef}], owner } ] }
+        [System.Serializable]
+        public class ServerProduct
+        {
+            public string productId;
+            public string displayName;
+            // providers array — Unity's JsonUtility can't deserialize nested arrays, so we
+            // parse this manually. The field is kept so JsonUtility doesn't strip the object.
+            public string owner; // null = own, non-null = collaborator owner name
+        }
+
+        [System.Serializable]
+        public class ServerProductsResponse
+        {
+            public ServerProduct[] products;
+        }
+
         [System.Serializable]
         public class PublisherPackagesResponse
         {
@@ -51,41 +67,49 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         /// </summary>
         public static void GetPublisherPackages(Action<List<PackageInfo>> onSuccess, Action<string> onError = null)
         {
+            _ = GetPublisherPackagesAsync(onSuccess, onError);
+        }
+
+        private static async System.Threading.Tasks.Task GetPublisherPackagesAsync(Action<List<PackageInfo>> onSuccess, Action<string> onError)
+        {
             var settings = GetSigningSettings();
-            if (settings == null || !settings.HasValidCertificate())
+            if (settings == null)
             {
-                onError?.Invoke("No valid certificate found");
+                EditorApplication.delayCall += () => onError?.Invoke("Signing settings not found");
                 return;
             }
 
             string serverUrl = settings.serverUrl;
             if (string.IsNullOrEmpty(serverUrl))
             {
-                onError?.Invoke("Server URL not configured");
+                EditorApplication.delayCall += () => onError?.Invoke("Server URL not configured");
                 return;
             }
 
-            string url = $"{serverUrl.TrimEnd('/')}/v1/publisher/packages";
-            
-            // Get certificate for authentication
-            var cert = CertificateManager.GetCurrentCertificate();
-            if (cert == null)
+            string accessToken = await YucpOAuthService.GetValidAccessTokenAsync(serverUrl);
+            if (string.IsNullOrEmpty(accessToken))
             {
-                onError?.Invoke("Certificate not found");
+                EditorApplication.delayCall += () => onError?.Invoke("Not signed in — please sign in with your Creator Account first.");
                 return;
             }
 
-            // Use a helper MonoBehaviour to run the coroutine
-            var helper = new GameObject("PackageInfoServiceHelper");
-            helper.hideFlags = HideFlags.HideAndDontSave;
-            var monoHelper = helper.AddComponent<PackageInfoServiceHelper>();
-            monoHelper.StartCoroutine(FetchPackagesCoroutine(url, cert, (packages) => {
-                UnityEngine.Object.DestroyImmediate(helper);
-                onSuccess?.Invoke(packages);
-            }, (error) => {
-                UnityEngine.Object.DestroyImmediate(helper);
-                onError?.Invoke(error);
-            }));
+            string url = $"{serverUrl.TrimEnd('/')}/v1/products";
+
+            EditorApplication.delayCall += () =>
+            {
+                var helper = new GameObject("PackageInfoServiceHelper");
+                helper.hideFlags = HideFlags.HideAndDontSave;
+                var monoHelper = helper.AddComponent<PackageInfoServiceHelper>();
+                monoHelper.StartCoroutine(FetchPackagesCoroutine(url, accessToken, packages =>
+                {
+                    UnityEngine.Object.DestroyImmediate(helper);
+                    onSuccess?.Invoke(packages);
+                }, error =>
+                {
+                    UnityEngine.Object.DestroyImmediate(helper);
+                    onError?.Invoke(error);
+                }));
+            };
         }
 
         /// <summary>
@@ -122,67 +146,16 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             }));
         }
 
-        private static IEnumerator FetchPackagesCoroutine(string url, Data.YucpCertificate cert, 
+        private static IEnumerator FetchPackagesCoroutine(string url, string accessToken,
             Action<List<PackageInfo>> onSuccess, Action<string> onError)
         {
-            Debug.Log($"[PackageInfoService] Fetching packages from: {url}");
-            
-            // Create payload matching server expectations
-            var payload = new PackageRequestPayload
-            {
-                publisherId = cert.cert.publisherId,
-                vrchatUserId = cert.cert.vrchatUserId,
-                yucpCert = cert,
-                timestamp = DateTime.UtcNow.ToString("O")
-            };
+            Debug.Log($"[PackageInfoService] Fetching products from: {url}");
 
-            // Canonicalize payload JSON to match server's format exactly
-            // Server uses: JSON.stringify(obj, Object.keys(obj).sort())
-            // This produces keys in alphabetical order: publisherId, timestamp, vrchatUserId, yucpCert
-            string payloadJson = CanonicalizePayload(payload);
-            byte[] payloadBytes = Encoding.UTF8.GetBytes(payloadJson);
-            
-            Debug.Log($"[PackageInfoService] Payload canonicalized (full): {payloadJson}");
-            Debug.Log($"[PackageInfoService] Payload bytes length: {payloadBytes.Length}");
-            
-            // Get dev public key for logging
-            var devKey = DevKeyManager.GetOrCreateDevKey();
-            Debug.Log($"[PackageInfoService] Dev public key (base64): {devKey.publicKey}");
-            byte[] devPublicKeyBytes = Convert.FromBase64String(devKey.publicKey);
-            Debug.Log($"[PackageInfoService] Dev public key length: {devPublicKeyBytes.Length} bytes (expected: 32)");
-            
-            // Verify the public key matches what's in the certificate
-            Debug.Log($"[PackageInfoService] Cert dev public key: {cert.cert.devPublicKey}");
-            if (devKey.publicKey != cert.cert.devPublicKey)
+            using (UnityWebRequest request = UnityWebRequest.Get(url))
             {
-                Debug.LogWarning($"[PackageInfoService] WARNING: Dev public key mismatch! Current key doesn't match certificate.");
-            }
-            
-            // Sign the canonicalized payload
-            byte[] devSignature = DevKeyManager.SignData(payloadBytes);
-            string devSignatureBase64 = Convert.ToBase64String(devSignature);
-            Debug.Log($"[PackageInfoService] Dev signature (base64): {devSignatureBase64}");
-            Debug.Log($"[PackageInfoService] Dev signature length: {devSignature.Length} bytes (expected: 64)");
-
-            // Build request body
-            var requestData = new PackageRequest
-            {
-                payload = payload,
-                devSignature = devSignatureBase64
-            };
-
-            string requestJson = JsonUtility.ToJson(requestData);
-            byte[] requestBytes = Encoding.UTF8.GetBytes(requestJson);
-            
-            Debug.Log($"[PackageInfoService] Request body length: {requestBytes.Length} bytes");
-            Debug.Log($"[PackageInfoService] Sending POST request...");
-
-            // Send POST request with JSON body
-            using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
-            {
-                request.uploadHandler = new UploadHandlerRaw(requestBytes);
-                request.downloadHandler = new DownloadHandlerBuffer();
-                request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                request.SetRequestHeader("Accept", "application/json");
+                request.SetRequestHeader("Accept-Encoding", "identity");
 
                 yield return request.SendWebRequest();
 
@@ -192,12 +165,30 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 {
                     string responseText = request.downloadHandler.text;
                     Debug.Log($"[PackageInfoService] Response received: {responseText.Substring(0, Math.Min(500, responseText.Length))}...");
-                    
+
                     try
                     {
-                        var response = JsonUtility.FromJson<PublisherPackagesResponse>(responseText);
-                        Debug.Log($"[PackageInfoService] Successfully parsed response. Package count: {response?.packages?.Count ?? 0}");
-                        onSuccess?.Invoke(response.packages ?? new List<PackageInfo>());
+                        // Server returns { products: [ { productId, displayName, providers: [...], owner } ] }
+                        // Parse with JsonUtility via the wrapper type
+                        var serverResp = JsonUtility.FromJson<ServerProductsResponse>(responseText);
+                        var packages = new List<PackageInfo>();
+                        if (serverResp?.products != null)
+                        {
+                            foreach (var prod in serverResp.products)
+                            {
+                                packages.Add(new PackageInfo
+                                {
+                                    packageId    = prod.productId,
+                                    publisherName = prod.owner ?? "(you)",
+                                    status       = "active",
+                                    version      = "",
+                                    archiveSha256 = "",
+                                    createdAt    = "",
+                                });
+                            }
+                        }
+                        Debug.Log($"[PackageInfoService] Products parsed: {packages.Count}");
+                        onSuccess?.Invoke(packages);
                     }
                     catch (Exception ex)
                     {
@@ -208,137 +199,20 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 else
                 {
                     string responseText = request.downloadHandler.text;
-                    string errorMessage = responseText;
-                    
-                    if (string.IsNullOrEmpty(errorMessage))
-                    {
-                        errorMessage = $"HTTP {request.responseCode}: {request.error}";
-                    }
-                    
+                    string errorMessage = string.IsNullOrEmpty(responseText)
+                        ? $"HTTP {request.responseCode}: {request.error}"
+                        : responseText;
+
                     Debug.LogError($"[PackageInfoService] Request failed!\n" +
-                        $"URL: {url}\n" +
-                        $"Result: {request.result}\n" +
+                        $"URL: {url}\nResult: {request.result}\n" +
                         $"Response Code: {request.responseCode}\n" +
-                        $"Error: {request.error}\n" +
-                        $"Response Body: {responseText}");
-                    
+                        $"Error: {request.error}\nResponse Body: {responseText}");
+
                     onError?.Invoke(errorMessage);
                 }
             }
         }
 
-        private static string CanonicalizePayload(PackageRequestPayload payload)
-        {
-            // Match server's recursive canonicalizeJson function
-            // Server recursively sorts keys at all levels alphabetically
-            return CanonicalizeJson(payload);
-        }
-        
-        /// <summary>
-        /// Recursively canonicalize JSON to match server's format
-        /// Sorts keys alphabetically at all levels
-        /// </summary>
-        private static string CanonicalizeJson(object obj)
-        {
-            if (obj == null)
-            {
-                return "null";
-            }
-            
-            var objType = obj.GetType();
-            
-            // Handle arrays and lists
-            if (objType.IsArray)
-            {
-                var array = (Array)obj;
-                var items = new List<string>();
-                foreach (var item in array)
-                {
-                    items.Add(CanonicalizeJson(item));
-                }
-                return "[" + string.Join(",", items) + "]";
-            }
-            
-            if (obj is System.Collections.IList list)
-            {
-                var items = new List<string>();
-                foreach (var item in list)
-                {
-                    items.Add(CanonicalizeJson(item));
-                }
-                return "[" + string.Join(",", items) + "]";
-            }
-            
-            // Handle objects (serializable classes)
-            if (objType.IsClass && !objType.IsPrimitive && objType != typeof(string))
-            {
-                // Get all serializable fields
-                var fields = objType.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
-                    .Where(f => !f.IsStatic)
-                    .OrderBy(f => f.Name)
-                    .ToList();
-                
-                var items = new List<string>();
-                foreach (var field in fields)
-                {
-                    var value = field.GetValue(obj);
-                    var key = EscapeJsonString(field.Name);
-                    var jsonValue = CanonicalizeJson(value);
-                    items.Add($"\"{key}\":{jsonValue}");
-                }
-                return "{" + string.Join(",", items) + "}";
-            }
-            
-            // Handle primitives
-            if (obj is string str)
-            {
-                return $"\"{EscapeJsonString(str)}\"";
-            }
-            
-            if (obj is bool b)
-            {
-                return b ? "true" : "false";
-            }
-            
-            if (obj is int || obj is long || obj is short || obj is byte || obj is uint || obj is ulong || obj is ushort || obj is sbyte)
-            {
-                return obj.ToString();
-            }
-            
-            if (obj is float || obj is double || obj is decimal)
-            {
-                return obj.ToString();
-            }
-            
-            // Fallback to JSON serialization
-            return JsonUtility.ToJson(obj);
-        }
-        
-        private static string EscapeJsonString(string str)
-        {
-            if (string.IsNullOrEmpty(str)) return "";
-            return str.Replace("\\", "\\\\")
-                      .Replace("\"", "\\\"")
-                      .Replace("\n", "\\n")
-                      .Replace("\r", "\\r")
-                      .Replace("\t", "\\t");
-        }
-
-        [System.Serializable]
-        private class PackageRequest
-        {
-            public PackageRequestPayload payload;
-            public string devSignature;
-        }
-
-        [System.Serializable]
-        private class PackageRequestPayload
-        {
-            public string publisherId;
-            public string vrchatUserId;
-            public Data.YucpCertificate yucpCert;
-            public string timestamp;
-        }
 
         private static IEnumerator FetchPackageStatusCoroutine(string url, 
             Action<PackageStatusResponse> onSuccess, Action<string> onError)
@@ -445,7 +319,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 timestamp = DateTime.UtcNow.ToString("O")
             };
 
-            string payloadJson = CanonicalizeJson(payload);
+            string payloadJson = JsonUtility.ToJson(payload);
             byte[] payloadBytes = Encoding.UTF8.GetBytes(payloadJson);
             
             // Sign the canonicalized payload
@@ -470,6 +344,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 request.uploadHandler = new UploadHandlerRaw(requestBytes);
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
+                request.SetRequestHeader("Accept-Encoding", "identity");
 
                 yield return request.SendWebRequest();
 

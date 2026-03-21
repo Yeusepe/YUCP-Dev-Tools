@@ -112,7 +112,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             if (!YucpOAuthService.IsSignedIn())
                 BuildSignInHero(content);
             else
+            {
+                YucpOAuthService.TryBeginBackgroundRefresh(GetServerUrl(), BuildUI);
                 BuildSignedInSection(content);
+            }
 
             return card;
         }
@@ -532,7 +535,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             var card    = YUCPUIToolkitHelper.CreateCard("Server Configuration", "Signing authority server settings");
             var content = YUCPUIToolkitHelper.GetCardContent(card);
 
-            var serverField = new TextField("Server URL");
+            var serverField = new TextField("Default Server URL");
             serverField.value = _settings.serverUrl;
             serverField.AddToClassList("yucp-input");
             serverField.RegisterValueChangedCallback(evt =>
@@ -542,7 +545,116 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             });
             content.Add(serverField);
 
-            YUCPUIToolkitHelper.AddSpacing(content, 12);
+            YUCPUIToolkitHelper.AddSpacing(content, 20);
+
+            // ── Certificate Providers ──────────────────────────────────────────────
+            var providersLabel = new Label("Certificate Providers");
+            providersLabel.AddToClassList("yucp-section-subtitle");
+            content.Add(providersLabel);
+
+            var providersHelp = new Label("Define named signing authorities. The first provider is used by default. Individual export profiles can override the server URL.");
+            providersHelp.AddToClassList("yucp-label-secondary");
+            providersHelp.style.whiteSpace = WhiteSpace.Normal;
+            providersHelp.style.marginBottom = 10;
+            content.Add(providersHelp);
+
+            var providersContainer = new VisualElement();
+            providersContainer.name = "providers-container";
+            content.Add(providersContainer);
+
+            void RebuildProviders()
+            {
+                providersContainer.Clear();
+                var providers = _settings.certificateProviders;
+                for (int i = 0; i < providers.Count; i++)
+                {
+                    int idx = i;
+                    var provider = providers[idx];
+
+                    var row = new VisualElement();
+                    row.style.flexDirection = FlexDirection.Column;
+                    row.style.borderTopWidth = 1;
+                    row.style.borderTopColor = new Color(0.2f, 0.2f, 0.2f);
+                    row.style.paddingTop = 10;
+                    row.style.paddingBottom = 10;
+                    row.style.marginBottom = 4;
+
+                    var rowHeader = new VisualElement();
+                    rowHeader.style.flexDirection = FlexDirection.Row;
+                    rowHeader.style.justifyContent = Justify.SpaceBetween;
+                    rowHeader.style.alignItems = Align.Center;
+                    rowHeader.style.marginBottom = 6;
+                    row.Add(rowHeader);
+
+                    var indexLabel = new Label($"Provider {idx + 1}{(idx == 0 ? " (default)" : "")}");
+                    indexLabel.AddToClassList("yucp-label");
+                    rowHeader.Add(indexLabel);
+
+                    var removeBtn = new Button(() =>
+                    {
+                        _settings.certificateProviders.RemoveAt(idx);
+                        EditorUtility.SetDirty(_settings);
+                        RebuildProviders();
+                    }) { text = "Remove" };
+                    removeBtn.AddToClassList("yucp-button-secondary");
+                    removeBtn.style.fontSize = 11;
+                    rowHeader.Add(removeBtn);
+
+                    var nameField = new TextField("Name") { value = provider.name };
+                    nameField.AddToClassList("yucp-input");
+                    nameField.RegisterValueChangedCallback(evt =>
+                    {
+                        _settings.certificateProviders[idx].name = evt.newValue;
+                        EditorUtility.SetDirty(_settings);
+                    });
+                    row.Add(nameField);
+
+                    YUCPUIToolkitHelper.AddSpacing(row, 4);
+
+                    var urlField = new TextField("Server URL") { value = provider.serverUrl };
+                    urlField.AddToClassList("yucp-input");
+                    urlField.RegisterValueChangedCallback(evt =>
+                    {
+                        _settings.certificateProviders[idx].serverUrl = evt.newValue;
+                        EditorUtility.SetDirty(_settings);
+                    });
+                    row.Add(urlField);
+
+                    YUCPUIToolkitHelper.AddSpacing(row, 4);
+
+                    var keyField = new TextField("Root Public Key (base64)") { value = provider.rootPublicKeyBase64 };
+                    keyField.AddToClassList("yucp-input");
+                    keyField.RegisterValueChangedCallback(evt =>
+                    {
+                        _settings.certificateProviders[idx].rootPublicKeyBase64 = evt.newValue;
+                        EditorUtility.SetDirty(_settings);
+                    });
+                    row.Add(keyField);
+
+                    providersContainer.Add(row);
+                }
+            }
+
+            RebuildProviders();
+
+            YUCPUIToolkitHelper.AddSpacing(content, 8);
+
+            content.Add(YUCPUIToolkitHelper.CreateButton(
+                "+ Add Provider",
+                () =>
+                {
+                    _settings.certificateProviders.Add(new CertificateProvider
+                    {
+                        name = "New Provider",
+                        serverUrl = "https://api.creators.yucp.club",
+                        rootPublicKeyBase64 = ""
+                    });
+                    EditorUtility.SetDirty(_settings);
+                    RebuildProviders();
+                },
+                YUCPUIToolkitHelper.ButtonVariant.Secondary));
+
+            YUCPUIToolkitHelper.AddSpacing(content, 16);
 
             content.Add(YUCPUIToolkitHelper.CreateButton(
                 "Save Settings",
@@ -625,64 +737,65 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             BuildUI();
         }
 
-        private void OnRequestCertClicked()
+        private async void OnRequestCertClicked()
         {
             if (_isRequestingCert) return;
             _isRequestingCert = true;
             BuildUI();
 
-            string accessToken   = YucpOAuthService.GetAccessToken();
+            string serverUrl = GetServerUrl();
+            string accessToken = await YucpOAuthService.GetValidAccessTokenAsync(serverUrl);
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                _isRequestingCert = false;
+                BuildUI();
+                EditorUtility.DisplayDialog("Certificate Request Failed", "Please sign in before requesting a certificate.", "OK");
+                return;
+            }
+
             string devPublicKey  = DevKeyManager.GetPublicKeyBase64();
             string publisherName = YucpOAuthService.GetDisplayName() ?? "YUCP Creator";
-            string serverUrl     = GetServerUrl();
             var    service       = new PackageSigningService(serverUrl);
 
-            _ = service.RequestCertificateAsync(accessToken, devPublicKey, publisherName)
-                .ContinueWith(task =>
-                    EditorApplication.delayCall += () =>
-                    {
-                        if (task.IsFaulted)
-                        {
-                            _isRequestingCert = false;
-                            BuildUI();
-                            string msg = task.Exception?.InnerException?.Message ?? "Unknown error.";
-                            EditorUtility.DisplayDialog("Certificate Request Failed", msg, "OK");
-                            return;
-                        }
+            try
+            {
+                var (success, error, certJson) = await service.RequestCertificateAsync(accessToken, devPublicKey, publisherName);
+                if (!success)
+                {
+                    _isRequestingCert = false;
+                    BuildUI();
+                    EditorUtility.DisplayDialog("Certificate Request Failed", error ?? "Unknown error.", "OK");
+                    return;
+                }
 
-                        var (success, error, certJson) = task.Result;
-                        if (!success)
-                        {
-                            _isRequestingCert = false;
-                            BuildUI();
-                            EditorUtility.DisplayDialog(
-                                "Certificate Request Failed", error ?? "Unknown error.", "OK");
-                            return;
-                        }
+                var result = CertificateManager.ImportAndVerifyFromJson(certJson);
+                if (result.valid)
+                {
+                    EditorUtility.DisplayDialog(
+                        "Certificate Issued!",
+                        $"Your signing certificate has been issued.\n\n" +
+                        $"Publisher: {result.publisherName}\n" +
+                        $"Expires: {result.expiresAt:MMM dd, yyyy}",
+                        "OK");
+                    _isRequestingCert = false;
+                    LoadSettings();
+                    BuildUI();
+                    return;
+                }
 
-                        var result = CertificateManager.ImportAndVerifyFromJson(certJson);
-                        if (result.valid)
-                        {
-                            EditorUtility.DisplayDialog(
-                                "Certificate Issued!",
-                                $"Your signing certificate has been issued.\n\n" +
-                                $"Publisher: {result.publisherName}\n" +
-                                $"Expires: {result.expiresAt:MMM dd, yyyy}",
-                                "OK");
-                            _isRequestingCert = false;
-                            LoadSettings();
-                            BuildUI();
-                        }
-                        else
-                        {
-                            _isRequestingCert = false;
-                            BuildUI();
-                            EditorUtility.DisplayDialog(
-                                "Certificate Invalid",
-                                $"Certificate was issued but failed verification:\n\n{result.error}",
-                                "OK");
-                        }
-                    });
+                _isRequestingCert = false;
+                BuildUI();
+                EditorUtility.DisplayDialog(
+                    "Certificate Invalid",
+                    $"Certificate was issued but failed verification:\n\n{result.error}",
+                    "OK");
+            }
+            catch (Exception ex)
+            {
+                _isRequestingCert = false;
+                BuildUI();
+                EditorUtility.DisplayDialog("Certificate Request Failed", ex.Message, "OK");
+            }
         }
 
         private void OnRemoveCert()

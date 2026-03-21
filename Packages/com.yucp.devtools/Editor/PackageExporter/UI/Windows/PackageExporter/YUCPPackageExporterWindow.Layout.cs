@@ -20,6 +20,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var root = rootVisualElement;
             root.AddToClassList("yucp-window");
+
+            // Initialize toast notification component (beautiful, non-blocking warnings)
+            _toast = new ToastNotification(root);
+
+            // Load package-exporter-specific toast stylesheet
+            var toastStyle = AssetDatabase.LoadAssetAtPath<StyleSheet>(
+                "Packages/com.yucp.devtools/Editor/PackageExporter/Styles/Toast.uss");
+            if (toastStyle != null)
+            {
+                root.styleSheets.Add(toastStyle);
+            }
             
             // Load shared design system stylesheet first
             var sharedStyleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(

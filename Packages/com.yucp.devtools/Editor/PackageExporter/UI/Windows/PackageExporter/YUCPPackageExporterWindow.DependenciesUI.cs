@@ -16,8 +16,44 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
     public partial class YUCPPackageExporterWindow
     {
+        // Package name for the YUCP Package Importer — required when license verification is on.
+        private const string YucpImporterPackageName = "com.yucp.importer";
+
         private void RebuildDependencyList(ExportProfile profile, VisualElement section, VisualElement container)
         {
+            // Auto-add the YUCP Importer dependency when license verification is enabled.
+            if (profile.requiresLicenseVerification)
+            {
+                bool hasImporter = profile.dependencies.Any(d =>
+                    string.Equals(d.packageName, YucpImporterPackageName, StringComparison.OrdinalIgnoreCase));
+
+                if (!hasImporter)
+                {
+                    var importerDep = new PackageDependency
+                    {
+                        packageName       = YucpImporterPackageName,
+                        displayName       = "YUCP Package Importer",
+                        packageVersion    = "1.0.0",
+                        enabled           = true,
+                        isVpmDependency   = true,
+                        exportMode        = DependencyExportMode.Dependency,
+                    };
+                    profile.dependencies.Insert(0, importerDep);
+                    EditorUtility.SetDirty(profile);
+                }
+                else
+                {
+                    // Make sure it's enabled — it can't be off while license gate is on
+                    var importerDep = profile.dependencies.First(d =>
+                        string.Equals(d.packageName, YucpImporterPackageName, StringComparison.OrdinalIgnoreCase));
+                    if (!importerDep.enabled)
+                    {
+                        importerDep.enabled = true;
+                        EditorUtility.SetDirty(profile);
+                    }
+                }
+            }
+
             var scrollView = container.GetFirstAncestorOfType<ScrollView>();
             float? sectionTopRelativeToViewport = null;
             
@@ -111,7 +147,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     foreach (var dep in profile.dependencies)
                     {
-                        dep.enabled = false;
+                        // Never disable the YUCP Importer while license verification is on
+                        bool isLockedImporter = profile.requiresLicenseVerification &&
+                            string.Equals(dep.packageName, YucpImporterPackageName, StringComparison.OrdinalIgnoreCase);
+                        if (!isLockedImporter)
+                            dep.enabled = false;
                     }
                     EditorUtility.SetDirty(profile);
                     container.Clear();
@@ -176,6 +216,47 @@ namespace YUCP.DevTools.Editor.PackageExporter
             helpText.AddToClassList("yucp-help-box-text");
             helpBox.Add(helpText);
             section.Add(helpBox);
+
+            // Show a notice when license protection is active — YUCP Importer is mandatory
+            if (profile.requiresLicenseVerification)
+            {
+                var licenseNotice = new VisualElement();
+                licenseNotice.AddToClassList("yucp-help-box");
+                licenseNotice.style.marginTop = 8;
+                licenseNotice.style.backgroundColor = new Color(0.1f, 0.45f, 0.1f, 0.35f);
+                licenseNotice.style.borderLeftWidth = 3;
+                licenseNotice.style.borderLeftColor = new StyleColor(new Color(0.3f, 0.85f, 0.3f, 1f));
+
+                // Header row: warning icon + title
+                var noticeHeader = new VisualElement();
+                noticeHeader.style.flexDirection = FlexDirection.Row;
+                noticeHeader.style.alignItems = Align.Center;
+                noticeHeader.style.marginBottom = 4;
+
+                var warnIcon = new Image
+                {
+                    image = EditorGUIUtility.IconContent("console.warnicon.sml").image,
+                };
+                warnIcon.style.width  = 16;
+                warnIcon.style.height = 16;
+                warnIcon.style.flexShrink = 0;
+                warnIcon.style.marginRight = 5;
+                noticeHeader.Add(warnIcon);
+
+                var noticeTitleLabel = new Label("License Protection is ON");
+                noticeTitleLabel.AddToClassList("yucp-help-box-text");
+                noticeTitleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                noticeHeader.Add(noticeTitleLabel);
+                licenseNotice.Add(noticeHeader);
+
+                var licenseNoticeText = new Label(
+                    "YUCP Package Importer (com.yucp.importer) is required and cannot be disabled " +
+                    "while license verification is enabled.");
+                licenseNoticeText.AddToClassList("yucp-help-box-text");
+                licenseNoticeText.style.whiteSpace = WhiteSpace.Normal;
+                licenseNotice.Add(licenseNoticeText);
+                section.Add(licenseNotice);
+            }
             
             // Disclaimer about automatic installation
             var disclaimerBox = new VisualElement();
@@ -347,6 +428,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             enableToggle.style.flexShrink = 0;
             enableToggle.RegisterValueChangedCallback(evt =>
             {
+                // Prevent disabling the YUCP Importer while license protection is on
+                if (profile.requiresLicenseVerification &&
+                    string.Equals(dep.packageName, YucpImporterPackageName, StringComparison.OrdinalIgnoreCase))
+                {
+                    enableToggle.SetValueWithoutNotify(true);
+                    return;
+                }
                 dep.enabled = evt.newValue;
                 EditorUtility.SetDirty(profile);
                 UpdateProfileDetails();
@@ -365,7 +453,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             nameLabel.style.minWidth = 0;
             headerRow.Add(nameLabel);
             
-            // Remove button
+            // Remove button — hidden for license-locked dependencies
             var removeButton = new Button(() => 
             {
                 profile.dependencies.RemoveAt(index);
@@ -378,8 +466,52 @@ namespace YUCP.DevTools.Editor.PackageExporter
             removeButton.AddToClassList("yucp-button-small");
             removeButton.style.width = 25;
             removeButton.style.flexShrink = 0;
+            // Hide remove button for the YUCP Importer while license protection is on
+            removeButton.style.display = (profile.requiresLicenseVerification &&
+                string.Equals(dep.packageName, YucpImporterPackageName, StringComparison.OrdinalIgnoreCase))
+                ? DisplayStyle.None
+                : DisplayStyle.Flex;
             headerRow.Add(removeButton);
             
+            // Is this the YUCP Importer locked by license protection?
+            bool isLicenseLocked = profile.requiresLicenseVerification &&
+                string.Equals(dep.packageName, YucpImporterPackageName, StringComparison.OrdinalIgnoreCase);
+
+            // Tint the card and show a lock badge for the mandatory importer
+            if (isLicenseLocked)
+            {
+                card.style.backgroundColor = new Color(0.05f, 0.22f, 0.05f, 1f);
+                card.style.borderLeftWidth = 3;
+                card.style.borderLeftColor = new StyleColor(new Color(0.3f, 0.85f, 0.3f, 1f));
+
+                // Lock badge: Unity built-in LockIcon + "Required" text
+                var lockBadge = new VisualElement();
+                lockBadge.style.flexDirection = FlexDirection.Row;
+                lockBadge.style.alignItems = Align.Center;
+                lockBadge.style.marginRight = 6;
+                lockBadge.style.flexShrink = 0;
+
+                var lockIcon = new Image
+                {
+                    image = EditorGUIUtility.IconContent("LockIcon").image,
+                };
+                lockIcon.style.width  = 12;
+                lockIcon.style.height = 12;
+                lockIcon.style.flexShrink = 0;
+                lockIcon.style.marginRight = 3;
+                lockBadge.Add(lockIcon);
+
+                var lockLabel = new Label("Required");
+                lockLabel.AddToClassList("yucp-label-secondary");
+                lockLabel.style.fontSize = 10;
+                lockLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                lockLabel.style.color = new StyleColor(new Color(0.4f, 0.9f, 0.4f, 1f));
+                lockBadge.Add(lockLabel);
+
+                // Insert before the (hidden) remove button — after the name label
+                headerRow.Insert(headerRow.IndexOf(removeButton), lockBadge);
+            }
+
             card.Add(headerRow);
             
             // Warning box for problematic dependencies

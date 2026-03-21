@@ -232,12 +232,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 else
                 {
-                    EditorUtility.DisplayDialog(
-                        "Export Failed",
-                        $"Export failed: {result.errorMessage}\n\n" +
-                        "Check the console for more details.",
-                        "OK"
-                    );
+                    string message = $"Export failed: {result.errorMessage}\n\nCheck the console for more details.";
+                    if (_toast != null)
+                    {
+                        _toast.ShowWarning(message, "Export Failed", 6f);
+                    }
+                    else
+                    {
+                        EditorUtility.DisplayDialog("Export Failed", message, "OK");
+                    }
                 }
             }
             catch (Exception ex)
@@ -247,7 +250,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 UpdateBottomBar();
                 
                 Debug.LogError($"[Package Exporter] Export failed: {ex.Message}");
-                EditorUtility.DisplayDialog("Export Failed", $"An error occurred: {ex.Message}", "OK");
+                if (_toast != null)
+                {
+                    _toast.ShowError($"An error occurred: {ex.Message}", "Export Failed", 6f);
+                }
+                else
+                {
+                    EditorUtility.DisplayDialog("Export Failed", $"An error occurred: {ex.Message}", "OK");
+                }
             }
         }
 
@@ -328,7 +338,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 UpdateBottomBar();
                 
                 Debug.LogError($"[Package Exporter] Batch export failed: {ex.Message}");
-                EditorUtility.DisplayDialog("Batch Export Failed", $"An error occurred: {ex.Message}", "OK");
+                if (_toast != null)
+                {
+                    _toast.ShowError($"An error occurred: {ex.Message}", "Batch Export Failed", 6f);
+                }
+                else
+                {
+                    EditorUtility.DisplayDialog("Batch Export Failed", $"An error occurred: {ex.Message}", "OK");
+                }
             }
         }
 

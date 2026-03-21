@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -32,9 +33,13 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private class CanonicalProduct
         {
             public string productId;
+            public List<string> productIds = new List<string>();
             public string displayName;
             public string owner;   // null = own product; non-null = collaborator's product (owner's name)
             public List<ProviderRef> providers = new List<ProviderRef>();
+            public bool configured;
+            public bool live;
+            public bool localConfigured;
             public string GetRef(string p) { foreach (var r in providers) if (r.provider == p) return r.providerRef; return null; }
         }
         private struct ProviderRef { public string provider; public string providerRef; }
@@ -43,6 +48,15 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private bool  _productPickerExpanded;
         private VisualElement _productPickerSlot;
         private VisualElement _productListPanel;
+        private string _productSearchQuery = "";
+        private string _productProviderFilter = AllProvidersFilter;
+        private string _productSourceFilter = AllSourcesFilter;
+
+        private const string AllProvidersFilter = "All providers";
+        private const string AllSourcesFilter = "All products";
+        private const string ConfiguredSourcesFilter = "Configured";
+        private const string StoreSourcesFilter = "Store";
+        private const string SelectedSourcesFilter = "Selected";
 
         // ── Design tokens ──────────────────────────────────────────────────────────
         // Use the same lighter surface as the rest of the Package Exporter UI
@@ -89,6 +103,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private VisualElement BuildCard()
         {
             if (!YucpOAuthService.IsSignedIn()) return BuildSignInHero();
+            YucpOAuthService.TryBeginBackgroundRefresh(GetServerUrl(), RefreshUI);
             bool hasCert = _settings != null && _settings.HasValidCertificate();
             return hasCert ? BuildActiveCard() : BuildNoCertCard();
         }
@@ -486,8 +501,83 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             if (_canonicalProducts == null && !_productsLoading)
                 LoadCreatorProducts();
 
+            // ── Certificate Provider override ──────────────────────────────────────
+            body.Add(BuildCertificateProviderRow());
+
             return body;
         }
+
+        private VisualElement BuildCertificateProviderRow()
+        {
+            var container = new VisualElement();
+            container.style.marginTop = 14;
+
+            container.Add(MakeLabel("Certificate Provider", 10, TextMute, bold: true, mb: 6));
+
+            string effectiveUrl = GetServerUrl();
+            bool hasOverride = !string.IsNullOrEmpty(_profile?.signingServerUrl);
+
+            var urlRow = new VisualElement();
+            urlRow.style.flexDirection = FlexDirection.Row;
+            urlRow.style.alignItems    = Align.Center;
+            urlRow.style.marginBottom  = 4;
+
+            var urlField = new TextField();
+            urlField.style.flexGrow   = 1;
+            urlField.style.marginRight = 6;
+            urlField.AddToClassList("yucp-input");
+            urlField.value      = hasOverride ? _profile.signingServerUrl : effectiveUrl;
+            urlField.isReadOnly = !hasOverride;
+            urlField.tooltip    = hasOverride
+                ? "Custom certificate provider URL for this profile"
+                : "Using default from Signing Settings. Enable override to customize.";
+            if (!hasOverride)
+                urlField.style.opacity = 0.5f;
+            urlRow.Add(urlField);
+
+            var overrideToggle = new Toggle("Override");
+            overrideToggle.value = hasOverride;
+            overrideToggle.style.flexShrink = 0;
+            overrideToggle.RegisterValueChangedCallback(evt =>
+            {
+                if (_profile == null) return;
+                if (evt.newValue)
+                {
+                    _profile.signingServerUrl = urlField.value != effectiveUrl ? urlField.value : effectiveUrl;
+                    urlField.SetValueWithoutNotify(_profile.signingServerUrl);
+                    urlField.isReadOnly = false;
+                    urlField.style.opacity = 1f;
+                }
+                else
+                {
+                    _profile.signingServerUrl = "";
+                    urlField.SetValueWithoutNotify(GetServerUrl());
+                    urlField.isReadOnly = true;
+                    urlField.style.opacity = 0.5f;
+                }
+                EditorUtility.SetDirty(_profile);
+            });
+            urlRow.Add(overrideToggle);
+
+            container.Add(urlRow);
+
+            urlField.RegisterValueChangedCallback(evt =>
+            {
+                if (_profile == null || !overrideToggle.value) return;
+                _profile.signingServerUrl = evt.newValue;
+                EditorUtility.SetDirty(_profile);
+            });
+
+            if (!hasOverride)
+            {
+                var hint = MakeLabel($"Default: {effectiveUrl}", 9, TextMute, mb: 0);
+                hint.style.whiteSpace = WhiteSpace.Normal;
+                container.Add(hint);
+            }
+
+            return container;
+        }
+
 
         private void LoadPackageStatusBadge(VisualElement slot)
         {
@@ -574,7 +664,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 var emptyCard = MakePickerShell();
                 emptyCard.style.paddingTop = emptyCard.style.paddingBottom = 10;
                 emptyCard.Add(MakeLabel("No products found", 11, TextSec, bold: true, mb: 3));
-                emptyCard.Add(MakeLabel("Add your store products at yucp.app, then refresh.", 10, TextMute, wrap: true));
+                emptyCard.Add(MakeLabel("Connect a store or configure a product, then refresh.", 10, TextMute, wrap: true));
                 _productPickerSlot.Add(emptyCard);
                 return;
             }
@@ -607,7 +697,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         {
             var selectedIds = GetSelectedProductIds();
             var selectedProducts = _canonicalProducts?
-                .Where(p => selectedIds.Contains(p.productId))
+                .Where(p => ProductIsSelected(p, selectedIds))
                 .ToList() ?? new List<CanonicalProduct>();
 
             bool open         = _productPickerExpanded;
@@ -709,13 +799,200 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             panel.style.borderBottomLeftRadius = panel.style.borderBottomRightRadius = 5;
             panel.style.overflow = Overflow.Hidden;
 
-            panel.Add(BuildPickerItem(null)); // "No product" entry
-            foreach (var product in _canonicalProducts)
+            var filteredProducts = GetFilteredProducts();
+            panel.Add(BuildPickerControls(filteredProducts.Count));
+            panel.Add(MakeListDivider());
+
+            var scroll = new ScrollView(ScrollViewMode.Vertical);
+            scroll.style.maxHeight = 320;
+            scroll.style.flexGrow = 1;
+            scroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            scroll.verticalScrollerVisibility = ScrollerVisibility.Auto;
+            scroll.Add(BuildPickerItem(null)); // "No product" entry
+
+            if (filteredProducts.Count == 0)
             {
-                panel.Add(MakeListDivider());
-                panel.Add(BuildPickerItem(product));
+                scroll.Add(MakeListDivider());
+                var emptyState = new VisualElement();
+                emptyState.style.paddingLeft = 12;
+                emptyState.style.paddingRight = 12;
+                emptyState.style.paddingTop = 12;
+                emptyState.style.paddingBottom = 12;
+                emptyState.Add(MakeLabel("No products match the current filters.", 10, TextMute, mb: 0));
+                scroll.Add(emptyState);
             }
+            else
+            {
+                foreach (var product in filteredProducts)
+                {
+                    scroll.Add(MakeListDivider());
+                    scroll.Add(BuildPickerItem(product));
+                }
+            }
+
+            panel.Add(scroll);
             return panel;
+        }
+
+        private VisualElement BuildPickerControls(int filteredCount)
+        {
+            var controls = new VisualElement();
+            controls.style.paddingLeft = 12;
+            controls.style.paddingRight = 12;
+            controls.style.paddingTop = 10;
+            controls.style.paddingBottom = 10;
+
+            var searchField = new TextField();
+            searchField.value = _productSearchQuery ?? string.Empty;
+            searchField.style.marginBottom = 8;
+            searchField.style.height = 24;
+            searchField.style.backgroundColor = new Color(0.145f, 0.145f, 0.145f);
+            searchField.style.borderBottomColor = Border;
+            searchField.style.borderLeftColor = Border;
+            searchField.style.borderRightColor = Border;
+            searchField.style.borderTopColor = Border;
+            searchField.style.borderBottomWidth = 1;
+            searchField.style.borderLeftWidth = 1;
+            searchField.style.borderRightWidth = 1;
+            searchField.style.borderTopWidth = 1;
+            searchField.style.borderBottomLeftRadius = 4;
+            searchField.style.borderBottomRightRadius = 4;
+            searchField.style.borderTopLeftRadius = 4;
+            searchField.style.borderTopRightRadius = 4;
+            searchField.RegisterValueChangedCallback(evt =>
+            {
+                _productSearchQuery = evt.newValue ?? string.Empty;
+                EditorApplication.delayCall += RebuildProductPicker;
+            });
+            controls.Add(searchField);
+
+            var filterRow = new VisualElement();
+            filterRow.style.flexDirection = FlexDirection.Row;
+            filterRow.style.alignItems = Align.Center;
+            filterRow.style.marginBottom = 6;
+
+            var sourceChoices = new List<string>
+            {
+                AllSourcesFilter,
+                ConfiguredSourcesFilter,
+                StoreSourcesFilter,
+                SelectedSourcesFilter,
+            };
+            var sourceField = new PopupField<string>(sourceChoices, Mathf.Max(0, sourceChoices.IndexOf(_productSourceFilter)));
+            sourceField.style.minWidth = 120;
+            sourceField.RegisterValueChangedCallback(evt =>
+            {
+                _productSourceFilter = evt.newValue ?? AllSourcesFilter;
+                EditorApplication.delayCall += RebuildProductPicker;
+            });
+            filterRow.Add(sourceField);
+
+            var providerChoices = new List<string> { AllProvidersFilter };
+            providerChoices.AddRange(
+                _canonicalProducts
+                    .SelectMany(product => product.providers ?? new List<ProviderRef>())
+                    .Select(provider => GetProviderStyle(provider.provider).label)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(label => label, StringComparer.OrdinalIgnoreCase));
+            if (!providerChoices.Contains(_productProviderFilter))
+            {
+                _productProviderFilter = AllProvidersFilter;
+            }
+
+            var providerField = new PopupField<string>(providerChoices, Mathf.Max(0, providerChoices.IndexOf(_productProviderFilter)));
+            providerField.style.marginLeft = 8;
+            providerField.style.minWidth = 140;
+            providerField.RegisterValueChangedCallback(evt =>
+            {
+                _productProviderFilter = evt.newValue ?? AllProvidersFilter;
+                EditorApplication.delayCall += RebuildProductPicker;
+            });
+            filterRow.Add(providerField);
+            controls.Add(filterRow);
+
+            controls.Add(MakeLabel($"{filteredCount} of {_canonicalProducts?.Count ?? 0} products", 9, TextMute, mb: 0));
+            return controls;
+        }
+
+        private List<CanonicalProduct> GetFilteredProducts()
+        {
+            var selectedIds = GetSelectedProductIds();
+            return (_canonicalProducts ?? new List<CanonicalProduct>())
+                .Where(product => MatchesSourceFilter(product, selectedIds))
+                .Where(product => MatchesProviderFilter(product))
+                .Where(product => MatchesSearch(product))
+                .OrderByDescending(product => ProductIsSelected(product, selectedIds))
+                .ThenByDescending(product => product.configured || product.localConfigured)
+                .ThenBy(product => product.displayName ?? product.productId, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private bool MatchesSourceFilter(CanonicalProduct product, List<string> selectedIds)
+        {
+            switch (_productSourceFilter)
+            {
+                case ConfiguredSourcesFilter:
+                    return product != null && (product.configured || product.localConfigured);
+                case StoreSourcesFilter:
+                    return product != null && IsStoreProduct(product);
+                case SelectedSourcesFilter:
+                    return ProductIsSelected(product, selectedIds);
+                default:
+                    return true;
+            }
+        }
+
+        private bool MatchesProviderFilter(CanonicalProduct product)
+        {
+            if (product == null || string.Equals(_productProviderFilter, AllProvidersFilter, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return (product.providers ?? new List<ProviderRef>())
+                .Select(provider => GetProviderStyle(provider.provider).label)
+                .Any(label => string.Equals(label, _productProviderFilter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private bool MatchesSearch(CanonicalProduct product)
+        {
+            if (product == null || string.IsNullOrWhiteSpace(_productSearchQuery))
+                return true;
+
+            string query = _productSearchQuery.Trim();
+            if (!string.IsNullOrEmpty(product.displayName) &&
+                product.displayName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            if (!string.IsNullOrEmpty(product.owner) &&
+                product.owner.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            foreach (var provider in product.providers ?? new List<ProviderRef>())
+            {
+                if ((!string.IsNullOrEmpty(provider.provider) &&
+                     provider.provider.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                    (!string.IsNullOrEmpty(provider.providerRef) &&
+                     provider.providerRef.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0))
+                    return true;
+            }
+
+            return !string.IsNullOrEmpty(product.productId) &&
+                   product.productId.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsStoreProduct(CanonicalProduct product)
+        {
+            if (product == null)
+                return false;
+
+            if (product.live)
+                return true;
+
+            return (product.providers ?? new List<ProviderRef>())
+                .Any(provider =>
+                    !string.IsNullOrEmpty(provider.provider) &&
+                    !string.Equals(provider.provider, "discord", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(provider.provider, "manual", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(provider.provider, "vrchat", StringComparison.OrdinalIgnoreCase));
         }
 
         private VisualElement MakeListDivider()
@@ -730,7 +1007,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         {
             bool isNone     = product == null;
             var  selectedIds = GetSelectedProductIds();
-            bool isSelected = !isNone && selectedIds.Contains(product.productId);
+            bool isSelected = !isNone && ProductIsSelected(product, selectedIds);
 
             var normalBg = isSelected ? new Color(0.165f, 0.165f, 0.165f) : new Color(0f, 0f, 0f, 0f);
             var hoverBg  = new Color(0.185f, 0.185f, 0.185f);
@@ -799,6 +1076,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                     collabRow.Add(MakeLabel("via " + product.owner, 9, new Color(0.68f, 0.55f, 0.27f), mb: 0));
                     content.Add(collabRow);
                 }
+                content.Add(BuildProductSourceBadgeRow(product));
                 if (product.providers?.Count > 0)
                     content.Add(BuildProviderBadgeRow(product.providers));
 
@@ -822,17 +1100,30 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 else
                 {
                     var ids = GetSelectedProductIds();
-                    if (ids.Contains(product.productId))
-                        ids.Remove(product.productId);
+                    bool hasCanonicalIds = GetProductIds(product).Any();
+                    if (ProductIsSelected(product, ids))
+                    {
+                        foreach (var productId in GetProductIds(product))
+                            ids.Remove(productId);
+                        ApplySelectedProductMetadata(null, ids);
+                    }
                     else
-                        ids.Add(product.productId);
-                    _profile.licenseProductIds = ids;
-                    // Keep licenseProductId as the first selection for back-compat
-                    _profile.licenseProductId  = ids.Count > 0 ? ids[0] : "";
-                    // Sync provider-specific refs from the first selected product
-                    var first = _canonicalProducts?.Find(p => p.productId == _profile.licenseProductId);
-                    _profile.gumroadProductId  = first?.GetRef("gumroad") ?? "";
-                    _profile.jinxxyProductId   = first?.GetRef("jinxxy")  ?? "";
+                    {
+                        if (hasCanonicalIds)
+                        {
+                            foreach (var productId in GetProductIds(product))
+                            {
+                                if (!ids.Contains(productId))
+                                    ids.Add(productId);
+                            }
+                            ApplySelectedProductMetadata(null, ids);
+                        }
+                        else
+                        {
+                            ids.Clear();
+                            ApplySelectedProductMetadata(product, ids);
+                        }
+                    }
                 }
 
                 EditorUtility.SetDirty(_profile);
@@ -849,6 +1140,38 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             row.style.flexWrap      = Wrap.Wrap;
             foreach (var p in providers) row.Add(MakeProviderBadge(p.provider));
             return row;
+        }
+
+        private VisualElement BuildProductSourceBadgeRow(CanonicalProduct product)
+        {
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.flexWrap = Wrap.Wrap;
+            row.style.marginBottom = 4;
+
+            if (product.configured || product.localConfigured)
+                row.Add(MakeStatusBadge("Configured", new Color(0.26f, 0.56f, 0.44f, 0.22f), new Color(0.62f, 0.82f, 0.72f)));
+            if (IsStoreProduct(product))
+                row.Add(MakeStatusBadge("Store", new Color(0.34f, 0.34f, 0.34f, 0.28f), new Color(0.82f, 0.82f, 0.82f)));
+
+            return row.childCount > 0 ? row : new VisualElement();
+        }
+
+        private VisualElement MakeStatusBadge(string text, Color background, Color foreground)
+        {
+            var badge = new VisualElement();
+            badge.style.paddingLeft = 6;
+            badge.style.paddingRight = 6;
+            badge.style.paddingTop = 2;
+            badge.style.paddingBottom = 2;
+            badge.style.marginRight = 4;
+            badge.style.backgroundColor = background;
+            badge.style.borderBottomLeftRadius = 10;
+            badge.style.borderBottomRightRadius = 10;
+            badge.style.borderTopLeftRadius = 10;
+            badge.style.borderTopRightRadius = 10;
+            badge.Add(MakeLabel(text, 8, foreground, bold: true, mb: 0));
+            return badge;
         }
 
         // Provider pill: full name with branded color. New providers get a graceful default style.
@@ -897,6 +1220,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             public string productId;
             public string displayName;
             public string owner;   // null = own; set = collaborator's product
+            public bool configured;
+            public bool live;
             public ProductProviderJson[] providers;
         }
 
@@ -905,10 +1230,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private async void LoadCreatorProducts()
         {
-            string accessToken = YucpOAuthService.GetAccessToken();
+            string serverUrl = GetServerUrl();
+            string accessToken = await YucpOAuthService.GetValidAccessTokenAsync(serverUrl);
             if (string.IsNullOrEmpty(accessToken)) return;
 
-            string serverUrl = GetServerUrl();
             _productsLoading = true;
             EditorApplication.delayCall += () => RebuildProductPicker();
 
@@ -926,44 +1251,240 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 if (request.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
                 {
                     var parsed = JsonUtility.FromJson<ProductsResponse>(request.downloadHandler.text);
-                    _canonicalProducts = new List<CanonicalProduct>();
+                    var mergedProducts = new List<CanonicalProduct>();
                     if (parsed?.products != null)
                     {
                         foreach (var p in parsed.products)
                         {
-                            var entry = new CanonicalProduct
+                            MergeCanonicalProduct(mergedProducts, new CanonicalProduct
                             {
-                                productId   = p.productId,
+                                productId = p.productId ?? string.Empty,
+                                productIds = string.IsNullOrEmpty(p.productId) ? new List<string>() : new List<string> { p.productId },
                                 displayName = !string.IsNullOrEmpty(p.displayName) ? p.displayName : p.productId,
-                                owner       = string.IsNullOrEmpty(p.owner) ? null : p.owner,
-                                providers   = new List<ProviderRef>(),
-                            };
-                            if (p.providers != null)
-                            {
-                                foreach (var prov in p.providers)
-                                {
-                                    if (!string.IsNullOrEmpty(prov.provider))
-                                        entry.providers.Add(new ProviderRef { provider = prov.provider, providerRef = prov.providerProductRef ?? "" });
-                                }
-                            }
-                            _canonicalProducts.Add(entry);
+                                owner = string.IsNullOrEmpty(p.owner) ? null : p.owner,
+                                providers = (p.providers ?? Array.Empty<ProductProviderJson>())
+                                    .Where(prov => !string.IsNullOrEmpty(prov.provider))
+                                    .Select(prov => new ProviderRef
+                                    {
+                                        provider = prov.provider,
+                                        providerRef = prov.providerProductRef ?? string.Empty,
+                                    })
+                                    .ToList(),
+                                configured = p.configured,
+                                live = p.live,
+                            });
                         }
                     }
+
+                    foreach (var localProduct in GetLocallyConfiguredProducts())
+                    {
+                        MergeCanonicalProduct(mergedProducts, localProduct);
+                    }
+
+                    _canonicalProducts = mergedProducts
+                        .OrderBy(product => product.displayName, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
                 }
                 else
                 {
-                    _canonicalProducts = new List<CanonicalProduct>();
+                    _canonicalProducts = GetLocallyConfiguredProducts();
                 }
             }
             catch
             {
-                _canonicalProducts = new List<CanonicalProduct>();
+                _canonicalProducts = GetLocallyConfiguredProducts();
             }
             finally
             {
                 _productsLoading = false;
                 EditorApplication.delayCall += () => RebuildProductPicker();
             }
+        }
+
+        private bool ProductIsSelected(CanonicalProduct product, List<string> selectedIds)
+        {
+            if (product == null || selectedIds == null || selectedIds.Count == 0)
+                return MatchesLegacyProviderSelection(product);
+
+            foreach (var productId in GetProductIds(product))
+            {
+                if (selectedIds.Contains(productId))
+                    return true;
+            }
+
+            return MatchesLegacyProviderSelection(product);
+        }
+
+        private static IEnumerable<string> GetProductIds(CanonicalProduct product)
+        {
+            if (product == null)
+                yield break;
+
+            if (product.productIds != null)
+            {
+                foreach (var productId in product.productIds)
+                {
+                    if (!string.IsNullOrEmpty(productId))
+                        yield return productId;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(product.productId) && (product.productIds == null || !product.productIds.Contains(product.productId)))
+                yield return product.productId;
+        }
+
+        private static string GetProductMergeKey(string displayName, string owner)
+        {
+            return NormalizeProductKey(displayName) + "||" + NormalizeProductKey(owner ?? string.Empty);
+        }
+
+        private static string NormalizeProductKey(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return string.Empty;
+
+            var builder = new System.Text.StringBuilder(value.Length);
+            foreach (char c in value)
+            {
+                if (char.IsLetterOrDigit(c))
+                    builder.Append(char.ToLowerInvariant(c));
+            }
+            return builder.ToString();
+        }
+
+        private bool MatchesLegacyProviderSelection(CanonicalProduct product)
+        {
+            if (_profile == null || product == null || product.providers == null)
+                return false;
+
+            return product.providers.Any(provider =>
+                (string.Equals(provider.provider, "gumroad", StringComparison.OrdinalIgnoreCase) &&
+                 string.Equals(provider.providerRef, _profile.gumroadProductId ?? string.Empty, StringComparison.OrdinalIgnoreCase)) ||
+                (string.Equals(provider.provider, "jinxxy", StringComparison.OrdinalIgnoreCase) &&
+                 string.Equals(provider.providerRef, _profile.jinxxyProductId ?? string.Empty, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private static bool ProviderRefsOverlap(CanonicalProduct left, CanonicalProduct right)
+        {
+            if (left?.providers == null || right?.providers == null) return false;
+            return left.providers.Any(
+                existing => right.providers.Any(candidate =>
+                    string.Equals(existing.provider, candidate.provider, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(existing.providerRef ?? string.Empty, candidate.providerRef ?? string.Empty, StringComparison.OrdinalIgnoreCase)));
+        }
+
+        private static void MergeCanonicalProduct(List<CanonicalProduct> mergedProducts, CanonicalProduct candidate)
+        {
+            if (candidate == null) return;
+
+            var existing = mergedProducts.FirstOrDefault(product =>
+                (!string.IsNullOrEmpty(candidate.productId) &&
+                 !string.IsNullOrEmpty(product.productId) &&
+                 string.Equals(product.productId, candidate.productId, StringComparison.OrdinalIgnoreCase)) ||
+                ProviderRefsOverlap(product, candidate) ||
+                string.Equals(GetProductMergeKey(product.displayName, product.owner), GetProductMergeKey(candidate.displayName, candidate.owner), StringComparison.OrdinalIgnoreCase));
+
+            if (existing == null)
+            {
+                mergedProducts.Add(candidate);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(existing.productId) && !string.IsNullOrEmpty(candidate.productId))
+                existing.productId = candidate.productId;
+            if ((string.IsNullOrEmpty(existing.displayName) || string.Equals(existing.displayName, existing.productId, StringComparison.OrdinalIgnoreCase)) &&
+                !string.IsNullOrEmpty(candidate.displayName))
+                existing.displayName = candidate.displayName;
+
+            existing.configured |= candidate.configured;
+            existing.live |= candidate.live;
+            existing.localConfigured |= candidate.localConfigured;
+
+            if (candidate.productIds != null)
+            {
+                foreach (var productId in candidate.productIds.Where(id => !string.IsNullOrEmpty(id)))
+                {
+                    if (!existing.productIds.Contains(productId))
+                        existing.productIds.Add(productId);
+                }
+            }
+
+            if (candidate.providers != null)
+            {
+                foreach (var provider in candidate.providers)
+                {
+                    bool alreadyPresent = existing.providers.Any(current =>
+                        string.Equals(current.provider, provider.provider, StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(current.providerRef ?? string.Empty, provider.providerRef ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+                    if (!alreadyPresent)
+                        existing.providers.Add(provider);
+                }
+            }
+        }
+
+        private List<CanonicalProduct> GetLocallyConfiguredProducts()
+        {
+            var configuredProducts = new List<CanonicalProduct>();
+            foreach (var guid in AssetDatabase.FindAssets("t:ExportProfile"))
+            {
+                var assetPath = AssetDatabase.GUIDToAssetPath(guid);
+                var profile = AssetDatabase.LoadAssetAtPath<ExportProfile>(assetPath);
+                if (profile == null) continue;
+
+                var productIds = new List<string>();
+                if (!string.IsNullOrEmpty(profile.licenseProductId))
+                    productIds.Add(profile.licenseProductId);
+                if (profile.licenseProductIds != null)
+                {
+                    foreach (var productId in profile.licenseProductIds)
+                    {
+                        if (!string.IsNullOrEmpty(productId) && !productIds.Contains(productId))
+                            productIds.Add(productId);
+                    }
+                }
+
+                var providers = new List<ProviderRef>();
+                if (!string.IsNullOrEmpty(profile.gumroadProductId))
+                    providers.Add(new ProviderRef { provider = "gumroad", providerRef = profile.gumroadProductId });
+                if (!string.IsNullOrEmpty(profile.jinxxyProductId))
+                    providers.Add(new ProviderRef { provider = "jinxxy", providerRef = profile.jinxxyProductId });
+
+                if (productIds.Count == 0 && providers.Count == 0)
+                    continue;
+
+                configuredProducts.Add(new CanonicalProduct
+                {
+                    productId = productIds.FirstOrDefault() ?? string.Empty,
+                    productIds = productIds,
+                    displayName = !string.IsNullOrEmpty(profile.packageName)
+                        ? profile.packageName
+                        : (productIds.FirstOrDefault() ?? providers.First().providerRef),
+                    owner = null,
+                    providers = providers,
+                    configured = true,
+                    localConfigured = true,
+                });
+            }
+
+            return configuredProducts;
+        }
+
+        private void ApplySelectedProductMetadata(CanonicalProduct preferredProduct, List<string> selectedIds)
+        {
+            _profile.licenseProductIds = selectedIds.Distinct().ToList();
+            _profile.licenseProductId = _profile.licenseProductIds.Count > 0 ? _profile.licenseProductIds[0] : string.Empty;
+
+            CanonicalProduct primaryProduct = null;
+            if (!string.IsNullOrEmpty(_profile.licenseProductId))
+            {
+                primaryProduct = _canonicalProducts?.FirstOrDefault(product =>
+                    GetProductIds(product).Any(productId =>
+                        string.Equals(productId, _profile.licenseProductId, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            primaryProduct ??= preferredProduct;
+            _profile.gumroadProductId = primaryProduct?.GetRef("gumroad") ?? string.Empty;
+            _profile.jinxxyProductId = primaryProduct?.GetRef("jinxxy") ?? string.Empty;
         }
 
         // ── License Protection section ─────────────────────────────────────────────
@@ -1179,11 +1700,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             RefreshUI();
         }
 
-        private void OnRequestCertClicked()
+        private async void OnRequestCertClicked()
         {
             if (_isRequestingCert) return;
 
-            string accessToken = YucpOAuthService.GetAccessToken();
+            string serverUrl = GetServerUrl();
+            string accessToken = await YucpOAuthService.GetValidAccessTokenAsync(serverUrl);
             if (string.IsNullOrEmpty(accessToken))
             {
                 EditorUtility.DisplayDialog("Not signed in", "Please sign in before requesting a certificate.", "OK");
@@ -1192,49 +1714,59 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             string devPublicKey  = DevKeyManager.GetPublicKeyBase64();
             string publisherName = YucpOAuthService.GetDisplayName() ?? "YUCP Creator";
-            string serverUrl     = GetServerUrl();
             var    service       = new PackageSigningService(serverUrl);
 
             _isRequestingCert = true;
             RefreshUI();
 
-            _ = service.RestoreCertificateAsync(accessToken, devPublicKey)
-                .ContinueWith(restoreTask =>
+            try
+            {
+                string restoredJson = await service.RestoreCertificateAsync(accessToken, devPublicKey);
+                if (!string.IsNullOrEmpty(restoredJson))
                 {
-                    string restoredJson = restoreTask.Result;
-                    if (!string.IsNullOrEmpty(restoredJson))
+                    _isRequestingCert = false;
+                    var restoreResult = CertificateManager.ImportAndVerifyFromJson(restoredJson);
+                    if (restoreResult.valid)
                     {
-                        EditorApplication.delayCall += () =>
-                        {
-                            _isRequestingCert = false;
-                            var r = CertificateManager.ImportAndVerifyFromJson(restoredJson);
-                            if (r.valid) { LoadSettings(); RefreshUI(); }
-                            else RequestNewCertificate(service, accessToken, devPublicKey, publisherName);
-                        };
+                        LoadSettings();
+                        RefreshUI();
                         return;
                     }
-                    EditorApplication.delayCall += () =>
-                        RequestNewCertificate(service, accessToken, devPublicKey, publisherName);
-                });
+                }
+
+                await RequestNewCertificateAsync(service, accessToken, devPublicKey, publisherName);
+            }
+            catch (Exception ex)
+            {
+                _isRequestingCert = false;
+                RefreshUI();
+                EditorUtility.DisplayDialog("Certificate failed", ex.Message, "OK");
+            }
         }
 
-        private void RequestNewCertificate(
+        private async Task RequestNewCertificateAsync(
             PackageSigningService service, string accessToken,
             string devPublicKey, string publisherName)
         {
-            _ = service.RequestCertificateAsync(accessToken, devPublicKey, publisherName)
-                .ContinueWith(task =>
-                {
-                    EditorApplication.delayCall += () =>
-                    {
-                        _isRequestingCert = false;
-                        var (success, error, certJson) = task.Result;
-                        if (!success) { RefreshUI(); EditorUtility.DisplayDialog("Certificate failed", error, "OK"); return; }
-                        var r = CertificateManager.ImportAndVerifyFromJson(certJson);
-                        if (r.valid) { LoadSettings(); RefreshUI(); }
-                        else { RefreshUI(); EditorUtility.DisplayDialog("Certificate error", r.error, "OK"); }
-                    };
-                });
+            var (success, error, certJson) = await service.RequestCertificateAsync(accessToken, devPublicKey, publisherName);
+            _isRequestingCert = false;
+            if (!success)
+            {
+                RefreshUI();
+                EditorUtility.DisplayDialog("Certificate failed", error, "OK");
+                return;
+            }
+
+            var result = CertificateManager.ImportAndVerifyFromJson(certJson);
+            if (result.valid)
+            {
+                LoadSettings();
+                RefreshUI();
+                return;
+            }
+
+            RefreshUI();
+            EditorUtility.DisplayDialog("Certificate error", result.error, "OK");
         }
 
         // ── Low-level helpers ──────────────────────────────────────────────────────
@@ -1376,10 +1908,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private string GetServerUrl()
         {
+            if (!string.IsNullOrEmpty(_profile?.signingServerUrl)) return _profile.signingServerUrl;
             if (!string.IsNullOrEmpty(_settings?.serverUrl)) return _settings.serverUrl;
             string fromService = PackageSigningService.GetServerUrl();
             return !string.IsNullOrEmpty(fromService) ? fromService : "https://api.creators.yucp.club";
         }
     }
 }
-

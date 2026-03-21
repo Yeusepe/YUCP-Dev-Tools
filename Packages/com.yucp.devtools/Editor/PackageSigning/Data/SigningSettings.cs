@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using UnityEngine;
@@ -6,11 +7,33 @@ using UnityEditor;
 
 namespace YUCP.DevTools.Editor.PackageSigning.Data
 {
+    /// <summary>
+    /// A named certificate provider (signing authority) with its own server URL and root public key.
+    /// </summary>
+    [Serializable]
+    public class CertificateProvider
+    {
+        [Tooltip("Display name for this certificate provider")]
+        public string name = "";
+
+        [Tooltip("API server URL for certificate issuance and package signing")]
+        public string serverUrl = "https://api.creators.yucp.club";
+
+        [Tooltip("Root public key (Ed25519, base64) used to verify certificates issued by this provider. Leave empty to use the global YUCP root key.")]
+        [TextArea(1, 3)]
+        public string rootPublicKeyBase64 = "";
+    }
+
     [CreateAssetMenu(fileName = "SigningSettings", menuName = "YUCP/Package Signing Settings")]
     public class SigningSettings : ScriptableObject
     {
         [Header("Server Configuration")]
+        [Tooltip("Default signing server URL. Used when no per-profile or per-provider URL is configured.")]
         public string serverUrl = "https://api.creators.yucp.club";
+
+        [Header("Certificate Providers")]
+        [Tooltip("Named certificate providers. Each provider has its own server URL and root public key. The first entry is used as the default when no per-profile override is set.")]
+        public List<CertificateProvider> certificateProviders = new List<CertificateProvider>();
         
         [Header("Certificate")]
         [SerializeField] private string _certificateJson; // Full certificate JSON stored here
@@ -24,7 +47,30 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         [Header("YUCP Root Public Key")]
         [TextArea(3, 10)]
         public string yucpRootPublicKeyBase64 = "y+8Zs9/mS1MFZFeF4CFjwqe0nsLW8lCcwmyvBx6H0Zo=";
-        
+
+        /// <summary>
+        /// Returns the effective server URL: first provider's URL if providers are configured,
+        /// otherwise the legacy <see cref="serverUrl"/> field.
+        /// </summary>
+        public string GetEffectiveServerUrl()
+        {
+            if (certificateProviders != null && certificateProviders.Count > 0
+                && !string.IsNullOrEmpty(certificateProviders[0].serverUrl))
+                return certificateProviders[0].serverUrl;
+            return string.IsNullOrEmpty(serverUrl) ? "https://api.creators.yucp.club" : serverUrl;
+        }
+
+        /// <summary>
+        /// Returns the effective root public key: resolved from the active provider or the global field.
+        /// </summary>
+        public string GetEffectiveRootPublicKey()
+        {
+            if (certificateProviders != null && certificateProviders.Count > 0
+                && !string.IsNullOrEmpty(certificateProviders[0].rootPublicKeyBase64))
+                return certificateProviders[0].rootPublicKeyBase64;
+            return yucpRootPublicKeyBase64;
+        }
+
         /// <summary>
         /// Store full certificate JSON
         /// </summary>

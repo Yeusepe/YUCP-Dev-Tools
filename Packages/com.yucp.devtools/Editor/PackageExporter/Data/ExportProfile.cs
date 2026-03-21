@@ -296,6 +296,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Custom tags added to this profile")]
         public List<string> customTags = new List<string>();
 
+        [Header("Signing")]
+        [Tooltip("Override the certificate provider server URL for this profile. Leave empty to use the default from Signing Settings.")]
+        public string signingServerUrl = "";
+
         [Header("Custom Update Steps")]
         [Tooltip("Custom steps to run when updating this package. Steps are only run if enabled.")]
         public UpdateStepList updateSteps = new UpdateStepList();

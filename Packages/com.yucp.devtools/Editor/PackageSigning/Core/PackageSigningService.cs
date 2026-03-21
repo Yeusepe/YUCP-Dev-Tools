@@ -173,19 +173,21 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         {
             try
             {
-                using var client = new System.Net.Http.HttpClient { Timeout = System.TimeSpan.FromSeconds(10) };
                 string url = $"{_serverUrl}/v1/packages/{archiveSha256}";
-                System.Net.Http.HttpResponseMessage response = await client.GetAsync(url);
-                string json = await response.Content.ReadAsStringAsync();
+                using var req = UnityWebRequest.Get(url);
+                req.SetRequestHeader("Accept-Encoding", "identity");
+                var op = req.SendWebRequest();
+                while (!op.isDone)
+                    await System.Threading.Tasks.Task.Yield();
 
-                if (response.IsSuccessStatusCode)
+                if (req.result == UnityWebRequest.Result.Success)
                 {
-                    PackageStatusResponse status = JsonUtility.FromJson<PackageStatusResponse>(json);
+                    PackageStatusResponse status = JsonUtility.FromJson<PackageStatusResponse>(req.downloadHandler.text);
                     onSuccess?.Invoke(status);
                 }
                 else
                 {
-                    onError?.Invoke($"HTTP {(int)response.StatusCode}: {response.ReasonPhrase}");
+                    onError?.Invoke($"HTTP {req.responseCode}: {req.error}");
                 }
             }
             catch (Exception ex)
@@ -235,14 +237,17 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         {
             try
             {
-                using var http = new System.Net.Http.HttpClient();
-                http.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
-                http.DefaultRequestHeaders.Add("X-Dev-Public-Key", devPublicKey);
+                using var req = UnityWebRequest.Get($"{_serverUrl}/v1/certificates/me");
+                req.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                req.SetRequestHeader("X-Dev-Public-Key", devPublicKey);
+                req.SetRequestHeader("Accept-Encoding", "identity");
+                var op = req.SendWebRequest();
+                while (!op.isDone)
+                    await System.Threading.Tasks.Task.Yield();
 
-                var resp = await http.GetAsync($"{_serverUrl}/v1/certificates/me");
-                if (!resp.IsSuccessStatusCode) return null;
+                if (req.result != UnityWebRequest.Result.Success) return null;
 
-                string json = await resp.Content.ReadAsStringAsync();
+                string json = req.downloadHandler.text;
 
                 // Extract "certificate" object from { "certificate": {...} }
                 int certIdx = json.IndexOf("\"certificate\"", StringComparison.Ordinal);
@@ -282,20 +287,27 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 bool isJwt = dotCount == 2;
                 UnityEngine.Debug.Log($"[YUCP Cert] RequestCertificateAsync token_type={(isJwt?"JWT":"opaque")} length={accessToken.Length} url={_serverUrl}/v1/certificates");
 
-                using var http = new System.Net.Http.HttpClient();
-                http.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
-
                 string body = $"{{\"devPublicKey\":\"{EscapeJson(devPublicKey)}\",\"publisherName\":\"{EscapeJson(publisherName)}\"}}";
                 UnityEngine.Debug.Log($"[YUCP Cert] Body: {body}");
-                var content = new System.Net.Http.StringContent(body, Encoding.UTF8, "application/json");
+                byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
 
-                var resp = await http.PostAsync($"{_serverUrl}/v1/certificates", content);
-                string json = await resp.Content.ReadAsStringAsync();
-                UnityEngine.Debug.Log($"[YUCP Cert] Response {(int)resp.StatusCode}: {json.Substring(0, Math.Min(300, json.Length))}");
+                using var req = new UnityWebRequest($"{_serverUrl}/v1/certificates", "POST");
+                req.uploadHandler   = new UploadHandlerRaw(bodyBytes);
+                req.downloadHandler = new DownloadHandlerBuffer();
+                req.SetRequestHeader("Authorization",    $"Bearer {accessToken}");
+                req.SetRequestHeader("Content-Type",     "application/json");
+                req.SetRequestHeader("Accept-Encoding",  "identity");
 
-                if (!resp.IsSuccessStatusCode)
+                var op = req.SendWebRequest();
+                while (!op.isDone)
+                    await System.Threading.Tasks.Task.Yield();
+
+                string json = req.downloadHandler.text;
+                UnityEngine.Debug.Log($"[YUCP Cert] Response {req.responseCode}: {json.Substring(0, Math.Min(300, json.Length))}");
+
+                if (req.result != UnityWebRequest.Result.Success)
                 {
-                    string errMsg = ExtractErrorMessage(json) ?? $"Server error ({(int)resp.StatusCode}).";
+                    string errMsg = ExtractErrorMessage(json) ?? $"Server error ({req.responseCode}).";
                     return (false, errMsg, null);
                 }
 
@@ -332,11 +344,15 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         {
             try
             {
-                using var http = new System.Net.Http.HttpClient();
-                var resp = await http.GetAsync($"{_serverUrl}/v1/keys");
-                if (!resp.IsSuccessStatusCode) return false;
+                using var req = UnityWebRequest.Get($"{_serverUrl}/v1/keys");
+                req.SetRequestHeader("Accept-Encoding", "identity");
+                var op = req.SendWebRequest();
+                while (!op.isDone)
+                    await System.Threading.Tasks.Task.Yield();
 
-                string json = await resp.Content.ReadAsStringAsync();
+                if (req.result != UnityWebRequest.Result.Success) return false;
+
+                string json = req.downloadHandler.text;
 
                 // Parse x field from first key: { "keys": [{ "x": "...", "kid": "..." }] }
                 int xIdx = json.IndexOf("\"x\"", StringComparison.Ordinal);

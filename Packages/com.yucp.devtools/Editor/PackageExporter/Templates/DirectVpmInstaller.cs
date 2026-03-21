@@ -13,10 +13,59 @@ namespace YUCP.DirectVpmInstaller
     [InitializeOnLoad]
     public static class DirectVpmInstaller
     {
-        
         static DirectVpmInstaller()
         {
             EditorApplication.delayCall += CheckAndInstallVpmPackages;
+        }
+
+        private static void EnableBundledPackagesAndFinalize(string packageJsonPath, string completionReason)
+        {
+            Debug.Log($"[DirectVpmInstaller] {completionReason}");
+
+            EditorApplication.LockReloadAssemblies();
+            AssetDatabase.DisallowAutoRefresh();
+            AssetDatabase.StartAssetEditing();
+
+            try
+            {
+                string txnId = InstallerTxn.Begin();
+                bool enableOk = false;
+                try
+                {
+                    EnableBundledPackagesTransactional();
+                    enableOk = true;
+                }
+                catch (Exception exEnable)
+                {
+                    Debug.LogError($"[DirectVpmInstaller] Failed while enabling bundled packages: {exEnable.Message}. Rolling back...");
+                    InstallerTxn.Rollback();
+                    throw;
+                }
+                finally
+                {
+                    if (enableOk)
+                    {
+                        if (!InstallerTxn.VerifyManifest())
+                            throw new Exception("Post-install manifest verification failed");
+                        InstallerTxn.Commit();
+                    }
+                }
+
+                InstallerTxn.SetMarker("complete");
+                CleanupTemporaryFiles(packageJsonPath);
+            }
+            finally
+            {
+                AssetDatabase.StopAssetEditing();
+                AssetDatabase.AllowAutoRefresh();
+                EditorApplication.UnlockReloadAssemblies();
+
+                Debug.Log("[DirectVpmInstaller] Bundled package enable completed. Triggering full domain reload...");
+                FullDomainReload.Run(() =>
+                {
+                    Debug.Log("[DirectVpmInstaller] Bundled package enable complete after domain reload.");
+                });
+            }
         }
         
         private static void CheckAndInstallVpmPackages()
@@ -136,8 +185,7 @@ namespace YUCP.DirectVpmInstaller
                 
                 if (vpmDependencies == null || vpmDependencies.Count == 0)
                 {
-                    InstallerTxn.SetMarker("complete");
-                    CleanupTemporaryFiles(packageJsonPath);
+                    EnableBundledPackagesAndFinalize(packageJsonPath, "No VPM dependencies were declared. Enabling bundled packages directly.");
                     return;
                 }
                 
@@ -226,7 +274,7 @@ namespace YUCP.DirectVpmInstaller
                 
                 if (packagesToInstall.Count == 0)
                 {
-                    CleanupTemporaryFiles(packageJsonPath);
+                    EnableBundledPackagesAndFinalize(packageJsonPath, "All VPM dependencies are already installed. Enabling bundled packages directly.");
                     return;
                 }
                 

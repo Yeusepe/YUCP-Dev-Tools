@@ -59,6 +59,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private Button _exportSelectedButton;
         private Button _exportAllButton;
         private VisualElement _supportToast;
+        private ToastNotification _toast;
         
         // Animated GIF support
         private Dictionary<string, AnimatedGifData> animatedGifs = new Dictionary<string, AnimatedGifData>();
