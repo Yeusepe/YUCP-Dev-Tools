@@ -196,7 +196,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 }
                 string codeChallenge = Base64UrlEncode(hashBytes);
 
-                byte[] stateBytes = new byte[16];
+                byte[] stateBytes = new byte[32];
                 using (var rng = RandomNumberGenerator.Create())
                 {
                     rng.GetBytes(stateBytes);

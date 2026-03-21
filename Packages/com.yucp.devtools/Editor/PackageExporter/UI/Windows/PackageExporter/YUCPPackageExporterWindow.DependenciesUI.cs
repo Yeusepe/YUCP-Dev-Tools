@@ -21,9 +21,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void RebuildDependencyList(ExportProfile profile, VisualElement section, VisualElement container)
         {
-            // Auto-add the YUCP Importer dependency when license verification is enabled.
             if (profile.requiresLicenseVerification)
             {
+                // Auto-add the YUCP Importer dependency when license verification is enabled.
                 bool hasImporter = profile.dependencies.Any(d =>
                     string.Equals(d.packageName, YucpImporterPackageName, StringComparison.OrdinalIgnoreCase));
 
@@ -51,6 +51,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         importerDep.enabled = true;
                         EditorUtility.SetDirty(profile);
                     }
+                }
+            }
+            else
+            {
+                // Auto-remove the YUCP Importer dependency when license verification is disabled.
+                int importerIdx = profile.dependencies.FindIndex(d =>
+                    string.Equals(d.packageName, YucpImporterPackageName, StringComparison.OrdinalIgnoreCase));
+                if (importerIdx >= 0)
+                {
+                    profile.dependencies.RemoveAt(importerIdx);
+                    EditorUtility.SetDirty(profile);
                 }
             }
 
@@ -221,52 +232,91 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (profile.requiresLicenseVerification)
             {
                 var licenseNotice = new VisualElement();
-                licenseNotice.AddToClassList("yucp-help-box");
-                licenseNotice.style.marginTop = 8;
-                licenseNotice.style.backgroundColor = new Color(0.1f, 0.45f, 0.1f, 0.35f);
-                licenseNotice.style.borderLeftWidth = 3;
-                licenseNotice.style.borderLeftColor = new StyleColor(new Color(0.3f, 0.85f, 0.3f, 1f));
+                licenseNotice.style.flexDirection  = FlexDirection.Row;
+                licenseNotice.style.alignItems     = Align.Center;
+                licenseNotice.style.marginTop      = 8;
+                licenseNotice.style.paddingLeft    = 12;
+                licenseNotice.style.paddingRight   = 12;
+                licenseNotice.style.paddingTop     = 9;
+                licenseNotice.style.paddingBottom  = 9;
+                licenseNotice.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f, 0.08f);
+                licenseNotice.style.borderTopLeftRadius = licenseNotice.style.borderTopRightRadius =
+                    licenseNotice.style.borderBottomLeftRadius = licenseNotice.style.borderBottomRightRadius = 6;
+                licenseNotice.style.borderLeftWidth  = 2;
+                licenseNotice.style.borderRightWidth = licenseNotice.style.borderTopWidth =
+                    licenseNotice.style.borderBottomWidth = 0;
+                licenseNotice.style.borderLeftColor = new StyleColor(new Color(0.212f, 0.749f, 0.694f, 0.7f));
 
-                // Header row: warning icon + title
-                var noticeHeader = new VisualElement();
-                noticeHeader.style.flexDirection = FlexDirection.Row;
-                noticeHeader.style.alignItems = Align.Center;
-                noticeHeader.style.marginBottom = 4;
+                // Pulsing dot
+                var dot = new VisualElement();
+                dot.style.width  = 6;
+                dot.style.height = 6;
+                dot.style.borderTopLeftRadius = dot.style.borderTopRightRadius =
+                    dot.style.borderBottomLeftRadius = dot.style.borderBottomRightRadius = 3;
+                dot.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f);
+                dot.style.marginRight = 8;
+                dot.style.flexShrink  = 0;
+                dot.style.marginTop   = 1;
+                licenseNotice.Add(dot);
 
-                var warnIcon = new Image
-                {
-                    image = EditorGUIUtility.IconContent("console.warnicon.sml").image,
-                };
-                warnIcon.style.width  = 16;
-                warnIcon.style.height = 16;
-                warnIcon.style.flexShrink = 0;
-                warnIcon.style.marginRight = 5;
-                noticeHeader.Add(warnIcon);
+                var noticeTextCol = new VisualElement();
+                noticeTextCol.style.flexGrow = 1;
 
                 var noticeTitleLabel = new Label("License Protection is ON");
-                noticeTitleLabel.AddToClassList("yucp-help-box-text");
+                noticeTitleLabel.style.fontSize = 11;
+                noticeTitleLabel.style.color    = new StyleColor(new Color(0.212f, 0.749f, 0.694f));
                 noticeTitleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-                noticeHeader.Add(noticeTitleLabel);
-                licenseNotice.Add(noticeHeader);
+                noticeTitleLabel.style.marginBottom = 2;
+                noticeTextCol.Add(noticeTitleLabel);
 
                 var licenseNoticeText = new Label(
                     "YUCP Package Importer (com.yucp.importer) is required and cannot be disabled " +
                     "while license verification is enabled.");
                 licenseNoticeText.AddToClassList("yucp-help-box-text");
                 licenseNoticeText.style.whiteSpace = WhiteSpace.Normal;
-                licenseNotice.Add(licenseNoticeText);
+                licenseNoticeText.style.color      = new StyleColor(new Color(0.549f, 0.549f, 0.549f));
+                licenseNoticeText.style.fontSize   = 10;
+                noticeTextCol.Add(licenseNoticeText);
+
+                licenseNotice.Add(noticeTextCol);
                 section.Add(licenseNotice);
             }
             
             // Disclaimer about automatic installation
             var disclaimerBox = new VisualElement();
-            disclaimerBox.AddToClassList("yucp-help-box");
-            disclaimerBox.AddToClassList("yucp-help-box-info");
-            disclaimerBox.style.marginTop = 8;
-            disclaimerBox.style.backgroundColor = new Color(0.2f, 0.4f, 0.6f, 0.2f);
-            var disclaimerText = new Label("Everything you select here will be asked for the user to install when importing the package, and will be installed automatically if clicked \"Install\" on their end");
+            disclaimerBox.style.flexDirection  = FlexDirection.Row;
+            disclaimerBox.style.alignItems     = Align.FlexStart;
+            disclaimerBox.style.marginTop      = 8;
+            disclaimerBox.style.paddingLeft    = 12;
+            disclaimerBox.style.paddingRight   = 12;
+            disclaimerBox.style.paddingTop     = 9;
+            disclaimerBox.style.paddingBottom  = 9;
+            disclaimerBox.style.backgroundColor = new Color(0.138f, 0.138f, 0.138f);
+            disclaimerBox.style.borderTopLeftRadius = disclaimerBox.style.borderTopRightRadius =
+                disclaimerBox.style.borderBottomLeftRadius = disclaimerBox.style.borderBottomRightRadius = 6;
+            disclaimerBox.style.borderTopWidth = disclaimerBox.style.borderBottomWidth =
+                disclaimerBox.style.borderLeftWidth = disclaimerBox.style.borderRightWidth = 1;
+            disclaimerBox.style.borderTopColor = disclaimerBox.style.borderBottomColor =
+                disclaimerBox.style.borderLeftColor = disclaimerBox.style.borderRightColor =
+                    new StyleColor(new Color(0.157f, 0.157f, 0.157f));
+
+            var infoIcon = new Image
+            {
+                image = EditorGUIUtility.IconContent("console.infoicon.sml").image,
+            };
+            infoIcon.style.width   = 14;
+            infoIcon.style.height  = 14;
+            infoIcon.style.marginRight = 8;
+            infoIcon.style.flexShrink  = 0;
+            infoIcon.style.marginTop   = 1;
+            disclaimerBox.Add(infoIcon);
+
+            var disclaimerText = new Label("Everything you select here will be asked for the user to install when importing the package, and will be installed automatically if they click \"Install\".");
             disclaimerText.AddToClassList("yucp-help-box-text");
-            disclaimerText.style.unityFontStyleAndWeight = FontStyle.Bold;
+            disclaimerText.style.whiteSpace = WhiteSpace.Normal;
+            disclaimerText.style.color      = new StyleColor(new Color(0.549f, 0.549f, 0.549f));
+            disclaimerText.style.fontSize   = 10;
+            disclaimerText.style.flexGrow   = 1;
             disclaimerBox.Add(disclaimerText);
             section.Add(disclaimerBox);
             
@@ -480,32 +530,33 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Tint the card and show a lock badge for the mandatory importer
             if (isLicenseLocked)
             {
-                card.style.backgroundColor = new Color(0.05f, 0.22f, 0.05f, 1f);
-                card.style.borderLeftWidth = 3;
-                card.style.borderLeftColor = new StyleColor(new Color(0.3f, 0.85f, 0.3f, 1f));
+                card.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f, 0.05f);
+                card.style.borderLeftWidth  = 2;
+                card.style.borderLeftColor  = new StyleColor(new Color(0.212f, 0.749f, 0.694f, 0.5f));
+                card.style.borderTopWidth = card.style.borderBottomWidth =
+                    card.style.borderRightWidth = 1;
+                card.style.borderTopColor = card.style.borderBottomColor =
+                    card.style.borderRightColor =
+                        new StyleColor(new Color(0.212f, 0.749f, 0.694f, 0.15f));
 
-                // Lock badge: Unity built-in LockIcon + "Required" text
+                // Lock badge: lock symbol + "Required" pill
                 var lockBadge = new VisualElement();
-                lockBadge.style.flexDirection = FlexDirection.Row;
-                lockBadge.style.alignItems = Align.Center;
-                lockBadge.style.marginRight = 6;
-                lockBadge.style.flexShrink = 0;
-
-                var lockIcon = new Image
-                {
-                    image = EditorGUIUtility.IconContent("LockIcon").image,
-                };
-                lockIcon.style.width  = 12;
-                lockIcon.style.height = 12;
-                lockIcon.style.flexShrink = 0;
-                lockIcon.style.marginRight = 3;
-                lockBadge.Add(lockIcon);
+                lockBadge.style.flexDirection  = FlexDirection.Row;
+                lockBadge.style.alignItems     = Align.Center;
+                lockBadge.style.marginRight    = 6;
+                lockBadge.style.flexShrink     = 0;
+                lockBadge.style.paddingLeft    = 6;
+                lockBadge.style.paddingRight   = 6;
+                lockBadge.style.paddingTop     = 2;
+                lockBadge.style.paddingBottom  = 2;
+                lockBadge.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f, 0.14f);
+                lockBadge.style.borderTopLeftRadius = lockBadge.style.borderTopRightRadius =
+                    lockBadge.style.borderBottomLeftRadius = lockBadge.style.borderBottomRightRadius = 10;
 
                 var lockLabel = new Label("Required");
-                lockLabel.AddToClassList("yucp-label-secondary");
-                lockLabel.style.fontSize = 10;
+                lockLabel.style.fontSize = 9;
                 lockLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-                lockLabel.style.color = new StyleColor(new Color(0.4f, 0.9f, 0.4f, 1f));
+                lockLabel.style.color = new StyleColor(new Color(0.212f, 0.749f, 0.694f));
                 lockBadge.Add(lockLabel);
 
                 // Insert before the (hidden) remove button — after the name label

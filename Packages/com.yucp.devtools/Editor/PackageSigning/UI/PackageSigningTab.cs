@@ -73,7 +73,13 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private static readonly Color TextSec      = new Color(0.549f, 0.549f, 0.549f); // #8C8C8C
         private static readonly Color TextMute     = new Color(0.302f, 0.302f, 0.302f); // #4D4D4D
 
-        public PackageSigningTab(ExportProfile profile = null) => _profile = profile;
+        private Action _onProfileChanged;
+
+        public PackageSigningTab(ExportProfile profile = null, Action onProfileChanged = null)
+        {
+            _profile = profile;
+            _onProfileChanged = onProfileChanged;
+        }
 
         public VisualElement CreateUI()
         {
@@ -102,10 +108,42 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private VisualElement BuildCard()
         {
-            if (!YucpOAuthService.IsSignedIn()) return BuildSignInHero();
+            if (!YucpOAuthService.IsSignedIn())
+            {
+                var wrapper = new VisualElement();
+                wrapper.Add(BuildSignInHero());
+                if (_profile != null)
+                    wrapper.Add(BuildDetachedLicenseSection());
+                return wrapper;
+            }
+
             YucpOAuthService.TryBeginBackgroundRefresh(GetServerUrl(), RefreshUI);
             bool hasCert = _settings != null && _settings.HasValidCertificate();
-            return hasCert ? BuildActiveCard() : BuildNoCertCard();
+
+            if (hasCert)
+                return BuildActiveCard(); // already includes license section
+
+            var noCertWrapper = new VisualElement();
+            noCertWrapper.Add(BuildNoCertCard());
+            if (_profile != null)
+                noCertWrapper.Add(BuildDetachedLicenseSection());
+            return noCertWrapper;
+        }
+
+        /// <summary>
+        /// A standalone license-protection card shown in states 1 &amp; 2 (not signed in / no cert),
+        /// so the toggle remains accessible regardless of auth state.
+        /// </summary>
+        private VisualElement BuildDetachedLicenseSection()
+        {
+            var card = MakeCard();
+            card.style.marginTop = 4;
+
+            _licenseSectionSlot = new VisualElement();
+            _licenseSectionSlot.Add(BuildLicenseProtectionSection());
+            card.Add(_licenseSectionSlot);
+
+            return card;
         }
 
         // ══════════════════════════════════════════════════════════════════════════
@@ -315,7 +353,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             // Primary action
             var getBtn = _isRequestingCert
                 ? BuildLoadingButton("Getting certificate\u2026")
-                : BuildPrimaryButton("\u2726  Get Certificate", OnRequestCertClicked);
+                : BuildPrimaryButton("Get Certificate", OnRequestCertClicked);
             getBtn.style.marginBottom = 14;
             body.Add(getBtn);
 
@@ -351,30 +389,29 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             card.Add(BuildAccountBar());
             card.Add(MakeDivider());
 
-            // ── Status banner ──────────────────────────────────────────────────────
-            var statusBand = new VisualElement();
-            statusBand.style.backgroundColor  = TealSub;
-            statusBand.style.flexDirection    = FlexDirection.Row;
-            statusBand.style.alignItems       = Align.Center;
-            statusBand.style.paddingLeft      = 18;
-            statusBand.style.paddingRight     = 18;
-            statusBand.style.paddingTop       = 11;
-            statusBand.style.paddingBottom    = 11;
+            // ── Status row (inline, no filled band) ───────────────────────────────
+            var statusRow = new VisualElement();
+            statusRow.style.flexDirection  = FlexDirection.Row;
+            statusRow.style.alignItems     = Align.Center;
+            statusRow.style.paddingLeft    = 18;
+            statusRow.style.paddingRight   = 18;
+            statusRow.style.paddingTop     = 13;
+            statusRow.style.paddingBottom  = 11;
 
             // Pulsing live dot
             var liveDot = new VisualElement();
-            liveDot.style.width  = 7;
-            liveDot.style.height = 7;
+            liveDot.style.width  = 6;
+            liveDot.style.height = 6;
             liveDot.style.borderTopLeftRadius = liveDot.style.borderTopRightRadius =
-                liveDot.style.borderBottomLeftRadius = liveDot.style.borderBottomRightRadius = 4;
+                liveDot.style.borderBottomLeftRadius = liveDot.style.borderBottomRightRadius = 3;
             liveDot.style.backgroundColor = Teal;
-            liveDot.style.marginRight     = 10;
+            liveDot.style.marginRight     = 8;
             liveDot.style.flexShrink      = 0;
-            liveDot.schedule.Execute(() => liveDot.style.opacity = liveDot.style.opacity.value > 0.6f ? 0.35f : 1.0f).Every(900);
-            statusBand.Add(liveDot);
+            liveDot.schedule.Execute(() => liveDot.style.opacity = liveDot.style.opacity.value > 0.6f ? 0.3f : 1.0f).Every(900);
+            statusRow.Add(liveDot);
 
-            statusBand.Add(MakeLabel("Ready to sign", 13, TextPri, bold: true));
-            card.Add(statusBand);
+            statusRow.Add(MakeLabel("Ready to sign", 12, Teal, bold: true));
+            card.Add(statusRow);
 
             // ── Certificate health ─────────────────────────────────────────────────
             var certBody = MakePad(16, 18, 16, 16);
@@ -403,7 +440,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             if (_profile != null)
             {
                 card.Add(MakeDivider());
-                card.Add(BuildLicenseProtectionSection());
+                _licenseSectionSlot = new VisualElement();
+                _licenseSectionSlot.Add(BuildLicenseProtectionSection());
+                card.Add(_licenseSectionSlot);
             }
 
             // ── Footer actions ─────────────────────────────────────────────────────
@@ -1487,20 +1526,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             _profile.jinxxyProductId = primaryProduct?.GetRef("jinxxy") ?? string.Empty;
         }
 
-        // ── License Protection section ─────────────────────────────────────────────
-
         private VisualElement BuildLicenseProtectionSection()
         {
             var body = MakePad(16, 18, 10, 16);
 
-            // Header row
-            var headerRow = new VisualElement();
-            headerRow.style.flexDirection  = FlexDirection.Row;
-            headerRow.style.alignItems     = Align.Center;
-            headerRow.style.justifyContent = Justify.SpaceBetween;
-            headerRow.style.marginBottom   = 10;
-            headerRow.Add(MakeLabel("License Protection", 11, TextMute, bold: true, mb: 0));
-            body.Add(headerRow);
+            // Section header
+            body.Add(MakeLabel("License Protection", 10, TextMute, bold: true, letterSpacing: 0.5f, mb: 12));
 
             // Collect all profiles: main + bundled
             var allProfiles = new List<ExportProfile>();
@@ -1514,57 +1545,184 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             foreach (var prof in allProfiles)
             {
                 if (prof == null) continue;
-                bool isLicensed = prof.requiresLicenseVerification;
-
-                var row = new VisualElement();
-                row.style.flexDirection  = FlexDirection.Row;
-                row.style.alignItems     = Align.Center;
-                row.style.justifyContent = Justify.SpaceBetween;
-                row.style.marginBottom   = 6;
-                row.style.paddingLeft    = 4;
-                row.style.paddingRight   = 4;
-                row.style.paddingTop     = 6;
-                row.style.paddingBottom  = 6;
-                row.style.backgroundColor = new Color(0.12f, 0.12f, 0.12f, 0.6f);
-                row.style.borderTopLeftRadius = row.style.borderTopRightRadius =
-                    row.style.borderBottomLeftRadius = row.style.borderBottomRightRadius = 4;
-
-                // Package name
-                string displayName = !string.IsNullOrEmpty(prof.packageName)
-                    ? prof.packageName
-                    : (!string.IsNullOrEmpty(prof.packageId) ? prof.packageId : "Unnamed");
-
-                var nameCol = new VisualElement();
-                nameCol.style.flexGrow = 1;
-                nameCol.Add(MakeLabel(displayName, 11, TextPri, mb: 0));
-                if (!string.IsNullOrEmpty(prof.packageId))
-                    nameCol.Add(MakeLabel(prof.packageId, 9, TextMute, mb: 0));
-                row.Add(nameCol);
-
-                // Toggle
-                var toggle = new Toggle { value = isLicensed };
-                toggle.style.flexShrink = 0;
-
-                toggle.RegisterValueChangedCallback(e =>
-                {
-                    var target = prof; // capture
-                    Undo.RecordObject(target, "Toggle License Protection");
-                    target.requiresLicenseVerification = e.newValue;
-                    EditorUtility.SetDirty(target);
-                });
-                row.Add(toggle);
-
-                body.Add(row);
+                body.Add(BuildLicenseRow(prof));
             }
 
             // Info note
             var note = MakeLabel(
                 "When enabled, derived FBX assets require a verified purchase before they are applied.",
                 9, TextMute, wrap: true);
-            note.style.marginTop = 4;
+            note.style.marginTop = 10;
             body.Add(note);
 
             return body;
+        }
+
+        private VisualElement BuildLicenseRow(ExportProfile prof)
+        {
+            bool isOn       = prof.requiresLicenseVerification;
+            bool isSignedIn = YucpOAuthService.IsSignedIn();
+            bool locked     = !isOn && !isSignedIn;
+
+            // ── Row ───────────────────────────────────────────────────────────────
+            var row = new VisualElement();
+            row.style.flexDirection   = FlexDirection.Row;
+            row.style.alignItems      = Align.Center;
+            row.style.justifyContent  = Justify.SpaceBetween;
+            row.style.paddingLeft     = 12;
+            row.style.paddingRight    = 10;
+            row.style.paddingTop      = 9;
+            row.style.paddingBottom   = 9;
+            row.style.marginBottom    = 6;
+            row.style.backgroundColor = SurfaceRaise;
+            row.style.borderTopLeftRadius = row.style.borderTopRightRadius =
+                row.style.borderBottomLeftRadius = row.style.borderBottomRightRadius = 6;
+            row.style.borderTopWidth = row.style.borderBottomWidth =
+                row.style.borderLeftWidth = row.style.borderRightWidth = 1;
+            row.style.borderTopColor = row.style.borderBottomColor =
+                row.style.borderLeftColor = row.style.borderRightColor =
+                    isOn ? new Color(0.212f, 0.749f, 0.694f, 0.20f) : Border;
+
+            // Left: package name + id
+            string displayName = !string.IsNullOrEmpty(prof.packageName)
+                ? prof.packageName
+                : (!string.IsNullOrEmpty(prof.packageId) ? prof.packageId : "Unnamed");
+
+            var nameCol = new VisualElement();
+            nameCol.style.flexGrow = 1;
+            nameCol.Add(MakeLabel(displayName, 11, isOn ? TextPri : TextSec, mb: 0));
+            if (!string.IsNullOrEmpty(prof.packageId))
+            {
+                var idLbl = MakeLabel(prof.packageId, 9, TextMute, mb: 0);
+                idLbl.style.marginTop = 2;
+                nameCol.Add(idLbl);
+            }
+            row.Add(nameCol);
+
+            // Right side
+            var rightCol = new VisualElement();
+            rightCol.style.flexDirection = FlexDirection.Row;
+            rightCol.style.alignItems    = Align.Center;
+            rightCol.style.flexShrink    = 0;
+            rightCol.style.marginLeft    = 10;
+
+            if (locked)
+            {
+                // ── Sign-in CTA replaces the toggle when locked ────────────────
+                var cta = new VisualElement();
+                cta.style.flexDirection  = FlexDirection.Row;
+                cta.style.alignItems     = Align.Center;
+                cta.style.paddingLeft    = 10;
+                cta.style.paddingRight   = 10;
+                cta.style.paddingTop     = 5;
+                cta.style.paddingBottom  = 5;
+                cta.style.borderTopLeftRadius = cta.style.borderTopRightRadius =
+                    cta.style.borderBottomLeftRadius = cta.style.borderBottomRightRadius = 5;
+                cta.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f, 0.10f);
+                cta.style.borderTopWidth = cta.style.borderBottomWidth =
+                    cta.style.borderLeftWidth = cta.style.borderRightWidth = 1;
+                cta.style.borderTopColor = cta.style.borderBottomColor =
+                    cta.style.borderLeftColor = cta.style.borderRightColor =
+                        new Color(0.212f, 0.749f, 0.694f, 0.28f);
+
+                var lockImg = new Image { image = EditorGUIUtility.IconContent("LockIcon-On").image };
+                lockImg.style.width    = 11;
+                lockImg.style.height   = 11;
+                lockImg.style.flexShrink  = 0;
+                lockImg.style.marginRight = 6;
+                cta.Add(lockImg);
+                cta.Add(MakeLabel("Sign in to enable", 10, Teal, mb: 0));
+
+                cta.RegisterCallback<MouseEnterEvent>(_ =>
+                    cta.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f, 0.18f));
+                cta.RegisterCallback<MouseLeaveEvent>(_ =>
+                    cta.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f, 0.10f));
+                cta.RegisterCallback<ClickEvent>(evt =>
+                {
+                    evt.StopPropagation();
+                    if (_isSigningIn) return;
+                    _isSigningIn = true;
+                    RefreshUI();
+#pragma warning disable CS4014
+                    YucpOAuthService.SignInAsync(GetServerUrl(),
+                        onSuccess: () => EditorApplication.delayCall += () => { _isSigningIn = false; LoadSettings(); RefreshUI(); },
+                        onError:   e  => EditorApplication.delayCall += () => { _isSigningIn = false; RefreshUI(); EditorUtility.DisplayDialog("Sign-in failed", e, "OK"); });
+#pragma warning restore CS4014
+                });
+
+                rightCol.Add(cta);
+            }
+            else
+            {
+                // ── Status pill ────────────────────────────────────────────────
+                var pill = new VisualElement();
+                pill.style.paddingLeft   = 8;
+                pill.style.paddingRight  = 8;
+                pill.style.paddingTop    = 3;
+                pill.style.paddingBottom = 3;
+                pill.style.marginRight   = 8;
+                pill.style.borderTopLeftRadius = pill.style.borderTopRightRadius =
+                    pill.style.borderBottomLeftRadius = pill.style.borderBottomRightRadius = 10;
+                pill.style.backgroundColor = isOn
+                    ? new Color(0.212f, 0.749f, 0.694f, 0.14f)
+                    : new Color(0.18f, 0.18f, 0.18f);
+                pill.Add(MakeLabel(isOn ? "ON" : "OFF", 9, isOn ? Teal : TextMute,
+                    bold: true, letterSpacing: 0.5f, mb: 0));
+                rightCol.Add(pill);
+
+                // ── iOS-style toggle track ─────────────────────────────────────
+                var track = new VisualElement();
+                track.style.width   = 32;
+                track.style.height  = 18;
+                track.style.borderTopLeftRadius = track.style.borderTopRightRadius =
+                    track.style.borderBottomLeftRadius = track.style.borderBottomRightRadius = 9;
+                track.style.backgroundColor = isOn
+                    ? new Color(0.212f, 0.749f, 0.694f, 0.85f)
+                    : new Color(0.22f, 0.22f, 0.22f);
+                track.style.flexShrink     = 0;
+                track.style.justifyContent = Justify.Center;
+                track.style.alignItems     = isOn ? Align.FlexEnd : Align.FlexStart;
+                track.style.paddingLeft    = 2;
+                track.style.paddingRight   = 2;
+                var thumb = new VisualElement();
+                thumb.style.width  = 14;
+                thumb.style.height = 14;
+                thumb.style.borderTopLeftRadius = thumb.style.borderTopRightRadius =
+                    thumb.style.borderBottomLeftRadius = thumb.style.borderBottomRightRadius = 7;
+                thumb.style.backgroundColor = Color.white;
+                thumb.style.flexShrink = 0;
+                track.Add(thumb);
+                rightCol.Add(track);
+
+                // Hover / click for the whole row
+                row.RegisterCallback<MouseEnterEvent>(_ =>
+                    row.style.backgroundColor = new Color(0.16f, 0.16f, 0.16f));
+                row.RegisterCallback<MouseLeaveEvent>(_ =>
+                    row.style.backgroundColor = SurfaceRaise);
+                row.RegisterCallback<ClickEvent>(_ =>
+                {
+                    Undo.RecordObject(prof, "Toggle License Protection");
+                    prof.requiresLicenseVerification = !prof.requiresLicenseVerification;
+                    EditorUtility.SetDirty(prof);
+                    EditorApplication.delayCall += () =>
+                    {
+                        RebuildLicenseSection();
+                        _onProfileChanged?.Invoke();
+                    };
+                });
+            }
+
+            row.Add(rightCol);
+            return row;
+        }
+
+        private VisualElement _licenseSectionSlot;
+
+        private void RebuildLicenseSection()
+        {
+            if (_licenseSectionSlot == null) return;
+            _licenseSectionSlot.Clear();
+            _licenseSectionSlot.Add(BuildLicenseProtectionSection());
         }
 
         // ── Account bar (shared across states 2 & 3) ──────────────────────────────

@@ -995,7 +995,9 @@ namespace YUCP.DirectVpmInstaller
                 {
                     try
                     {
-                        var repoData = JObject.Parse(new WebClient().DownloadString(repo.Value));
+                        var repoClient = new WebClient();
+                        repoClient.Headers.Add(HttpRequestHeader.UserAgent, "VCC/2.3.0");
+                        var repoData = JObject.Parse(repoClient.DownloadString(repo.Value));
                         var packages = repoData["packages"] as JObject;
                         
                         if (packages?[packageName] == null)
@@ -1049,7 +1051,9 @@ namespace YUCP.DirectVpmInstaller
                 string tempZipPath = Path.Combine(Path.GetTempPath(), $"{packageName}.zip");
                 string packageDestination = $"Packages/{packageName}";
                 
-                new WebClient().DownloadFile(downloadUrl, tempZipPath);
+                var downloadClient = new WebClient();
+                downloadClient.Headers.Add(HttpRequestHeader.UserAgent, "VCC/2.3.0");
+                downloadClient.DownloadFile(downloadUrl, tempZipPath);
                 
                 if (Directory.Exists(packageDestination))
                     Directory.Delete(packageDestination, true);

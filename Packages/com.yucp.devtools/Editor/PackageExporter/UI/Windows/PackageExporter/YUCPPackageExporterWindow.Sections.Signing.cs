@@ -18,7 +18,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
     {
         private VisualElement CreatePackageSigningSection(ExportProfile profile)
         {
-            var signingTab = new YUCP.DevTools.Editor.PackageSigning.UI.PackageSigningTab(profile);
+            var signingTab = new YUCP.DevTools.Editor.PackageSigning.UI.PackageSigningTab(profile, UpdateProfileDetails);
             _signingSectionElement = signingTab.CreateUI();
             return _signingSectionElement;
         }
