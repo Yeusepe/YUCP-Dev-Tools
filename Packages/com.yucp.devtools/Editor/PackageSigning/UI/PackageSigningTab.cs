@@ -45,6 +45,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private struct ProviderRef { public string provider; public string providerRef; }
         private List<CanonicalProduct> _canonicalProducts;
         private bool  _productsLoading;
+        private string _productLoadErrorTitle;
+        private string _productLoadErrorMessage;
         private bool  _productPickerExpanded;
         private VisualElement _productPickerSlot;
         private VisualElement _productListPanel;
@@ -683,6 +685,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             refreshLbl.RegisterCallback<ClickEvent>(_ =>
             {
                 _canonicalProducts = null; _productsLoading = false; _productPickerExpanded = false;
+                _productLoadErrorTitle = null; _productLoadErrorMessage = null;
                 LoadCreatorProducts();
             });
             header.Add(refreshLbl);
@@ -697,13 +700,28 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 return;
             }
 
+            if (!string.IsNullOrEmpty(_productLoadErrorTitle) || !string.IsNullOrEmpty(_productLoadErrorMessage))
+            {
+                var errorCard = MakePickerShell();
+                errorCard.style.marginBottom = 8;
+                errorCard.Add(MakeLabel(_productLoadErrorTitle ?? "Could not load products", 11, Amber, bold: true, mb: 3));
+                errorCard.Add(MakeLabel(_productLoadErrorMessage ?? "Refresh to try again.", 10, TextMute, wrap: true));
+                _productPickerSlot.Add(errorCard);
+            }
+
             // Empty state
             if (_canonicalProducts == null || _canonicalProducts.Count == 0)
             {
                 var emptyCard = MakePickerShell();
                 emptyCard.style.paddingTop = emptyCard.style.paddingBottom = 10;
                 emptyCard.Add(MakeLabel("No products found", 11, TextSec, bold: true, mb: 3));
-                emptyCard.Add(MakeLabel("Connect a store or configure a product, then refresh.", 10, TextMute, wrap: true));
+                emptyCard.Add(MakeLabel(
+                    string.IsNullOrEmpty(_productLoadErrorMessage)
+                        ? "Connect a store or configure a product, then refresh."
+                        : "The server catalog is unavailable. Fix the error above, then refresh.",
+                    10,
+                    TextMute,
+                    wrap: true));
                 _productPickerSlot.Add(emptyCard);
                 return;
             }
@@ -1274,6 +1292,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             if (string.IsNullOrEmpty(accessToken)) return;
 
             _productsLoading = true;
+            _productLoadErrorTitle = null;
+            _productLoadErrorMessage = null;
             EditorApplication.delayCall += () => RebuildProductPicker();
 
             try
@@ -1323,21 +1343,45 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                     _canonicalProducts = mergedProducts
                         .OrderBy(product => product.displayName, StringComparer.OrdinalIgnoreCase)
                         .ToList();
+                    _productLoadErrorTitle = null;
+                    _productLoadErrorMessage = null;
                 }
                 else
                 {
                     _canonicalProducts = GetLocallyConfiguredProducts();
+                    _productLoadErrorTitle = "Could not load products";
+                    _productLoadErrorMessage = BuildProductLoadErrorMessage(request.responseCode, request.downloadHandler != null ? request.downloadHandler.text : null);
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 _canonicalProducts = GetLocallyConfiguredProducts();
+                _productLoadErrorTitle = "Could not load products";
+                _productLoadErrorMessage = string.IsNullOrEmpty(ex.Message)
+                    ? "The request failed before the server returned a catalog."
+                    : ex.Message;
             }
             finally
             {
                 _productsLoading = false;
                 EditorApplication.delayCall += () => RebuildProductPicker();
             }
+        }
+
+        private static string BuildProductLoadErrorMessage(long statusCode, string responseBody)
+        {
+            string trimmedBody = string.IsNullOrEmpty(responseBody) ? string.Empty : responseBody.Trim();
+            if (!string.IsNullOrEmpty(trimmedBody))
+            {
+                return $"Server returned {(int)statusCode}: {trimmedBody}";
+            }
+
+            if (statusCode > 0)
+            {
+                return $"Server returned {(int)statusCode}.";
+            }
+
+            return "The request failed before the server returned a catalog.";
         }
 
         private bool ProductIsSelected(CanonicalProduct product, List<string> selectedIds)

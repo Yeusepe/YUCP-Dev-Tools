@@ -289,16 +289,16 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 }
 
                 Debug.Log($"[YUCP OAuth] Exchanging auth code at {serverUrl.TrimEnd('/')}/api/auth/oauth2/token");
-                var form = new WWWForm();
-                form.AddField("grant_type", "authorization_code");
-                form.AddField("client_id", ClientId);
-                form.AddField("code", authCode);
-                form.AddField("code_verifier", codeVerifier);
-                form.AddField("redirect_uri", redirectUri);
-
-                using var tokenReq = UnityWebRequest.Post($"{serverUrl.TrimEnd('/')}/api/auth/oauth2/token", form);
-                tokenReq.SetRequestHeader("Accept", "application/json");
-                tokenReq.SetRequestHeader("Accept-Encoding", "identity");
+                using var tokenReq = CreateTokenRequest(
+                    serverUrl,
+                    new Dictionary<string, string>
+                    {
+                        ["grant_type"] = "authorization_code",
+                        ["client_id"] = ClientId,
+                        ["code"] = authCode,
+                        ["code_verifier"] = codeVerifier,
+                        ["redirect_uri"] = redirectUri,
+                    });
 
                 var op = tokenReq.SendWebRequest();
                 while (!op.isDone)
@@ -365,14 +365,14 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return null;
             }
 
-            var form = new WWWForm();
-            form.AddField("grant_type", "refresh_token");
-            form.AddField("client_id", ClientId);
-            form.AddField("refresh_token", currentSession.refreshToken);
-
-            using var tokenReq = UnityWebRequest.Post($"{serverUrl.TrimEnd('/')}/api/auth/oauth2/token", form);
-            tokenReq.SetRequestHeader("Accept", "application/json");
-            tokenReq.SetRequestHeader("Accept-Encoding", "identity");
+            using var tokenReq = CreateTokenRequest(
+                serverUrl,
+                new Dictionary<string, string>
+                {
+                    ["grant_type"] = "refresh_token",
+                    ["client_id"] = ClientId,
+                    ["refresh_token"] = currentSession.refreshToken,
+                });
 
             var operation = tokenReq.SendWebRequest();
             while (!operation.isDone)
@@ -449,6 +449,44 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 displayName = displayName,
                 scope = scope,
             };
+        }
+
+        private static UnityWebRequest CreateTokenRequest(string serverUrl, IReadOnlyDictionary<string, string> fields)
+        {
+            string endpoint = $"{serverUrl.TrimEnd('/')}/api/auth/oauth2/token";
+            string body = BuildFormUrlEncodedBody(fields);
+            var request = new UnityWebRequest(endpoint, UnityWebRequest.kHttpVerbPOST)
+            {
+                uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body)),
+                downloadHandler = new DownloadHandlerBuffer(),
+            };
+            request.SetRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+            request.SetRequestHeader("Accept", "application/json");
+            request.SetRequestHeader("Accept-Encoding", "identity");
+            return request;
+        }
+
+        private static string BuildFormUrlEncodedBody(IReadOnlyDictionary<string, string> fields)
+        {
+            var builder = new StringBuilder();
+            foreach (KeyValuePair<string, string> field in fields)
+            {
+                if (builder.Length > 0)
+                {
+                    builder.Append('&');
+                }
+
+                builder.Append(EncodeFormComponent(field.Key));
+                builder.Append('=');
+                builder.Append(EncodeFormComponent(field.Value));
+            }
+
+            return builder.ToString();
+        }
+
+        private static string EncodeFormComponent(string value)
+        {
+            return Uri.EscapeDataString(value ?? string.Empty).Replace("%20", "+");
         }
 
         private static long ResolveExpiryTimestamp(string tokenJson, string expiresInKey, string expiresAtKey, long fallback)
