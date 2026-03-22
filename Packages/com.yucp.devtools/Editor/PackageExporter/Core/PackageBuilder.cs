@@ -10,8 +10,8 @@ using ICSharpCode.SharpZipLib.Tar;
 #endif
 using UnityEditor;
 using UnityEngine;
-using YUCP.Components.Editor.PackageManager;
-using PackageVerifierData = YUCP.Components.Editor.PackageVerifier.Data;
+using YUCP.Importer.Editor.PackageManager;
+using PackageVerifierData = YUCP.Importer.Editor.PackageVerifier.Data;
 using YUCP.DevTools.Editor.PackageSigning.Core;
 using PackageSigningData = YUCP.DevTools.Editor.PackageSigning.Data;
 

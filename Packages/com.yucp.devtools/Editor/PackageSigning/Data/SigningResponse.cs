@@ -1,5 +1,5 @@
 using System;
-using YUCP.Components.Editor.PackageVerifier.Data;
+using YUCP.Importer.Editor.PackageVerifier.Data;
 
 namespace YUCP.DevTools.Editor.PackageSigning.Data
 {

@@ -4,7 +4,7 @@ using System.Text;
 using UnityEngine;
 using UnityEditor;
 using UnityEngine.Networking;
-using PackageVerifierData = YUCP.Components.Editor.PackageVerifier.Data;
+using PackageVerifierData = YUCP.Importer.Editor.PackageVerifier.Data;
 using PackageSigningData = YUCP.DevTools.Editor.PackageSigning.Data;
 
 namespace YUCP.DevTools.Editor.PackageSigning.Core
