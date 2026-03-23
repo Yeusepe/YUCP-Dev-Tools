@@ -19,6 +19,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         [Tooltip("API server URL for certificate issuance and package signing")]
         public string serverUrl = "https://api.creators.yucp.club";
 
+        [Tooltip("Optional web account base URL for certificate billing and device management. Leave empty to derive from the server URL.")]
+        public string accountAppUrl = "";
+
         [Tooltip("Root public key (Ed25519, base64) used to verify certificates issued by this provider. Leave empty to use the global YUCP root key.")]
         [TextArea(1, 3)]
         public string rootPublicKeyBase64 = "";
@@ -30,6 +33,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         [Header("Server Configuration")]
         [Tooltip("Default signing server URL. Used when no per-profile or per-provider URL is configured.")]
         public string serverUrl = "https://api.creators.yucp.club";
+
+        [Tooltip("Default web account base URL for certificate billing and device management. Leave empty to derive from the signing server URL.")]
+        public string accountAppUrl = "";
 
         [Header("Certificate Providers")]
         [Tooltip("Named certificate providers. Each provider has its own server URL and root public key. The first entry is used as the default when no per-profile override is set.")]
@@ -69,6 +75,69 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                 && !string.IsNullOrEmpty(certificateProviders[0].rootPublicKeyBase64))
                 return certificateProviders[0].rootPublicKeyBase64;
             return yucpRootPublicKeyBase64;
+        }
+
+        /// <summary>
+        /// Returns the effective account certificates URL for billing and device management.
+        /// </summary>
+        public string GetEffectiveAccountCertificatesUrl()
+        {
+            string explicitBaseUrl = null;
+            if (certificateProviders != null && certificateProviders.Count > 0
+                && !string.IsNullOrEmpty(certificateProviders[0].accountAppUrl))
+            {
+                explicitBaseUrl = certificateProviders[0].accountAppUrl;
+            }
+            else if (!string.IsNullOrEmpty(accountAppUrl))
+            {
+                explicitBaseUrl = accountAppUrl;
+            }
+
+            if (!string.IsNullOrEmpty(explicitBaseUrl))
+            {
+                return $"{explicitBaseUrl.TrimEnd('/')}/account/certificates";
+            }
+
+            string server = GetEffectiveServerUrl();
+            if (string.IsNullOrEmpty(server))
+                return "https://creators.yucp.club/account/certificates";
+
+            try
+            {
+                var serverUri = new Uri(server);
+                string scheme = serverUri.Scheme;
+                string host = serverUri.Host;
+                int port = serverUri.IsDefaultPort ? -1 : serverUri.Port;
+
+                if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+                    host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (port == 3001)
+                        port = 3000;
+                }
+                else if (host.StartsWith("api.", StringComparison.OrdinalIgnoreCase))
+                {
+                    string remainder = host.Substring(4);
+                    host = remainder.StartsWith("creators.", StringComparison.OrdinalIgnoreCase)
+                        ? remainder
+                        : $"creators.{remainder}";
+                }
+
+                var builder = new UriBuilder(serverUri)
+                {
+                    Scheme = scheme,
+                    Host = host,
+                    Port = port,
+                    Path = "/account/certificates",
+                    Query = string.Empty,
+                    Fragment = string.Empty,
+                };
+                return builder.Uri.ToString().TrimEnd('/');
+            }
+            catch
+            {
+                return "https://creators.yucp.club/account/certificates";
+            }
         }
 
         /// <summary>

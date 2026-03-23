@@ -23,7 +23,7 @@ namespace YUCP.PatchCleanup
                 Directory.CreateDirectory(logDir);
             return Path.Combine(logDir, "YUCP_PatchImporter.log");
         }
-        
+
         private static void WriteLog(string message)
         {
             try
@@ -34,16 +34,16 @@ namespace YUCP.PatchCleanup
             }
             catch { }
         }
-        
+
         static YUCPPatchImporter()
         {
             WriteLog("YUCPPatchImporter static constructor called - importer is loaded and compiled!");
             EditorApplication.delayCall += CheckForPatchesOnLoad;
-            
+
             // Clean up DLLs on editor load
             EditorApplication.delayCall += CleanupDllsOnLoad;
         }
-        
+
         private static HashSet<string> processedPatches = new HashSet<string>();
         private static Dictionary<string, int> patchRetryCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private static bool hasCheckedOnLoad = false;
@@ -95,6 +95,53 @@ namespace YUCP.PatchCleanup
             }
 
             return false;
+        }
+
+        private static bool HasTempRuntimeFiles(string[] importedAssets = null)
+        {
+            if (importedAssets != null)
+            {
+                foreach (string importedPath in importedAssets)
+                {
+                    if (string.IsNullOrEmpty(importedPath))
+                    {
+                        continue;
+                    }
+
+                    string normalizedPath = importedPath.Replace('\\', '/');
+                    if (normalizedPath.StartsWith("Packages/com.yucp.temp/Editor/", StringComparison.OrdinalIgnoreCase) &&
+                        (normalizedPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+                         normalizedPath.EndsWith(".asmdef", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return TempRuntimeAssetExists("Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs") ||
+                   TempRuntimeAssetExists("Packages/com.yucp.temp/Editor/YUCP.PatchRuntime.asmdef");
+        }
+
+        private static bool TempRuntimeAssetExists(string assetPath)
+        {
+            if (!string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(assetPath)))
+            {
+                return true;
+            }
+
+            string physicalPath = Path.Combine(Application.dataPath, "..", assetPath.Replace('/', Path.DirectorySeparatorChar));
+            return File.Exists(physicalPath);
+        }
+
+        private static bool ShouldSkipPatchProcessing(string context, string[] importedAssets = null)
+        {
+            if (HasTempRuntimeFiles(importedAssets))
+            {
+                return false;
+            }
+
+            WriteLog($"Skipping patch processing {context} because temp runtime files are not present. This project likely only has authoring patch assets in Packages/com.yucp.temp.");
+            return true;
         }
 
         private static List<PatchEntryInfo> ReadPatchEntries(UnityEngine.Object patchObj)
@@ -201,7 +248,7 @@ namespace YUCP.PatchCleanup
                 WriteLog($"  Failed to inspect temp runtime state for '{patchPath}': {ex.Message}");
             }
         }
-        
+
         private static void CheckForPatchesOnLoad()
         {
             if (IsExporterGeneratingTempPatchAssets())
@@ -212,9 +259,9 @@ namespace YUCP.PatchCleanup
 
             if (hasCheckedOnLoad) return;
             hasCheckedOnLoad = true;
-            
+
             WriteLog("CheckForPatchesOnLoad called - checking for existing patches");
-            
+
             try
             {
                 // First, check if there's a pending patch retry after package installation
@@ -223,7 +270,7 @@ namespace YUCP.PatchCleanup
                 if (!string.IsNullOrEmpty(pendingPatchPath))
                 {
                     WriteLog($"Found pending patch retry after package installation: {pendingPatchPath}");
-                    
+
                     // Wait a moment for packages to finish resolving
                     EditorApplication.delayCall += () =>
                     {
@@ -241,7 +288,7 @@ namespace YUCP.PatchCleanup
                                 }
                             }
                             catch { }
-                            
+
                             if (fbxExporterAvailable)
                             {
                                 WriteLog("Unity FBX Exporter is now available. Automatically retrying patch application...");
@@ -268,37 +315,42 @@ namespace YUCP.PatchCleanup
                         };
                     };
                 }
-                
+
                 string patchesFolder = "Packages/com.yucp.temp/Patches";
                 if (!AssetDatabase.IsValidFolder(patchesFolder))
                 {
                     WriteLog($"Patches folder does not exist: {patchesFolder}");
                     return;
                 }
-                
+
+                if (ShouldSkipPatchProcessing("on load"))
+                {
+                    return;
+                }
+
                 string[] allGuids = AssetDatabase.FindAssets("", new[] { patchesFolder });
                 WriteLog($"Found {allGuids.Length} asset(s) in Patches folder");
-                
+
                 int appliedCount = 0;
                 foreach (var guid in allGuids)
                 {
                     string path = AssetDatabase.GUIDToAssetPath(guid);
-                    
+
                     if (path.Contains("DerivedFbxAsset") && path.EndsWith(".asset") && path.Contains("com.yucp.temp"))
                     {
                         WriteLog($"Found existing patch: {path} - attempting to apply");
-                        
+
                         if (processedPatches != null && processedPatches.Contains(path))
                         {
                             WriteLog($"  Skipping (already processed): {path}");
                             continue;
                         }
-                        
+
                         TryApplyPatch(path);
                         appliedCount++;
                     }
                 }
-                
+
                 WriteLog($"Applied {appliedCount} existing patch(es) on load");
             }
             catch (Exception ex)
@@ -306,25 +358,25 @@ namespace YUCP.PatchCleanup
                 WriteLog($"Error checking for existing patches: {ex.Message}\n{ex.StackTrace}");
             }
         }
-        
+
         private static void CleanupDllsOnLoad()
         {
             if (s_hasCleanedOnLoad) return;
             s_hasCleanedOnLoad = true;
-            
+
             try
             {
                 WriteLog("Checking for DLLs to clean up on editor load...");
-                
+
                 string pluginsPath = "Packages/com.yucp.temp/Plugins";
                 if (!AssetDatabase.IsValidFolder(pluginsPath))
                 {
                     return;
                 }
-                
+
                 string[] dllGuids = AssetDatabase.FindAssets("t:DefaultAsset", new[] { pluginsPath });
                 int deletedCount = 0;
-                
+
                 foreach (var guid in dllGuids)
                 {
                     string path = AssetDatabase.GUIDToAssetPath(guid);
@@ -338,7 +390,7 @@ namespace YUCP.PatchCleanup
                             {
                                 Resources.UnloadAsset(asset);
                             }
-                            
+
                             // Delete the DLL
                             AssetDatabase.DeleteAsset(path);
                             deletedCount++;
@@ -350,7 +402,7 @@ namespace YUCP.PatchCleanup
                         }
                     }
                 }
-                
+
                 if (deletedCount > 0)
                 {
                     AssetDatabase.Refresh();
@@ -362,22 +414,22 @@ namespace YUCP.PatchCleanup
                 WriteLog($"ERROR in CleanupDllsOnLoad: {ex.Message}\n{ex.StackTrace}");
             }
         }
-        
+
         private static void DeleteDllsFromPluginsBeforePatching()
         {
             try
             {
                 WriteLog("Deleting DLLs from Plugins folder before patching to ensure Library/YUCP/ DLLs are used...");
-                
+
                 string pluginsPath = "Packages/com.yucp.temp/Plugins";
                 if (!AssetDatabase.IsValidFolder(pluginsPath))
                 {
                     return;
                 }
-                
+
                 string[] dllGuids = AssetDatabase.FindAssets("t:DefaultAsset", new[] { pluginsPath });
                 int deletedCount = 0;
-                
+
                 foreach (var guid in dllGuids)
                 {
                     string path = AssetDatabase.GUIDToAssetPath(guid);
@@ -392,19 +444,19 @@ namespace YUCP.PatchCleanup
                                 Resources.UnloadAsset(asset);
                                 asset = null;
                             }
-                            
+
                             // Use direct file deletion to bypass Unity's locks
                             string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                             string physicalPath = Path.Combine(projectPath, path.Replace('/', Path.DirectorySeparatorChar));
-                            
+
                             if (File.Exists(physicalPath))
                             {
                                 // Remove read-only attribute
                                 File.SetAttributes(physicalPath, FileAttributes.Normal);
-                                
+
                                 // Delete the file directly
                                 File.Delete(physicalPath);
-                                
+
                                 // Delete .meta file
                                 string metaPath = physicalPath + ".meta";
                                 if (File.Exists(metaPath))
@@ -412,7 +464,7 @@ namespace YUCP.PatchCleanup
                                     File.SetAttributes(metaPath, FileAttributes.Normal);
                                     File.Delete(metaPath);
                                 }
-                                
+
                                 deletedCount++;
                                 WriteLog($"  Deleted DLL before patching: {path}");
                             }
@@ -423,7 +475,7 @@ namespace YUCP.PatchCleanup
                         }
                     }
                 }
-                
+
                 if (deletedCount > 0)
                 {
                     AssetDatabase.Refresh();
@@ -435,13 +487,13 @@ namespace YUCP.PatchCleanup
                 WriteLog($"ERROR in DeleteDllsFromPluginsBeforePatching: {ex.Message}\n{ex.StackTrace}");
             }
         }
-        
+
         private static void CleanupDllsAfterPatchApplication()
         {
             try
             {
                 WriteLog("Cleaning up DLLs after patch application...");
-                
+
                 // Free the loaded DLL libraries first to release file locks
                 try
                 {
@@ -460,7 +512,7 @@ namespace YUCP.PatchCleanup
                 {
                     WriteLog($"  Warning: Could not free DLL libraries: {ex.Message}");
                 }
-                
+
                 // Use delayCall to wait for file handles to be released
                 EditorApplication.delayCall += () =>
                 {
@@ -472,7 +524,7 @@ namespace YUCP.PatchCleanup
                 WriteLog($"ERROR in CleanupDllsAfterPatchApplication: {ex.Message}\n{ex.StackTrace}");
             }
         }
-        
+
         private static void CleanupDllsFromPluginsFolder()
         {
             try
@@ -482,10 +534,10 @@ namespace YUCP.PatchCleanup
                 {
                     return;
                 }
-                
+
                 string[] dllGuids = AssetDatabase.FindAssets("t:DefaultAsset", new[] { pluginsPath });
                 int deletedCount = 0;
-                
+
                 foreach (var guid in dllGuids)
                 {
                     string path = AssetDatabase.GUIDToAssetPath(guid);
@@ -500,19 +552,19 @@ namespace YUCP.PatchCleanup
                                 Resources.UnloadAsset(asset);
                                 asset = null;
                             }
-                            
+
                             // Use direct file deletion to bypass Unity's locks
                             string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                             string physicalPath = Path.Combine(projectPath, path.Replace('/', Path.DirectorySeparatorChar));
-                            
+
                             if (File.Exists(physicalPath))
                             {
                                 // Remove read-only attribute
                                 File.SetAttributes(physicalPath, FileAttributes.Normal);
-                                
+
                                 // Delete the file directly
                                 File.Delete(physicalPath);
-                                
+
                                 // Delete .meta file
                                 string metaPath = physicalPath + ".meta";
                                 if (File.Exists(metaPath))
@@ -520,7 +572,7 @@ namespace YUCP.PatchCleanup
                                     File.SetAttributes(metaPath, FileAttributes.Normal);
                                     File.Delete(metaPath);
                                 }
-                                
+
                                 deletedCount++;
                                 WriteLog($"  Deleted DLL after patch application: {path}");
                             }
@@ -531,7 +583,7 @@ namespace YUCP.PatchCleanup
                         }
                     }
                 }
-                
+
                 if (deletedCount > 0)
                 {
                     AssetDatabase.Refresh();
@@ -543,39 +595,39 @@ namespace YUCP.PatchCleanup
                 WriteLog($"ERROR in CleanupDllsFromPluginsFolder: {ex.Message}\n{ex.StackTrace}");
             }
         }
-        
+
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
             WriteLog($"OnPostprocessAllAssets called with {importedAssets?.Length ?? 0} imported assets");
-            
+
             // Skip temp patch processing while the exporter is generating scratch assets.
             if (IsExporterGeneratingTempPatchAssets())
             {
                 WriteLog("Export in progress, skipping patch detection");
                 return;
             }
-            
+
             if (processedPatches == null)
                 processedPatches = new HashSet<string>();
-            
+
             if (importedTempFiles == null)
                 importedTempFiles = new HashSet<string>();
-            
+
             foreach (var path in importedAssets ?? new string[0])
             {
-                if (path.Contains("com.yucp.temp") && 
+                if (path.Contains("com.yucp.temp") &&
                     !path.Contains("/Derived/") && !path.Contains("\\Derived\\"))
                 {
                     bool isInTempFolder = path.Contains("/Patches/") || path.Contains("\\Patches\\") ||
                                          path.Contains("/Editor/") || path.Contains("\\Editor\\") ||
                                          path.Contains("/Plugins/") || path.Contains("\\Plugins\\");
-                    
+
                     bool isRootFile = path.Contains("com.yucp.temp/package.json") ||
                                      path.Contains("com.yucp.temp\\package.json") ||
-                                     (path.Contains("com.yucp.temp") && 
+                                     (path.Contains("com.yucp.temp") &&
                                       (path.EndsWith(".asmdef") || path.EndsWith(".asmdef.meta") ||
                                        path.EndsWith(".asmdef.json") || path.EndsWith(".asmdef.json.meta")));
-                    
+
                     if (isInTempFolder || isRootFile)
                     {
                         importedTempFiles.Add(path);
@@ -583,7 +635,17 @@ namespace YUCP.PatchCleanup
                     }
                 }
             }
-            
+
+            bool hasImportedPatchAssets = (importedAssets ?? Array.Empty<string>())
+                .Any(path => !string.IsNullOrEmpty(path) &&
+                             path.Replace('\\', '/').Contains("/Patches/") &&
+                             path.EndsWith(".asset", StringComparison.OrdinalIgnoreCase));
+
+            if (hasImportedPatchAssets && ShouldSkipPatchProcessing("for imported patch assets", importedAssets))
+            {
+                return;
+            }
+
             int patchCount = 0;
             foreach (var path in importedAssets ?? new string[0])
             {
@@ -592,28 +654,28 @@ namespace YUCP.PatchCleanup
                 {
                     continue;
                 }
-                
+
                 if (!path.Contains("/Patches/") && !path.Contains("\\Patches\\"))
                 {
                     continue;
                 }
-                
+
                 if (processedPatches.Contains(path))
                 {
                     continue;
                 }
-                
+
                 if (path.Contains("DerivedFbxAsset") && path.EndsWith(".asset") && path.Contains("com.yucp.temp"))
                 {
                     patchCount++;
                     WriteLog($"  FOUND PATCH: {path}");
                     processedPatches.Add(path);
-                    
+
                     // Check if scripts were just imported - if so, wait for compilation
                     bool scriptsJustImported = false;
                     foreach (var importedPath in importedAssets ?? new string[0])
                     {
-                        if (importedPath.Contains("com.yucp.temp/Editor") && 
+                        if (importedPath.Contains("com.yucp.temp/Editor") &&
                             (importedPath.EndsWith(".cs") || importedPath.EndsWith(".asmdef")))
                         {
                             scriptsJustImported = true;
@@ -621,7 +683,7 @@ namespace YUCP.PatchCleanup
                             break;
                         }
                     }
-                    
+
                     if (scriptsJustImported)
                     {
                         // Wait for compilation with nested delayCall
@@ -643,10 +705,10 @@ namespace YUCP.PatchCleanup
                     }
                 }
             }
-            
+
             WriteLog($"Processed {patchCount} patch(es) from {importedAssets?.Length ?? 0} imported assets");
         }
-        
+
         private static void TryApplyPatch(string patchPath)
         {
             WriteLog($"TryApplyPatch called for: {patchPath}");
@@ -656,26 +718,32 @@ namespace YUCP.PatchCleanup
                 if (processedPatches == null)
                     processedPatches = new HashSet<string>();
 
+                if (ShouldSkipPatchProcessing($"for patch '{patchPath}'"))
+                {
+                    ClearPatchRetryState(patchPath);
+                    return;
+                }
+
                 processedPatches.Add(patchPath);
 
                 // First, fix script GUID and namespace references if needed (must happen before type lookup)
                 string derivedFbxAssetScriptPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs";
                 string derivedFbxAssetScriptGuid = AssetDatabase.AssetPathToGUID(derivedFbxAssetScriptPath);
-                
+
                 if (!string.IsNullOrEmpty(derivedFbxAssetScriptGuid))
                 {
                     string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                     string physicalAssetPath = Path.Combine(projectPath, patchPath.Replace('/', Path.DirectorySeparatorChar));
-                    
+
                     if (File.Exists(physicalAssetPath))
                     {
                         string assetContent = File.ReadAllText(physicalAssetPath);
                         bool needsUpdate = false;
-                        
+
                         // Fix script GUID
                         var guidPattern = new System.Text.RegularExpressions.Regex(@"m_Script:\s*\{fileID:\s*\d+,\s*guid:\s*([a-f0-9]{32}),\s*type:\s*\d+\}");
                         var match = guidPattern.Match(assetContent);
-                        
+
                         if (match.Success)
                         {
                             string currentGuid = match.Groups[1].Value;
@@ -686,10 +754,10 @@ namespace YUCP.PatchCleanup
                                 needsUpdate = true;
                             }
                         }
-                        
+
                         // Fix namespace references - catch all variations
                         bool namespaceFixed = false;
-                        
+
                         // Fix nested type references: YUCP.DevTools.Editor.PackageExporter.DerivedFbxAsset/EmbeddedBlendshapeOp
                         if (System.Text.RegularExpressions.Regex.IsMatch(assetContent, @"YUCP\.DevTools\.Editor\.PackageExporter"))
                         {
@@ -707,7 +775,7 @@ namespace YUCP.PatchCleanup
                             namespaceFixed = true;
                             needsUpdate = true;
                         }
-                        
+
                         // Fix assembly references: com.yucp.devtools.Editor
                         if (System.Text.RegularExpressions.Regex.IsMatch(assetContent, @"com\.yucp\.devtools\.Editor"))
                         {
@@ -720,7 +788,7 @@ namespace YUCP.PatchCleanup
                             namespaceFixed = true;
                             needsUpdate = true;
                         }
-                        
+
                         if (System.Text.RegularExpressions.Regex.IsMatch(assetContent, @"YUCP\.DevTools"))
                         {
                             WriteLog($"  Fixing remaining DevTools namespace references...");
@@ -732,18 +800,18 @@ namespace YUCP.PatchCleanup
                             namespaceFixed = true;
                             needsUpdate = true;
                         }
-                        
+
                         if (namespaceFixed)
                         {
                             WriteLog($"  Namespace fix applied");
                         }
-                        
+
                         if (needsUpdate)
                         {
                             File.WriteAllText(physicalAssetPath, assetContent);
                             AssetDatabase.ImportAsset(patchPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
                             WriteLog($"  Reimported asset after fixing references");
-                            
+
                             // Wait a moment for Unity to process the reimport before continuing
                             EditorApplication.delayCall += () =>
                             {
@@ -753,7 +821,7 @@ namespace YUCP.PatchCleanup
                         }
                     }
                 }
-                
+
                 // Continue with type lookup
                 TryApplyPatchInternal(patchPath);
             }
@@ -763,7 +831,7 @@ namespace YUCP.PatchCleanup
                 Debug.LogWarning($"[YUCP PatchImporter] Error processing patch {patchPath}: {ex.Message}");
             }
         }
-        
+
         private static void TryApplyPatchInternal(string patchPath)
         {
             try
@@ -771,7 +839,7 @@ namespace YUCP.PatchCleanup
                 // Find DerivedFbxAsset type
                 // Try multiple approaches since assembly loading can be timing-sensitive
                 System.Type derivedFbxAssetType = null;
-                
+
                 // First, try direct type lookup with assembly name
                 try
                 {
@@ -785,19 +853,19 @@ namespace YUCP.PatchCleanup
                 {
                     WriteLog($"  Direct type lookup failed: {ex.Message}");
                 }
-                
+
                 // If not found, search all loaded assemblies
                 if (derivedFbxAssetType == null)
                 {
                     var assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
                     WriteLog($"  Searching {assemblies.Length} loaded assemblies for DerivedFbxAsset type...");
-                    
+
                     foreach (var asm in assemblies)
                     {
                         try
                         {
                             // Check if this assembly is likely to contain the type
-                            if (asm.FullName.Contains("YUCP.PatchRuntime") || 
+                            if (asm.FullName.Contains("YUCP.PatchRuntime") ||
                                 asm.GetName().Name == "YUCP.PatchRuntime" ||
                                 asm.FullName.Contains("PatchRuntime"))
                             {
@@ -816,7 +884,7 @@ namespace YUCP.PatchCleanup
                             WriteLog($"  Exception checking assembly {asm.FullName}: {ex.Message}");
                         }
                     }
-                    
+
                     // If still not found, do a broader search
                     if (derivedFbxAssetType == null)
                     {
@@ -836,11 +904,11 @@ namespace YUCP.PatchCleanup
                         }
                     }
                 }
-                
+
                 if (derivedFbxAssetType == null)
                 {
                     WriteLog("  WARNING: DerivedFbxAsset type not found - assembly may not be compiled yet, will retry");
-                    
+
                     // Check if the script file exists but assembly hasn't compiled yet
                     string derivedFbxAssetScriptPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs";
                     if (File.Exists(Path.Combine(Application.dataPath, "..", derivedFbxAssetScriptPath.Replace('/', Path.DirectorySeparatorChar))))
@@ -860,10 +928,10 @@ namespace YUCP.PatchCleanup
                         return;
                     }
                 }
-                
+
                 // Force import to ensure asset is up to date
                 AssetDatabase.ImportAsset(patchPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-                
+
                 // Load the asset
                 var patch = AssetDatabase.LoadAssetAtPath(patchPath, derivedFbxAssetType);
                 if (patch == null)
@@ -871,7 +939,7 @@ namespace YUCP.PatchCleanup
                     // Validate file exists and check size before loading (very large files can cause crashes)
                     string physicalPath = patchPath.Replace("Packages/", "").Replace("Assets/", "");
                     physicalPath = Path.Combine(Application.dataPath.Replace("/Assets", ""), physicalPath);
-                    
+
                     if (File.Exists(physicalPath))
                     {
                         long fileSize = new FileInfo(physicalPath).Length;
@@ -882,21 +950,21 @@ namespace YUCP.PatchCleanup
                             Debug.LogWarning($"[YUCP PatchImporter] Patch file is very large: {patchPath} ({fileSize / (1024 * 1024)}MB)");
                         }
                     }
-                    
+
                     var genericObj = AssetDatabase.LoadAssetAtPath<ScriptableObject>(patchPath);
                     if (genericObj != null && derivedFbxAssetType.IsAssignableFrom(genericObj.GetType()))
                     {
                         patch = genericObj;
                     }
                 }
-                
+
                 if (patch == null)
                 {
                     WriteLog($"  ERROR: Could not load patch asset at path: {patchPath}");
                     Debug.LogWarning($"[YUCP PatchImporter] Could not load patch asset: {patchPath}");
                     return;
                 }
-                
+
                 // Check if the asset has patch entries (required for binary patching)
                 try
                 {
@@ -909,11 +977,11 @@ namespace YUCP.PatchCleanup
                         WriteLog($"  ERROR: Patch asset has no patch entries");
                         return;
                     }
-                    
+
                     bool hasAnyHdiff = false;
                     bool anyExists = false;
                     string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                    
+
                     foreach (var entry in entries)
                     {
                         if (entry == null || string.IsNullOrEmpty(entry.hdiffFilePath)) continue;
@@ -926,7 +994,7 @@ namespace YUCP.PatchCleanup
                             break;
                         }
                     }
-                    
+
                     if (!hasAnyHdiff)
                     {
                         Debug.LogError($"[YUCP PatchImporter] Patch asset {patchPath} has no hdiff file paths. This asset was created with an incompatible format.\n" +
@@ -935,7 +1003,7 @@ namespace YUCP.PatchCleanup
                         CleanupAfterFailure("Patch asset has no diff file paths");
                         return;
                     }
-                    
+
                     if (!anyExists)
                     {
                         Debug.LogError($"[YUCP PatchImporter] No diff payloads found for patch {patchPath}.\n" +
@@ -953,7 +1021,7 @@ namespace YUCP.PatchCleanup
                     CleanupAfterFailure("Patch asset corrupted or incompatible");
                     return;
                 }
-                
+
                 WriteLog($"  Patch asset loaded successfully: {patch.GetType().FullName}");
                 ClearPatchRetryState(patchPath);
                 ApplyPatch(patch, patchPath);
@@ -965,7 +1033,7 @@ namespace YUCP.PatchCleanup
                 CleanupAfterFailure($"TryApplyPatchInternal exception: {ex.GetType().Name}");
             }
         }
-        
+
         private static void ApplyPatch(UnityEngine.Object patchObj, string patchPath)
         {
             try
@@ -1052,7 +1120,7 @@ namespace YUCP.PatchCleanup
             {
                 // Delete DLLs from Plugins BEFORE patching
                 DeleteDllsFromPluginsBeforePatching();
-                
+
                 // Get DerivedFbxBuilder type
                 var derivedFbxBuilderType = System.Type.GetType("YUCP.PatchRuntime.DerivedFbxBuilder, YUCP.PatchRuntime");
                 if (derivedFbxBuilderType == null)
@@ -1069,7 +1137,7 @@ namespace YUCP.PatchCleanup
                         catch { }
                     }
                 }
-                
+
                 if (derivedFbxBuilderType == null)
                 {
                     WriteLog("  ERROR: DerivedFbxBuilder type not found");
@@ -1077,7 +1145,7 @@ namespace YUCP.PatchCleanup
                     CleanupAfterFailure("DerivedFbxBuilder type not found");
                     return false;
                 }
-                
+
                 // Get BuildDerivedFbx method
                 var buildMethod = derivedFbxBuilderType.GetMethod("BuildDerivedFbx", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
                 if (buildMethod == null)
@@ -1087,7 +1155,7 @@ namespace YUCP.PatchCleanup
                     CleanupAfterFailure("BuildDerivedFbx method not found");
                     return false;
                 }
-                
+
                 // Determine output path - use original path if available, otherwise construct from target name
                 string outputPath;
                 if (!string.IsNullOrEmpty(originalDerivedFbxPath))
@@ -1118,20 +1186,20 @@ namespace YUCP.PatchCleanup
                         WriteLog($"  Using default path: {outputPath}");
                     }
                 }
-                
+
                 WriteLog($"  Building derived FBX: {baseFbxPath} -> {outputPath}");
                 WriteLog($"  Preserving GUID: {derivedFbxGuid ?? "none"}");
-                
+
                 // Store patch path for automatic retry if package installation is needed
                 string patchPathKey = "YUCP.DerivedFbxBuilder.PendingPatchPath";
                 EditorPrefs.SetString(patchPathKey, patchPath);
-                
+
                 // Call BuildDerivedFbx
                 object result = null;
                 try
                 {
                     result = buildMethod.Invoke(null, new object[] { baseFbxPath, patchObj, outputPath, derivedFbxGuid ?? string.Empty });
-                    
+
                     // Clear retry flag on success
                     EditorPrefs.DeleteKey(patchPathKey);
                 }
@@ -1153,9 +1221,9 @@ namespace YUCP.PatchCleanup
                     Debug.LogError($"[YUCP PatchImporter] Error invoking BuildDerivedFbx: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
                     throw;
                 }
-                
+
                 string createdPath = result as string;
-                
+
                 if (string.IsNullOrEmpty(createdPath))
                 {
                     WriteLog($"  ERROR: BuildDerivedFbx returned null");
@@ -1163,18 +1231,18 @@ namespace YUCP.PatchCleanup
                     CleanupAfterFailure("BuildDerivedFbx returned null");
                     return false;
                 }
-                
+
                 WriteLog($"  Successfully created derived FBX: {createdPath}");
                 Debug.Log($"[YUCP PatchImporter] Successfully created derived FBX: {createdPath}");
-                
+
                 // Track this derived FBX for cleanup
                 if (createdDerivedFbxPaths == null)
                     createdDerivedFbxPaths = new HashSet<string>();
                 createdDerivedFbxPaths.Add(createdPath);
-                
+
                 // Check if override original references is enabled
                 CheckAndHandleOverrideOriginalReferences(baseFbxPath, createdPath, patchPath);
-                
+
                 // Clean up imported temp files after successful FBX build
                 // Use nested delayCall
                 EditorApplication.delayCall += () =>
@@ -1188,26 +1256,26 @@ namespace YUCP.PatchCleanup
                         CleanupDllsAfterPatchApplication();
                     };
                 };
-                
+
                 // Update prefab references if GUID was preserved
                 if (!string.IsNullOrEmpty(derivedFbxGuid))
                 {
                     WriteLog($"  Finding prefabs referencing original derived FBX (GUID: {derivedFbxGuid})...");
-                    
+
                     // Find all prefabs that reference the original derived FBX by GUID
                     // Even though we preserved the GUID, Unity may need a refresh to recognize the new Prefab
                     string[] allPrefabGuids = AssetDatabase.FindAssets("t:Prefab");
                     int updatedCount = 0;
-                    
+
                     foreach (var prefabGuid in allPrefabGuids)
                     {
                         string prefabPath = AssetDatabase.GUIDToAssetPath(prefabGuid);
                         if (string.IsNullOrEmpty(prefabPath)) continue;
-                        
+
                         // Check if this prefab depends on the original derived FBX
                         string[] dependencies = AssetDatabase.GetDependencies(prefabPath, false);
                         bool referencesDerivedFbx = false;
-                        
+
                         foreach (var depPath in dependencies)
                         {
                             string depGuid = AssetDatabase.AssetPathToGUID(depPath);
@@ -1217,11 +1285,11 @@ namespace YUCP.PatchCleanup
                                 break;
                             }
                         }
-                        
+
                         if (referencesDerivedFbx)
                         {
                             WriteLog($"    Found prefab referencing derived FBX: {prefabPath}");
-                            
+
                             // Load the prefab and check if it needs updating
                             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
                             if (prefab != null)
@@ -1233,7 +1301,7 @@ namespace YUCP.PatchCleanup
                             }
                         }
                     }
-                    
+
                     // Also update mesh references in prefabs
                     var backupManagerType = System.Type.GetType("YUCP.PatchRuntime.BackupManager, YUCP.PatchRuntime");
                     if (backupManagerType != null)
@@ -1259,13 +1327,13 @@ namespace YUCP.PatchCleanup
                                         if (skinnedMeshRenderer.sharedMesh != null && !meshMap.ContainsKey(skinnedMeshRenderer.sharedMesh.name))
                                             meshMap[skinnedMeshRenderer.sharedMesh.name] = skinnedMeshRenderer.sharedMesh;
                                     }
-                                    
+
                                     // Update mesh references in all prefabs that reference the derived FBX
                                     foreach (var prefabGuid in allPrefabGuids)
                                     {
                                         string prefabPath = AssetDatabase.GUIDToAssetPath(prefabGuid);
                                         if (string.IsNullOrEmpty(prefabPath)) continue;
-                                        
+
                                         string[] dependencies = AssetDatabase.GetDependencies(prefabPath, false);
                                         bool referencesDerivedFbx = false;
                                         foreach (var depPath in dependencies)
@@ -1276,14 +1344,14 @@ namespace YUCP.PatchCleanup
                                                 break;
                                             }
                                         }
-                                        
+
                                         if (referencesDerivedFbx && meshMap.Count > 0)
                                         {
                                             // Update mesh references in this prefab
                                             updatePrefabMethod.Invoke(null, new object[] { prefabPath, baseFbxPath, meshMap });
                                         }
                                     }
-                                    
+
                                     WriteLog($"  Updated {updatedCount} prefab(s) and mesh references");
                                 }
                             }
@@ -1297,11 +1365,11 @@ namespace YUCP.PatchCleanup
                     {
                         WriteLog($"  Updated {updatedCount} prefab(s) (mesh reference update not available)");
                     }
-                    
+
                     // Force a refresh
                     AssetDatabase.Refresh();
                 }
-                
+
                 return true;
             }
             catch (Exception ex)
@@ -1318,7 +1386,7 @@ namespace YUCP.PatchCleanup
             try
             {
                 WriteLog($"CleanupAfterFailure: {reason}");
-                
+
                 EditorApplication.delayCall += () =>
                 {
                     EditorApplication.delayCall += () =>
@@ -1342,7 +1410,7 @@ namespace YUCP.PatchCleanup
             {
                 string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                 string tempPackagePath = Path.Combine(projectPath, "Packages", "com.yucp.temp");
-                
+
                 if (Directory.Exists(tempPackagePath))
                 {
                     try
@@ -1355,7 +1423,7 @@ namespace YUCP.PatchCleanup
                         WriteLog($"Warning: Could not delete Packages/com.yucp.temp: {ex.Message}");
                     }
                 }
-                
+
                 AssetDatabase.Refresh();
             }
             catch (Exception ex)
@@ -1363,7 +1431,7 @@ namespace YUCP.PatchCleanup
                 WriteLog($"ERROR in CleanupTempPackageFolder: {ex.Message}\n{ex.StackTrace}");
             }
         }
-        
+
         private static void CleanupImportedTempFiles()
         {
             try
@@ -1373,12 +1441,12 @@ namespace YUCP.PatchCleanup
                     WriteLog("No imported temp files to clean up");
                     return;
                 }
-                
+
                 WriteLog($"Cleaning up {importedTempFiles.Count} imported temp file(s) from package...");
-                
+
                 int deletedCount = 0;
                 var filesToDelete = new List<string>(importedTempFiles);
-                
+
                 foreach (var path in filesToDelete)
                 {
                     if (path.Contains("/Derived/") || path.Contains("\\Derived\\"))
@@ -1386,35 +1454,35 @@ namespace YUCP.PatchCleanup
                         WriteLog($"  Skipping Derived folder file: {path}");
                         continue;
                     }
-                    
+
                     // STRICT CHECK: Only delete files that are explicitly in Packages/com.yucp.temp
                     // This prevents accidental deletion of user assets (like ExportProfile files)
                     bool isInTempPackage = path.StartsWith("Packages/com.yucp.temp/", StringComparison.OrdinalIgnoreCase) ||
                                           path.StartsWith("Packages\\com.yucp.temp\\", StringComparison.OrdinalIgnoreCase);
-                    
+
                     if (!isInTempPackage)
                     {
                         WriteLog($"  Skipping file outside temp package (safety check): {path}");
                         continue;
                     }
-                    
+
                     // Additional check: must be in specific temp package subfolders
                     bool isInTempFolder = (path.Contains("/Patches/") || path.Contains("\\Patches\\")) ||
                                          (path.Contains("/Editor/") || path.Contains("\\Editor\\")) ||
                                          (path.Contains("/Plugins/") || path.Contains("\\Plugins\\"));
-                    
+
                     bool isRootFile = path.Contains("com.yucp.temp/package.json") ||
                                      path.Contains("com.yucp.temp\\package.json") ||
-                                     (path.Contains("com.yucp.temp") && 
+                                     (path.Contains("com.yucp.temp") &&
                                       (path.EndsWith(".asmdef") || path.EndsWith(".asmdef.meta") ||
                                        path.EndsWith(".asmdef.json") || path.EndsWith(".asmdef.json.meta")));
-                    
+
                     if (!isInTempFolder && !isRootFile)
                     {
                         WriteLog($"  Skipping file outside cleanup folders: {path}");
                         continue;
                     }
-                    
+
                     // FINAL SAFETY CHECK: Never delete anything in Assets folder
                     if (path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ||
                         path.StartsWith("Assets\\", StringComparison.OrdinalIgnoreCase))
@@ -1422,13 +1490,13 @@ namespace YUCP.PatchCleanup
                         WriteLog($"  SAFETY: Skipping file in Assets folder (should never be deleted): {path}");
                         continue;
                     }
-                    
+
                     try
                     {
                         // For DLLs, use direct file deletion to bypass Unity's locks
                         // For other files, use AssetDatabase.DeleteAsset
                         bool isDll = path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
-                        
+
                         if (isDll)
                         {
                             // Force unload the DLL first
@@ -1438,16 +1506,16 @@ namespace YUCP.PatchCleanup
                                 Resources.UnloadAsset(asset);
                                 asset = null;
                             }
-                            
+
                             // Use direct file deletion for DLLs
                             string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                             string physicalPath = Path.Combine(projectPath, path.Replace('/', Path.DirectorySeparatorChar));
-                            
+
                             if (File.Exists(physicalPath))
                             {
                                 File.SetAttributes(physicalPath, FileAttributes.Normal);
                                 File.Delete(physicalPath);
-                                
+
                                 // Delete .meta file
                                 string metaPath = physicalPath + ".meta";
                                 if (File.Exists(metaPath))
@@ -1455,7 +1523,7 @@ namespace YUCP.PatchCleanup
                                     File.SetAttributes(metaPath, FileAttributes.Normal);
                                     File.Delete(metaPath);
                                 }
-                                
+
                                 deletedCount++;
                                 WriteLog($"  Deleted DLL (direct): {path}");
                             }
@@ -1476,22 +1544,22 @@ namespace YUCP.PatchCleanup
                         WriteLog($"  Warning: Failed to delete {path}: {ex.Message}");
                     }
                 }
-                
+
                 // Clear the tracked files
                 importedTempFiles.Clear();
-                
+
                 try
                 {
                     string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                     string tempPackagePath = Path.Combine(projectPath, "Packages", "com.yucp.temp");
-                    
+
                     string[] foldersToCheck = new string[]
                     {
                         Path.Combine(tempPackagePath, "Patches"),
                         Path.Combine(tempPackagePath, "Editor"),
                         Path.Combine(tempPackagePath, "Plugins")
                     };
-                    
+
                     foreach (var folder in foldersToCheck)
                     {
                         if (Directory.Exists(folder))
@@ -1500,7 +1568,7 @@ namespace YUCP.PatchCleanup
                             {
                                 var files = Directory.GetFiles(folder, "*", SearchOption.AllDirectories)
                                     .Where(f => !f.EndsWith(".meta")).ToArray();
-                                
+
                                 if (files.Length == 0)
                                 {
                                     Directory.Delete(folder, true);
@@ -1518,7 +1586,7 @@ namespace YUCP.PatchCleanup
                 {
                     WriteLog($"  Warning: Error cleaning up empty folders: {ex.Message}");
                 }
-                
+
                 // Try to clean up Unity's Temp/Export Package directory
                 // This helps prevent "Access is denied" errors on re-import
                 try
@@ -1541,7 +1609,7 @@ namespace YUCP.PatchCleanup
                                 }
                                 catch { }
                             }
-                            
+
                             Directory.Delete(tempExportPath, true);
                             WriteLog($"  Cleaned up Unity Temp/Export Package directory");
                         }
@@ -1555,9 +1623,9 @@ namespace YUCP.PatchCleanup
                 {
                     WriteLog($"  Warning: Could not access Temp/Export Package: {ex.Message}");
                 }
-                
+
                 AssetDatabase.Refresh();
-                
+
                 WriteLog($"Cleanup complete: deleted {deletedCount} file(s) from Packages/com.yucp.temp");
             }
             catch (Exception ex)
@@ -1566,7 +1634,7 @@ namespace YUCP.PatchCleanup
                 Debug.LogWarning($"[YUCP PatchImporter] Error cleaning up temp files: {ex.Message}");
             }
         }
-        
+
         private static void CleanupDerivedFbxImporterSettings()
         {
             try
@@ -1576,12 +1644,12 @@ namespace YUCP.PatchCleanup
                     WriteLog("No derived FBX files to clean up importer settings for");
                     return;
                 }
-                
+
                 WriteLog($"Cleaning up ModelImporter settings for {createdDerivedFbxPaths.Count} derived FBX file(s)...");
-                
+
                 int cleanedCount = 0;
                 var pathsToClean = new List<string>(createdDerivedFbxPaths);
-                
+
                 foreach (var fbxPath in pathsToClean)
                 {
                     try
@@ -1590,21 +1658,21 @@ namespace YUCP.PatchCleanup
                         {
                             continue;
                         }
-                        
+
                         var importer = AssetImporter.GetAtPath(fbxPath) as ModelImporter;
                         if (importer == null)
                         {
                             WriteLog($"  Skipping {fbxPath}: Not a ModelImporter");
                             continue;
                         }
-                        
+
                         // Check if userData contains patching information
                         if (string.IsNullOrEmpty(importer.userData))
                         {
                             WriteLog($"  Skipping {fbxPath}: No userData");
                             continue;
                         }
-                        
+
                         try
                         {
                             // Try to parse as DerivedSettings
@@ -1639,10 +1707,10 @@ namespace YUCP.PatchCleanup
                         WriteLog($"  Warning: Failed to clean importer settings for {fbxPath}: {ex.Message}");
                     }
                 }
-                
+
                 // Clear the tracked paths after cleaning
                 createdDerivedFbxPaths.Clear();
-                
+
                 if (cleanedCount > 0)
                 {
                     AssetDatabase.Refresh();
@@ -1655,14 +1723,14 @@ namespace YUCP.PatchCleanup
                 Debug.LogWarning($"[YUCP PatchImporter] Error cleaning derived FBX importer settings: {ex.Message}");
             }
         }
-        
+
         private static void CheckAndHandleOverrideOriginalReferences(string baseFbxPath, string newFbxPath, string patchPath)
         {
             try
             {
                 // Check if override is enabled in the patch asset
                 bool overrideEnabled = false;
-                
+
                 try
                 {
                     var patchAsset = AssetDatabase.LoadAssetAtPath<ScriptableObject>(patchPath);
@@ -1679,15 +1747,15 @@ namespace YUCP.PatchCleanup
                 {
                     WriteLog($"  Warning: Could not read overrideOriginalReferences from patch: {ex.Message}");
                 }
-                
+
                 if (!overrideEnabled)
                 {
                     WriteLog("Override Original References is not enabled, skipping GUID swap");
                     return;
                 }
-                
+
                 WriteLog("Override Original References is enabled, checking for confirmation...");
-                
+
                 // Get the new FBX GUID
                 string newFbxGuid = AssetDatabase.AssetPathToGUID(newFbxPath);
                 if (string.IsNullOrEmpty(newFbxGuid))
@@ -1697,13 +1765,13 @@ namespace YUCP.PatchCleanup
                 }
 
                 string baseFbxGuid = string.IsNullOrEmpty(baseFbxPath) ? null : AssetDatabase.AssetPathToGUID(baseFbxPath);
-                
+
                 if (string.IsNullOrEmpty(baseFbxGuid))
                 {
                     WriteLog("  ERROR: baseFbxGuid could not be resolved, cannot override references");
                     return;
                 }
-                
+
                 // Show confirmation dialog
                 string baseFbxName = Path.GetFileNameWithoutExtension(baseFbxPath);
                 bool confirmed = EditorUtility.DisplayDialog(
@@ -1716,23 +1784,23 @@ namespace YUCP.PatchCleanup
                     "Yes, Override References",
                     "Cancel"
                 );
-                
+
                 if (!confirmed)
                 {
                     WriteLog("User cancelled override operation");
                     return;
                 }
-                
+
                 WriteLog($"User confirmed override. Swapping GUIDs: {baseFbxGuid} -> {newFbxGuid}");
-                
+
                 // Perform GUID swap
                 int swappedCount = SwapGuidReferences(baseFbxGuid, newFbxGuid, baseFbxPath);
-                
+
                 if (swappedCount > 0)
                 {
                     // Store swap info for reversal
                     StoreGuidSwapInfo(baseFbxGuid, newFbxGuid, baseFbxPath, newFbxPath);
-                    
+
                     AssetDatabase.Refresh();
                     WriteLog($"Successfully swapped GUIDs in {swappedCount} file(s)");
                     Debug.Log($"[YUCP PatchImporter] Overrode references: {swappedCount} file(s) now reference the new FBX instead of the original");
@@ -1748,7 +1816,7 @@ namespace YUCP.PatchCleanup
                 Debug.LogError($"[YUCP PatchImporter] Error handling override original references: {ex.Message}");
             }
         }
-        
+
         [Serializable]
         private class DerivedSettings
         {
@@ -1758,66 +1826,66 @@ namespace YUCP.PatchCleanup
             public string category;
             public bool overrideOriginalReferences = false;
         }
-        
+
         private static int SwapGuidReferences(string oldGuid, string newGuid, string oldFbxPath)
         {
             int swappedCount = 0;
             try
             {
                 WriteLog($"Swapping GUID references: {oldGuid} -> {newGuid}");
-                
+
                 string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                
+
                 // Get the new FBX path to exclude it
                 string newFbxPath = AssetDatabase.GUIDToAssetPath(newGuid);
-                string newFbxPhysicalPath = string.IsNullOrEmpty(newFbxPath) ? null : 
+                string newFbxPhysicalPath = string.IsNullOrEmpty(newFbxPath) ? null :
                     Path.Combine(projectPath, newFbxPath.Replace('/', Path.DirectorySeparatorChar));
-                
+
                 // Find all .meta files in Assets and Packages (skip Library, Temp, etc.)
                 string[] searchPaths = new string[]
                 {
                     Path.Combine(projectPath, "Assets"),
                     Path.Combine(projectPath, "Packages")
                 };
-                
+
                 foreach (var searchPath in searchPaths)
                 {
                     if (!Directory.Exists(searchPath))
                         continue;
-                    
+
                     string[] allMetaFiles = Directory.GetFiles(searchPath, "*.meta", SearchOption.AllDirectories);
-                    
+
                     foreach (var metaFile in allMetaFiles)
                     {
                         try
                         {
                             // Skip the new FBX's meta file itself
-                            if (!string.IsNullOrEmpty(newFbxPhysicalPath) && 
+                            if (!string.IsNullOrEmpty(newFbxPhysicalPath) &&
                                 metaFile.Equals(newFbxPhysicalPath + ".meta", StringComparison.OrdinalIgnoreCase))
                             {
                                 continue;
                             }
-                            
+
                             // Skip the old FBX's meta file
                             string assetPath = metaFile.Substring(0, metaFile.Length - 5);
                             string relativePath = assetPath.Replace(projectPath, "").Replace('\\', '/').TrimStart('/');
                             string assetGuid = AssetDatabase.AssetPathToGUID(relativePath);
-                            
+
                             if (assetGuid == oldGuid)
                             {
                                 continue;
                             }
-                            
+
                             string content = File.ReadAllText(metaFile);
                             bool wasModified = false;
-                            
+
                             string oldGuidPattern = @"\b" + oldGuid + @"\b";
                             if (System.Text.RegularExpressions.Regex.IsMatch(content, oldGuidPattern))
                             {
                                 content = System.Text.RegularExpressions.Regex.Replace(content, oldGuidPattern, newGuid);
                                 wasModified = true;
                             }
-                            
+
                             if (wasModified)
                             {
                                 File.WriteAllText(metaFile, content);
@@ -1836,19 +1904,19 @@ namespace YUCP.PatchCleanup
             {
                 WriteLog($"ERROR in SwapGuidReferences: {ex.Message}\n{ex.StackTrace}");
             }
-            
+
             return swappedCount;
         }
-        
+
         private static void StoreGuidSwapInfo(string oldGuid, string newGuid, string oldPath, string newPath)
         {
             try
             {
                 string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                 string swapInfoPath = Path.Combine(projectPath, "Library", "YUCP", "guid_swaps.json");
-                
+
                 Directory.CreateDirectory(Path.GetDirectoryName(swapInfoPath));
-                
+
                 var swapInfo = new GuidSwapInfo
                 {
                     oldGuid = oldGuid,
@@ -1857,9 +1925,9 @@ namespace YUCP.PatchCleanup
                     newPath = newPath,
                     timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
                 };
-                
+
                 List<GuidSwapInfo> swaps = new List<GuidSwapInfo>();
-                
+
                 // Load existing swaps
                 if (File.Exists(swapInfoPath))
                 {
@@ -1874,17 +1942,17 @@ namespace YUCP.PatchCleanup
                     }
                     catch { }
                 }
-                
+
                 swaps.RemoveAll(s => s.oldGuid == oldGuid);
-                
+
                 // Add new swap
                 swaps.Add(swapInfo);
-                
+
                 // Save
                 var swapList = new GuidSwapList { swaps = swaps };
                 string json = JsonUtility.ToJson(swapList, true);
                 File.WriteAllText(swapInfoPath, json);
-                
+
                 WriteLog($"Stored GUID swap info for reversal");
             }
             catch (Exception ex)
@@ -1892,7 +1960,7 @@ namespace YUCP.PatchCleanup
                 WriteLog($"ERROR in StoreGuidSwapInfo: {ex.Message}\n{ex.StackTrace}");
             }
         }
-        
+
         [Serializable]
         private class GuidSwapInfo
         {
@@ -1902,13 +1970,13 @@ namespace YUCP.PatchCleanup
             public string newPath;
             public string timestamp;
         }
-        
+
         [Serializable]
         private class GuidSwapList
         {
             public List<GuidSwapInfo> swaps = new List<GuidSwapInfo>();
         }
-        
+
         [MenuItem("Tools/YUCP/Others/Utilities/Revert GUID Override")]
         public static void RevertGuidOverride()
         {
@@ -1916,27 +1984,27 @@ namespace YUCP.PatchCleanup
             {
                 string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                 string swapInfoPath = Path.Combine(projectPath, "Library", "YUCP", "guid_swaps.json");
-                
+
                 if (!File.Exists(swapInfoPath))
                 {
                     EditorUtility.DisplayDialog("No GUID Swaps", "No GUID override operations found to revert.", "OK");
                     return;
                 }
-                
+
                 string json = File.ReadAllText(swapInfoPath);
                 var swapList = JsonUtility.FromJson<GuidSwapList>(json);
-                
+
                 if (swapList == null || swapList.swaps == null || swapList.swaps.Count == 0)
                 {
                     EditorUtility.DisplayDialog("No GUID Swaps", "No GUID override operations found to revert.", "OK");
                     return;
                 }
-                
+
                 // Build list of swaps for display
-                string swapListText = string.Join("\n", swapList.swaps.Select(s => 
+                string swapListText = string.Join("\n", swapList.swaps.Select(s =>
                     $"  â€¢ {Path.GetFileName(s.oldPath)} -> {Path.GetFileName(s.newPath)} ({s.timestamp})"
                 ));
-                
+
                 // Confirm reversal
                 bool confirmed = EditorUtility.DisplayDialog(
                     "Revert GUID Override",
@@ -1946,12 +2014,12 @@ namespace YUCP.PatchCleanup
                     "Yes, Revert All",
                     "Cancel"
                 );
-                
+
                 if (!confirmed)
                 {
                     return;
                 }
-                
+
                 int revertedCount = 0;
                 foreach (var swap in swapList.swaps)
                 {
@@ -1959,18 +2027,18 @@ namespace YUCP.PatchCleanup
                     int count = SwapGuidReferences(swap.newGuid, swap.oldGuid, swap.newPath);
                     revertedCount += count;
                 }
-                
+
                 // Delete swap info file after reverting all
                 File.Delete(swapInfoPath);
-                
+
                 AssetDatabase.Refresh();
-                
+
                 EditorUtility.DisplayDialog(
                     "Reversion Complete",
                     $"Successfully reverted {revertedCount} GUID reference(s) from {swapList.swaps.Count} operation(s).",
                     "OK"
                 );
-                
+
                 WriteLog($"Reverted {revertedCount} GUID reference(s)");
                 Debug.Log($"[YUCP PatchImporter] Reverted {revertedCount} GUID reference(s)");
             }

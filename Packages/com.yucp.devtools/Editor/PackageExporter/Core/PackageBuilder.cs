@@ -24,6 +24,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
     public static class PackageBuilder
     {
         internal static bool s_isExporting = false;
+        private static string s_lastSigningFailureMessage;
         
         private const string DefaultGridPlaceholderPath = "Packages/com.yucp.devtools/Resources/DefaultGrid.png";
         private const string InstalledPackagesRoot = "Packages/yucp.installed-packages";
@@ -111,6 +112,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 Assets.Add(new EmbeddedAsset { sourcePath = sourcePath, unityPath = unityPath });
                 return unityPath;
             }
+        }
+
+        private sealed class SigningRequestResult
+        {
+            public PackageSigningData.SigningResponse response;
+            public string rawError;
+            public string normalizedError;
+            public long responseCode;
         }
         
         /// <summary>
@@ -717,11 +726,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 // Sign package if certificate is available, using the fully-prepared contentPackagePath
                 bool packageSigned = false;
+                bool signingWasRequired = false;
+                bool signingBlockedExport = false;
+                s_lastSigningFailureMessage = null;
                 try
                 {
                     var signingSettings = GetSigningSettings();
                     if (signingSettings != null && signingSettings.HasValidCertificate())
                     {
+                        signingWasRequired = true;
                         progressCallback?.Invoke(0.82f, "Signing package...");
                         packageSigned = SignPackageBeforeExport(contentPackagePath, profile, progressCallback);
                         if (packageSigned)
@@ -730,18 +743,31 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                         else
                         {
-                            Debug.LogWarning("[PackageBuilder] Package signing failed, continuing without signature");
+                            signingBlockedExport = true;
+                            Debug.LogWarning("[PackageBuilder] Package signing failed, canceling export");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
                     Debug.LogWarning($"[PackageBuilder] Package signing error: {ex.Message}");
+                    if (signingWasRequired)
+                    {
+                        signingBlockedExport = true;
+                        s_lastSigningFailureMessage = $"Package signing failed before export completed: {ex.Message}";
+                    }
                 }
-                
-                // Copy signed (or unsigned) content package to final location
-                progressCallback?.Invoke(0.86f, "Copying package to output location...");
-                File.Copy(contentPackagePath, finalOutputPath, true);
+
+                if (signingBlockedExport)
+                {
+                    progressCallback?.Invoke(0.86f, "Signing requirements blocked export.");
+                }
+                else
+                {
+                    // Copy signed (or unsigned) content package to final location
+                    progressCallback?.Invoke(0.86f, "Copying package to output location...");
+                    File.Copy(contentPackagePath, finalOutputPath, true);
+                }
                 
                 progressCallback?.Invoke(0.9f, "Cleaning up temporary files...");
                 
@@ -825,6 +851,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     progressCallback?.Invoke(0.95f, "Restoring original assemblies...");
                     ConfuserExManager.RestoreOriginalDlls(profile.assembliesToObfuscate);
+                }
+
+                if (signingBlockedExport)
+                {
+                    result.success = false;
+                    result.errorMessage = !string.IsNullOrEmpty(s_lastSigningFailureMessage)
+                        ? s_lastSigningFailureMessage
+                        : "Package signing failed. Resolve the billing or certificate issue and try exporting again.";
+                    result.buildTimeSeconds = (float)(DateTime.Now - startTime).TotalSeconds;
+                    return result;
                 }
                 
                 progressCallback?.Invoke(0.98f, "Saving export statistics...");
@@ -3281,7 +3317,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 string resolvedServerUrl = !string.IsNullOrEmpty(profile?.signingServerUrl)
                     ? profile.signingServerUrl
                     : settings.serverUrl;
-                PackageSigningData.SigningResponse signingResponse = SendSigningRequestSynchronously(
+                SigningRequestResult signingResult = SendSigningRequestSynchronously(
                     resolvedServerUrl,
                     rawCertJson,
                     payloadObj.manifest?.packageId ?? "",
@@ -3291,11 +3327,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     progressCallback
                 );
 
-                if (signingResponse == null)
+                if (signingResult?.response == null)
                 {
-                    Debug.LogWarning("[PackageBuilder] Signing failed - no signature received from server");
+                    string friendlyError = signingResult?.normalizedError ?? "Signing failed before the server returned a signature.";
+                    s_lastSigningFailureMessage = friendlyError;
+                    Debug.LogWarning($"[PackageBuilder] Package signing failed: {friendlyError}");
+                    if (!string.IsNullOrEmpty(signingResult?.rawError))
+                    {
+                        Debug.LogWarning($"[PackageBuilder] Raw signing failure: {signingResult.rawError}");
+                    }
                     return false;
                 }
+
+                var signingResponse = signingResult.response;
 
                 // Extract certificate chain from response and add to manifest
                 if (signingResponse.certificateChain != null && signingResponse.certificateChain.Length > 0)
@@ -3322,6 +3366,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Inject signing data into the package
                 InjectSigningDataIntoPackage(packagePath);
+                s_lastSigningFailureMessage = null;
 
                 return true;
             }
@@ -3467,6 +3512,26 @@ namespace YUCP.DevTools.Editor.PackageExporter
                       .Replace("\t", "\\t");
         }
 
+        private static string BuildSigningProofPayload(
+            string certNonce,
+            string packageId,
+            string contentHash,
+            string packageVersion,
+            string requestNonce,
+            long requestTimestamp)
+        {
+            return string.Join("\n", new[]
+            {
+                "yucp-signature-proof-v1",
+                certNonce ?? "",
+                packageId ?? "",
+                contentHash ?? "",
+                packageVersion ?? "",
+                requestNonce ?? "",
+                requestTimestamp.ToString()
+            });
+        }
+
         /// <summary>
         /// Send signing request to server synchronously.
         /// Calls POST /v1/signatures (transparency log). The server authenticates via the YUCP
@@ -3474,7 +3539,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// Returns a synthetic SigningResponse built from the local certificate (the cert IS the
         /// trust anchor — no separate CA signature is returned by the server).
         /// </summary>
-        private static PackageSigningData.SigningResponse SendSigningRequestSynchronously(
+        private static SigningRequestResult SendSigningRequestSynchronously(
             string serverUrl,
             string rawCertJson,
             string packageId,
@@ -3488,7 +3553,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (string.IsNullOrEmpty(rawCertJson))
                 {
                     Debug.LogError("[PackageBuilder] No certificate JSON available");
-                    return null;
+                    return new SigningRequestResult
+                    {
+                        rawError = "No certificate JSON available.",
+                        normalizedError = "No certificate is available for signing. Restore or request a certificate before exporting a signed package.",
+                    };
                 }
 
                 // POST /v1/signatures
@@ -3496,10 +3565,36 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // The server uses atob() then JSON.parse() so we must base64-encode the raw
                 // JSON string exactly as it was stored (which is what the CA signed).
                 string certBase64 = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(rawCertJson));
+                var parsedCert = JsonUtility.FromJson<PackageSigningData.YucpCertificate>(rawCertJson);
+                if (string.IsNullOrEmpty(parsedCert?.cert?.nonce))
+                {
+                    Debug.LogError("[PackageBuilder] Certificate nonce missing");
+                    return new SigningRequestResult
+                    {
+                        rawError = "Certificate nonce missing.",
+                        normalizedError = "The stored certificate is incomplete. Restore the correct certificate before exporting again.",
+                    };
+                }
+
+                string requestNonce = Guid.NewGuid().ToString();
+                long requestTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                string proofPayload = BuildSigningProofPayload(
+                    parsedCert.cert.nonce,
+                    packageId,
+                    contentHash,
+                    packageVersion,
+                    requestNonce,
+                    requestTimestamp
+                );
+                byte[] proofSignature = DevKeyManager.SignData(Encoding.UTF8.GetBytes(proofPayload));
+                string proofSignatureBase64 = Convert.ToBase64String(proofSignature);
 
                 string bodyJson = $"{{\"packageId\":\"{EscapeJsonString(packageId)}\","
                                 + $"\"contentHash\":\"{EscapeJsonString(contentHash)}\","
-                                + $"\"packageVersion\":\"{EscapeJsonString(packageVersion)}\"}}";
+                                + $"\"packageVersion\":\"{EscapeJsonString(packageVersion)}\","
+                                + $"\"requestNonce\":\"{EscapeJsonString(requestNonce)}\","
+                                + $"\"requestTimestamp\":{requestTimestamp},"
+                                + $"\"requestSignature\":\"{EscapeJsonString(proofSignatureBase64)}\"}}";
                 byte[] requestBytes = System.Text.Encoding.UTF8.GetBytes(bodyJson);
 
                 string url = $"{serverUrl.TrimEnd('/')}/v1/signatures";
@@ -3528,7 +3623,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         Debug.Log($"[PackageBuilder] Transparency log recorded: {responseText}");
 
                         // Parse publisherId from the stored cert JSON to populate the synthetic response
-                        var parsedCert = JsonUtility.FromJson<PackageSigningData.YucpCertificate>(rawCertJson);
                         var response = new PackageSigningData.SigningResponse
                         {
                             algorithm        = "Ed25519",
@@ -3536,7 +3630,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             signature        = System.Convert.ToBase64String(devSignature),
                             certificateIndex = 0,
                         };
-                        return response;
+                        return new SigningRequestResult
+                        {
+                            response = response,
+                            responseCode = request.responseCode,
+                        };
                     }
                     else
                     {
@@ -3547,15 +3645,34 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         if (error.TrimStart().StartsWith("<"))
                             error = $"HTTP {request.responseCode} (server returned HTML — likely wrong URL or auth)";
 
-                        Debug.LogError($"[PackageBuilder] Signing request failed: {error}");
-                        return null;
+                        string normalizedError = PackageSigningService.NormalizeSigningError(request.responseCode, error);
+                        if (normalizedError.IndexOf("Certificates & Billing", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            string accountUrl = GetSigningSettings()?.GetEffectiveAccountCertificatesUrl();
+                            if (!string.IsNullOrEmpty(accountUrl))
+                            {
+                                normalizedError = $"{normalizedError} Open: {accountUrl}";
+                            }
+                        }
+
+                        Debug.LogError($"[PackageBuilder] Signing request failed: {normalizedError}");
+                        return new SigningRequestResult
+                        {
+                            responseCode = request.responseCode,
+                            rawError = error,
+                            normalizedError = normalizedError,
+                        };
                     }
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[PackageBuilder] Signing request exception: {ex.Message}");
-                return null;
+                return new SigningRequestResult
+                {
+                    rawError = ex.Message,
+                    normalizedError = $"Network error while requesting a package signature: {ex.Message}",
+                };
             }
         }
 

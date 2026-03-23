@@ -22,6 +22,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private ScrollView      _scrollView;
         private bool            _isSigningIn;
         private bool            _isRequestingCert;
+        private bool            _isLoadingAccountState;
+        private string          _accountStateServerUrl;
+        private double          _accountStateRefreshedAt;
+        private PackageSigningService.CertificateAccountState _accountState;
+        private const double AccountStateRefreshIntervalSeconds = 15d;
 
         [MenuItem("Tools/YUCP/Others/Development/Package Signing Settings", false, 100)]
         public static void ShowWindow()
@@ -114,6 +119,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             else
             {
                 YucpOAuthService.TryBeginBackgroundRefresh(GetServerUrl(), BuildUI);
+                EnsureAccountStateRefresh();
                 BuildSignedInSection(content);
             }
 
@@ -287,67 +293,70 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private void BuildSignedInSection(VisualElement content)
         {
             var section = new VisualElement();
-            section.style.paddingTop    = 4;
+            section.style.paddingTop = 4;
             section.style.paddingBottom = 0;
 
-            // Account row
             var accountRow = new VisualElement();
-            accountRow.style.flexDirection    = FlexDirection.Row;
-            accountRow.style.alignItems       = Align.Center;
-            accountRow.style.justifyContent   = Justify.SpaceBetween;
-            accountRow.style.paddingBottom    = 16;
-            accountRow.style.borderBottomWidth= 1;
-            accountRow.style.borderBottomColor= new Color(0.165f, 0.165f, 0.165f);
-            accountRow.style.marginBottom     = 16;
+            accountRow.style.flexDirection = FlexDirection.Row;
+            accountRow.style.alignItems = Align.Center;
+            accountRow.style.justifyContent = Justify.SpaceBetween;
+            accountRow.style.paddingBottom = 16;
+            accountRow.style.borderBottomWidth = 1;
+            accountRow.style.borderBottomColor = new Color(0.165f, 0.165f, 0.165f);
+            accountRow.style.marginBottom = 16;
 
             var left = new VisualElement();
             left.style.flexDirection = FlexDirection.Row;
-            left.style.alignItems    = Align.Center;
+            left.style.alignItems = Align.Center;
 
-            // Avatar circle with initial letter
             string displayName = YucpOAuthService.GetDisplayName() ?? "Creator";
-            string initial     = displayName.Length > 0 ? displayName.Substring(0, 1).ToUpper() : "C";
+            string initial = displayName.Length > 0 ? displayName.Substring(0, 1).ToUpper() : "C";
 
             var avatarCircle = new VisualElement();
-            avatarCircle.style.width                   = 44;
-            avatarCircle.style.height                  = 44;
-            avatarCircle.style.borderTopLeftRadius     = 22;
-            avatarCircle.style.borderTopRightRadius    = 22;
-            avatarCircle.style.borderBottomLeftRadius  = 22;
+            avatarCircle.style.width = 44;
+            avatarCircle.style.height = 44;
+            avatarCircle.style.borderTopLeftRadius = 22;
+            avatarCircle.style.borderTopRightRadius = 22;
+            avatarCircle.style.borderBottomLeftRadius = 22;
             avatarCircle.style.borderBottomRightRadius = 22;
-            avatarCircle.style.backgroundColor         = new Color(0.21f, 0.75f, 0.69f, 0.15f);
-            avatarCircle.style.borderTopWidth          = 2;
-            avatarCircle.style.borderBottomWidth       = 2;
-            avatarCircle.style.borderLeftWidth         = 2;
-            avatarCircle.style.borderRightWidth        = 2;
-            avatarCircle.style.borderTopColor          = new Color(0.21f, 0.75f, 0.69f);
-            avatarCircle.style.borderBottomColor       = new Color(0.21f, 0.75f, 0.69f);
-            avatarCircle.style.borderLeftColor         = new Color(0.21f, 0.75f, 0.69f);
-            avatarCircle.style.borderRightColor        = new Color(0.21f, 0.75f, 0.69f);
-            avatarCircle.style.alignItems              = Align.Center;
-            avatarCircle.style.justifyContent          = Justify.Center;
-            avatarCircle.style.marginRight             = 14;
+            avatarCircle.style.backgroundColor = new Color(0.21f, 0.75f, 0.69f, 0.15f);
+            avatarCircle.style.borderTopWidth = 2;
+            avatarCircle.style.borderBottomWidth = 2;
+            avatarCircle.style.borderLeftWidth = 2;
+            avatarCircle.style.borderRightWidth = 2;
+            avatarCircle.style.borderTopColor = new Color(0.21f, 0.75f, 0.69f);
+            avatarCircle.style.borderBottomColor = new Color(0.21f, 0.75f, 0.69f);
+            avatarCircle.style.borderLeftColor = new Color(0.21f, 0.75f, 0.69f);
+            avatarCircle.style.borderRightColor = new Color(0.21f, 0.75f, 0.69f);
+            avatarCircle.style.alignItems = Align.Center;
+            avatarCircle.style.justifyContent = Justify.Center;
+            avatarCircle.style.marginRight = 14;
 
             var initialLbl = new Label(initial);
-            initialLbl.style.fontSize                = 18;
+            initialLbl.style.fontSize = 18;
             initialLbl.style.unityFontStyleAndWeight = FontStyle.Bold;
-            initialLbl.style.color                   = new Color(0.21f, 0.75f, 0.69f);
+            initialLbl.style.color = new Color(0.21f, 0.75f, 0.69f);
             avatarCircle.Add(initialLbl);
             left.Add(avatarCircle);
 
-            // Info column
             var infoCol = new VisualElement();
             infoCol.style.flexDirection = FlexDirection.Column;
 
             var nameLbl = new Label(displayName);
-            nameLbl.style.fontSize                = 14;
+            nameLbl.style.fontSize = 14;
             nameLbl.style.unityFontStyleAndWeight = FontStyle.Bold;
-            nameLbl.style.color                   = Color.white;
+            nameLbl.style.color = Color.white;
             infoCol.Add(nameLbl);
 
-            var roleLbl = new Label("YUCP Creator · Signed in");
+            string roleText = "YUCP Creator · Signed in";
+            if (_accountState?.billing != null)
+            {
+                roleText = $"YUCP Creator · {_accountState.billing.status}";
+            }
+
+            var roleLbl = new Label(roleText);
             roleLbl.style.fontSize = 11;
-            roleLbl.style.color    = new Color(0.21f, 0.75f, 0.69f);
+            roleLbl.style.color = new Color(0.21f, 0.75f, 0.69f);
             infoCol.Add(roleLbl);
 
             left.Add(infoCol);
@@ -358,65 +367,112 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             section.Add(accountRow);
 
-            // Certificate area
             bool hasCert = _settings != null && _settings.HasValidCertificate();
+            bool currentDeviceKnown = _accountState?.currentDeviceKnown == true;
+            bool deviceCapReached = _accountState?.deviceCapReachedForCurrentMachine == true;
+            string billingStatus = _accountState?.billing?.status ?? "";
+            string message = hasCert
+                ? "Certificate is active and ready for signing."
+                : "No certificate yet. Request one to start signing.";
+            var messageType = hasCert
+                ? YUCPUIToolkitHelper.MessageType.Success
+                : YUCPUIToolkitHelper.MessageType.Warning;
+
+            switch (billingStatus)
+            {
+                case "inactive":
+                    message = "A certificate subscription is required before this machine can enroll or sign.";
+                    messageType = YUCPUIToolkitHelper.MessageType.Warning;
+                    break;
+                case "grace":
+                    message = currentDeviceKnown
+                        ? "Billing grace is active. This machine can keep signing once its existing certificate is restored."
+                        : "Billing grace is active. Existing enrolled devices can keep signing, but this machine cannot enroll until billing is fixed.";
+                    messageType = YUCPUIToolkitHelper.MessageType.Warning;
+                    break;
+                case "suspended":
+                    message = "Certificate signing is suspended until billing is restored.";
+                    messageType = YUCPUIToolkitHelper.MessageType.Error;
+                    break;
+            }
+
+            if (_isLoadingAccountState && _accountState == null)
+            {
+                message = "Checking certificate and billing status for this account.";
+                messageType = YUCPUIToolkitHelper.MessageType.Info;
+            }
+            else if (!string.IsNullOrEmpty(_accountState?.error))
+            {
+                message = _accountState.error;
+                messageType = YUCPUIToolkitHelper.MessageType.Info;
+            }
+
+            section.Add(YUCPUIToolkitHelper.CreateHelpBox(message, messageType));
+            YUCPUIToolkitHelper.AddSpacing(section, 12);
+
+            var actions = new VisualElement();
+            actions.style.flexDirection = FlexDirection.Row;
+            actions.style.flexWrap = Wrap.Wrap;
             if (hasCert)
             {
-                section.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "Certificate is active and ready for signing.",
-                    YUCPUIToolkitHelper.MessageType.Success));
-
-                YUCPUIToolkitHelper.AddSpacing(section, 12);
-
-                var details = new VisualElement();
-                details.style.flexDirection = FlexDirection.Column;
-
                 if (!string.IsNullOrEmpty(_settings.publisherName))
-                    AddDetailRow(details, "Publisher", _settings.publisherName);
+                    AddDetailRow(section, "Publisher", _settings.publisherName);
 
                 if (!string.IsNullOrEmpty(_settings.publisherId))
-                    AddDetailRow(details, "Publisher ID", _settings.publisherId);
+                    AddDetailRow(section, "Publisher ID", _settings.publisherId);
 
                 if (!string.IsNullOrEmpty(_settings.certificateExpiresAt) &&
                     DateTime.TryParse(_settings.certificateExpiresAt, out DateTime exp))
-                    AddDetailRow(details, "Expires", exp.ToString("yyyy-MM-dd HH:mm") + " UTC");
+                {
+                    AddDetailRow(section, "Expires", exp.ToString("yyyy-MM-dd HH:mm") + " UTC");
+                }
 
-                section.Add(details);
+                if (_accountState?.billing != null)
+                {
+                    AddDetailRow(
+                        section,
+                        "Devices",
+                        _accountState.billing.deviceCap > 0
+                            ? $"{_accountState.billing.activeDeviceCount}/{_accountState.billing.deviceCap}"
+                            : _accountState.billing.activeDeviceCount.ToString());
+                }
+
                 YUCPUIToolkitHelper.AddSpacing(section, 12);
-
-                var renewBtn = YUCPUIToolkitHelper.CreateButton(
-                    "Renew Certificate",
-                    OnRequestCertClicked,
-                    YUCPUIToolkitHelper.ButtonVariant.Secondary);
-                section.Add(renewBtn);
-
-                YUCPUIToolkitHelper.AddSpacing(section, 8);
-
-                section.Add(YUCPUIToolkitHelper.CreateButton(
-                    "Remove Certificate", OnRemoveCert, YUCPUIToolkitHelper.ButtonVariant.Ghost));
+                actions.Add(YUCPUIToolkitHelper.CreateButton(
+                    "Manage Billing & Devices",
+                    OpenAccountCertificatesPage,
+                    YUCPUIToolkitHelper.ButtonVariant.Secondary));
+                var removeBtn = YUCPUIToolkitHelper.CreateButton(
+                    "Remove Certificate",
+                    OnRemoveCert,
+                    YUCPUIToolkitHelper.ButtonVariant.Ghost);
+                removeBtn.style.marginLeft = 8;
+                actions.Add(removeBtn);
             }
             else
             {
-                section.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                    "No certificate yet. Request one to start signing.",
-                    YUCPUIToolkitHelper.MessageType.Warning));
+                bool allowDirectRequest =
+                    !_isLoadingAccountState &&
+                    (_accountState == null ||
+                     !_accountState.billing.billingEnabled ||
+                     currentDeviceKnown ||
+                     (_accountState.billing.allowEnrollment && !deviceCapReached));
 
-                YUCPUIToolkitHelper.AddSpacing(section, 16);
-
+                string requestLabel = currentDeviceKnown ? "Restore Signing Certificate" : "Request Signing Certificate";
                 var reqBtn = YUCPUIToolkitHelper.CreateButton(
-                    "✦  Request Signing Certificate",
+                    requestLabel,
                     OnRequestCertClicked,
                     YUCPUIToolkitHelper.ButtonVariant.Primary);
                 reqBtn.style.width = Length.Percent(100);
-                reqBtn.SetEnabled(!_isRequestingCert);
+                reqBtn.SetEnabled(!_isRequestingCert && allowDirectRequest);
                 section.Add(reqBtn);
 
                 if (_isRequestingCert)
                 {
                     YUCPUIToolkitHelper.AddSpacing(section, 8);
-                    var progLbl = new Label("Requesting…");
-                    progLbl.style.fontSize       = 11;
-                    progLbl.style.color          = new Color(0.502f, 0.502f, 0.502f);
+                    var progLbl = new Label("Requesting...");
+                    progLbl.style.fontSize = 11;
+                    progLbl.style.color = new Color(0.502f, 0.502f, 0.502f);
                     progLbl.style.unityTextAlign = TextAnchor.MiddleCenter;
                     section.Add(progLbl);
                 }
@@ -424,35 +480,39 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 YUCPUIToolkitHelper.AddSpacing(section, 8);
 
                 var infoTxt = new Label(
-                    "Your Ed25519 dev key will be certified by the YUCP Authority. Certs expire after 90 days.");
-                infoTxt.style.fontSize   = 11;
-                infoTxt.style.color      = new Color(0.502f, 0.502f, 0.502f);
+                    "Certificate enrollment follows the web account billing and device rules. Use Certificates & Billing when you need to buy a plan, fix billing, or manage devices.");
+                infoTxt.style.fontSize = 11;
+                infoTxt.style.color = new Color(0.502f, 0.502f, 0.502f);
                 infoTxt.style.whiteSpace = WhiteSpace.Normal;
                 section.Add(infoTxt);
 
-                // Divider
-                YUCPUIToolkitHelper.AddSpacing(section, 14);
-                var divider = new VisualElement();
-                divider.style.height          = 1;
-                divider.style.backgroundColor = new Color(0.165f, 0.165f, 0.165f);
-                divider.style.marginBottom    = 10;
-                section.Add(divider);
+                YUCPUIToolkitHelper.AddSpacing(section, 12);
+                actions.Add(YUCPUIToolkitHelper.CreateButton(
+                    "Open Certificates & Billing",
+                    OpenAccountCertificatesPage,
+                    YUCPUIToolkitHelper.ButtonVariant.Secondary));
 
-                // Import from file fallback
                 var importRow = new VisualElement();
-                importRow.style.flexDirection  = FlexDirection.Row;
-                importRow.style.alignItems     = Align.Center;
+                importRow.style.flexDirection = FlexDirection.Row;
+                importRow.style.alignItems = Align.Center;
                 importRow.style.justifyContent = Justify.Center;
 
                 var importLbl = new Label("Already have a .yucp_cert file?");
-                importLbl.style.fontSize  = 11;
-                importLbl.style.color     = new Color(0.45f, 0.45f, 0.45f);
+                importLbl.style.fontSize = 11;
+                importLbl.style.color = new Color(0.45f, 0.45f, 0.45f);
                 importLbl.style.marginRight = 6;
                 importRow.Add(importLbl);
-
                 importRow.Add(YUCPUIToolkitHelper.CreateButton(
-                    "Import from file", ImportCertificateFromFile, YUCPUIToolkitHelper.ButtonVariant.Ghost));
+                    "Import from file",
+                    ImportCertificateFromFile,
+                    YUCPUIToolkitHelper.ButtonVariant.Ghost));
                 section.Add(importRow);
+            }
+
+            if (actions.childCount > 0)
+            {
+                YUCPUIToolkitHelper.AddSpacing(section, 8);
+                section.Add(actions);
             }
 
             content.Add(section);
@@ -545,6 +605,18 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             });
             content.Add(serverField);
 
+            YUCPUIToolkitHelper.AddSpacing(content, 4);
+
+            var accountField = new TextField("Account Certificates URL");
+            accountField.value = _settings.accountAppUrl;
+            accountField.AddToClassList("yucp-input");
+            accountField.RegisterValueChangedCallback(evt =>
+            {
+                _settings.accountAppUrl = evt.newValue;
+                EditorUtility.SetDirty(_settings);
+            });
+            content.Add(accountField);
+
             YUCPUIToolkitHelper.AddSpacing(content, 20);
 
             // ── Certificate Providers ──────────────────────────────────────────────
@@ -619,6 +691,17 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                         EditorUtility.SetDirty(_settings);
                     });
                     row.Add(urlField);
+
+                    YUCPUIToolkitHelper.AddSpacing(row, 4);
+
+                    var accountUrlField = new TextField("Account Certificates URL") { value = provider.accountAppUrl };
+                    accountUrlField.AddToClassList("yucp-input");
+                    accountUrlField.RegisterValueChangedCallback(evt =>
+                    {
+                        _settings.certificateProviders[idx].accountAppUrl = evt.newValue;
+                        EditorUtility.SetDirty(_settings);
+                    });
+                    row.Add(accountUrlField);
 
                     YUCPUIToolkitHelper.AddSpacing(row, 4);
 
@@ -701,6 +784,81 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             return card;
         }
 
+        private string GetAccountCertificatesUrl()
+        {
+            return _settings != null
+                ? _settings.GetEffectiveAccountCertificatesUrl()
+                : "https://creators.yucp.club/account/certificates";
+        }
+
+        private void OpenAccountCertificatesPage()
+        {
+            string url = GetAccountCertificatesUrl();
+            if (string.IsNullOrEmpty(url))
+            {
+                EditorUtility.DisplayDialog(
+                    "Certificates & Billing",
+                    "No account certificates URL is configured for this signing provider.",
+                    "OK");
+                return;
+            }
+
+            Application.OpenURL(url);
+        }
+
+        private void EnsureAccountStateRefresh(bool force = false)
+        {
+            if (_settings == null || !YucpOAuthService.IsSignedIn())
+                return;
+
+            string serverUrl = GetServerUrl();
+            if (string.IsNullOrEmpty(serverUrl))
+                return;
+
+            double now = EditorApplication.timeSinceStartup;
+            bool serverChanged = !string.Equals(_accountStateServerUrl, serverUrl, StringComparison.OrdinalIgnoreCase);
+            bool stale = now - _accountStateRefreshedAt >= AccountStateRefreshIntervalSeconds;
+            if (!force && (_isLoadingAccountState || (!serverChanged && !stale && _accountState != null)))
+                return;
+
+            _accountStateServerUrl = serverUrl;
+            RefreshAccountStateAsync(serverUrl);
+        }
+
+        private async void RefreshAccountStateAsync(string serverUrl)
+        {
+            if (_isLoadingAccountState)
+                return;
+
+            _isLoadingAccountState = true;
+            try
+            {
+                string accessToken = await YucpOAuthService.GetValidAccessTokenAsync(serverUrl);
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    _accountState = null;
+                    return;
+                }
+
+                string devPublicKey = DevKeyManager.GetPublicKeyBase64();
+                var service = new PackageSigningService(serverUrl);
+                _accountState = await service.GetCertificateAccountStateAsync(accessToken, devPublicKey);
+                _accountStateRefreshedAt = EditorApplication.timeSinceStartup;
+            }
+            catch (Exception ex)
+            {
+                _accountState = new PackageSigningService.CertificateAccountState
+                {
+                    error = ex.Message,
+                };
+            }
+            finally
+            {
+                _isLoadingAccountState = false;
+                BuildUI();
+            }
+        }
+
         // ──────────────────────────────────────────────────────────────
         //  Event handlers
         // ──────────────────────────────────────────────────────────────
@@ -734,12 +892,43 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private void OnSignOutClicked()
         {
             YucpOAuthService.SignOut();
+            _accountState = null;
+            _isLoadingAccountState = false;
             BuildUI();
         }
 
         private async void OnRequestCertClicked()
         {
             if (_isRequestingCert) return;
+
+            if (_accountState?.billing != null &&
+                !_accountState.billing.allowEnrollment &&
+                !_accountState.currentDeviceKnown)
+            {
+                if (EditorUtility.DisplayDialog(
+                    "Certificate enrollment blocked",
+                    _accountState.error ?? "This machine cannot enroll a certificate right now.",
+                    "Open Certificates & Billing",
+                    "Cancel"))
+                {
+                    OpenAccountCertificatesPage();
+                }
+                return;
+            }
+
+            if (_accountState?.deviceCapReachedForCurrentMachine == true)
+            {
+                if (EditorUtility.DisplayDialog(
+                    "Device limit reached",
+                    _accountState.error ?? "This plan has no free device slots for this machine.",
+                    "Manage Devices",
+                    "Cancel"))
+                {
+                    OpenAccountCertificatesPage();
+                }
+                return;
+            }
+
             _isRequestingCert = true;
             BuildUI();
 
@@ -759,12 +948,82 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             try
             {
-                var (success, error, certJson) = await service.RequestCertificateAsync(accessToken, devPublicKey, publisherName);
+                var refreshedAccountState = await service.GetCertificateAccountStateAsync(accessToken, devPublicKey);
+                if (refreshedAccountState != null)
+                {
+                    _accountState = refreshedAccountState;
+                }
+
+                if (_accountState?.billing != null)
+                {
+                    if (!_accountState.billing.allowEnrollment && !_accountState.currentDeviceKnown)
+                    {
+                        _isRequestingCert = false;
+                        BuildUI();
+                        if (EditorUtility.DisplayDialog(
+                            "Certificate enrollment blocked",
+                            _accountState.error ?? "This machine cannot enroll a certificate right now.",
+                            "Open Certificates & Billing",
+                            "Cancel"))
+                        {
+                            OpenAccountCertificatesPage();
+                        }
+                        return;
+                    }
+
+                    if (!_accountState.billing.allowSigning && _accountState.currentDeviceKnown)
+                    {
+                        _isRequestingCert = false;
+                        BuildUI();
+                        if (EditorUtility.DisplayDialog(
+                            "Certificate restore blocked",
+                            _accountState.error ?? "This machine cannot restore its certificate until billing is fixed.",
+                            "Open Certificates & Billing",
+                            "Cancel"))
+                        {
+                            OpenAccountCertificatesPage();
+                        }
+                        return;
+                    }
+
+                    if (_accountState.deviceCapReachedForCurrentMachine)
+                    {
+                        _isRequestingCert = false;
+                        BuildUI();
+                        if (EditorUtility.DisplayDialog(
+                            "Device limit reached",
+                            _accountState.error ?? "This plan has no free device slots for this machine.",
+                            "Manage Devices",
+                            "Cancel"))
+                        {
+                            OpenAccountCertificatesPage();
+                        }
+                        return;
+                    }
+                }
+
+                var (success, responseCode, error, certJson) = await service.RequestCertificateAsync(accessToken, devPublicKey, publisherName);
                 if (!success)
                 {
                     _isRequestingCert = false;
                     BuildUI();
-                    EditorUtility.DisplayDialog("Certificate Request Failed", error ?? "Unknown error.", "OK");
+                    string friendly = PackageSigningService.NormalizeCertificateRequestError(
+                        responseCode,
+                        error ?? "Unknown error.",
+                        _accountState?.currentDeviceKnown == true);
+                    bool openAccount = friendly.IndexOf("Certificates & Billing", StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (openAccount && EditorUtility.DisplayDialog(
+                        "Certificate Request Failed",
+                        friendly,
+                        "Open Certificates & Billing",
+                        "Close"))
+                    {
+                        OpenAccountCertificatesPage();
+                    }
+                    else if (!openAccount)
+                    {
+                        EditorUtility.DisplayDialog("Certificate Request Failed", friendly, "OK");
+                    }
                     return;
                 }
 
@@ -779,6 +1038,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                         "OK");
                     _isRequestingCert = false;
                     LoadSettings();
+                    EnsureAccountStateRefresh();
                     BuildUI();
                     return;
                 }

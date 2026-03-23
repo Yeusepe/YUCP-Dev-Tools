@@ -268,6 +268,208 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             }
         }
 
+        public async System.Threading.Tasks.Task<CertificateAccountState> GetCertificateAccountStateAsync(
+            string accessToken,
+            string devPublicKey)
+        {
+            try
+            {
+                using var req = UnityWebRequest.Get($"{_serverUrl}/v1/certificates/devices");
+                req.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                req.SetRequestHeader("Accept-Encoding", "identity");
+
+                var op = req.SendWebRequest();
+                while (!op.isDone)
+                    await System.Threading.Tasks.Task.Yield();
+
+                string json = req.downloadHandler?.text ?? "";
+                if (req.result != UnityWebRequest.Result.Success)
+                {
+                    string rawError = ExtractErrorMessage(json) ?? $"Server error ({req.responseCode}).";
+                    return CreateErrorAccountState(req.responseCode, rawError);
+                }
+
+                var response = JsonUtility.FromJson<CertificateDevicesResponse>(json);
+                if (response == null || response.billing == null)
+                {
+                    return CreateErrorAccountState(0, "Invalid certificate account response from server.");
+                }
+
+                response.devices ??= Array.Empty<CertificateDeviceInfo>();
+                response.currentDeviceKnown = !string.IsNullOrEmpty(devPublicKey) &&
+                    Array.Exists(response.devices, device =>
+                        device != null &&
+                        string.Equals(device.devPublicKey, devPublicKey, StringComparison.Ordinal));
+                response.deviceCapReachedForCurrentMachine =
+                    !response.currentDeviceKnown &&
+                    response.billing.deviceCap > 0 &&
+                    response.billing.activeDeviceCount >= response.billing.deviceCap;
+                response.error = BuildAccountStateReason(response);
+                return response;
+            }
+            catch (Exception ex)
+            {
+                return CreateErrorAccountState(0, $"Network error: {ex.Message}");
+            }
+        }
+
+        public static string NormalizeCertificateRequestError(
+            long responseCode,
+            string rawError,
+            bool currentDeviceKnown = false)
+        {
+            string message = string.IsNullOrWhiteSpace(rawError)
+                ? $"Server error ({responseCode})."
+                : rawError.Trim();
+            bool looksLikeGrace = message.IndexOf("Billing grace period active", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool looksLikePlanRequired =
+                message.IndexOf("subscription", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("payment required", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("plan required", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool looksLikeDeviceLimit = message.IndexOf("Device limit reached", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (responseCode == 401)
+            {
+                return message.IndexOf("No active certificate found for this machine", StringComparison.OrdinalIgnoreCase) >= 0
+                    ? "No active certificate exists for this machine. Open Certificates & Billing to enroll or restore the correct device."
+                    : "Your creator session expired or is no longer valid. Sign in again and retry.";
+            }
+
+            if (responseCode == 402 || looksLikeGrace)
+            {
+                if (looksLikeGrace)
+                {
+                    return currentDeviceKnown
+                        ? "Billing grace is active. Restore this machine's existing certificate or reopen Certificates & Billing to fix billing."
+                        : "Billing grace is active. Existing enrolled devices can still sign, but this machine cannot enroll until billing is fixed.";
+                }
+
+                return "An active certificate subscription is required before this machine can enroll or sign. Open Certificates & Billing to continue.";
+            }
+
+            if (responseCode == 403)
+            {
+                return "This account is not allowed to enroll certificates on the current signing server.";
+            }
+
+            if ((responseCode == 409 && looksLikeDeviceLimit) || looksLikeDeviceLimit)
+            {
+                return "Your certificate plan has reached its device limit. Revoke another device or upgrade the plan from Certificates & Billing.";
+            }
+
+            if (looksLikePlanRequired)
+            {
+                return "An active certificate subscription is required before this machine can enroll or sign. Open Certificates & Billing to continue.";
+            }
+
+            return message;
+        }
+
+        public static string NormalizeSigningError(long responseCode, string rawError)
+        {
+            string message = string.IsNullOrWhiteSpace(rawError)
+                ? $"HTTP {responseCode}"
+                : rawError.Trim();
+            bool looksLikeGrace = message.IndexOf("Billing grace period active", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool looksLikePlanRequired =
+                message.IndexOf("subscription", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("payment required", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("plan required", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool looksLikeRevoked = message.IndexOf("Certificate has been revoked", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (responseCode == 401)
+            {
+                return looksLikeRevoked
+                    ? "This signing certificate has been revoked. Restore the correct device or manage devices in Certificates & Billing."
+                    : "Signing authentication failed. Re-import or restore the correct certificate, then try again.";
+            }
+
+            if (responseCode == 402 || looksLikeGrace)
+            {
+                return looksLikeGrace
+                    ? "Billing grace is active. Existing enrolled devices can keep signing, but this machine cannot enroll a new certificate until billing is fixed."
+                    : "Package signing is blocked until the certificate subscription is active again. Open Certificates & Billing to fix billing.";
+            }
+
+            if (responseCode == 409)
+            {
+                return message.IndexOf("nonce", StringComparison.OrdinalIgnoreCase) >= 0
+                    ? "The signing proof was already used. Retry the export to generate a fresh signing proof."
+                    : message;
+            }
+
+            if (looksLikeRevoked)
+            {
+                return "This signing certificate has been revoked. Restore the correct device or manage devices in Certificates & Billing.";
+            }
+
+            if (looksLikePlanRequired)
+            {
+                return "Package signing is blocked until the certificate subscription is active again. Open Certificates & Billing to fix billing.";
+            }
+
+            return message;
+        }
+
+        private static string BuildAccountStateReason(CertificateDevicesResponse state)
+        {
+            if (state == null || state.billing == null)
+                return "Certificate account status is unavailable.";
+
+            if (!string.IsNullOrEmpty(state.billing.reason))
+                return state.billing.reason;
+
+            if (!state.billing.billingEnabled)
+                return "Certificate billing is unmanaged for this signing server.";
+
+            switch (state.billing.status ?? "")
+            {
+                case "active":
+                    if (state.deviceCapReachedForCurrentMachine)
+                    {
+                        return "This plan has no free device slots. Manage devices or upgrade the plan before enrolling this machine.";
+                    }
+
+                    if (state.currentDeviceKnown)
+                    {
+                        return "This machine already has an active signing device on your account.";
+                    }
+
+                    return "Certificate signing is active for this account.";
+
+                case "grace":
+                    return state.currentDeviceKnown
+                        ? "Billing grace is active. This machine can still sign once its existing certificate is restored."
+                        : "Billing grace is active. Existing enrolled devices can still sign, but this machine cannot enroll until billing is fixed.";
+
+                case "inactive":
+                    return "A certificate subscription is required before this machine can enroll or sign.";
+
+                case "suspended":
+                    return "Certificate signing is suspended until billing is restored.";
+
+                case "unmanaged":
+                    return "Certificate billing is unmanaged for this signing server.";
+
+                default:
+                    return "Certificate account status is unavailable.";
+            }
+        }
+
+        private static CertificateAccountState CreateErrorAccountState(long responseCode, string error)
+        {
+            return new CertificateAccountState
+            {
+                responseCode = responseCode,
+                error = error,
+                devices = Array.Empty<CertificateDeviceInfo>(),
+                billing = new CertificateBillingInfo
+                {
+                    status = "unknown",
+                },
+            };
+        }
+
         /// <summary>
         /// Request a signing certificate from the YUCP CA using a YUCP OAuth access token.
         /// Returns the raw certificate JSON on success for import via CertificateManager.ImportAndVerifyFromJson.
@@ -276,7 +478,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         /// Server extracts yucpUserId from the Bearer token.
         /// Response: { success: true, certificate: CertEnvelope }
         /// </summary>
-        public async System.Threading.Tasks.Task<(bool success, string error, string certJson)>
+        public async System.Threading.Tasks.Task<(bool success, long responseCode, string error, string certJson)>
             RequestCertificateAsync(string accessToken, string devPublicKey, string publisherName)
         {
             try
@@ -308,7 +510,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 if (req.result != UnityWebRequest.Result.Success)
                 {
                     string errMsg = ExtractErrorMessage(json) ?? $"Server error ({req.responseCode}).";
-                    return (false, errMsg, null);
+                    return (false, req.responseCode, errMsg, null);
                 }
 
                 // Response: { "success": true, "certificate": { "cert": {...}, "signature": {...} } }
@@ -325,14 +527,14 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                             if (json[i] == '{') depth++;
                             else if (json[i] == '}') { depth--; if (depth == 0) { end = i; break; } }
                         }
-                        return (true, null, json.Substring(braceIdx, end - braceIdx + 1));
+                        return (true, req.responseCode, null, json.Substring(braceIdx, end - braceIdx + 1));
                     }
                 }
-                return (false, "Invalid response format from server.", null);
+                return (false, req.responseCode, "Invalid response format from server.", null);
             }
             catch (Exception ex)
             {
-                return (false, $"Network error: {ex.Message}", null);
+                return (false, 0, $"Network error: {ex.Message}", null);
             }
         }
 
@@ -459,6 +661,69 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             public bool ownershipConflict;
             public string registeredOwnerYucpUserId;
             public string signingYucpUserId;
+        }
+
+        [Serializable]
+        public class CertificateDeviceInfo
+        {
+            public string certNonce;
+            public string devPublicKey;
+            public string publisherId;
+            public string publisherName;
+            public long issuedAt;
+            public long expiresAt;
+            public string status;
+        }
+
+        [Serializable]
+        public class CertificateBillingInfo
+        {
+            public bool billingEnabled;
+            public string status;
+            public string planKey;
+            public int deviceCap;
+            public int activeDeviceCount;
+            public bool allowEnrollment;
+            public bool allowSigning;
+            public int signQuotaPerPeriod;
+            public int auditRetentionDays;
+            public string supportTier;
+            public long currentPeriodEnd;
+            public long graceUntil;
+            public string reason;
+        }
+
+        [Serializable]
+        public class CertificatePlanInfo
+        {
+            public string planKey;
+            public string slug;
+            public string productId;
+            public int priority;
+            public int deviceCap;
+            public int signQuotaPerPeriod;
+            public int auditRetentionDays;
+            public string supportTier;
+            public int billingGraceDays;
+        }
+
+        [Serializable]
+        public class CertificateAccountState
+        {
+            public long responseCode;
+            public string error;
+            public bool currentDeviceKnown;
+            public bool deviceCapReachedForCurrentMachine;
+            public string workspaceKey;
+            public string creatorProfileId;
+            public CertificateDeviceInfo[] devices;
+            public CertificateBillingInfo billing;
+            public CertificatePlanInfo[] availablePlans;
+        }
+
+        [Serializable]
+        private class CertificateDevicesResponse : CertificateAccountState
+        {
         }
 
         /// <summary>

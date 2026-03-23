@@ -26,6 +26,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private readonly ExportProfile _profile;
         private bool _isSigningIn;
         private bool _isRequestingCert;
+        private bool _isLoadingAccountState;
+        private string _accountStateServerUrl;
+        private double _accountStateRefreshedAt;
+        private PackageSigningService.CertificateAccountState _accountState;
+        private const double AccountStateRefreshIntervalSeconds = 15d;
 
         // ── Product catalog cache ──────────────────────────────────────────────────
         // Loaded once per sign-in from GET /v1/products. The server groups by canonical
@@ -103,7 +108,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         public bool CanSign()
         {
             LoadSettings();
-            return YucpOAuthService.IsSignedIn() && _settings != null && _settings.HasValidCertificate();
+            if (!YucpOAuthService.IsSignedIn() || _settings == null || !_settings.HasValidCertificate())
+                return false;
+
+            return _accountState?.billing == null || _accountState.billing.allowSigning;
         }
 
         // ── State dispatcher ───────────────────────────────────────────────────────
@@ -120,6 +128,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             }
 
             YucpOAuthService.TryBeginBackgroundRefresh(GetServerUrl(), RefreshUI);
+            EnsureAccountStateRefresh();
             bool hasCert = _settings != null && _settings.HasValidCertificate();
 
             if (hasCert)
@@ -326,18 +335,93 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             card.Add(MakeDivider());
 
             var body = MakePad(24, 28, 24, 24);
+            string title = "No certificate yet";
+            string subtitle = "Get one to start signing your packages.";
+            string detail = null;
+            string primaryText = "Get Certificate";
+            Action primaryAction = OnRequestCertClicked;
+            string secondaryText = null;
+            Action secondaryAction = null;
 
-            // Empty-state icon ring
+            bool currentDeviceKnown = _accountState?.currentDeviceKnown == true;
+            bool deviceCapReached = _accountState?.deviceCapReachedForCurrentMachine == true;
+            string billingStatus = _accountState?.billing?.status ?? "";
+
+            if (_isLoadingAccountState && _accountState == null)
+            {
+                subtitle = "Checking certificate and billing status for this account.";
+                primaryText = null;
+            }
+            else if (_accountState != null)
+            {
+                detail = _accountState.error;
+
+                switch (billingStatus)
+                {
+                    case "inactive":
+                        title = "Certificate plan required";
+                        subtitle = "This account needs an active certificate subscription before this machine can enroll.";
+                        primaryText = "Open Certificates & Billing";
+                        primaryAction = OpenAccountCertificatesPage;
+                        break;
+                    case "suspended":
+                        title = "Signing access suspended";
+                        subtitle = "Billing needs attention before this machine can enroll or restore a signing certificate.";
+                        primaryText = "Open Certificates & Billing";
+                        primaryAction = OpenAccountCertificatesPage;
+                        break;
+                    case "grace":
+                        if (currentDeviceKnown)
+                        {
+                            title = "Restore this device";
+                            subtitle = "Billing grace is active. This machine can still sign once its existing certificate is restored.";
+                            primaryText = "Restore Certificate";
+                            primaryAction = OnRequestCertClicked;
+                            secondaryText = "Open Billing";
+                            secondaryAction = OpenAccountCertificatesPage;
+                        }
+                        else
+                        {
+                            title = "Grace period active";
+                            subtitle = "Existing enrolled devices can keep signing, but this machine cannot enroll until billing is fixed.";
+                            primaryText = "Open Certificates & Billing";
+                            primaryAction = OpenAccountCertificatesPage;
+                        }
+                        break;
+                    case "active":
+                        if (currentDeviceKnown)
+                        {
+                            title = "Restore certificate";
+                            subtitle = "This machine already has an active signing device on your account.";
+                            primaryText = "Restore Certificate";
+                            primaryAction = OnRequestCertClicked;
+                            secondaryText = "Manage Devices";
+                            secondaryAction = OpenAccountCertificatesPage;
+                        }
+                        else if (deviceCapReached)
+                        {
+                            title = "Device limit reached";
+                            subtitle = "Your current certificate plan has no free device slots for this machine.";
+                            primaryText = "Manage Devices";
+                            primaryAction = OpenAccountCertificatesPage;
+                        }
+                        break;
+                    case "unmanaged":
+                        subtitle = "Get one to start signing your packages on this unmanaged signing server.";
+                        break;
+                }
+            }
+
             var ring = MakeRoundedBox(Color.clear, 28, 1, new Color(0.212f, 0.749f, 0.694f, 0.25f));
-            ring.style.width  = 56;
+            ring.style.width = 56;
             ring.style.height = 56;
-            ring.style.alignItems    = Align.Center;
+            ring.style.alignItems = Align.Center;
             ring.style.justifyContent = Justify.Center;
-            ring.style.alignSelf     = Align.Center;
-            ring.style.marginBottom  = 16;
+            ring.style.alignSelf = Align.Center;
+            ring.style.marginBottom = 16;
 
             var ringInner = new VisualElement();
-            ringInner.style.width  = 20;
+            ringInner.style.width = 20;
             ringInner.style.height = 20;
             ringInner.style.borderTopLeftRadius = ringInner.style.borderTopRightRadius =
                 ringInner.style.borderBottomLeftRadius = ringInner.style.borderBottomRightRadius = 10;
@@ -349,25 +433,44 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             ring.Add(ringInner);
             body.Add(ring);
 
-            body.Add(MakeLabel("No certificate yet", 14, TextPri, bold: true, align: TextAnchor.MiddleCenter, mb: 6));
-            body.Add(MakeLabel("Get one to start signing your packages.", 11, TextSec, align: TextAnchor.MiddleCenter, mb: 22, wrap: true));
+            body.Add(MakeLabel(title, 14, TextPri, bold: true, align: TextAnchor.MiddleCenter, mb: 6));
+            body.Add(MakeLabel(subtitle, 11, TextSec, align: TextAnchor.MiddleCenter, mb: 12, wrap: true));
+            if (!string.IsNullOrEmpty(detail))
+            {
+                body.Add(MakeLabel(detail, 10, TextMute, align: TextAnchor.MiddleCenter, mb: 18, wrap: true));
+            }
+            else
+            {
+                var spacer = new VisualElement();
+                spacer.style.height = 10;
+                body.Add(spacer);
+            }
 
-            // Primary action
-            var getBtn = _isRequestingCert
-                ? BuildLoadingButton("Getting certificate\u2026")
-                : BuildPrimaryButton("Get Certificate", OnRequestCertClicked);
-            getBtn.style.marginBottom = 14;
-            body.Add(getBtn);
+            if (!string.IsNullOrEmpty(primaryText))
+            {
+                var getBtn = _isRequestingCert
+                    ? BuildLoadingButton("Getting certificate...")
+                    : BuildPrimaryButton(primaryText, primaryAction);
+                getBtn.style.marginBottom = 10;
+                body.Add(getBtn);
+            }
 
-            // Import ghost link
+            if (!string.IsNullOrEmpty(secondaryText))
+            {
+                var secondaryBtn = MakeGhostButton(secondaryText, secondaryAction);
+                secondaryBtn.style.alignSelf = Align.Center;
+                secondaryBtn.style.marginBottom = 14;
+                body.Add(secondaryBtn);
+            }
+
             var importRow = new VisualElement();
-            importRow.style.flexDirection  = FlexDirection.Row;
-            importRow.style.alignItems     = Align.Center;
+            importRow.style.flexDirection = FlexDirection.Row;
+            importRow.style.alignItems = Align.Center;
             importRow.style.justifyContent = Justify.Center;
             var importHint = MakeLabel("Have a .yucp_cert file?", 11, TextMute, mb: 0);
             importHint.style.marginRight = 5;
             importRow.Add(importHint);
-            importRow.Add(MakeGhostButton("Import \u2197", () =>
+            importRow.Add(MakeGhostButton("Import ->", () =>
             {
                 string path = EditorUtility.OpenFilePanel("Import Certificate", "", "yucp_cert");
                 if (string.IsNullOrEmpty(path)) return;
@@ -376,6 +479,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 else EditorUtility.DisplayDialog("Import failed", r.error, "OK");
             }, small: true));
             body.Add(importRow);
+
+            if (_accountState?.billing?.billingEnabled == true)
+            {
+                body.Add(BuildBillingInsightsSection(showPlanActions: true));
+            }
 
             card.Add(body);
             return card;
@@ -390,6 +498,47 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             var card = MakeCard();
             card.Add(BuildAccountBar());
             card.Add(MakeDivider());
+            string statusText = "Ready to sign";
+            Color statusColor = Teal;
+            string accountDetail = _accountState?.error;
+            string manageLabel = "Manage Billing & Devices";
+            string billingLabel = null;
+            string deviceLabel = null;
+
+            if (_accountState?.billing != null)
+            {
+                switch (_accountState.billing.status ?? "")
+                {
+                    case "grace":
+                        statusText = "Grace period";
+                        statusColor = Amber;
+                        break;
+                    case "inactive":
+                        statusText = "Plan required";
+                        statusColor = Amber;
+                        break;
+                    case "suspended":
+                        statusText = "Signing blocked";
+                        statusColor = Red;
+                        break;
+                    case "unmanaged":
+                        statusText = "Unmanaged server";
+                        statusColor = TextSec;
+                        manageLabel = "Open Certificates Workspace";
+                        break;
+                }
+
+                if (_accountState.billing.billingEnabled)
+                {
+                    billingLabel = string.IsNullOrEmpty(_accountState.billing.planKey)
+                        ? $"Billing: {_accountState.billing.status}"
+                        : $"Plan: {_accountState.billing.planKey}";
+                }
+
+                deviceLabel = _accountState.billing.deviceCap > 0
+                    ? $"Devices: {_accountState.billing.activeDeviceCount}/{_accountState.billing.deviceCap}"
+                    : $"Devices: {_accountState.billing.activeDeviceCount}";
+            }
 
             // ── Status row (inline, no filled band) ───────────────────────────────
             var statusRow = new VisualElement();
@@ -406,13 +555,13 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             liveDot.style.height = 6;
             liveDot.style.borderTopLeftRadius = liveDot.style.borderTopRightRadius =
                 liveDot.style.borderBottomLeftRadius = liveDot.style.borderBottomRightRadius = 3;
-            liveDot.style.backgroundColor = Teal;
+            liveDot.style.backgroundColor = statusColor;
             liveDot.style.marginRight     = 8;
             liveDot.style.flexShrink      = 0;
             liveDot.schedule.Execute(() => liveDot.style.opacity = liveDot.style.opacity.value > 0.6f ? 0.3f : 1.0f).Every(900);
             statusRow.Add(liveDot);
 
-            statusRow.Add(MakeLabel("Ready to sign", 12, Teal, bold: true));
+            statusRow.Add(MakeLabel(statusText, 12, statusColor, bold: true));
             card.Add(statusRow);
 
             // ── Certificate health ─────────────────────────────────────────────────
@@ -429,7 +578,28 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 certBody.Add(BuildExpiryBar(exp));
             }
 
+            if (!string.IsNullOrEmpty(accountDetail))
+            {
+                certBody.Add(MakeLabel(accountDetail, 11, TextSec, mb: 8, wrap: true));
+            }
+
+            if (!string.IsNullOrEmpty(billingLabel))
+            {
+                certBody.Add(MakeLabel(billingLabel, 11, TextSec, mb: 4, wrap: true));
+            }
+
+            if (!string.IsNullOrEmpty(deviceLabel))
+            {
+                certBody.Add(MakeLabel(deviceLabel, 11, TextSec, mb: 0, wrap: true));
+            }
+
             card.Add(certBody);
+
+            if (_accountState?.billing?.billingEnabled == true)
+            {
+                card.Add(MakeDivider());
+                card.Add(BuildBillingInsightsSection(showPlanActions: true));
+            }
 
             // ── Package info ───────────────────────────────────────────────────────
             if (_profile != null)
@@ -456,7 +626,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             footer.style.paddingRight   = 14;
             footer.style.paddingTop     = 10;
             footer.style.paddingBottom  = 10;
-            footer.Add(MakeGhostButton("Manage \u2192", () => SigningSettingsWindow.ShowWindow()));
+            footer.Add(MakeGhostButton(manageLabel, OpenAccountCertificatesPage));
+            var settingsBtn = MakeGhostButton("Editor Settings", () => SigningSettingsWindow.ShowWindow());
+            settingsBtn.style.marginLeft = 8;
+            footer.Add(settingsBtn);
             card.Add(footer);
 
             return card;
@@ -506,6 +679,188 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             col.Add(track);
 
             return col;
+        }
+
+        private VisualElement BuildBillingInsightsSection(bool showPlanActions)
+        {
+            var section = MakePad(16, 18, 16, 16);
+            section.Add(MakeLabel("Billing Workspace", 10, TextMute, bold: true, mb: 6));
+
+            string summary = _accountState?.billing?.reason;
+            if (string.IsNullOrEmpty(summary))
+            {
+                summary = _accountState?.error;
+            }
+            if (string.IsNullOrEmpty(summary))
+            {
+                summary = "Your subscription controls device enrollment, signing availability, and support capacity for this workspace.";
+            }
+
+            section.Add(MakeLabel(summary, 11, TextSec, mb: 12, wrap: true));
+
+            var metrics = new VisualElement();
+            metrics.style.flexDirection = FlexDirection.Row;
+            metrics.style.flexWrap = Wrap.Wrap;
+            metrics.style.marginBottom = 12;
+            metrics.Add(BuildBillingMetricTile(
+                "Current plan",
+                !string.IsNullOrEmpty(_accountState?.billing?.planKey) ? _accountState.billing.planKey : "No plan"));
+            metrics.Add(BuildBillingMetricTile(
+                "Devices",
+                _accountState?.billing != null && _accountState.billing.deviceCap > 0
+                    ? $"{_accountState.billing.activeDeviceCount}/{_accountState.billing.deviceCap}"
+                    : $"{_accountState?.billing?.activeDeviceCount ?? 0}"));
+            metrics.Add(BuildBillingMetricTile(
+                "Quota",
+                FormatQuota(_accountState?.billing?.signQuotaPerPeriod ?? 0)));
+            metrics.Add(BuildBillingMetricTile(
+                "Support",
+                FormatSupportTier(_accountState?.billing?.supportTier)));
+            section.Add(metrics);
+
+            if (!string.IsNullOrEmpty(_accountState?.workspaceKey))
+            {
+                var workspaceRow = new VisualElement();
+                workspaceRow.style.flexDirection = FlexDirection.Row;
+                workspaceRow.style.alignItems = Align.Center;
+                workspaceRow.style.marginBottom = 12;
+                workspaceRow.Add(MakeLabel("Workspace", 10, TextMute, bold: true, mb: 0));
+                var workspaceChip = MakeRoundedBox(SurfaceRaise, 6, 1, Border);
+                workspaceChip.style.marginLeft = 8;
+                workspaceChip.style.paddingLeft = 8;
+                workspaceChip.style.paddingRight = 8;
+                workspaceChip.style.paddingTop = 4;
+                workspaceChip.style.paddingBottom = 4;
+                workspaceChip.Add(MakeLabel(_accountState.workspaceKey, 10, TextSec, mb: 0));
+                workspaceRow.Add(workspaceChip);
+                section.Add(workspaceRow);
+            }
+
+            if (_accountState?.availablePlans != null && _accountState.availablePlans.Length > 0)
+            {
+                section.Add(MakeLabel("Plans", 10, TextMute, bold: true, mb: 8));
+
+                foreach (var plan in _accountState.availablePlans.OrderByDescending(p => p.priority))
+                {
+                    section.Add(BuildPlanCard(plan, showPlanActions));
+                }
+            }
+            else
+            {
+                section.Add(MakeLabel(
+                    "No certificate plans are configured on this signing server yet.",
+                    10,
+                    TextMute,
+                    mb: 0,
+                    wrap: true));
+            }
+
+            return section;
+        }
+
+        private VisualElement BuildBillingMetricTile(string label, string value)
+        {
+            var tile = MakeRoundedBox(SurfaceRaise, 8, 1, Border);
+            tile.style.minWidth = 120;
+            tile.style.marginRight = 8;
+            tile.style.marginBottom = 8;
+            tile.style.paddingLeft = 10;
+            tile.style.paddingRight = 10;
+            tile.style.paddingTop = 9;
+            tile.style.paddingBottom = 9;
+            tile.Add(MakeLabel(label, 9, TextMute, bold: true, mb: 4));
+            tile.Add(MakeLabel(value, 12, TextPri, bold: true, mb: 0, wrap: true));
+            return tile;
+        }
+
+        private VisualElement BuildPlanCard(PackageSigningService.CertificatePlanInfo plan, bool showPlanActions)
+        {
+            bool isCurrent = string.Equals(
+                _accountState?.billing?.planKey,
+                plan?.planKey,
+                StringComparison.OrdinalIgnoreCase);
+
+            var card = MakeRoundedBox(
+                isCurrent ? new Color(0.212f, 0.749f, 0.694f, 0.08f) : SurfaceRaise,
+                8,
+                1,
+                isCurrent ? new Color(0.212f, 0.749f, 0.694f, 0.32f) : Border);
+            card.style.paddingLeft = 12;
+            card.style.paddingRight = 12;
+            card.style.paddingTop = 12;
+            card.style.paddingBottom = 12;
+            card.style.marginBottom = 8;
+
+            var topRow = new VisualElement();
+            topRow.style.flexDirection = FlexDirection.Row;
+            topRow.style.justifyContent = Justify.SpaceBetween;
+            topRow.style.alignItems = Align.FlexStart;
+
+            var titleCol = new VisualElement();
+            titleCol.Add(MakeLabel(plan.planKey, 13, TextPri, bold: true, mb: 3));
+            titleCol.Add(MakeLabel(
+                $"{FormatSupportTier(plan.supportTier)} support",
+                10,
+                TextSec,
+                mb: 0));
+            topRow.Add(titleCol);
+
+            if (isCurrent)
+            {
+                topRow.Add(BuildStatusPill("active"));
+            }
+
+            card.Add(topRow);
+
+            var features = new VisualElement();
+            features.style.marginTop = 10;
+            features.Add(MakeLabel($"{plan.deviceCap} active device slots", 10, TextSec, mb: 4, wrap: true));
+            features.Add(MakeLabel($"{FormatQuota(plan.signQuotaPerPeriod)} signing events per period", 10, TextSec, mb: 4, wrap: true));
+            features.Add(MakeLabel($"{FormatRetention(plan.auditRetentionDays)} of audit retention", 10, TextSec, mb: 4, wrap: true));
+            features.Add(MakeLabel($"{plan.billingGraceDays} billing grace days", 10, TextSec, mb: 0, wrap: true));
+            card.Add(features);
+
+            if (showPlanActions)
+            {
+                var actions = new VisualElement();
+                actions.style.flexDirection = FlexDirection.Row;
+                actions.style.justifyContent = Justify.FlexEnd;
+                actions.style.marginTop = 12;
+
+                if (isCurrent && _accountState?.billing?.status == "active")
+                {
+                    actions.Add(MakeGhostButton("Manage plan", OpenBillingPortalPage, small: true));
+                }
+                else
+                {
+                    actions.Add(MakeGhostButton("Choose plan", () => OpenCheckoutForPlan(plan.planKey), small: true));
+                }
+
+                card.Add(actions);
+            }
+
+            return card;
+        }
+
+        private static string FormatQuota(int value)
+        {
+            return value > 0 ? value.ToString("N0") : "Unlimited";
+        }
+
+        private static string FormatRetention(int days)
+        {
+            return days > 0 ? $"{days} days" : "Retention varies";
+        }
+
+        private static string FormatSupportTier(string supportTier)
+        {
+            if (string.IsNullOrEmpty(supportTier))
+                return "Standard";
+
+            if (supportTier.Length == 1)
+                return supportTier.ToUpperInvariant();
+
+            return char.ToUpperInvariant(supportTier[0]) + supportTier.Substring(1);
         }
 
         private VisualElement BuildPackageInfo()
@@ -1899,12 +2254,42 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private void OnSignOutClicked()
         {
             YucpOAuthService.SignOut();
+            _accountState = null;
+            _isLoadingAccountState = false;
             RefreshUI();
         }
 
         private async void OnRequestCertClicked()
         {
             if (_isRequestingCert) return;
+
+            if (_accountState?.billing != null &&
+                !_accountState.billing.allowEnrollment &&
+                !_accountState.currentDeviceKnown)
+            {
+                if (EditorUtility.DisplayDialog(
+                    "Certificate enrollment blocked",
+                    _accountState.error ?? "This machine cannot enroll a certificate right now.",
+                    "Open Certificates & Billing",
+                    "Cancel"))
+                {
+                    OpenAccountCertificatesPage();
+                }
+                return;
+            }
+
+            if (_accountState?.deviceCapReachedForCurrentMachine == true)
+            {
+                if (EditorUtility.DisplayDialog(
+                    "Device limit reached",
+                    _accountState.error ?? "This plan has no free device slots for this machine.",
+                    "Manage Devices",
+                    "Cancel"))
+                {
+                    OpenAccountCertificatesPage();
+                }
+                return;
+            }
 
             string serverUrl = GetServerUrl();
             string accessToken = await YucpOAuthService.GetValidAccessTokenAsync(serverUrl);
@@ -1923,6 +2308,60 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             try
             {
+                var refreshedAccountState = await service.GetCertificateAccountStateAsync(accessToken, devPublicKey);
+                if (refreshedAccountState != null)
+                {
+                    _accountState = refreshedAccountState;
+                }
+
+                if (_accountState?.billing != null)
+                {
+                    if (!_accountState.billing.allowEnrollment && !_accountState.currentDeviceKnown)
+                    {
+                        _isRequestingCert = false;
+                        RefreshUI();
+                        if (EditorUtility.DisplayDialog(
+                            "Certificate enrollment blocked",
+                            _accountState.error ?? "This machine cannot enroll a certificate right now.",
+                            "Open Certificates & Billing",
+                            "Cancel"))
+                        {
+                            OpenAccountCertificatesPage();
+                        }
+                        return;
+                    }
+
+                    if (!_accountState.billing.allowSigning && _accountState.currentDeviceKnown)
+                    {
+                        _isRequestingCert = false;
+                        RefreshUI();
+                        if (EditorUtility.DisplayDialog(
+                            "Certificate restore blocked",
+                            _accountState.error ?? "This machine cannot restore its certificate until billing is fixed.",
+                            "Open Certificates & Billing",
+                            "Cancel"))
+                        {
+                            OpenAccountCertificatesPage();
+                        }
+                        return;
+                    }
+
+                    if (_accountState.deviceCapReachedForCurrentMachine)
+                    {
+                        _isRequestingCert = false;
+                        RefreshUI();
+                        if (EditorUtility.DisplayDialog(
+                            "Device limit reached",
+                            _accountState.error ?? "This plan has no free device slots for this machine.",
+                            "Manage Devices",
+                            "Cancel"))
+                        {
+                            OpenAccountCertificatesPage();
+                        }
+                        return;
+                    }
+                }
+
                 string restoredJson = await service.RestoreCertificateAsync(accessToken, devPublicKey);
                 if (!string.IsNullOrEmpty(restoredJson))
                 {
@@ -1950,12 +2389,28 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             PackageSigningService service, string accessToken,
             string devPublicKey, string publisherName)
         {
-            var (success, error, certJson) = await service.RequestCertificateAsync(accessToken, devPublicKey, publisherName);
+            var (success, responseCode, error, certJson) = await service.RequestCertificateAsync(accessToken, devPublicKey, publisherName);
             _isRequestingCert = false;
             if (!success)
             {
                 RefreshUI();
-                EditorUtility.DisplayDialog("Certificate failed", error, "OK");
+                string friendly = PackageSigningService.NormalizeCertificateRequestError(
+                    responseCode,
+                    error,
+                    _accountState?.currentDeviceKnown == true);
+                bool openAccount = friendly.IndexOf("Certificates & Billing", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (openAccount && EditorUtility.DisplayDialog(
+                    "Certificate failed",
+                    friendly,
+                    "Open Certificates & Billing",
+                    "Close"))
+                {
+                    OpenAccountCertificatesPage();
+                }
+                else if (!openAccount)
+                {
+                    EditorUtility.DisplayDialog("Certificate failed", friendly, "OK");
+                }
                 return;
             }
 
@@ -1963,6 +2418,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             if (result.valid)
             {
                 LoadSettings();
+                EnsureAccountStateRefresh();
                 RefreshUI();
                 return;
             }
@@ -2114,6 +2570,182 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             if (!string.IsNullOrEmpty(_settings?.serverUrl)) return _settings.serverUrl;
             string fromService = PackageSigningService.GetServerUrl();
             return !string.IsNullOrEmpty(fromService) ? fromService : "https://api.creators.yucp.club";
+        }
+
+        private string GetAccountCertificatesUrl()
+        {
+            return _settings?.GetEffectiveAccountCertificatesUrl() ?? "https://creators.yucp.club/account/certificates";
+        }
+
+        private static Dictionary<string, string> ParseUrlQuery(string query)
+        {
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(query))
+                return values;
+
+            foreach (var pair in query.TrimStart('?').Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var pieces = pair.Split(new[] { '=' }, 2);
+                string key = Uri.UnescapeDataString(pieces[0]);
+                if (string.IsNullOrEmpty(key))
+                    continue;
+
+                string value = pieces.Length > 1 ? Uri.UnescapeDataString(pieces[1]) : "";
+                values[key] = value;
+            }
+
+            return values;
+        }
+
+        private string BuildAccountCertificatesUrl(string planKey = null, bool openCheckout = false, bool openPortal = false)
+        {
+            string baseUrl = GetAccountCertificatesUrl();
+            if (string.IsNullOrEmpty(baseUrl))
+                return null;
+
+            try
+            {
+                var builder = new UriBuilder(baseUrl);
+                var query = ParseUrlQuery(builder.Query);
+                query["source"] = "unity-package-signing";
+
+                if (!string.IsNullOrEmpty(planKey))
+                {
+                    query["plan"] = planKey;
+                }
+
+                if (openCheckout)
+                {
+                    query["checkout"] = "1";
+                }
+
+                if (openPortal)
+                {
+                    query["portal"] = "1";
+                }
+
+                builder.Query = string.Join("&",
+                    query.Select(entry => $"{Uri.EscapeDataString(entry.Key)}={Uri.EscapeDataString(entry.Value ?? "")}"));
+                return builder.Uri.ToString();
+            }
+            catch
+            {
+                return baseUrl;
+            }
+        }
+
+        private void OpenAccountCertificatesPage()
+        {
+            string url = BuildAccountCertificatesUrl();
+            if (string.IsNullOrEmpty(url))
+            {
+                EditorUtility.DisplayDialog(
+                    "Certificates & Billing",
+                    "No account URL is configured for this signing provider.",
+                    "OK");
+                return;
+            }
+
+            Application.OpenURL(url);
+        }
+
+        private void OpenCheckoutForPlan(string planKey)
+        {
+            string url = BuildAccountCertificatesUrl(planKey, openCheckout: true);
+            if (string.IsNullOrEmpty(url))
+            {
+                EditorUtility.DisplayDialog(
+                    "Certificates & Billing",
+                    "No account URL is configured for this signing provider.",
+                    "OK");
+                return;
+            }
+
+            Application.OpenURL(url);
+        }
+
+        private void OpenBillingPortalPage()
+        {
+            string url = BuildAccountCertificatesUrl(openPortal: true);
+            if (string.IsNullOrEmpty(url))
+            {
+                EditorUtility.DisplayDialog(
+                    "Certificates & Billing",
+                    "No account URL is configured for this signing provider.",
+                    "OK");
+                return;
+            }
+
+            Application.OpenURL(url);
+        }
+
+        private string TryGetCurrentDevPublicKey()
+        {
+            try
+            {
+                return DevKeyManager.GetPublicKeyBase64();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void EnsureAccountStateRefresh()
+        {
+            if (!YucpOAuthService.IsSignedIn())
+            {
+                _accountState = null;
+                _isLoadingAccountState = false;
+                return;
+            }
+
+            string serverUrl = GetServerUrl();
+            if (string.IsNullOrEmpty(serverUrl))
+                return;
+
+            bool stale = _accountState == null ||
+                !string.Equals(_accountStateServerUrl, serverUrl, StringComparison.Ordinal) ||
+                EditorApplication.timeSinceStartup - _accountStateRefreshedAt > AccountStateRefreshIntervalSeconds;
+            if (!stale || _isLoadingAccountState)
+                return;
+
+            _isLoadingAccountState = true;
+            _accountStateServerUrl = serverUrl;
+#pragma warning disable CS4014
+            RefreshAccountStateAsync(serverUrl);
+#pragma warning restore CS4014
+        }
+
+        private async Task RefreshAccountStateAsync(string serverUrl)
+        {
+            PackageSigningService.CertificateAccountState nextState = null;
+            try
+            {
+                string accessToken = await YucpOAuthService.GetValidAccessTokenAsync(serverUrl);
+                if (!string.IsNullOrEmpty(accessToken))
+                {
+                    var service = new PackageSigningService(serverUrl);
+                    nextState = await service.GetCertificateAccountStateAsync(
+                        accessToken,
+                        TryGetCurrentDevPublicKey());
+                }
+            }
+            catch (Exception ex)
+            {
+                nextState = new PackageSigningService.CertificateAccountState
+                {
+                    error = ex.Message,
+                };
+            }
+
+            EditorApplication.delayCall += () =>
+            {
+                _accountState = nextState;
+                _isLoadingAccountState = false;
+                _accountStateRefreshedAt = EditorApplication.timeSinceStartup;
+                RefreshUI();
+            };
         }
     }
 }

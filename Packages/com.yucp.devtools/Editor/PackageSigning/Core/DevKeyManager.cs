@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Security.Cryptography;
+using System.Runtime.InteropServices;
 using System.Text;
 using UnityEngine;
 using YUCP.DevTools.Editor.PackageSigning.Data;
@@ -20,6 +21,44 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         );
 
         private static DevKeyPair _cachedKeyPair;
+        private const string DpapiPrefix = "dpapi:";
+        private const string AesPrefix = "aes:";
+        private const int CryptProtectUiForbidden = 0x1;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct DataBlob
+        {
+            public int cbData;
+            public IntPtr pbData;
+        }
+
+        // Windows DPAPI docs:
+        // https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata
+        // https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptunprotectdata
+        [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CryptProtectData(
+            ref DataBlob dataIn,
+            string dataDescr,
+            IntPtr optionalEntropy,
+            IntPtr reserved,
+            IntPtr promptStruct,
+            int flags,
+            out DataBlob dataOut);
+
+        [DllImport("crypt32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CryptUnprotectData(
+            ref DataBlob dataIn,
+            IntPtr dataDescr,
+            IntPtr optionalEntropy,
+            IntPtr reserved,
+            IntPtr promptStruct,
+            int flags,
+            out DataBlob dataOut);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr LocalFree(IntPtr handle);
 
         /// <summary>
         /// Get or create dev keypair
@@ -132,33 +171,32 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         /// </summary>
         private static string EncryptPrivateKey(string privateKeyBase64)
         {
-            try
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                byte[] key = GetMachineKey();
                 byte[] data = Convert.FromBase64String(privateKeyBase64);
-                
-                using (var aes = Aes.Create())
-                {
-                    aes.Key = key;
-                    aes.Mode = CipherMode.CBC;
-                    aes.GenerateIV();
-                    
-                    using (var encryptor = aes.CreateEncryptor())
-                    using (var ms = new MemoryStream())
-                    {
-                        ms.Write(aes.IV, 0, aes.IV.Length);
-                        using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
-                        {
-                            cs.Write(data, 0, data.Length);
-                        }
-                        return Convert.ToBase64String(ms.ToArray());
-                    }
-                }
+                byte[] protectedData = ProtectForCurrentUser(data);
+                return $"{DpapiPrefix}{Convert.ToBase64String(protectedData)}";
             }
-            catch
+
+            byte[] key = GetMachineKey();
+            byte[] cleartext = Convert.FromBase64String(privateKeyBase64);
+
+            using (var aes = Aes.Create())
             {
-                // If encryption fails, return as-is (not ideal but better than nothing)
-                return privateKeyBase64;
+                aes.Key = key;
+                aes.Mode = CipherMode.CBC;
+                aes.GenerateIV();
+
+                using (var encryptor = aes.CreateEncryptor())
+                using (var ms = new MemoryStream())
+                {
+                    ms.Write(aes.IV, 0, aes.IV.Length);
+                    using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+                    {
+                        cs.Write(cleartext, 0, cleartext.Length);
+                    }
+                    return $"{AesPrefix}{Convert.ToBase64String(ms.ToArray())}";
+                }
             }
         }
 
@@ -167,34 +205,57 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         /// </summary>
         private static string DecryptPrivateKey(string encryptedBase64)
         {
+            if (encryptedBase64.StartsWith(DpapiPrefix, StringComparison.Ordinal))
+            {
+                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    throw new CryptographicException("DPAPI-protected key can only be read on Windows.");
+
+                byte[] encrypted = Convert.FromBase64String(encryptedBase64.Substring(DpapiPrefix.Length));
+                byte[] unprotected = UnprotectForCurrentUser(encrypted);
+                return Convert.ToBase64String(unprotected);
+            }
+
+            if (encryptedBase64.StartsWith(AesPrefix, StringComparison.Ordinal))
+            {
+                return DecryptLegacyAesPrivateKey(encryptedBase64.Substring(AesPrefix.Length));
+            }
+
             try
             {
-                byte[] key = GetMachineKey();
-                byte[] encrypted = Convert.FromBase64String(encryptedBase64);
-                
-                using (var aes = Aes.Create())
-                {
-                    aes.Key = key;
-                    aes.Mode = CipherMode.CBC;
-                    
-                    byte[] iv = new byte[16];
-                    Array.Copy(encrypted, 0, iv, 0, 16);
-                    aes.IV = iv;
-                    
-                    using (var decryptor = aes.CreateDecryptor())
-                    using (var ms = new MemoryStream(encrypted, 16, encrypted.Length - 16))
-                    using (var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read))
-                    using (var result = new MemoryStream())
-                    {
-                        cs.CopyTo(result);
-                        return Convert.ToBase64String(result.ToArray());
-                    }
-                }
+                return DecryptLegacyAesPrivateKey(encryptedBase64);
             }
-            catch
+            catch (Exception)
             {
-                // If decryption fails, assume it's not encrypted
-                return encryptedBase64;
+                byte[] maybePlaintext = Convert.FromBase64String(encryptedBase64);
+                if (maybePlaintext.Length == 32 || maybePlaintext.Length == 64)
+                    return encryptedBase64;
+
+                throw;
+            }
+        }
+
+        private static string DecryptLegacyAesPrivateKey(string encryptedBase64)
+        {
+            byte[] key = GetMachineKey();
+            byte[] encrypted = Convert.FromBase64String(encryptedBase64);
+
+            using (var aes = Aes.Create())
+            {
+                aes.Key = key;
+                aes.Mode = CipherMode.CBC;
+
+                byte[] iv = new byte[16];
+                Array.Copy(encrypted, 0, iv, 0, 16);
+                aes.IV = iv;
+
+                using (var decryptor = aes.CreateDecryptor())
+                using (var ms = new MemoryStream(encrypted, 16, encrypted.Length - 16))
+                using (var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read))
+                using (var result = new MemoryStream())
+                {
+                    cs.CopyTo(result);
+                    return Convert.ToBase64String(result.ToArray());
+                }
             }
         }
 
@@ -209,6 +270,105 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             {
                 return sha256.ComputeHash(Encoding.UTF8.GetBytes(keyMaterial));
             }
+        }
+
+        private static byte[] ProtectForCurrentUser(byte[] cleartext)
+        {
+            DataBlob input = CreateDataBlob(cleartext);
+            try
+            {
+                if (!CryptProtectData(
+                    ref input,
+                    "YUCP Dev Key",
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    CryptProtectUiForbidden,
+                    out DataBlob output))
+                {
+                    throw new CryptographicException($"CryptProtectData failed with Win32 error {Marshal.GetLastWin32Error()}.");
+                }
+
+                try
+                {
+                    return CopyDataBlob(output);
+                }
+                finally
+                {
+                    if (output.pbData != IntPtr.Zero)
+                        LocalFree(output.pbData);
+                }
+            }
+            finally
+            {
+                FreeDataBlob(input);
+            }
+        }
+
+        private static byte[] UnprotectForCurrentUser(byte[] encrypted)
+        {
+            DataBlob input = CreateDataBlob(encrypted);
+            try
+            {
+                if (!CryptUnprotectData(
+                    ref input,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    CryptProtectUiForbidden,
+                    out DataBlob output))
+                {
+                    throw new CryptographicException($"CryptUnprotectData failed with Win32 error {Marshal.GetLastWin32Error()}.");
+                }
+
+                try
+                {
+                    return CopyDataBlob(output);
+                }
+                finally
+                {
+                    if (output.pbData != IntPtr.Zero)
+                        LocalFree(output.pbData);
+                }
+            }
+            finally
+            {
+                FreeDataBlob(input);
+            }
+        }
+
+        private static DataBlob CreateDataBlob(byte[] data)
+        {
+            var blob = new DataBlob
+            {
+                cbData = data != null ? data.Length : 0,
+                pbData = IntPtr.Zero,
+            };
+
+            if (blob.cbData > 0)
+            {
+                blob.pbData = Marshal.AllocHGlobal(blob.cbData);
+                Marshal.Copy(data, 0, blob.pbData, blob.cbData);
+            }
+
+            return blob;
+        }
+
+        private static byte[] CopyDataBlob(DataBlob blob)
+        {
+            if (blob.cbData <= 0 || blob.pbData == IntPtr.Zero)
+                return Array.Empty<byte>();
+
+            byte[] data = new byte[blob.cbData];
+            Marshal.Copy(blob.pbData, data, 0, blob.cbData);
+            return data;
+        }
+
+        private static void FreeDataBlob(DataBlob blob)
+        {
+            if (blob.pbData != IntPtr.Zero)
+                Marshal.FreeHGlobal(blob.pbData);
         }
     }
 }
