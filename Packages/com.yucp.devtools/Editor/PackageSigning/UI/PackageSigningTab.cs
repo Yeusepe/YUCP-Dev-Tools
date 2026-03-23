@@ -530,9 +530,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
                 if (_accountState.billing.billingEnabled)
                 {
+                    string planDisplayName = ResolvePlanDisplayName(_accountState.billing.planKey);
                     billingLabel = string.IsNullOrEmpty(_accountState.billing.planKey)
                         ? $"Billing: {_accountState.billing.status}"
-                        : $"Plan: {_accountState.billing.planKey}";
+                        : $"Plan: {planDisplayName}";
                 }
 
                 deviceLabel = _accountState.billing.deviceCap > 0
@@ -797,7 +798,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             topRow.style.alignItems = Align.FlexStart;
 
             var titleCol = new VisualElement();
-            titleCol.Add(MakeLabel(plan.planKey, 13, TextPri, bold: true, mb: 3));
+            string planName = !string.IsNullOrEmpty(plan.displayName) ? plan.displayName : plan.planKey;
+            titleCol.Add(MakeLabel(planName, 13, TextPri, bold: true, mb: 3));
             titleCol.Add(MakeLabel(
                 $"{FormatSupportTier(plan.supportTier)} support",
                 10,
@@ -814,10 +816,29 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             var features = new VisualElement();
             features.style.marginTop = 10;
-            features.Add(MakeLabel($"{plan.deviceCap} active device slots", 10, TextSec, mb: 4, wrap: true));
-            features.Add(MakeLabel($"{FormatQuota(plan.signQuotaPerPeriod)} signing events per period", 10, TextSec, mb: 4, wrap: true));
-            features.Add(MakeLabel($"{FormatRetention(plan.auditRetentionDays)} of audit retention", 10, TextSec, mb: 4, wrap: true));
-            features.Add(MakeLabel($"{plan.billingGraceDays} billing grace days", 10, TextSec, mb: 0, wrap: true));
+            if (!string.IsNullOrEmpty(plan.description))
+            {
+                features.Add(MakeLabel(plan.description, 10, TextSec, mb: 6, wrap: true));
+            }
+
+            string[] highlights = plan.highlights != null && plan.highlights.Length > 0
+                ? plan.highlights
+                : new[]
+                {
+                    $"{plan.deviceCap} active device slots",
+                    $"{FormatQuota(plan.signQuotaPerPeriod)} signing events per period",
+                    $"{FormatRetention(plan.auditRetentionDays)} of audit retention",
+                    $"{plan.billingGraceDays} billing grace days",
+                };
+
+            for (int index = 0; index < highlights.Length; index++)
+            {
+                string highlight = highlights[index];
+                if (string.IsNullOrEmpty(highlight))
+                    continue;
+
+                features.Add(MakeLabel(highlight, 10, TextSec, mb: index == highlights.Length - 1 ? 0 : 4, wrap: true));
+            }
             card.Add(features);
 
             if (showPlanActions)
@@ -861,6 +882,22 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 return supportTier.ToUpperInvariant();
 
             return char.ToUpperInvariant(supportTier[0]) + supportTier.Substring(1);
+        }
+
+        private string ResolvePlanDisplayName(string planKey)
+        {
+            if (string.IsNullOrEmpty(planKey) || _accountState?.availablePlans == null)
+                return planKey;
+
+            foreach (var plan in _accountState.availablePlans)
+            {
+                if (plan == null || !string.Equals(plan.planKey, planKey, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                return !string.IsNullOrEmpty(plan.displayName) ? plan.displayName : plan.planKey;
+            }
+
+            return planKey;
         }
 
         private VisualElement BuildPackageInfo()
@@ -2574,7 +2611,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private string GetAccountCertificatesUrl()
         {
-            return _settings?.GetEffectiveAccountCertificatesUrl() ?? "https://creators.yucp.club/account/certificates";
+            return _settings?.GetEffectiveAccountCertificatesUrl() ?? "https://creators.yucp.club/dashboard/certificates";
         }
 
         private static Dictionary<string, string> ParseUrlQuery(string query)

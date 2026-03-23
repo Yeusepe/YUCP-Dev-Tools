@@ -95,12 +95,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
 
             if (!string.IsNullOrEmpty(explicitBaseUrl))
             {
-                return $"{explicitBaseUrl.TrimEnd('/')}/account/certificates";
+                return $"{explicitBaseUrl.TrimEnd('/')}/dashboard/certificates";
             }
 
             string server = GetEffectiveServerUrl();
             if (string.IsNullOrEmpty(server))
-                return "https://creators.yucp.club/account/certificates";
+                return "https://creators.yucp.club/dashboard/certificates";
 
             try
             {
@@ -128,7 +128,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                     Scheme = scheme,
                     Host = host,
                     Port = port,
-                    Path = "/account/certificates",
+                    Path = "/dashboard/certificates",
                     Query = string.Empty,
                     Fragment = string.Empty,
                 };
@@ -136,7 +136,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
             }
             catch
             {
-                return "https://creators.yucp.club/account/certificates";
+                return "https://creators.yucp.club/dashboard/certificates";
             }
         }
 

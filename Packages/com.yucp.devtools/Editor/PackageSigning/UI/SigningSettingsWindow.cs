@@ -788,7 +788,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         {
             return _settings != null
                 ? _settings.GetEffectiveAccountCertificatesUrl()
-                : "https://creators.yucp.club/account/certificates";
+                : "https://creators.yucp.club/dashboard/certificates";
         }
 
         private void OpenAccountCertificatesPage()

@@ -699,6 +699,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             public string planKey;
             public string slug;
             public string productId;
+            public string displayName;
+            public string description;
+            public string[] highlights;
             public int priority;
             public int deviceCap;
             public int signQuotaPerPeriod;
