@@ -39,6 +39,11 @@ namespace YUCP.DevTools.Editor.PackageExporter.Bridge
 
             if (result.success)
             {
+                if (!string.IsNullOrWhiteSpace(result.warningMessage))
+                {
+                    Console.WriteLine($"[YUCP-Export] Warning: {result.warningMessage}");
+                }
+
                 string outputFile = Environment.GetEnvironmentVariable("YUCP_EXPORT_OUTPUT_FILE");
                 if (!string.IsNullOrWhiteSpace(outputFile))
                 {

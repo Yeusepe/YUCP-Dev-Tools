@@ -42,14 +42,14 @@ namespace YUCP.DirectVpmInstaller
                 string assetsPath = Application.dataPath;
                 
                 // Clean up installer scripts
-                foreach (string editorPath in editorPaths)
+                foreach (string editorPath in DirectVpmInstaller.GetInstallerEditorPaths(projectRoot))
                 {
                     if (!Directory.Exists(editorPath))
                         continue;
 
-                    // YUCP_Installer_*.cs
-                    string[] installerScripts = Directory.GetFiles(editorPath, "YUCP_Installer_*.cs", SearchOption.TopDirectoryOnly);
-                    foreach (string script in installerScripts)
+                    foreach (string script in DirectVpmInstaller.GeneratedInstallerArtifactPatterns
+                                 .SelectMany(pattern => Directory.GetFiles(editorPath, pattern, SearchOption.TopDirectoryOnly))
+                                 .Distinct(StringComparer.OrdinalIgnoreCase))
                     {
                         try
                         {
@@ -57,71 +57,13 @@ namespace YUCP.DirectVpmInstaller
                             string meta = script + ".meta";
                             if (File.Exists(meta)) File.Delete(meta);
                             cleanedCount++;
-                            cleanedItems.Add($"Installer script: {Path.GetFileName(script)}");
-                        }
-                        catch { }
-                    }
-                    
-                    // YUCP_Installer_*.asmdef
-                    string[] installerAsmdefs = Directory.GetFiles(editorPath, "YUCP_Installer_*.asmdef", SearchOption.TopDirectoryOnly);
-                    foreach (string asmdef in installerAsmdefs)
-                    {
-                        try
-                        {
-                            File.Delete(asmdef);
-                            string meta = asmdef + ".meta";
-                            if (File.Exists(meta)) File.Delete(meta);
-                            cleanedCount++;
-                            cleanedItems.Add($"Installer asmdef: {Path.GetFileName(asmdef)}");
-                        }
-                        catch { }
-                    }
-                    
-                    // YUCP_InstallerTxn_*.cs
-                    string[] txnScripts = Directory.GetFiles(editorPath, "YUCP_InstallerTxn_*.cs", SearchOption.TopDirectoryOnly);
-                    foreach (string script in txnScripts)
-                    {
-                        try
-                        {
-                            File.Delete(script);
-                            string meta = script + ".meta";
-                            if (File.Exists(meta)) File.Delete(meta);
-                            cleanedCount++;
-                            cleanedItems.Add($"Transaction script: {Path.GetFileName(script)}");
-                        }
-                        catch { }
-                    }
-                    
-                    // YUCP_FullDomainReload_*.cs
-                    string[] reloadScripts = Directory.GetFiles(editorPath, "YUCP_FullDomainReload_*.cs", SearchOption.TopDirectoryOnly);
-                    foreach (string script in reloadScripts)
-                    {
-                        try
-                        {
-                            File.Delete(script);
-                            string meta = script + ".meta";
-                            if (File.Exists(meta)) File.Delete(meta);
-                            cleanedCount++;
-                            cleanedItems.Add($"Reload script: {Path.GetFileName(script)}");
-                        }
-                        catch { }
-                    }
-                    
-                    // YUCP_InstallerHealthTools_*.cs
-                    string[] healthToolsScripts = Directory.GetFiles(editorPath, "YUCP_InstallerHealthTools_*.cs", SearchOption.TopDirectoryOnly);
-                    foreach (string script in healthToolsScripts)
-                    {
-                        try
-                        {
-                            File.Delete(script);
-                            string meta = script + ".meta";
-                            if (File.Exists(meta)) File.Delete(meta);
-                            cleanedCount++;
-                            cleanedItems.Add($"Health tools script: {Path.GetFileName(script)}");
+                            cleanedItems.Add($"Installer artifact: {Path.GetFileName(script)}");
                         }
                         catch { }
                     }
                 }
+
+                TryDeleteEmptyInstalledPackagesEditorFolder(projectRoot);
                 
                 // Clean up temporary JSON files
                 string[] tempJsonFiles = Array.Empty<string>();
@@ -207,6 +149,29 @@ namespace YUCP.DirectVpmInstaller
                     $"Failed to clean import artifacts:\n\n{ex.Message}",
                     "OK"
                 );
+            }
+        }
+
+        private static void TryDeleteEmptyInstalledPackagesEditorFolder(string projectRoot)
+        {
+            try
+            {
+                string installedEditorPath = Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor");
+                if (!Directory.Exists(installedEditorPath))
+                    return;
+
+                if (Directory.EnumerateFileSystemEntries(installedEditorPath).Any())
+                    return;
+
+                Directory.Delete(installedEditorPath);
+
+                string metaPath = installedEditorPath + ".meta";
+                if (File.Exists(metaPath))
+                    File.Delete(metaPath);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP] Failed to remove empty installed-packages editor folder: {ex.Message}");
             }
         }
 
@@ -537,5 +502,4 @@ namespace YUCP.DirectVpmInstaller
         private static string Short(string p) => p.Replace(Path.GetDirectoryName(Application.dataPath) + Path.DirectorySeparatorChar, "");
     }
 }
-
 

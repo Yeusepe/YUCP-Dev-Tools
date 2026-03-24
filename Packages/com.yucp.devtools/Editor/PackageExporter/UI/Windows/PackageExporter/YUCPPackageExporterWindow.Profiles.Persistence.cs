@@ -36,7 +36,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Apply custom order if available, otherwise sort alphabetically
             allProfiles = ApplyCustomOrder(allProfiles);
             
-            // Reselect if we had a selection
+            // Re-sync actionable selection state after reload/domain reload.
+            // The visible details panel can still have a valid selectedProfile reference,
+            // but export/keyboard/sidebar behavior depends on selectedProfileIndices too.
             if (selectedProfile != null)
             {
                 int index = allProfiles.IndexOf(selectedProfile);
@@ -44,7 +46,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     selectedProfile = null;
                     selectedProfileIndices.Clear();
+                    lastClickedProfileIndex = -1;
                 }
+                else
+                {
+                    selectedProfileIndices.Clear();
+                    selectedProfileIndices.Add(index);
+                    lastClickedProfileIndex = index;
+                }
+            }
+            else
+            {
+                selectedProfileIndices.Clear();
+                lastClickedProfileIndex = -1;
             }
         }
 

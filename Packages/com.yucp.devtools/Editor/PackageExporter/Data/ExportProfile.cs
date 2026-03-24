@@ -295,6 +295,41 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         [Tooltip("Custom tags added to this profile")]
         public List<string> customTags = new List<string>();
+        
+        [Header("Storefront")]
+        [Tooltip("Short one-line tagline displayed under the package name in the importer")]
+        public string tagline = "";
+        
+        [Tooltip("Package category for marketplace-style display")]
+        public PackageCategory category = PackageCategory.None;
+        
+        [Tooltip("Supported platforms (e.g. PC, Quest, iOS, Android)")]
+        public List<string> supportedPlatforms = new List<string>();
+        
+        [Tooltip("Minimum Unity version required")]
+        public string minimumUnityVersion = "2022.3";
+        
+        [Tooltip("Short creator note displayed in the importer")]
+        [TextArea(2, 4)]
+        public string creatorNote = "";
+        
+        [Tooltip("Release notes for this version")]
+        [TextArea(3, 8)]
+        public string releaseNotes = "";
+        
+        [Tooltip("Gallery images displayed in a carousel in the importer (max 8)")]
+        public List<Texture2D> galleryImages = new List<Texture2D>();
+        
+        /// <summary>
+        /// Available platform options for the Storefront platforms selector
+        /// </summary>
+        public static readonly List<string> AvailablePlatforms = new List<string>
+        {
+            "PC",
+            "Quest",
+            "iOS",
+            "Android"
+        };
 
         [Header("Signing")]
         [Tooltip("Override the certificate provider server URL for this profile. Leave empty to use the default from Signing Settings.")]
@@ -845,5 +880,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             return icon;
         }
+    }
+    
+    /// <summary>
+    /// Package category for marketplace-style display in the importer
+    /// </summary>
+    public enum PackageCategory
+    {
+        None,
+        Avatar,
+        Tool,
+        Shader,
+        World,
+        AssetPack,
+        Prefab,
+        Animation,
+        System
     }
 }

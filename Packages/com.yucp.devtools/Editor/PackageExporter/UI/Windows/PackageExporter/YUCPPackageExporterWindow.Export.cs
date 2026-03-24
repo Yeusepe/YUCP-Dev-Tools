@@ -210,6 +210,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 if (result.success)
                 {
+                    string warningSuffix = string.IsNullOrEmpty(result.warningMessage)
+                        ? string.Empty
+                        : $"\n\nWarning:\n{result.warningMessage}";
+
                     bool openFolder = EditorUtility.DisplayDialog(
                         "Export Successful",
                         $"Package exported successfully!\n\n" +
@@ -217,7 +221,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         $"Output: {result.outputPath}\n" +
                         $"Files: {result.filesExported}\n" +
                         $"Assemblies Obfuscated: {result.assembliesObfuscated}\n" +
-                        $"Build Time: {result.buildTimeSeconds:F2}s",
+                        $"Build Time: {result.buildTimeSeconds:F2}s" +
+                        warningSuffix,
                         "Open Folder",
                         "OK"
                     );
@@ -229,6 +234,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     LoadProfiles();
                     UpdateProfileDetails();
+
+                    if (!string.IsNullOrEmpty(result.warningMessage) && _toast != null)
+                    {
+                        _toast.ShowWarning(result.warningMessage, "Export Warning", 6f);
+                    }
                 }
                 else
                 {

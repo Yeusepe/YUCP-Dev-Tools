@@ -43,6 +43,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             public bool success;
             public string errorMessage;
+            public string warningMessage;
             public string outputPath;
             public float buildTimeSeconds;
             public int filesExported;
@@ -65,6 +66,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public string IconPath;
             public string BannerPath;
             public readonly Dictionary<ProductLink, string> ProductLinkIconPaths = new Dictionary<ProductLink, string>();
+            public readonly List<string> GalleryImagePaths = new List<string>();
 
             public PackageEmbedContext(ExportProfile profile)
             {
@@ -388,6 +390,31 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         if (!string.IsNullOrEmpty(linkIconPath))
                         {
                             embedContext.ProductLinkIconPaths[link] = linkIconPath;
+                        }
+                    }
+                }
+
+                // Embed gallery images for storefront display
+                if (profile.galleryImages != null)
+                {
+                    for (int i = 0; i < profile.galleryImages.Count && i < 8; i++)
+                    {
+                        var galleryImg = profile.galleryImages[i];
+                        if (galleryImg == null) continue;
+                        string exportAssetPath;
+                        string galleryPath = embedContext.RegisterTextureForExport(
+                            galleryImg,
+                            $"Gallery_{i}",
+                            "Gallery",
+                            out exportAssetPath
+                        );
+                        if (!string.IsNullOrEmpty(exportAssetPath) && !assetsToExport.Contains(exportAssetPath))
+                        {
+                            assetsToExport.Add(exportAssetPath);
+                        }
+                        if (!string.IsNullOrEmpty(galleryPath))
+                        {
+                            embedContext.GalleryImagePaths.Add(galleryPath);
                         }
                     }
                 }
@@ -728,6 +755,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 bool packageSigned = false;
                 bool signingWasRequired = false;
                 bool signingBlockedExport = false;
+                string signingWarningMessage = null;
                 s_lastSigningFailureMessage = null;
                 try
                 {
@@ -743,8 +771,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                         else
                         {
-                            signingBlockedExport = true;
-                            Debug.LogWarning("[PackageBuilder] Package signing failed, canceling export");
+                            string signingFailureMessage = s_lastSigningFailureMessage;
+                            if (ShouldAllowUnsignedExportAfterSigningFailure(signingFailureMessage))
+                            {
+                                signingWarningMessage = BuildUnsignedExportWarning(signingFailureMessage);
+                                progressCallback?.Invoke(0.84f, "Signing unavailable, exporting unsigned package...");
+                                Debug.LogWarning($"[PackageBuilder] {signingWarningMessage}");
+                            }
+                            else
+                            {
+                                signingBlockedExport = true;
+                                Debug.LogWarning("[PackageBuilder] Package signing failed, canceling export");
+                            }
                         }
                     }
                 }
@@ -753,8 +791,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Debug.LogWarning($"[PackageBuilder] Package signing error: {ex.Message}");
                     if (signingWasRequired)
                     {
-                        signingBlockedExport = true;
-                        s_lastSigningFailureMessage = $"Package signing failed before export completed: {ex.Message}";
+                        string signingFailureMessage = $"Package signing failed before export completed: {ex.Message}";
+                        s_lastSigningFailureMessage = signingFailureMessage;
+                        if (ShouldAllowUnsignedExportAfterSigningFailure(signingFailureMessage))
+                        {
+                            signingWarningMessage = BuildUnsignedExportWarning(signingFailureMessage);
+                            progressCallback?.Invoke(0.84f, "Signing unavailable, exporting unsigned package...");
+                            Debug.LogWarning($"[PackageBuilder] {signingWarningMessage}");
+                        }
+                        else
+                        {
+                            signingBlockedExport = true;
+                        }
                     }
                 }
 
@@ -874,6 +922,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Build result
                 result.success = true;
+                result.warningMessage = signingWarningMessage;
                 
                 // Track export for milestones
                 try
@@ -1807,6 +1856,81 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     metadataJson.fileHashes = BuildExportHashes(exportedAssets);
                 }
 
+                // Storefront metadata
+                if (!string.IsNullOrEmpty(profile.tagline))
+                    metadataJson.tagline = profile.tagline;
+                if (profile.category != PackageCategory.None)
+                    metadataJson.category = profile.category.ToString();
+                if (profile.supportedPlatforms != null && profile.supportedPlatforms.Count > 0)
+                    metadataJson.supportedPlatforms = new List<string>(profile.supportedPlatforms);
+                if (!string.IsNullOrEmpty(profile.minimumUnityVersion))
+                    metadataJson.minimumUnityVersion = profile.minimumUnityVersion;
+                if (!string.IsNullOrEmpty(profile.creatorNote))
+                    metadataJson.creatorNote = profile.creatorNote;
+                if (!string.IsNullOrEmpty(profile.releaseNotes))
+                    metadataJson.releaseNotes = profile.releaseNotes;
+                // Tags from existing tag system
+                var allTags = profile.GetAllTags();
+                if (allTags != null && allTags.Count > 0)
+                    metadataJson.tags = allTags;
+
+                // Gallery image paths (already embedded by PackageEmbedContext)
+                if (embedContext != null && embedContext.GalleryImagePaths.Count > 0)
+                    metadataJson.galleryImages = new List<string>(embedContext.GalleryImagePaths);
+
+                // Auto-computed asset statistics
+                metadataJson.exportDate = DateTime.UtcNow.ToString("O");
+                if (exportedAssets != null && exportedAssets.Count > 0)
+                {
+                    metadataJson.totalFileCount = exportedAssets.Count;
+
+                    long totalSize = 0;
+                    var typeCounts = new Dictionary<string, int>();
+                    string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                    foreach (var assetPath in exportedAssets)
+                    {
+                        if (string.IsNullOrEmpty(assetPath)) continue;
+                        string abs = Path.Combine(projectRoot, assetPath.Replace('/', Path.DirectorySeparatorChar));
+                        if (File.Exists(abs))
+                        {
+                            try { totalSize += new FileInfo(abs).Length; } catch { }
+                        }
+
+                        string ext = Path.GetExtension(assetPath).ToLowerInvariant();
+                        string assetType = ext switch
+                        {
+                            ".prefab" => "Prefab",
+                            ".cs" => "Script",
+                            ".shader" or ".shadergraph" or ".shadersubgraph" => "Shader",
+                            ".mat" => "Material",
+                            ".png" or ".jpg" or ".jpeg" or ".tga" or ".psd" or ".gif" or ".bmp" => "Texture",
+                            ".fbx" or ".obj" or ".blend" => "Model",
+                            ".anim" => "Animation",
+                            ".controller" or ".overrideController" => "Animator",
+                            ".asset" => "Asset",
+                            ".unity" => "Scene",
+                            ".dll" => "Assembly",
+                            ".mesh" => "Mesh",
+                            _ => null
+                        };
+                        if (assetType != null)
+                        {
+                            typeCounts.TryGetValue(assetType, out int count);
+                            typeCounts[assetType] = count + 1;
+                        }
+                    }
+                    metadataJson.totalFileSize = totalSize;
+
+                    if (typeCounts.Count > 0)
+                    {
+                        metadataJson.assetBreakdown = new List<AssetBreakdownJson>();
+                        foreach (var kvp in typeCounts.OrderByDescending(x => x.Value))
+                        {
+                            metadataJson.assetBreakdown.Add(new AssetBreakdownJson { type = kvp.Key, count = kvp.Value });
+                        }
+                    }
+                }
+
                 // Embed license requirements for all profiles (main + bundled)
                 var licensePackages = new List<LicensePackageJson>();
                 void AddLicenseProfile(ExportProfile p)
@@ -1861,6 +1985,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public List<FileHashJson> fileHashes;
             /// <summary>Per-profile license requirements embedded at export time.</summary>
             public List<LicensePackageJson> licensePackages;
+            
+            // Storefront metadata
+            public string tagline;
+            public string category;
+            public List<string> supportedPlatforms;
+            public string minimumUnityVersion;
+            public string creatorNote;
+            public string releaseNotes;
+            public List<string> galleryImages;
+            public List<string> tags;
+            public int totalFileCount;
+            public long totalFileSize;
+            public List<AssetBreakdownJson> assetBreakdown;
+            public string exportDate;
         }
 
         [Serializable]
@@ -1890,6 +2028,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             public string path;
             public string hash;
+        }
+
+        [Serializable]
+        private class AssetBreakdownJson
+        {
+            public string type;
+            public int count;
         }
 
         private static List<FileHashJson> BuildExportHashes(List<string> exportedAssets)
@@ -2462,6 +2607,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // 2b. Inject DirectVpmInstaller.cs
                 string installerRoot = embedContext != null ? $"{InstalledPackagesRoot}/Editor" : "Assets/Editor";
+                bool deferInstallerActivation = embedContext != null;
                 // Try to find the script in the package
                 string installerScriptPath = null;
                 string[] foundScripts = AssetDatabase.FindAssets("DirectVpmInstaller t:Script");
@@ -2477,16 +2623,46 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     string installerFolder = Path.Combine(tempExtractDir, installerGuid);
                     Directory.CreateDirectory(installerFolder);
                     
+                    string installerDir = Path.GetDirectoryName(installerScriptPath);
+                    if (deferInstallerActivation)
+                    {
+                        string preflightTemplatePath = Path.Combine(installerDir, "InstallerPreflight.cs");
+                        if (File.Exists(preflightTemplatePath))
+                        {
+                            string preflightGuid = Guid.NewGuid().ToString("N");
+                            string preflightFolder = Path.Combine(tempExtractDir, preflightGuid);
+                            Directory.CreateDirectory(preflightFolder);
+
+                            string preflightFileName = $"YUCP_InstallerPreflight_{installerGuid}.cs";
+                            string preflightClassName = $"InstallerPreflight_{installerGuid}";
+                            string preflightContent = File.ReadAllText(preflightTemplatePath)
+                                .Replace("__YUCP_PREFLIGHT_CLASS__", preflightClassName)
+                                .Replace("__YUCP_PREFLIGHT_FILE__", preflightFileName);
+
+                            File.WriteAllText(Path.Combine(preflightFolder, "asset"), preflightContent);
+                            File.WriteAllText(Path.Combine(preflightFolder, "pathname"), $"{installerRoot}/{preflightFileName}");
+
+                            string preflightMeta = "fileFormatVersion: 2\nguid: " + preflightGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+                            File.WriteAllText(Path.Combine(preflightFolder, "asset.meta"), preflightMeta);
+                        }
+                        else
+                        {
+                            Debug.LogWarning("[PackageBuilder] Could not find InstallerPreflight.cs template");
+                        }
+                    }
+
                     string installerContent = File.ReadAllText(installerScriptPath);
                     File.WriteAllText(Path.Combine(installerFolder, "asset"), installerContent);
-                    // Use unique path
-                    File.WriteAllText(Path.Combine(installerFolder, "pathname"), $"{installerRoot}/YUCP_Installer_{installerGuid}.cs");
+                    string installerFileName = $"YUCP_Installer_{installerGuid}.cs";
+                    string installerPathname = deferInstallerActivation
+                        ? $"{installerRoot}/{installerFileName}.yucp_disabled"
+                        : $"{installerRoot}/{installerFileName}";
+                    File.WriteAllText(Path.Combine(installerFolder, "pathname"), installerPathname);
                     
                     string installerMeta = "fileFormatVersion: 2\nguid: " + installerGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(Path.Combine(installerFolder, "asset.meta"), installerMeta);
                     
                     // Also inject the .asmdef to isolate the installer from compilation errors
-                    string installerDir = Path.GetDirectoryName(installerScriptPath);
                     string asmdefPath = Path.Combine(installerDir, "DirectVpmInstaller.asmdef");
                     
                     if (File.Exists(asmdefPath))
@@ -2509,7 +2685,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                         catch { /* best-effort replacement */ }
                         File.WriteAllText(Path.Combine(asmdefFolder, "asset"), asmdefContent);
-                        File.WriteAllText(Path.Combine(asmdefFolder, "pathname"), $"{installerRoot}/YUCP_Installer_{installerGuid}.asmdef");
+                        string installerAsmdefName = $"YUCP_Installer_{installerGuid}.asmdef";
+                        string installerAsmdefPathname = deferInstallerActivation
+                            ? $"{installerRoot}/{installerAsmdefName}.yucp_disabled"
+                            : $"{installerRoot}/{installerAsmdefName}";
+                        File.WriteAllText(Path.Combine(asmdefFolder, "pathname"), installerAsmdefPathname);
                         
                         string asmdefMeta = "fileFormatVersion: 2\nguid: " + asmdefGuid + "\nAssemblyDefinitionImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                         File.WriteAllText(Path.Combine(asmdefFolder, "asset.meta"), asmdefMeta);
@@ -2527,7 +2707,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         
                         string txnManagerContent = File.ReadAllText(txnManagerPath);
                         File.WriteAllText(Path.Combine(txnManagerFolder, "asset"), txnManagerContent);
-                        File.WriteAllText(Path.Combine(txnManagerFolder, "pathname"), $"{installerRoot}/YUCP_InstallerTxn_{installerGuid}.cs");
+                        string txnManagerName = $"YUCP_InstallerTxn_{installerGuid}.cs";
+                        string txnManagerPathname = deferInstallerActivation
+                            ? $"{installerRoot}/{txnManagerName}.yucp_disabled"
+                            : $"{installerRoot}/{txnManagerName}";
+                        File.WriteAllText(Path.Combine(txnManagerFolder, "pathname"), txnManagerPathname);
                         
                         string txnManagerMeta = "fileFormatVersion: 2\nguid: " + txnManagerGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                         File.WriteAllText(Path.Combine(txnManagerFolder, "asset.meta"), txnManagerMeta);
@@ -2548,7 +2732,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         
                         string healthToolsContent = File.ReadAllText(healthToolsScriptPath);
                         File.WriteAllText(Path.Combine(healthToolsFolder, "asset"), healthToolsContent);
-                        File.WriteAllText(Path.Combine(healthToolsFolder, "pathname"), $"{installerRoot}/YUCP_InstallerHealthTools_{installerGuid}.cs");
+                        string healthToolsName = $"YUCP_InstallerHealthTools_{installerGuid}.cs";
+                        string healthToolsPathname = deferInstallerActivation
+                            ? $"{installerRoot}/{healthToolsName}.yucp_disabled"
+                            : $"{installerRoot}/{healthToolsName}";
+                        File.WriteAllText(Path.Combine(healthToolsFolder, "pathname"), healthToolsPathname);
                         
                         string healthToolsMeta = "fileFormatVersion: 2\nguid: " + healthToolsGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                         File.WriteAllText(Path.Combine(healthToolsFolder, "asset.meta"), healthToolsMeta);
@@ -2576,7 +2764,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     string reloadContent = File.ReadAllText(fullReloadScriptPath);
                     File.WriteAllText(Path.Combine(reloadFolder, "asset"), reloadContent);
-                    File.WriteAllText(Path.Combine(reloadFolder, "pathname"), $"{installerRoot}/YUCP_FullDomainReload_{reloadGuid}.cs");
+                    string reloadName = $"YUCP_FullDomainReload_{reloadGuid}.cs";
+                    string reloadPathname = deferInstallerActivation
+                        ? $"{installerRoot}/{reloadName}.yucp_disabled"
+                        : $"{installerRoot}/{reloadName}";
+                    File.WriteAllText(Path.Combine(reloadFolder, "pathname"), reloadPathname);
                     
                     string reloadMeta = "fileFormatVersion: 2\nguid: " + reloadGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(Path.Combine(reloadFolder, "asset.meta"), reloadMeta);
@@ -3238,6 +3430,35 @@ namespace YUCP.DevTools.Editor.PackageExporter
             try
             {
                 var settings = GetSigningSettings();
+                string resolvedServerUrl = !string.IsNullOrEmpty(profile?.signingServerUrl)
+                    ? profile.signingServerUrl
+                    : settings?.serverUrl;
+                bool shouldAutoManageCertificate =
+                    settings != null &&
+                    !string.IsNullOrEmpty(resolvedServerUrl) &&
+                    YucpOAuthService.IsSignedIn();
+
+                if (shouldAutoManageCertificate &&
+                    (!settings.HasValidCertificate() || !IsStoredCertificateForCurrentDevKey(settings)))
+                {
+                    if (!TryRepairSigningCertificateForExport(
+                            resolvedServerUrl,
+                            settings,
+                            progressCallback,
+                            out string repairError,
+                            out string rawRepairError))
+                    {
+                        s_lastSigningFailureMessage = repairError;
+                        if (!string.IsNullOrEmpty(rawRepairError))
+                        {
+                            Debug.LogWarning($"[PackageBuilder] Raw certificate repair failure: {rawRepairError}");
+                        }
+                        return false;
+                    }
+
+                    settings = GetSigningSettings();
+                }
+
                 if (settings == null || !settings.HasValidCertificate())
                 {
                     return false;
@@ -3254,9 +3475,34 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 string currentDevPublicKey = DevKeyManager.GetPublicKeyBase64();
                 if (certificate.cert.devPublicKey != currentDevPublicKey)
                 {
-                    Debug.LogError($"[PackageBuilder] Dev public key mismatch! Certificate expects: {certificate.cert.devPublicKey}, Current: {currentDevPublicKey}");
-                    Debug.LogError("[PackageBuilder] The certificate was issued for a different dev key. Please regenerate or import the correct certificate.");
-                    return false;
+                    string repairError = null;
+                    string rawRepairError = null;
+                    if (!shouldAutoManageCertificate ||
+                        !TryRepairSigningCertificateForExport(
+                            resolvedServerUrl,
+                            settings,
+                            progressCallback,
+                            out repairError,
+                            out rawRepairError))
+                    {
+                        Debug.LogError($"[PackageBuilder] Dev public key mismatch! Certificate expects: {certificate.cert.devPublicKey}, Current: {currentDevPublicKey}");
+                        Debug.LogError("[PackageBuilder] The certificate was issued for a different dev key. Please regenerate or import the correct certificate.");
+                        s_lastSigningFailureMessage = repairError ?? "The stored signing certificate belongs to a different device key. Restore or request a certificate for this machine before exporting again.";
+                        if (!string.IsNullOrEmpty(rawRepairError))
+                        {
+                            Debug.LogWarning($"[PackageBuilder] Raw certificate repair failure: {rawRepairError}");
+                        }
+                        return false;
+                    }
+
+                    settings = GetSigningSettings();
+                    certificate = CertificateManager.GetCurrentCertificate();
+                    currentDevPublicKey = DevKeyManager.GetPublicKeyBase64();
+                    if (certificate == null || certificate.cert.devPublicKey != currentDevPublicKey)
+                    {
+                        s_lastSigningFailureMessage = "The signing certificate could not be refreshed for the current device.";
+                        return false;
+                    }
                 }
 
                 Debug.Log($"[PackageBuilder] Dev public key matches certificate: {currentDevPublicKey}");
@@ -3290,42 +3536,72 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 progressCallback?.Invoke(0.723f, "Signing manifest with dev key...");
 
-                // Create signing request payload (matching PackageSigningService format)
-                var payloadObj = new SigningRequestPayload
+                SigningRequestResult SubmitSigningRequest(
+                    PackageSigningData.YucpCertificate activeCertificate,
+                    PackageSigningData.SigningSettings activeSettings,
+                    bool suppressFailureLog = false)
                 {
-                    publisherId = settings.publisherId,
-                    vrchatUserId = settings.vrchatUserId,
-                    manifest = manifest,
-                    yucpCert = certificate,
-                    timestamp = System.DateTime.UtcNow.ToString("O"),
-                    nonce = System.Guid.NewGuid().ToString()
-                };
+                    var payloadObj = new SigningRequestPayload
+                    {
+                        publisherId = activeSettings.publisherId,
+                        vrchatUserId = activeSettings.vrchatUserId,
+                        manifest = manifest,
+                        yucpCert = activeCertificate,
+                        timestamp = System.DateTime.UtcNow.ToString("O"),
+                        nonce = System.Guid.NewGuid().ToString()
+                    };
 
-                // Canonicalize payload JSON (must match PackageSigningService format exactly)
-                // The server verifies the signature against the canonicalized payload
-                string payloadJson = CanonicalizeSigningPayload(payloadObj);
-                byte[] payloadBytes = System.Text.Encoding.UTF8.GetBytes(payloadJson);
-                
-                byte[] devSignature = DevKeyManager.SignData(payloadBytes);
+                    string payloadJson = CanonicalizeSigningPayload(payloadObj);
+                    byte[] payloadBytes = System.Text.Encoding.UTF8.GetBytes(payloadJson);
+                    byte[] devSignature = DevKeyManager.SignData(payloadBytes);
 
-                progressCallback?.Invoke(0.724f, "Sending signing request to server...");
+                    progressCallback?.Invoke(0.724f, "Sending signing request to server...");
+                    return SendSigningRequestSynchronously(
+                        resolvedServerUrl,
+                        activeSettings.GetCertificateJson(),
+                        payloadObj.manifest?.packageId ?? "",
+                        payloadObj.manifest?.archiveSha256 ?? "",
+                        payloadObj.manifest?.version ?? "",
+                        devSignature,
+                        progressCallback,
+                        suppressFailureLog
+                    );
+                }
 
-                // Send to server using synchronous HTTP request
-                // Pass the raw stored cert JSON so the Bearer token exactly matches what the CA signed.
-                string rawCertJson = settings.GetCertificateJson();
-                // Resolve server URL: profile override takes precedence over global signing settings.
-                string resolvedServerUrl = !string.IsNullOrEmpty(profile?.signingServerUrl)
-                    ? profile.signingServerUrl
-                    : settings.serverUrl;
-                SigningRequestResult signingResult = SendSigningRequestSynchronously(
-                    resolvedServerUrl,
-                    rawCertJson,
-                    payloadObj.manifest?.packageId ?? "",
-                    payloadObj.manifest?.archiveSha256 ?? "",
-                    payloadObj.manifest?.version ?? "",
-                    devSignature,
-                    progressCallback
+                SigningRequestResult signingResult = SubmitSigningRequest(
+                    certificate,
+                    settings,
+                    suppressFailureLog: shouldAutoManageCertificate
                 );
+
+                if (signingResult?.response == null)
+                {
+                    if (shouldAutoManageCertificate && LooksLikeRepairableSigningFailure(signingResult))
+                    {
+                        if (TryRepairSigningCertificateForExport(
+                                resolvedServerUrl,
+                                settings,
+                                progressCallback,
+                                out _,
+                                out string rawRepairError))
+                        {
+                            settings = GetSigningSettings();
+                            certificate = CertificateManager.GetCurrentCertificate();
+                            if (settings != null &&
+                                certificate != null &&
+                                settings.HasValidCertificate() &&
+                                certificate.cert.devPublicKey == DevKeyManager.GetPublicKeyBase64())
+                            {
+                                progressCallback?.Invoke(0.724f, "Retrying signing with refreshed certificate...");
+                                signingResult = SubmitSigningRequest(certificate, settings);
+                            }
+                        }
+                        else if (!string.IsNullOrEmpty(rawRepairError))
+                        {
+                            Debug.LogWarning($"[PackageBuilder] Raw certificate repair failure: {rawRepairError}");
+                        }
+                    }
+                }
 
                 if (signingResult?.response == null)
                 {
@@ -3345,10 +3621,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (signingResponse.certificateChain != null && signingResponse.certificateChain.Length > 0)
                 {
                     manifest.certificateChain = signingResponse.certificateChain;
-                }
-                else
-                {
-                    Debug.LogWarning("[PackageBuilder] Server response did not include certificate chain");
                 }
 
                 // Convert SigningResponse to SignatureData for embedding
@@ -3375,6 +3647,222 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 Debug.LogError($"[PackageBuilder] Signing error: {ex.Message}\n{ex.StackTrace}");
                 return false;
             }
+        }
+
+        private static bool IsStoredCertificateForCurrentDevKey(PackageSigningData.SigningSettings settings)
+        {
+            if (settings == null || string.IsNullOrEmpty(settings.devPublicKey))
+            {
+                return false;
+            }
+
+            try
+            {
+                string currentDevPublicKey = DevKeyManager.GetPublicKeyBase64();
+                return !string.IsNullOrEmpty(currentDevPublicKey) &&
+                    string.Equals(settings.devPublicKey, currentDevPublicKey, StringComparison.Ordinal);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool LooksLikeRepairableSigningFailure(SigningRequestResult signingResult)
+        {
+            string message = $"{signingResult?.normalizedError ?? ""}\n{signingResult?.rawError ?? ""}";
+            return message.IndexOf("Certificate has been revoked", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   message.IndexOf("restore the correct certificate", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   message.IndexOf("Signing authentication failed", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool ShouldAllowUnsignedExportAfterSigningFailure(string signingFailureMessage)
+        {
+            if (string.IsNullOrWhiteSpace(signingFailureMessage))
+                return false;
+
+            string message = signingFailureMessage.Trim();
+
+            if (message.IndexOf("network error while requesting a package signature", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            if (message.IndexOf("server returned HTML", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            if (message.IndexOf("HTTP 5", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            if (message.StartsWith("HTTP 0", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            string[] availabilityHints =
+            {
+                "cannot connect",
+                "destination host",
+                "host unreachable",
+                "timed out",
+                "timeout",
+                "cannot resolve",
+                "could not resolve",
+                "name resolution",
+                "no internet",
+                "offline",
+                "connection refused",
+                "connection failed",
+                "failed to connect",
+                "temporarily unavailable",
+                "service unavailable",
+                "gateway timeout",
+                "bad gateway",
+                "dns"
+            };
+
+            return availabilityHints.Any(hint =>
+                message.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        private static string BuildUnsignedExportWarning(string signingFailureMessage)
+        {
+            if (string.IsNullOrWhiteSpace(signingFailureMessage))
+                return "Package was exported unsigned because the signing service was unavailable.";
+
+            return $"Package was exported unsigned because signing was unavailable: {signingFailureMessage}";
+        }
+
+        private static string AppendAccountCertificatesUrlIfNeeded(
+            string message,
+            PackageSigningData.SigningSettings settings)
+        {
+            if (string.IsNullOrEmpty(message) ||
+                message.IndexOf("Certificates & Billing", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return message;
+            }
+
+            string accountUrl = settings?.GetEffectiveAccountCertificatesUrl();
+            if (string.IsNullOrEmpty(accountUrl) ||
+                message.IndexOf(accountUrl, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return message;
+            }
+
+            return $"{message} Open: {accountUrl}";
+        }
+
+        private static bool TryRepairSigningCertificateForExport(
+            string resolvedServerUrl,
+            PackageSigningData.SigningSettings settings,
+            Action<float, string> progressCallback,
+            out string friendlyError,
+            out string rawError)
+        {
+            friendlyError = null;
+            rawError = null;
+
+            if (settings == null || string.IsNullOrEmpty(resolvedServerUrl))
+            {
+                friendlyError = "Certificate repair is unavailable because the signing server is not configured.";
+                return false;
+            }
+
+            string accessToken = YucpOAuthService.GetAccessToken();
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                friendlyError = "Your creator session expired. Sign in again from Package Signing, then retry the export.";
+                return false;
+            }
+
+            string devPublicKey;
+            try
+            {
+                devPublicKey = DevKeyManager.GetPublicKeyBase64();
+            }
+            catch (Exception ex)
+            {
+                friendlyError = $"Could not load the current device key: {ex.Message}";
+                rawError = ex.Message;
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(devPublicKey))
+            {
+                friendlyError = "Could not load the current device key for this project.";
+                return false;
+            }
+
+            string publisherName = YucpOAuthService.GetDisplayName();
+            if (string.IsNullOrEmpty(publisherName))
+            {
+                publisherName = settings.publisherName;
+            }
+            if (string.IsNullOrEmpty(publisherName))
+            {
+                publisherName = "YUCP Creator";
+            }
+
+            var service = new PackageSigningService(resolvedServerUrl);
+            progressCallback?.Invoke(0.7242f, "Refreshing signing certificate...");
+
+            var accountState = service.GetCertificateAccountState(accessToken, devPublicKey);
+            if (accountState?.billing != null)
+            {
+                if (!accountState.billing.allowSigning && accountState.currentDeviceKnown)
+                {
+                    friendlyError = AppendAccountCertificatesUrlIfNeeded(
+                        accountState.error ?? "This machine cannot restore its certificate until billing is fixed.",
+                        settings);
+                    rawError = accountState.error;
+                    return false;
+                }
+
+                if (!accountState.billing.allowEnrollment && !accountState.currentDeviceKnown)
+                {
+                    friendlyError = AppendAccountCertificatesUrlIfNeeded(
+                        accountState.error ?? "This machine cannot enroll a certificate right now.",
+                        settings);
+                    rawError = accountState.error;
+                    return false;
+                }
+
+                if (accountState.deviceCapReachedForCurrentMachine)
+                {
+                    friendlyError = AppendAccountCertificatesUrlIfNeeded(
+                        accountState.error ?? "This plan has no free device slots for this machine.",
+                        settings);
+                    rawError = accountState.error;
+                    return false;
+                }
+            }
+
+            string certJson = service.RestoreCertificate(accessToken, devPublicKey);
+            if (string.IsNullOrEmpty(certJson))
+            {
+                var requestResult = service.RequestCertificate(accessToken, devPublicKey, publisherName);
+                if (!requestResult.success || string.IsNullOrEmpty(requestResult.certJson))
+                {
+                    rawError = requestResult.error;
+                    friendlyError = AppendAccountCertificatesUrlIfNeeded(
+                        PackageSigningService.NormalizeCertificateRequestError(
+                            requestResult.responseCode,
+                            requestResult.error ?? "Certificate request failed.",
+                            accountState?.currentDeviceKnown == true),
+                        settings);
+                    return false;
+                }
+
+                certJson = requestResult.certJson;
+            }
+
+            var importResult = CertificateManager.ImportAndVerifyFromJson(certJson);
+            if (!importResult.valid)
+            {
+                rawError = importResult.error;
+                friendlyError = $"Certificate repair failed: {importResult.error}";
+                return false;
+            }
+
+            progressCallback?.Invoke(0.7248f, "Signing certificate refreshed.");
+            return true;
         }
 
         /// <summary>
@@ -3546,7 +4034,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             string contentHash,
             string packageVersion,
             byte[] devSignature,
-            Action<float, string> progressCallback)
+            Action<float, string> progressCallback,
+            bool suppressFailureLog = false)
         {
             try
             {
@@ -3655,7 +4144,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             }
                         }
 
-                        Debug.LogError($"[PackageBuilder] Signing request failed: {normalizedError}");
+                        if (!suppressFailureLog)
+                        {
+                            Debug.LogError($"[PackageBuilder] Signing request failed: {normalizedError}");
+                        }
                         return new SigningRequestResult
                         {
                             responseCode = request.responseCode,

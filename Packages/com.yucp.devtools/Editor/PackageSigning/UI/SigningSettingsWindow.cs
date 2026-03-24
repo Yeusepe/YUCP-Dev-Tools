@@ -1038,7 +1038,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                         "OK");
                     _isRequestingCert = false;
                     LoadSettings();
-                    EnsureAccountStateRefresh();
+                    EnsureAccountStateRefresh(force: true);
                     BuildUI();
                     return;
                 }
@@ -1087,6 +1087,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                     $"Expires: {result.expiresAt:yyyy-MM-dd HH:mm:ss UTC}",
                     "OK");
                 LoadSettings();
+                EnsureAccountStateRefresh(force: true);
                 BuildUI();
             }
             else

@@ -856,13 +856,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 if (result.success)
                 {
+                    string warningSuffix = string.IsNullOrEmpty(result.warningMessage)
+                        ? string.Empty
+                        : $"\n\nWarning:\n{result.warningMessage}";
+
                     bool openFolder = EditorUtility.DisplayDialog(
                         "Export Successful",
                         $"Package exported successfully!\n\n" +
                         $"Output: {result.outputPath}\n" +
                         $"Files: {result.filesExported}\n" +
                         $"Assemblies Obfuscated: {result.assembliesObfuscated}\n" +
-                        $"Build Time: {result.buildTimeSeconds:F2}s",
+                        $"Build Time: {result.buildTimeSeconds:F2}s" +
+                        warningSuffix,
                         "Open Folder",
                         "OK"
                     );

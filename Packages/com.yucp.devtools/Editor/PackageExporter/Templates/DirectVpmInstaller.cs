@@ -13,9 +13,28 @@ namespace YUCP.DirectVpmInstaller
     [InitializeOnLoad]
     public static class DirectVpmInstaller
     {
+        internal static readonly string[] GeneratedInstallerArtifactPatterns = new[]
+        {
+            "YUCP_InstallerPreflight_*.cs",
+            "YUCP_Installer_*.cs",
+            "YUCP_Installer_*.asmdef",
+            "YUCP_InstallerTxn_*.cs",
+            "YUCP_InstallerHealthTools_*.cs",
+            "YUCP_FullDomainReload_*.cs"
+        };
+
         static DirectVpmInstaller()
         {
             EditorApplication.delayCall += CheckAndInstallVpmPackages;
+        }
+
+        internal static string[] GetInstallerEditorPaths(string projectRoot)
+        {
+            return new[]
+            {
+                Path.Combine(Application.dataPath, "Editor"),
+                Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor")
+            };
         }
 
         private static void EnableBundledPackagesAndFinalize(string packageJsonPath, string completionReason)
@@ -103,6 +122,12 @@ namespace YUCP.DirectVpmInstaller
                 if (InstallerTxn.HasMarker("complete"))
                 {
                     CleanupInstallerScript();
+
+                    string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                    if (!HasGeneratedInstallerArtifacts(projectRoot))
+                    {
+                        InstallerTxn.ClearMarker("complete");
+                    }
                 }
                 return;
             }
@@ -660,81 +685,8 @@ namespace YUCP.DirectVpmInstaller
                     Debug.Log($"[DirectVpmInstaller] Cleaned up temporary file: {packageJsonPath}");
                 }
                 
-                // Clean up the installer script itself
-                CleanupInstallerScript();
-                
-                // Find and delete the installer script itself
-                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                string[] editorPaths = new string[]
-                {
-                    Path.Combine(Application.dataPath, "Editor"),
-                    Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor")
-                };
-
-                foreach (string editorPath in editorPaths)
-                {
-                    if (!Directory.Exists(editorPath))
-                        continue;
-
-                    string[] installerScripts = Directory.GetFiles(editorPath, "YUCP_Installer_*.cs", SearchOption.TopDirectoryOnly);
-                    foreach (string installerPath in installerScripts)
-                    {
-                        File.Delete(installerPath);
-                        string metaPath = installerPath + ".meta";
-                        if (File.Exists(metaPath))
-                            File.Delete(metaPath);
-                        
-                        Debug.Log($"[DirectVpmInstaller] Deleted installer script: {installerPath}");
-                    }
-                    
-                    // Also delete the .asmdef
-                    string[] asmdefFiles = Directory.GetFiles(editorPath, "YUCP_Installer_*.asmdef", SearchOption.TopDirectoryOnly);
-                    foreach (string asmdefPath in asmdefFiles)
-                    {
-                        File.Delete(asmdefPath);
-                        string metaPath = asmdefPath + ".meta";
-                        if (File.Exists(metaPath))
-                            File.Delete(metaPath);
-                        
-                        Debug.Log($"[DirectVpmInstaller] Deleted installer asmdef: {asmdefPath}");
-                    }
-                    
-                    // Also delete the InstallerTransactionManager script
-                    string[] txnScripts = Directory.GetFiles(editorPath, "YUCP_InstallerTxn_*.cs", SearchOption.TopDirectoryOnly);
-                    foreach (string txnPath in txnScripts)
-                    {
-                        File.Delete(txnPath);
-                        string metaPath = txnPath + ".meta";
-                        if (File.Exists(metaPath))
-                            File.Delete(metaPath);
-                        
-                        Debug.Log($"[DirectVpmInstaller] Deleted InstallerTransactionManager script: {txnPath}");
-                    }
-                    
-                    // Also delete the FullDomainReload helper script
-                    string[] reloadScripts = Directory.GetFiles(editorPath, "YUCP_FullDomainReload_*.cs", SearchOption.TopDirectoryOnly);
-                    foreach (string reloadPath in reloadScripts)
-                    {
-                        File.Delete(reloadPath);
-                        string metaPath = reloadPath + ".meta";
-                        if (File.Exists(metaPath))
-                            File.Delete(metaPath);
-                        
-                        Debug.Log($"[DirectVpmInstaller] Deleted FullDomainReload script: {reloadPath}");
-                    }
-                    
-                    // Also delete the InstallerHealthTools script
-                    string[] healthToolsScripts = Directory.GetFiles(editorPath, "YUCP_InstallerHealthTools_*.cs", SearchOption.TopDirectoryOnly);
-                    foreach (string healthToolsPath in healthToolsScripts)
-                    {
-                        File.Delete(healthToolsPath);
-                        string metaPath = healthToolsPath + ".meta";
-                        if (File.Exists(metaPath))
-                            File.Delete(metaPath);
-                        
-                        Debug.Log($"[DirectVpmInstaller] Deleted InstallerHealthTools script: {healthToolsPath}");
-                    }
-                }
+                // Leave generated installer scripts in place until the next domain comes up.
+                // They are responsible for performing the post-reload self-cleanup pass.
                 
                 // Delete all .yucp_disabled files from bundled packages (orphaned after enabling)
                 string packagesPath = Path.Combine(Application.dataPath, "..", "Packages");
@@ -787,6 +739,23 @@ namespace YUCP.DirectVpmInstaller
             {
                 Debug.LogWarning($"[DirectVpmInstaller] Failed to cleanup temporary files: {ex.Message}");
             }
+        }
+
+        private static bool HasGeneratedInstallerArtifacts(string projectRoot)
+        {
+            foreach (string editorPath in GetInstallerEditorPaths(projectRoot))
+            {
+                if (!Directory.Exists(editorPath))
+                    continue;
+
+                foreach (string pattern in GeneratedInstallerArtifactPatterns)
+                {
+                    if (Directory.GetFiles(editorPath, pattern, SearchOption.TopDirectoryOnly).Length > 0)
+                        return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -1209,26 +1178,18 @@ namespace YUCP.DirectVpmInstaller
             {
                 // Find and delete all YUCP installer scripts
                 string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                string[] editorPaths = new string[]
-                {
-                    Path.Combine(Application.dataPath, "Editor"),
-                    Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor")
-                };
-                
                 int deletedCount = 0;
                 
-                foreach (string editorPath in editorPaths)
+                foreach (string editorPath in GetInstallerEditorPaths(projectRoot))
                 {
                     if (!Directory.Exists(editorPath))
                         continue;
-                    
-                    // Find all YUCP installer files (NOT guardian - guardian stays permanently)
-                    string[] installerFiles = Directory.GetFiles(editorPath, "YUCP_Installer_*.cs", SearchOption.TopDirectoryOnly);
-                    string[] installerTxnFiles = Directory.GetFiles(editorPath, "YUCP_InstallerTxn_*.cs", SearchOption.TopDirectoryOnly);
-                    string[] installerHealthToolsFiles = Directory.GetFiles(editorPath, "YUCP_InstallerHealthTools_*.cs", SearchOption.TopDirectoryOnly);
-                    string[] installerAsmDefs = Directory.GetFiles(editorPath, "YUCP_Installer_*.asmdef", SearchOption.TopDirectoryOnly);
-                    
-                    foreach (string file in installerFiles.Concat(installerTxnFiles).Concat(installerHealthToolsFiles).Concat(installerAsmDefs))
+
+                    var generatedFiles = GeneratedInstallerArtifactPatterns
+                        .SelectMany(pattern => Directory.GetFiles(editorPath, pattern, SearchOption.TopDirectoryOnly))
+                        .Distinct(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (string file in generatedFiles)
                     {
                         try
                         {
@@ -1245,6 +1206,8 @@ namespace YUCP.DirectVpmInstaller
                         }
                     }
                 }
+
+                TryDeleteEmptyInstalledPackagesEditorFolder(projectRoot);
                 
                 if (deletedCount > 0)
                 {
@@ -1255,6 +1218,31 @@ namespace YUCP.DirectVpmInstaller
             catch (Exception ex)
             {
                 Debug.LogWarning($"[DirectVpmInstaller] Error during installer script cleanup: {ex.Message}");
+            }
+        }
+
+        private static void TryDeleteEmptyInstalledPackagesEditorFolder(string projectRoot)
+        {
+            try
+            {
+                string installedEditorPath = Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor");
+                if (!Directory.Exists(installedEditorPath))
+                    return;
+
+                if (Directory.EnumerateFileSystemEntries(installedEditorPath).Any())
+                    return;
+
+                Directory.Delete(installedEditorPath);
+
+                string metaFile = installedEditorPath + ".meta";
+                if (File.Exists(metaFile))
+                    File.Delete(metaFile);
+
+                Debug.Log($"[DirectVpmInstaller] Removed empty temporary editor folder: {installedEditorPath}");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[DirectVpmInstaller] Failed to remove empty installed-packages editor folder: {ex.Message}");
             }
         }
 

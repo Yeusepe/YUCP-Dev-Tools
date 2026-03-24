@@ -254,7 +254,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                         string desc = qp.TryGetValue("error_description", out string errorDescription)
                             ? Uri.UnescapeDataString(errorDescription)
                             : callbackError;
-                        string msg = $"Authorization error: {desc}";
+                        string msg = BuildAuthorizationErrorMessage(desc, "cert:issue");
                         Debug.LogError($"[YUCP OAuth] {msg}");
                         await SendErrorRedirectAsync(context, serverUrl, msg);
                         onError?.Invoke(msg);
@@ -263,7 +263,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
                     if (!qp.TryGetValue("state", out string returnedState) || returnedState != state)
                     {
-                        const string msg = "State mismatch — possible CSRF. Please try again.";
+                        const string msg = "State mismatch during sign-in. Please try again.";
                         Debug.LogError($"[YUCP OAuth] {msg}");
                         await SendErrorRedirectAsync(context, serverUrl, msg);
                         onError?.Invoke(msg);
@@ -855,26 +855,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static async Task SendErrorRedirectAsync(HttpListenerContext ctx, string serverUrl, string errorMessage)
         {
-            try
-            {
-                string errorUrl = $"{serverUrl.TrimEnd('/')}/oauth/error?error={Uri.EscapeDataString(errorMessage)}";
-                ctx.Response.Redirect(errorUrl);
-                ctx.Response.Close();
-            }
-            catch
-            {
-                try
-                {
-                    byte[] bytes = Encoding.UTF8.GetBytes(BuildErrorHtml(errorMessage));
-                    ctx.Response.ContentType = "text/html; charset=utf-8";
-                    ctx.Response.ContentLength64 = bytes.Length;
-                    await ctx.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
-                    ctx.Response.OutputStream.Close();
-                }
-                catch
-                {
-                }
-            }
+            byte[] bytes = Encoding.UTF8.GetBytes(BuildErrorHtml(errorMessage));
+            ctx.Response.StatusCode = 200;
+            ctx.Response.ContentType = "text/html; charset=utf-8";
+            ctx.Response.ContentLength64 = bytes.Length;
+            await ctx.Response.OutputStream.WriteAsync(bytes, 0, bytes.Length);
+            ctx.Response.OutputStream.Close();
         }
 
         private static string BuildAuthUrl(string serverUrl, string codeChallenge, string state, string redirectUri)
@@ -1037,182 +1023,276 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             }
         }
 
-        private static string BuildErrorHtml(string errorMessage)
+        private static string BuildAuthorizationErrorMessage(string description, string expectedScope)
         {
-            string escaped = System.Net.WebUtility.HtmlEncode(errorMessage);
-            return $@"<!DOCTYPE html>
-<html lang=""en"">
-<head>
-  <meta charset=""UTF-8"">
-  <meta name=""viewport"" content=""width=device-width,initial-scale=1"">
-  <title>YUCP – Sign-in Failed</title>
-  <style>
-    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{
-      background: #0d0d0d;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      display: flex; align-items: center; justify-content: center;
-      min-height: 100vh; color: #fff;
-    }}
-    .card {{
-      background: #1a1a1a; border-radius: 18px; border: 1px solid #2a2a2a;
-      padding: 52px 44px; max-width: 460px; width: 100%; text-align: center;
-      box-shadow: 0 28px 72px rgba(0,0,0,.65);
-    }}
-    .icon {{
-      width: 76px; height: 76px;
-      background: rgba(239,68,68,.15); border: 1.5px solid rgba(239,68,68,.3);
-      border-radius: 50%; display: flex; align-items: center; justify-content: center;
-      margin: 0 auto 28px; font-size: 34px; color: #EF4444;
-    }}
-    h1  {{ font-size: 22px; font-weight: 700; margin-bottom: 10px; }}
-    p   {{ font-size: 14px; color: #808080; line-height: 1.65; margin-bottom: 18px; }}
-    .detail {{
-      background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2);
-      border-radius: 10px; padding: 12px 14px; text-align: left;
-      font-family: Menlo, Consolas, monospace; font-size: 12px; color: #aaa;
-      word-break: break-word; margin-bottom: 24px;
-    }}
-    .hint {{ font-size: 13px; color: #666; line-height: 1.6; }}
-  </style>
-</head>
-<body>
-  <div class=""card"">
-    <div class=""icon"">&#9888;</div>
-    <h1>Sign-in failed</h1>
-    <p>An error occurred while connecting to the Unity Editor.</p>
-    <div class=""detail"">{escaped}</div>
-    <p class=""hint"">Return to Unity, close the signing dialog, and click
-    <em>Sign in with Creator Account</em> to try again.</p>
-  </div>
-</body>
-</html>";
+            string normalized = NormalizeAuthorizationDescription(description);
+            if (TryExtractInvalidScope(normalized, out string invalidScope))
+            {
+                string scopeLabel = string.IsNullOrEmpty(invalidScope) ? expectedScope : invalidScope;
+                return $"Authorization error: This YUCP server is not ready for Unity package signing yet. The deployment rejected the required Unity scope '{scopeLabel}'. Return to Unity and try again later.";
+            }
+
+            return $"Authorization error: {normalized}";
         }
 
-        private static string BuildSuccessHtml() => @"<!DOCTYPE html>
+        private static string NormalizeAuthorizationDescription(string description)
+        {
+            if (string.IsNullOrWhiteSpace(description))
+            {
+                return "The server returned an unknown authorization error.";
+            }
+
+            return description.Replace('+', ' ').Trim();
+        }
+
+        private static bool TryExtractInvalidScope(string description, out string scope)
+        {
+            const string marker = "The following scopes are invalid:";
+            int index = description.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+            {
+                scope = null;
+                return false;
+            }
+
+            string remainder = description.Substring(index + marker.Length).Trim();
+            if (string.IsNullOrEmpty(remainder))
+            {
+                scope = null;
+                return true;
+            }
+
+            int separator = remainder.IndexOfAny(new[] { ',', ';' });
+            scope = (separator >= 0 ? remainder.Substring(0, separator) : remainder).Trim();
+            return true;
+        }
+
+        private static string BuildErrorHtml(string errorMessage)
+        {
+            string escaped = WebUtility.HtmlEncode(errorMessage);
+            string details = $"<div class=\"detail-card\"><span class=\"detail-label\">Details</span><div class=\"detail-body\">{escaped}</div></div>";
+            return BuildOAuthPageHtml(
+                "Sign-in failed",
+                "We could not finish the YUCP sign-in",
+                "Return to Unity, review the details below, and try again once the server is ready.",
+                details,
+                "#fb7185",
+                "#f59e0b");
+        }
+
+        private static string BuildSuccessHtml()
+        {
+            return BuildOAuthPageHtml(
+                "Connected",
+                "Creator signing is connected",
+                "Return to Unity. Your YUCP package signing tools are ready to request or restore this device certificate.",
+                "<div class=\"detail-card detail-card-success\"><span class=\"detail-label\">Next</span><div class=\"detail-body\">You can close this tab and continue in Unity.</div></div>",
+                "#36bfb1",
+                "#2da89c");
+        }
+
+        private static string BuildOAuthPageHtml(string badge, string title, string message, string detailHtml, string accentStart, string accentEnd)
+        {
+            string escapedBadge = WebUtility.HtmlEncode(badge);
+            string escapedTitle = WebUtility.HtmlEncode(title);
+            string escapedMessage = WebUtility.HtmlEncode(message);
+            string html = @"<!DOCTYPE html>
 <html lang=""en"">
 <head>
   <meta charset=""UTF-8"">
   <meta name=""viewport"" content=""width=device-width,initial-scale=1"">
-  <title>YUCP – Signed In</title>
+  <title>YUCP Creator Identity</title>
   <link rel=""preconnect"" href=""https://fonts.googleapis.com"">
   <link rel=""preconnect"" href=""https://fonts.gstatic.com"" crossorigin>
   <link href=""https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=DM+Sans:wght@400;500&display=swap"" rel=""stylesheet"">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #0d0d0d;
-      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      display: flex; align-items: center; justify-content: center;
-      min-height: 100vh; color: #fff; overflow: hidden;
+      min-height: 100vh;
+      font-family: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+      color: rgba(255,255,255,0.92);
+      background: #779dc3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow-x: hidden;
     }
-    /* animated background blobs */
-    .blobs { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
-    .blob {
-      position: absolute; border-radius: 50%; filter: blur(90px); opacity: 0.15;
-      animation: drift 10s ease-in-out infinite alternate;
+    /* Static sky placeholder — mirrors web app PageLoadingOverlay sky */
+    .sky {
+      position: fixed;
+      inset: -8%;
+      pointer-events: none;
+      z-index: 0;
     }
-    .blob-1 { width:380px;height:380px;background:#36BFB1;top:-120px;left:-80px; animation-delay:0s; }
-    .blob-2 { width:300px;height:300px;background:#5865F2;bottom:-60px;right:-60px; animation-delay:-4s; }
-    @keyframes drift { from{transform:translate(0,0);} to{transform:translate(18px,22px);} }
-
-    /* card */
+    .sky::before {
+      content: """";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 20% 54%, rgba(255,255,255,0.42) 0, rgba(255,255,255,0.42) 10%, rgba(255,255,255,0.18) 16%, transparent 24%),
+        radial-gradient(circle at 76% 28%, rgba(255,255,255,0.34) 0, rgba(255,255,255,0.34) 8%,  rgba(255,255,255,0.12) 14%, transparent 21%),
+        radial-gradient(circle at 48% 78%, rgba(255,255,255,0.28) 0, rgba(255,255,255,0.28) 12%, rgba(255,255,255,0.10) 18%, transparent 26%);
+      filter: blur(28px);
+      opacity: 0.95;
+    }
+    .sky::after {
+      content: """";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 32% 20% at 14% 48%, rgba(255,255,255,0.55) 0%, transparent 100%),
+        radial-gradient(ellipse 22% 14% at 74% 26%, rgba(255,255,255,0.50) 0%, transparent 100%),
+        radial-gradient(ellipse 44% 24% at 46% 70%, rgba(255,255,255,0.45) 0%, transparent 100%);
+      filter: blur(20px);
+      opacity: 0.55;
+    }
+    /* Card shell */
+    .shell {
+      position: relative;
+      z-index: 1;
+      width: min(380px, 100%);
+      animation: fadein 0.5s cubic-bezier(0.22,1,0.36,1) both;
+    }
+    @keyframes fadein {
+      from { opacity: 0; transform: translateY(14px) scale(0.984); }
+      to   { opacity: 1; transform: none; }
+    }
+    /* Glass card */
     .card {
-      position: relative; z-index: 1;
-      background: rgba(255,255,255,0.04);
-      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 28px;
-      padding: 56px 48px 48px;
-      max-width: 440px; width: 100%; text-align: center;
-      box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04) inset;
-      animation: pop-in 0.4s cubic-bezier(0.22,1,0.36,1) both;
+      position: relative;
+      background: rgba(10,10,10,0.80);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255,255,255,0.09);
+      box-shadow: 0 24px 64px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+      border-radius: 22px;
+      padding: 30px 26px 26px;
+      overflow: hidden;
     }
-    @keyframes pop-in {
-      from { opacity:0; transform:scale(0.92) translateY(20px); }
-      to   { opacity:1; transform:scale(1)    translateY(0);    }
+    /* Accent highlight at top of card */
+    .card::before {
+      content: """";
+      position: absolute;
+      top: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 55%; height: 1px;
+      background: linear-gradient(90deg, transparent, __ACCENT_START__, transparent);
+      opacity: 0.6;
+      pointer-events: none;
     }
-
-    /* check icon */
-    .check-ring {
-      width: 88px; height: 88px; border-radius: 50%;
-      background: rgba(54,191,177,0.15);
-      border: 1.5px solid rgba(54,191,177,0.35);
-      display: flex; align-items: center; justify-content: center;
-      margin: 0 auto 32px;
-      animation: ring-glow 2.8s ease-in-out infinite;
+    /* Status badge */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 12px 5px 10px;
+      border-radius: 999px;
+      border: 1px solid __ACCENT_START__;
+      color: __ACCENT_START__;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 18px;
+      font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+      opacity: 0.9;
     }
-    @keyframes ring-glow {
-      0%,100% { box-shadow: 0 0 0 0 rgba(54,191,177,0); }
-      50%      { box-shadow: 0 0 0 10px rgba(54,191,177,0.1); }
+    .badge-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: __ACCENT_START__;
+      box-shadow: 0 0 8px __ACCENT_START__;
+      flex-shrink: 0;
     }
-    .check-ring svg { width:40px; height:40px; color:#36BFB1; }
-
     h1 {
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      font-size: 1.55rem; font-weight: 800;
-      letter-spacing: -0.035em; margin-bottom: 10px;
+      font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: #fff;
+      line-height: 1.12;
+      margin: 0 0 8px;
     }
-    .subtitle { font-size: 0.9rem; color: #888; line-height: 1.6; margin-bottom: 28px; }
-
-    /* divider */
+    .body-copy {
+      font-size: 13px;
+      line-height: 1.65;
+      color: rgba(255,255,255,0.5);
+      margin: 0 0 20px;
+    }
     .divider {
-      height: 1px; background: rgba(255,255,255,0.07); margin: 0 auto 24px;
+      width: 100%; height: 1px;
+      background: rgba(255,255,255,0.07);
+      margin: 0 0 18px;
     }
-
-    /* instruction row */
-    .instruction {
-      display: flex; align-items: center; gap: 14px;
+    .detail-card {
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
       padding: 14px 16px;
-      background: rgba(255,255,255,0.03);
-      border: 1px solid rgba(255,255,255,0.07);
-      border-radius: 14px;
     }
-    .instruction-icon {
-      flex-shrink: 0; width: 38px; height: 38px; border-radius: 10px;
-      background: rgba(54,191,177,0.12); border: 1px solid rgba(54,191,177,0.2);
-      display: flex; align-items: center; justify-content: center;
+    .detail-card-success {
+      background: rgba(54,191,177,0.07);
+      border-color: rgba(54,191,177,0.22);
     }
-    .instruction-icon svg { width:18px; height:18px; color:#36BFB1; }
-    .instruction-text { font-size: 0.87rem; color: #aaa; line-height: 1.45; text-align: left; }
-    .instruction-text strong { color: #fff; font-weight: 600; }
+    .detail-card-error {
+      background: rgba(239,68,68,0.07);
+      border-color: rgba(239,68,68,0.22);
+    }
+    .detail-label {
+      display: block;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.32);
+      margin-bottom: 7px;
+      font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+    }
+    .detail-body {
+      font-size: 13px;
+      line-height: 1.6;
+      color: rgba(255,255,255,0.78);
+      word-break: break-word;
+    }
+    .footer {
+      margin-top: 14px;
+      text-align: center;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.28);
+      font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .shell { animation: none; }
+    }
   </style>
 </head>
 <body>
-  <div class=""blobs"">
-    <div class=""blob blob-1""></div>
-    <div class=""blob blob-2""></div>
-  </div>
-
-  <div class=""card"">
-    <div class=""check-ring"">
-      <svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor""
-           stroke-width=""2.5"" stroke-linecap=""round"" stroke-linejoin=""round"">
-        <polyline points=""20 6 9 17 4 12""/>
-      </svg>
+  <div class=""sky""></div>
+  <div class=""shell"">
+    <div class=""card"">
+      <div class=""badge""><span class=""badge-dot""></span>__BADGE__</div>
+      <h1>__TITLE__</h1>
+      <p class=""body-copy"">__MESSAGE__</p>
+      <div class=""divider""></div>
+      __DETAIL_HTML__
     </div>
-
-    <h1>You&#x2019;re signed in!</h1>
-    <p class=""subtitle"">Your Creator Account is now connected to the Unity Editor.</p>
-
-    <div class=""divider""></div>
-
-    <div class=""instruction"">
-      <div class=""instruction-icon"">
-        <svg viewBox=""0 0 24 24"" fill=""none"" stroke=""currentColor""
-             stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"">
-          <rect x=""2"" y=""3"" width=""20"" height=""14"" rx=""2""/>
-          <line x1=""8"" y1=""21"" x2=""16"" y2=""21""/>
-          <line x1=""12"" y1=""17"" x2=""12"" y2=""21""/>
-        </svg>
-      </div>
-      <div class=""instruction-text"">
-        <strong>Return to the Unity Editor</strong> — your signing certificate
-        is being activated. You can close this tab.
-      </div>
-    </div>
+    <div class=""footer"">YUCP &middot; Loopback sign-in</div>
   </div>
 </body>
 </html>";
+
+            return html
+                .Replace("__BADGE__", escapedBadge)
+                .Replace("__TITLE__", escapedTitle)
+                .Replace("__MESSAGE__", escapedMessage)
+                .Replace("__DETAIL_HTML__", detailHtml)
+                .Replace("__ACCENT_START__", accentStart)
+                .Replace("__ACCENT_END__", accentEnd);
+        }
+
     }
 }

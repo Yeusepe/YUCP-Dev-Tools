@@ -2407,6 +2407,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                     if (restoreResult.valid)
                     {
                         LoadSettings();
+                        EnsureAccountStateRefresh(force: true);
                         RefreshUI();
                         return;
                     }
@@ -2455,7 +2456,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             if (result.valid)
             {
                 LoadSettings();
-                EnsureAccountStateRefresh();
+                EnsureAccountStateRefresh(force: true);
                 RefreshUI();
                 return;
             }
@@ -2728,7 +2729,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             }
         }
 
-        private void EnsureAccountStateRefresh()
+        private void EnsureAccountStateRefresh(bool force = false)
         {
             if (!YucpOAuthService.IsSignedIn())
             {
@@ -2744,7 +2745,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             bool stale = _accountState == null ||
                 !string.Equals(_accountStateServerUrl, serverUrl, StringComparison.Ordinal) ||
                 EditorApplication.timeSinceStartup - _accountStateRefreshedAt > AccountStateRefreshIntervalSeconds;
-            if (!stale || _isLoadingAccountState)
+            if (!force && (!stale || _isLoadingAccountState))
+                return;
+
+            if (force && _isLoadingAccountState)
                 return;
 
             _isLoadingAccountState = true;

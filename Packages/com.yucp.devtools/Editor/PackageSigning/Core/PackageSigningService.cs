@@ -247,20 +247,32 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
                 if (req.result != UnityWebRequest.Result.Success) return null;
 
-                string json = req.downloadHandler.text;
+                return ExtractCertificateEnvelopeJson(req.downloadHandler.text);
+            }
+            catch
+            {
+                return null;
+            }
+        }
 
-                // Extract "certificate" object from { "certificate": {...} }
-                int certIdx = json.IndexOf("\"certificate\"", StringComparison.Ordinal);
-                if (certIdx < 0) return null;
-                int braceIdx = json.IndexOf('{', certIdx);
-                if (braceIdx < 0) return null;
-                int depth = 0, end = braceIdx;
-                for (int i = braceIdx; i < json.Length; i++)
-                {
-                    if (json[i] == '{') depth++;
-                    else if (json[i] == '}') { depth--; if (depth == 0) { end = i; break; } }
-                }
-                return json.Substring(braceIdx, end - braceIdx + 1);
+        public string RestoreCertificate(string accessToken, string devPublicKey)
+        {
+            try
+            {
+                using var req = UnityWebRequest.Get($"{_serverUrl}/v1/certificates/me");
+                req.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                req.SetRequestHeader("X-Dev-Public-Key", devPublicKey);
+                req.SetRequestHeader("Accept-Encoding", "identity");
+                req.timeout = 30;
+
+                var op = req.SendWebRequest();
+                while (!op.isDone)
+                    System.Threading.Thread.Sleep(25);
+
+                if (req.result != UnityWebRequest.Result.Success)
+                    return null;
+
+                return ExtractCertificateEnvelopeJson(req.downloadHandler.text);
             }
             catch
             {
@@ -289,23 +301,35 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                     return CreateErrorAccountState(req.responseCode, rawError);
                 }
 
-                var response = JsonUtility.FromJson<CertificateDevicesResponse>(json);
-                if (response == null || response.billing == null)
+                return ParseCertificateAccountState(req.responseCode, json, devPublicKey);
+            }
+            catch (Exception ex)
+            {
+                return CreateErrorAccountState(0, $"Network error: {ex.Message}");
+            }
+        }
+
+        public CertificateAccountState GetCertificateAccountState(string accessToken, string devPublicKey)
+        {
+            try
+            {
+                using var req = UnityWebRequest.Get($"{_serverUrl}/v1/certificates/devices");
+                req.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                req.SetRequestHeader("Accept-Encoding", "identity");
+                req.timeout = 30;
+
+                var op = req.SendWebRequest();
+                while (!op.isDone)
+                    System.Threading.Thread.Sleep(25);
+
+                string json = req.downloadHandler?.text ?? "";
+                if (req.result != UnityWebRequest.Result.Success)
                 {
-                    return CreateErrorAccountState(0, "Invalid certificate account response from server.");
+                    string rawError = ExtractErrorMessage(json) ?? $"Server error ({req.responseCode}).";
+                    return CreateErrorAccountState(req.responseCode, rawError);
                 }
 
-                response.devices ??= Array.Empty<CertificateDeviceInfo>();
-                response.currentDeviceKnown = !string.IsNullOrEmpty(devPublicKey) &&
-                    Array.Exists(response.devices, device =>
-                        device != null &&
-                        string.Equals(device.devPublicKey, devPublicKey, StringComparison.Ordinal));
-                response.deviceCapReachedForCurrentMachine =
-                    !response.currentDeviceKnown &&
-                    response.billing.deviceCap > 0 &&
-                    response.billing.activeDeviceCount >= response.billing.deviceCap;
-                response.error = BuildAccountStateReason(response);
-                return response;
+                return ParseCertificateAccountState(req.responseCode, json, devPublicKey);
             }
             catch (Exception ex)
             {
@@ -515,22 +539,48 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
                 // Response: { "success": true, "certificate": { "cert": {...}, "signature": {...} } }
                 // Extract the "certificate" object
-                int certIdx = json.IndexOf("\"certificate\"", StringComparison.Ordinal);
-                if (certIdx >= 0)
+                string certJson = ExtractCertificateEnvelopeJson(json);
+                return string.IsNullOrEmpty(certJson)
+                    ? (false, req.responseCode, "Invalid response format from server.", null)
+                    : (true, req.responseCode, null, certJson);
+            }
+            catch (Exception ex)
+            {
+                return (false, 0, $"Network error: {ex.Message}", null);
+            }
+        }
+
+        public (bool success, long responseCode, string error, string certJson)
+            RequestCertificate(string accessToken, string devPublicKey, string publisherName)
+        {
+            try
+            {
+                string body = $"{{\"devPublicKey\":\"{EscapeJson(devPublicKey)}\",\"publisherName\":\"{EscapeJson(publisherName)}\"}}";
+                byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
+
+                using var req = new UnityWebRequest($"{_serverUrl}/v1/certificates", "POST");
+                req.uploadHandler = new UploadHandlerRaw(bodyBytes);
+                req.downloadHandler = new DownloadHandlerBuffer();
+                req.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                req.SetRequestHeader("Content-Type", "application/json");
+                req.SetRequestHeader("Accept-Encoding", "identity");
+                req.timeout = 30;
+
+                var op = req.SendWebRequest();
+                while (!op.isDone)
+                    System.Threading.Thread.Sleep(25);
+
+                string json = req.downloadHandler.text;
+                if (req.result != UnityWebRequest.Result.Success)
                 {
-                    int braceIdx = json.IndexOf('{', certIdx);
-                    if (braceIdx >= 0)
-                    {
-                        int depth = 0, end = braceIdx;
-                        for (int i = braceIdx; i < json.Length; i++)
-                        {
-                            if (json[i] == '{') depth++;
-                            else if (json[i] == '}') { depth--; if (depth == 0) { end = i; break; } }
-                        }
-                        return (true, req.responseCode, null, json.Substring(braceIdx, end - braceIdx + 1));
-                    }
+                    string errMsg = ExtractErrorMessage(json) ?? $"Server error ({req.responseCode}).";
+                    return (false, req.responseCode, errMsg, null);
                 }
-                return (false, req.responseCode, "Invalid response format from server.", null);
+
+                string certJson = ExtractCertificateEnvelopeJson(json);
+                return string.IsNullOrEmpty(certJson)
+                    ? (false, req.responseCode, "Invalid response format from server.", null)
+                    : (true, req.responseCode, null, certJson);
             }
             catch (Exception ex)
             {
@@ -612,6 +662,64 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return json.Substring(quoteIdx + 1, endIdx - quoteIdx - 1);
             }
             return null;
+        }
+
+        private static string ExtractCertificateEnvelopeJson(string json)
+        {
+            if (string.IsNullOrEmpty(json))
+                return null;
+
+            int certIdx = json.IndexOf("\"certificate\"", StringComparison.Ordinal);
+            if (certIdx < 0)
+                return null;
+
+            int braceIdx = json.IndexOf('{', certIdx);
+            if (braceIdx < 0)
+                return null;
+
+            int depth = 0;
+            int end = braceIdx;
+            for (int i = braceIdx; i < json.Length; i++)
+            {
+                if (json[i] == '{')
+                    depth++;
+                else if (json[i] == '}')
+                {
+                    depth--;
+                    if (depth == 0)
+                    {
+                        end = i;
+                        break;
+                    }
+                }
+            }
+
+            return json.Substring(braceIdx, end - braceIdx + 1);
+        }
+
+        private static CertificateAccountState ParseCertificateAccountState(
+            long responseCode,
+            string json,
+            string devPublicKey)
+        {
+            var response = JsonUtility.FromJson<CertificateDevicesResponse>(json);
+            if (response == null || response.billing == null)
+            {
+                return CreateErrorAccountState(0, "Invalid certificate account response from server.");
+            }
+
+            response.responseCode = responseCode;
+            response.devices ??= Array.Empty<CertificateDeviceInfo>();
+            response.currentDeviceKnown = !string.IsNullOrEmpty(devPublicKey) &&
+                Array.Exists(response.devices, device =>
+                    device != null &&
+                    string.Equals(device.devPublicKey, devPublicKey, StringComparison.Ordinal));
+            response.deviceCapReachedForCurrentMachine =
+                !response.currentDeviceKnown &&
+                response.billing.deviceCap > 0 &&
+                response.billing.activeDeviceCount >= response.billing.deviceCap;
+            response.error = BuildAccountStateReason(response);
+            return response;
         }
 
         private string CanonicalizePayload(SigningRequestPayload payload)
