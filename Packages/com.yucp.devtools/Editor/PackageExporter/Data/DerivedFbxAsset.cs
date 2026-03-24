@@ -36,6 +36,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		/// Checked against the "yucp.license.{licensePackageId}" SessionState key.
 		/// </summary>
 		[SerializeField] public string licensePackageId = "";
+
+		/// <summary>
+		/// When true, reconstructing this protected asset requires a server-issued unlock token
+		/// containing the wrapped content key for this machine/project.
+		/// </summary>
+		[SerializeField] public bool requiresServerUnlock = false;
+
+		/// <summary>
+		/// Stable identifier for the protected payload registration on the YUCP server.
+		/// Empty for legacy packages that still embed enough material to recover the content key locally.
+		/// </summary>
+		[SerializeField] public string protectedAssetId = "";
 		
 		[Serializable]
 		public struct Policy

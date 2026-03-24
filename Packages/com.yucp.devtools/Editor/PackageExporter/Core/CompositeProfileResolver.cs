@@ -305,6 +305,67 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             return errors.Count == 0;
         }
+
+        public static bool ValidateEmbeddedProfiles(ExportProfile profile, out List<string> errors)
+        {
+            errors = new List<string>();
+
+            if (profile == null || !profile.HasEmbeddedProfiles())
+                return true;
+
+            if (!ValidateProfileGraph(profile, p => p.GetEmbeddedProfiles(), "embedded", out var embeddedErrors))
+                errors.AddRange(embeddedErrors);
+
+            return errors.Count == 0;
+        }
+
+        private static bool ValidateProfileGraph(
+            ExportProfile root,
+            Func<ExportProfile, List<ExportProfile>> getChildren,
+            string relationshipName,
+            out List<string> errors)
+        {
+            var collectedErrors = new List<string>();
+            if (root == null || getChildren == null)
+            {
+                errors = collectedErrors;
+                return true;
+            }
+
+            var visited = new HashSet<ExportProfile>();
+            var recursionStack = new HashSet<ExportProfile>();
+            var currentPath = new List<string>();
+
+            void Walk(ExportProfile profile)
+            {
+                if (profile == null)
+                    return;
+
+                if (recursionStack.Contains(profile))
+                {
+                    currentPath.Add(profile.packageName);
+                    collectedErrors.Add($"Cycle detected in {relationshipName} profiles: {string.Join(" → ", currentPath)}");
+                    currentPath.RemoveAt(currentPath.Count - 1);
+                    return;
+                }
+
+                if (!visited.Add(profile))
+                    return;
+
+                recursionStack.Add(profile);
+                currentPath.Add(profile.packageName);
+
+                foreach (var child in getChildren(profile) ?? new List<ExportProfile>())
+                    Walk(child);
+
+                currentPath.RemoveAt(currentPath.Count - 1);
+                recursionStack.Remove(profile);
+            }
+
+            Walk(root);
+            errors = collectedErrors;
+            return collectedErrors.Count == 0;
+        }
         
         /// <summary>
         /// Get status of a profile (for UI display)
@@ -404,4 +465,3 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
     }
 }
-

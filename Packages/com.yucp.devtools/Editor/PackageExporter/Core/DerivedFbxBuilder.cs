@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using YUCP.Importer.Editor.PackageManager.Core;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -25,18 +26,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				return null;
 			}
 
-			// License gate: if the asset requires a verified license, check SessionState
-			// before decrypting. LicenseTokenCache (in com.yucp.importer) sets
-			// "yucp.license.{packageId}" when a valid token is verified.
+			string wrappedContentKey = null;
 			if (derivedAsset.requiresLicense && !string.IsNullOrEmpty(derivedAsset.licensePackageId))
 			{
-				string sessionKey = $"yucp.license.{derivedAsset.licensePackageId}";
-				string licenseToken = SessionState.GetString(sessionKey, null);
-				if (string.IsNullOrEmpty(licenseToken))
+				string protectedAssetId = derivedAsset.requiresServerUnlock ? derivedAsset.protectedAssetId : null;
+				if (!ProtectedAssetUnlockService.TryAuthorizePackage(
+					derivedAsset.licensePackageId,
+					protectedAssetId,
+					out wrappedContentKey,
+					out var authorizationError))
 				{
 					Debug.LogError(
 						$"[DerivedFbxBuilder] License required for package '{derivedAsset.licensePackageId}'. " +
-						"Please import the package through the YUCP Package Manager to verify your license.");
+						$"{authorizationError}");
 					return null;
 				}
 			}
@@ -104,7 +106,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					shares.Add(share);
 				}
 				
-				byte[] key = RecoverKey(shares);
+				byte[] recoveryKey = RecoverKey(shares);
+				byte[] contentKey = recoveryKey;
+				if (derivedAsset.requiresServerUnlock && !string.IsNullOrEmpty(derivedAsset.protectedAssetId))
+				{
+					if (string.IsNullOrEmpty(wrappedContentKey) ||
+					    !ProtectedContentKeyUtility.TryUnwrapContentKey(wrappedContentKey, recoveryKey, out contentKey))
+					{
+						Debug.LogError("[DerivedFbxBuilder] Failed to unwrap protected content key for this derived asset.");
+						return null;
+					}
+				}
 				
 				string encryptedPhysicalPath = ResolvePhysicalPath(projectPath, encryptedDiffPath);
 				if (!File.Exists(encryptedPhysicalPath))
@@ -132,7 +144,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				}
 				
 				string tempDiffPath = Path.Combine(projectPath, "Library", "YUCP", $"patch_{Guid.NewGuid():N}.hdiff");
-				if (!DecryptDiffFile(encryptedPhysicalPath, tempDiffPath, key))
+				if (!DecryptDiffFile(encryptedPhysicalPath, tempDiffPath, contentKey))
 				{
 					Debug.LogError("[DerivedFbxBuilder] Failed to decrypt diff payload.");
 					return null;

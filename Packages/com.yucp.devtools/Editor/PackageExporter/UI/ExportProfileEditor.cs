@@ -24,6 +24,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
     private bool showExportOptions = false;
     private bool showExclusionFilters = false;
     private bool showDependencies = true;
+    private bool showEmbeddedPackages = true;
     private bool showObfuscation = true;
     private bool showExportSettings = false;
     private bool showStatistics = false;
@@ -38,6 +39,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
     private bool showOnlyExcluded = false;
     
     private string lastFoldersHash = "";
+    private ExportProfile embeddedProfileToAdd;
         
         private void OnEnable()
         {
@@ -317,6 +319,67 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                     
                     EditorGUILayout.EndScrollView();
+                });
+            }
+            EditorGUILayout.EndFoldoutHeaderGroup();
+
+            EditorGUILayout.Space(5);
+            showEmbeddedPackages = EditorGUILayout.BeginFoldoutHeaderGroup(showEmbeddedPackages, "Embedded Packages");
+            if (showEmbeddedPackages)
+            {
+                DrawSection(() =>
+                {
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("useEmbeddedPackages"),
+                        new GUIContent("Enable Embedded Packages"));
+
+                    if (!profile.useEmbeddedPackages)
+                    {
+                        EditorGUILayout.HelpBox("Disabled. This profile will export normally unless you turn on container mode.", MessageType.Info);
+                        return;
+                    }
+
+                    EditorGUILayout.HelpBox(
+                        "Embedded packages are exported as whole child .unitypackage payloads inside this container package.",
+                        MessageType.Info);
+
+                    var embeddedProfiles = profile.GetEmbeddedProfiles();
+                    if (embeddedProfiles.Count == 0)
+                    {
+                        EditorGUILayout.HelpBox("No embedded profiles configured yet.", MessageType.Warning);
+                    }
+
+                    foreach (var embeddedProfile in embeddedProfiles)
+                    {
+                        EditorGUILayout.BeginHorizontal();
+                        EditorGUI.BeginDisabledGroup(true);
+                        EditorGUILayout.ObjectField(embeddedProfile, typeof(ExportProfile), false);
+                        EditorGUI.EndDisabledGroup();
+
+                        if (GUILayout.Button("Remove", GUILayout.Width(70)))
+                        {
+                            profile.RemoveEmbeddedProfile(embeddedProfile);
+                            EditorUtility.SetDirty(profile);
+                            GUIUtility.ExitGUI();
+                        }
+                        EditorGUILayout.EndHorizontal();
+                    }
+
+                    EditorGUILayout.Space(4);
+                    embeddedProfileToAdd = (ExportProfile)EditorGUILayout.ObjectField(
+                        "Add Embedded Profile",
+                        embeddedProfileToAdd,
+                        typeof(ExportProfile),
+                        false);
+
+                    using (new EditorGUI.DisabledScope(embeddedProfileToAdd == null))
+                    {
+                        if (GUILayout.Button("Add Embedded Profile", GUILayout.Height(24)))
+                        {
+                            profile.AddEmbeddedProfile(embeddedProfileToAdd);
+                            embeddedProfileToAdd = null;
+                            EditorUtility.SetDirty(profile);
+                        }
+                    }
                 });
             }
             EditorGUILayout.EndFoldoutHeaderGroup();

@@ -426,92 +426,38 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			out string encryptedDiffPath,
 			out List<DerivedFbxAsset.PatchEntry> entries)
 		{
-			encryptedDiffPath = null;
-			entries = new List<DerivedFbxAsset.PatchEntry>();
-			
-			if (baseFbxPaths == null || baseFbxPaths.Count == 0 || baseGuids == null || baseGuids.Count != baseFbxPaths.Count)
-				return false;
-			
-			string canonicalBasePath = baseFbxPaths.FirstOrDefault(p => !string.IsNullOrEmpty(p));
-			if (string.IsNullOrEmpty(canonicalBasePath))
-				return false;
-			
-			string canonicalGuid = baseGuids.FirstOrDefault(g => !string.IsNullOrEmpty(g));
-			string tempDiffPath = CreateHdiffFile(canonicalBasePath, modifiedFbxPath, friendlyName, canonicalGuid);
-			if (string.IsNullOrEmpty(tempDiffPath))
-				return false;
-			
-			string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-			string tempDiffPhysicalPath = ResolvePhysicalPath(projectPath, tempDiffPath);
-			
-			string encryptedPath = tempDiffPath + ".enc";
-			string encryptedPhysicalPath = ResolvePhysicalPath(projectPath, encryptedPath);
-			
-			byte[] key = new byte[32];
-			RandomNumberGenerator.Fill(key);
-			
-			if (!EncryptDiffFile(tempDiffPhysicalPath, encryptedPhysicalPath, key))
-				return false;
-			
-			try
-			{
-				File.Delete(tempDiffPhysicalPath);
-				string tempMeta = tempDiffPhysicalPath + ".meta";
-				if (File.Exists(tempMeta))
-					File.Delete(tempMeta);
-			}
-			catch (Exception ex)
-			{
-				Debug.LogWarning($"[PatchBuilder] Failed to delete temp .hdiff: {ex.Message}");
-			}
-			
-			EnsureMetaFile(encryptedPhysicalPath);
-			
-			var masks = new List<byte[]>(baseFbxPaths.Count);
-			for (int i = 0; i < baseFbxPaths.Count; i++)
-			{
-				string basePath = baseFbxPaths[i];
-				string baseGuid = baseGuids[i];
-				if (string.IsNullOrEmpty(basePath) || string.IsNullOrEmpty(baseGuid))
-					return false;
-				
-				string basePhysicalPath = ResolvePhysicalPath(projectPath, basePath);
-				if (!File.Exists(basePhysicalPath))
-					return false;
-				
-				ComputeBaseHashAndMask(basePhysicalPath, out var baseHash, out var mask);
-				string baseHashHex = BytesToHex(baseHash);
-				masks.Add(mask);
-				
-				entries.Add(new DerivedFbxAsset.PatchEntry
-				{
-					baseGuid = baseGuid,
-					baseHash = baseHashHex,
-					shareEnc = string.Empty,
-					hdiffFilePath = encryptedPath
-				});
-			}
-			
-			var shares = SplitKeyAllOfN(key, entries.Count);
-			for (int i = 0; i < entries.Count; i++)
-			{
-				byte[] shareEnc = XorBytes(shares[i], masks[i]);
-				entries[i].shareEnc = Convert.ToBase64String(shareEnc);
-			}
-			
-			encryptedDiffPath = encryptedPath;
-			
-			try
-			{
-				AssetDatabase.ImportAsset(encryptedPath, ImportAssetOptions.ForceUpdate);
-				AssetDatabase.Refresh();
-			}
-			catch (Exception ex)
-			{
-				Debug.LogWarning($"[PatchBuilder] Failed to import encrypted diff asset: {ex.Message}");
-			}
-			
-			return true;
+			return CreateEncryptedPatchEntriesCore(
+				baseFbxPaths,
+				baseGuids,
+				modifiedFbxPath,
+				friendlyName,
+				useWrappedContentKey: false,
+				out encryptedDiffPath,
+				out entries,
+				out _,
+				out _);
+		}
+
+		public static bool CreateServerProtectedPatchEntries(
+			List<string> baseFbxPaths,
+			List<string> baseGuids,
+			string modifiedFbxPath,
+			string friendlyName,
+			out string encryptedDiffPath,
+			out List<DerivedFbxAsset.PatchEntry> entries,
+			out string protectedAssetId,
+			out string wrappedContentKey)
+		{
+			return CreateEncryptedPatchEntriesCore(
+				baseFbxPaths,
+				baseGuids,
+				modifiedFbxPath,
+				friendlyName,
+				useWrappedContentKey: true,
+				out encryptedDiffPath,
+				out entries,
+				out protectedAssetId,
+				out wrappedContentKey);
 		}
 		
 		/// <summary>
@@ -546,6 +492,117 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			ExtractAndEmbedMetaFile(modifiedFbxPath, asset);
 			
 			return asset;
+		}
+
+		private static bool CreateEncryptedPatchEntriesCore(
+			List<string> baseFbxPaths,
+			List<string> baseGuids,
+			string modifiedFbxPath,
+			string friendlyName,
+			bool useWrappedContentKey,
+			out string encryptedDiffPath,
+			out List<DerivedFbxAsset.PatchEntry> entries,
+			out string protectedAssetId,
+			out string wrappedContentKey)
+		{
+			encryptedDiffPath = null;
+			entries = new List<DerivedFbxAsset.PatchEntry>();
+			protectedAssetId = string.Empty;
+			wrappedContentKey = string.Empty;
+
+			if (baseFbxPaths == null || baseFbxPaths.Count == 0 || baseGuids == null || baseGuids.Count != baseFbxPaths.Count)
+				return false;
+
+			string canonicalBasePath = baseFbxPaths.FirstOrDefault(p => !string.IsNullOrEmpty(p));
+			if (string.IsNullOrEmpty(canonicalBasePath))
+				return false;
+
+			string canonicalGuid = baseGuids.FirstOrDefault(g => !string.IsNullOrEmpty(g));
+			string tempDiffPath = CreateHdiffFile(canonicalBasePath, modifiedFbxPath, friendlyName, canonicalGuid);
+			if (string.IsNullOrEmpty(tempDiffPath))
+				return false;
+
+			string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+			string tempDiffPhysicalPath = ResolvePhysicalPath(projectPath, tempDiffPath);
+
+			string encryptedPath = tempDiffPath + ".enc";
+			string encryptedPhysicalPath = ResolvePhysicalPath(projectPath, encryptedPath);
+
+			byte[] contentKey = new byte[32];
+			RandomNumberGenerator.Fill(contentKey);
+
+			if (!EncryptDiffFile(tempDiffPhysicalPath, encryptedPhysicalPath, contentKey))
+				return false;
+
+			try
+			{
+				File.Delete(tempDiffPhysicalPath);
+				string tempMeta = tempDiffPhysicalPath + ".meta";
+				if (File.Exists(tempMeta))
+					File.Delete(tempMeta);
+			}
+			catch (Exception ex)
+			{
+				Debug.LogWarning($"[PatchBuilder] Failed to delete temp .hdiff: {ex.Message}");
+			}
+
+			EnsureMetaFile(encryptedPhysicalPath);
+
+			var masks = new List<byte[]>(baseFbxPaths.Count);
+			for (int i = 0; i < baseFbxPaths.Count; i++)
+			{
+				string basePath = baseFbxPaths[i];
+				string baseGuid = baseGuids[i];
+				if (string.IsNullOrEmpty(basePath) || string.IsNullOrEmpty(baseGuid))
+					return false;
+
+				string basePhysicalPath = ResolvePhysicalPath(projectPath, basePath);
+				if (!File.Exists(basePhysicalPath))
+					return false;
+
+				ComputeBaseHashAndMask(basePhysicalPath, out var baseHash, out var mask);
+				string baseHashHex = BytesToHex(baseHash);
+				masks.Add(mask);
+
+				entries.Add(new DerivedFbxAsset.PatchEntry
+				{
+					baseGuid = baseGuid,
+					baseHash = baseHashHex,
+					shareEnc = string.Empty,
+					hdiffFilePath = encryptedPath
+				});
+			}
+
+			byte[] recoveryKey = contentKey;
+			if (useWrappedContentKey)
+			{
+				byte[] wrappingKey = new byte[32];
+				RandomNumberGenerator.Fill(wrappingKey);
+				recoveryKey = wrappingKey;
+				protectedAssetId = Guid.NewGuid().ToString("N");
+				wrappedContentKey = ProtectedContentKeyUtility.WrapContentKey(contentKey, wrappingKey);
+			}
+
+			var shares = SplitKeyAllOfN(recoveryKey, entries.Count);
+			for (int i = 0; i < entries.Count; i++)
+			{
+				byte[] shareEnc = XorBytes(shares[i], masks[i]);
+				entries[i].shareEnc = Convert.ToBase64String(shareEnc);
+			}
+
+			encryptedDiffPath = encryptedPath;
+
+			try
+			{
+				AssetDatabase.ImportAsset(encryptedPath, ImportAssetOptions.ForceUpdate);
+				AssetDatabase.Refresh();
+			}
+			catch (Exception ex)
+			{
+				Debug.LogWarning($"[PatchBuilder] Failed to import encrypted diff asset: {ex.Message}");
+			}
+
+			return true;
 		}
 
 		private static void EnsureMetaFile(string filePath)
