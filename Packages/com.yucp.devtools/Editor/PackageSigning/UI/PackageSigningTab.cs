@@ -2176,21 +2176,22 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             // Left: avatar + name
             string name = YucpOAuthService.GetDisplayName() ?? "Creator";
-            string init = name.Length > 0 ? name.Substring(0, 1).ToUpper() : "C";
 
             var left = new VisualElement();
             left.style.flexDirection = FlexDirection.Row;
             left.style.alignItems    = Align.Center;
 
-            var avatar = MakeRoundedBox(TealSub, 15, 1, new Color(0.212f, 0.749f, 0.694f, 0.35f));
-            avatar.style.width  = 28;
-            avatar.style.height = 28;
-            avatar.style.alignItems    = Align.Center;
-            avatar.style.justifyContent = Justify.Center;
+            var avatar = SigningProfileAvatar.Create(
+                name,
+                YucpOAuthService.GetProfileImageUrl(),
+                28f,
+                1f,
+                TealSub,
+                new Color(0.212f, 0.749f, 0.694f, 0.35f),
+                Teal,
+                11);
             avatar.style.marginRight   = 9;
             avatar.style.flexShrink    = 0;
-            var initLbl = MakeLabel(init, 11, Teal, bold: true, mb: 0, align: TextAnchor.MiddleCenter);
-            avatar.Add(initLbl);
             left.Add(avatar);
             left.Add(MakeLabel(name, 12, TextPri, bold: true, mb: 0));
             bar.Add(left);

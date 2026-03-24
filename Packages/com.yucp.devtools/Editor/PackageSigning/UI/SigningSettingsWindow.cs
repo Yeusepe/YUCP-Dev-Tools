@@ -310,33 +310,16 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             left.style.alignItems = Align.Center;
 
             string displayName = YucpOAuthService.GetDisplayName() ?? "Creator";
-            string initial = displayName.Length > 0 ? displayName.Substring(0, 1).ToUpper() : "C";
-
-            var avatarCircle = new VisualElement();
-            avatarCircle.style.width = 44;
-            avatarCircle.style.height = 44;
-            avatarCircle.style.borderTopLeftRadius = 22;
-            avatarCircle.style.borderTopRightRadius = 22;
-            avatarCircle.style.borderBottomLeftRadius = 22;
-            avatarCircle.style.borderBottomRightRadius = 22;
-            avatarCircle.style.backgroundColor = new Color(0.21f, 0.75f, 0.69f, 0.15f);
-            avatarCircle.style.borderTopWidth = 2;
-            avatarCircle.style.borderBottomWidth = 2;
-            avatarCircle.style.borderLeftWidth = 2;
-            avatarCircle.style.borderRightWidth = 2;
-            avatarCircle.style.borderTopColor = new Color(0.21f, 0.75f, 0.69f);
-            avatarCircle.style.borderBottomColor = new Color(0.21f, 0.75f, 0.69f);
-            avatarCircle.style.borderLeftColor = new Color(0.21f, 0.75f, 0.69f);
-            avatarCircle.style.borderRightColor = new Color(0.21f, 0.75f, 0.69f);
-            avatarCircle.style.alignItems = Align.Center;
-            avatarCircle.style.justifyContent = Justify.Center;
+            var avatarCircle = SigningProfileAvatar.Create(
+                displayName,
+                YucpOAuthService.GetProfileImageUrl(),
+                44f,
+                2f,
+                new Color(0.21f, 0.75f, 0.69f, 0.15f),
+                new Color(0.21f, 0.75f, 0.69f),
+                new Color(0.21f, 0.75f, 0.69f),
+                18);
             avatarCircle.style.marginRight = 14;
-
-            var initialLbl = new Label(initial);
-            initialLbl.style.fontSize = 18;
-            initialLbl.style.unityFontStyleAndWeight = FontStyle.Bold;
-            initialLbl.style.color = new Color(0.21f, 0.75f, 0.69f);
-            avatarCircle.Add(initialLbl);
             left.Add(avatarCircle);
 
             var infoCol = new VisualElement();

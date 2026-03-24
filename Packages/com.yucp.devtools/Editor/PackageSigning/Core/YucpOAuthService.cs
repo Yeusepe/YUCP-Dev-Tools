@@ -16,18 +16,59 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 {
     public static class YucpOAuthService
     {
-        public const string ClientId = "yucp-unity-editor";
-
-        private const string KeyToken = "YUCP_OAuth_AccessToken";
-        private const string KeyExpiry = "YUCP_OAuth_TokenExpiry";
-        private const string KeyUserId = "YUCP_OAuth_UserId";
-        private const string KeyDisplayName = "YUCP_OAuth_DisplayName";
-        private const string KeySessionVersion = "YUCP_OAuth_SessionVersion";
+        private const string RequiredCertificateScope = "cert:issue";
+        private const string RequiredProfileScope = "profile:read";
         private const string CurrentSessionVersion = "2";
+        private const string LegacySharedStoragePrefix = "YUCP_OAuth";
+        private const string LegacySharedSessionFileName = "unity-oauth-session-v2.dat";
         private const int AccessTokenSkewSeconds = 60;
-        private static readonly byte[] SessionEntropy = Encoding.UTF8.GetBytes("YUCP.UnityEditor.Session.v2");
         private static readonly object SessionLock = new object();
         private static Task _backgroundRefreshTask;
+
+        private sealed class OAuthDomainConfig
+        {
+            public OAuthDomainConfig(
+                string clientId,
+                string[] requestedScopes,
+                string editorPrefsPrefix,
+                string sessionFileName,
+                string sessionEntropyLabel)
+            {
+                ClientId = clientId;
+                RequestedScopes = requestedScopes;
+                EditorPrefsPrefix = editorPrefsPrefix;
+                SessionFileName = sessionFileName;
+                SessionEntropyLabel = sessionEntropyLabel;
+            }
+
+            public string ClientId { get; }
+            public string[] RequestedScopes { get; }
+            public string EditorPrefsPrefix { get; }
+            public string SessionFileName { get; }
+            public string SessionEntropyLabel { get; }
+            public string RequestedScopeValue => string.Join(" ", RequestedScopes);
+
+            public string GetEditorPrefKey(string suffix)
+            {
+                return $"{EditorPrefsPrefix}_{suffix}";
+            }
+        }
+
+        private static readonly OAuthDomainConfig Domain = new OAuthDomainConfig(
+            clientId: "yucp-unity-creator",
+            requestedScopes: new[] { RequiredCertificateScope, RequiredProfileScope },
+            editorPrefsPrefix: "YUCP_CreatorOAuth",
+            sessionFileName: "unity-creator-oauth-session-v2.dat",
+            sessionEntropyLabel: "YUCP.UnityEditor.Creator.Session.v2");
+
+        public static string ClientId => Domain.ClientId;
+
+        private static string KeyToken => Domain.GetEditorPrefKey("AccessToken");
+        private static string KeyExpiry => Domain.GetEditorPrefKey("TokenExpiry");
+        private static string KeyUserId => Domain.GetEditorPrefKey("UserId");
+        private static string KeyDisplayName => Domain.GetEditorPrefKey("DisplayName");
+        private static string KeySessionVersion => Domain.GetEditorPrefKey("SessionVersion");
+        private static readonly byte[] SessionEntropy = Encoding.UTF8.GetBytes(Domain.SessionEntropyLabel);
 
 #if UNITY_EDITOR_WIN
         private const int CryptProtectUiForbidden = 0x1;
@@ -73,6 +114,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             public long refreshTokenExpiresAt;
             public string userId;
             public string displayName;
+            public string imageUrl;
             public string scope;
         }
 
@@ -108,6 +150,13 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
             string name = EditorPrefs.GetString(KeyDisplayName, null);
             return string.IsNullOrEmpty(name) ? null : name;
+        }
+
+        public static string GetProfileImageUrl()
+        {
+            return TryGetCachedSession(out OAuthSessionV2 session) && !string.IsNullOrEmpty(session.imageUrl)
+                ? session.imageUrl
+                : null;
         }
 
         public static void TryBeginBackgroundRefresh(string serverUrl, Action onStateChanged = null)
@@ -155,16 +204,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
             if (TryGetLegacyAccessToken(out string legacyToken, out long legacyExpiry))
             {
-                var legacySession = new OAuthSessionV2
-                {
-                    storageVersion = 1,
-                    accessToken = legacyToken,
-                    accessTokenExpiresAt = legacyExpiry,
-                    userId = EditorPrefs.GetString(KeyUserId, null),
-                    displayName = EditorPrefs.GetString(KeyDisplayName, null),
-                };
-                PersistPresenceHints(legacySession);
-                return legacyToken;
+                Debug.LogWarning(
+                    $"[YUCP OAuth] Discarding legacy shared Unity session because it cannot prove required scope '{RequiredCertificateScope}'.");
+                ClearLegacySharedSessionArtifacts();
             }
 
             return null;
@@ -173,8 +215,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         public static void SignOut()
         {
             ClearPersistentSession();
-            ClearLegacyKeys();
-            EditorPrefs.DeleteKey(KeySessionVersion);
+            ClearCurrentDomainKeys();
+            ClearLegacySharedSessionArtifacts();
         }
 
         public static async Task SignInAsync(string serverUrl, Action onSuccess, Action<string> onError)
@@ -254,7 +296,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                         string desc = qp.TryGetValue("error_description", out string errorDescription)
                             ? Uri.UnescapeDataString(errorDescription)
                             : callbackError;
-                        string msg = BuildAuthorizationErrorMessage(desc, "cert:issue");
+                        string msg = BuildAuthorizationErrorMessage(desc, RequiredCertificateScope);
                         Debug.LogError($"[YUCP OAuth] {msg}");
                         await SendErrorRedirectAsync(context, serverUrl, msg);
                         onError?.Invoke(msg);
@@ -307,21 +349,22 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 }
 
                 string tokenJson = tokenReq.downloadHandler.text;
-                Debug.Log($"[YUCP OAuth] Token response {tokenReq.responseCode}: {tokenJson}");
+                Debug.Log($"[YUCP OAuth] Token response {tokenReq.responseCode}: {DescribeTokenResponse(tokenJson)}");
 
                 if (tokenReq.result != UnityWebRequest.Result.Success)
                 {
-                    onError?.Invoke($"Token exchange failed ({tokenReq.responseCode}): {tokenReq.error} — {tokenJson}");
+                    onError?.Invoke(BuildTokenExchangeErrorMessage(tokenReq.responseCode, tokenReq.error, tokenJson));
                     return;
                 }
 
                 OAuthSessionV2 session = BuildSessionFromTokenResponse(tokenJson, null);
                 if (session == null || string.IsNullOrEmpty(session.accessToken))
                 {
-                    onError?.Invoke($"No access_token in server response: {tokenJson}");
+                    onError?.Invoke($"No access_token in server response: {DescribeTokenResponse(tokenJson)}");
                     return;
                 }
 
+                session = await EnrichSessionWithProfileAsync(serverUrl, session);
                 PersistSession(session);
                 QueueFocusRelevantWindows();
                 Debug.Log($"[YUCP OAuth] Access token obtained (length {session.accessToken.Length}).");
@@ -408,6 +451,15 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return null;
             }
 
+            if (!HasRequiredScope(refreshedSession.scope, RequiredCertificateScope))
+            {
+                Debug.LogWarning(
+                    $"[YUCP OAuth] Refreshed session is missing required scope '{RequiredCertificateScope}'. Clearing the current auth domain session.");
+                SignOut();
+                return null;
+            }
+
+            refreshedSession = await EnrichSessionWithProfileAsync(serverUrl, refreshedSession);
             PersistSession(refreshedSession);
             return refreshedSession.accessToken;
         }
@@ -448,6 +500,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 displayName = previousSession?.displayName;
             }
 
+            string imageUrl = previousSession?.imageUrl;
+
             return new OAuthSessionV2
             {
                 storageVersion = 2,
@@ -457,6 +511,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 refreshTokenExpiresAt = refreshTokenExpiresAt,
                 userId = userId,
                 displayName = displayName,
+                imageUrl = imageUrl,
                 scope = scope,
             };
         }
@@ -474,6 +529,58 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             request.SetRequestHeader("Accept", "application/json");
             request.SetRequestHeader("Accept-Encoding", "identity");
             return request;
+        }
+
+        private static UnityWebRequest CreateProfileRequest(string serverUrl, string accessToken)
+        {
+            string endpoint = $"{serverUrl.TrimEnd('/')}/api/public/v2/me/profile";
+            var request = UnityWebRequest.Get(endpoint);
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+            request.SetRequestHeader("Accept", "application/json");
+            request.SetRequestHeader("Accept-Encoding", "identity");
+            return request;
+        }
+
+        private static async Task<OAuthSessionV2> EnrichSessionWithProfileAsync(string serverUrl, OAuthSessionV2 session)
+        {
+            if (session == null
+                || string.IsNullOrEmpty(serverUrl)
+                || string.IsNullOrEmpty(session.accessToken)
+                || !HasRequiredScope(session.scope, RequiredProfileScope))
+            {
+                return session;
+            }
+
+            using var request = CreateProfileRequest(serverUrl, session.accessToken);
+            var operation = request.SendWebRequest();
+            while (!operation.isDone)
+            {
+                await Task.Yield();
+            }
+
+            string profileJson = request.downloadHandler?.text ?? string.Empty;
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogWarning(
+                    $"[YUCP OAuth] Profile fetch failed ({request.responseCode}): {request.error}. Response: {BuildProfileResponseSummary(profileJson)}");
+                return session;
+            }
+
+            string profileUserId = ExtractJsonString(profileJson, "authUserId");
+            if (!string.IsNullOrEmpty(profileUserId))
+            {
+                session.userId = profileUserId;
+            }
+
+            string profileName = ExtractJsonString(profileJson, "name");
+            if (!string.IsNullOrEmpty(profileName))
+            {
+                session.displayName = profileName;
+            }
+
+            session.imageUrl = ExtractJsonString(profileJson, "image");
+            return session;
         }
 
         private static string BuildFormUrlEncodedBody(IReadOnlyDictionary<string, string> fields)
@@ -537,7 +644,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         {
             if (TryGetCachedSession(out session))
             {
-                if (HasUsableAccessToken(session) || IsRefreshableSession(session))
+                if (HasUsableAccessToken(session) || (IsRefreshableSession(session) && HasRequiredScope(session.scope, RequiredCertificateScope)))
                 {
                     PersistPresenceHints(session);
                     return true;
@@ -546,16 +653,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
             if (TryGetLegacyAccessToken(out string legacyToken, out long legacyExpiry))
             {
-                session = new OAuthSessionV2
-                {
-                    storageVersion = 1,
-                    accessToken = legacyToken,
-                    accessTokenExpiresAt = legacyExpiry,
-                    userId = EditorPrefs.GetString(KeyUserId, null),
-                    displayName = EditorPrefs.GetString(KeyDisplayName, null),
-                };
-                PersistPresenceHints(session);
-                return true;
+                Debug.LogWarning(
+                    $"[YUCP OAuth] Clearing legacy shared Unity session because it cannot prove required scope '{RequiredCertificateScope}'.");
+                ClearLegacySharedSessionArtifacts();
             }
 
             session = null;
@@ -573,13 +673,13 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             token = null;
             expiry = 0;
 
-            if (!EditorPrefs.HasKey(KeyToken) || !EditorPrefs.HasKey(KeyExpiry))
+            if (!EditorPrefs.HasKey(GetLegacySharedKey("AccessToken")) || !EditorPrefs.HasKey(GetLegacySharedKey("TokenExpiry")))
             {
                 return false;
             }
 
-            token = EditorPrefs.GetString(KeyToken, string.Empty);
-            expiry = EditorPrefs.GetInt(KeyExpiry, 0);
+            token = EditorPrefs.GetString(GetLegacySharedKey("AccessToken"), string.Empty);
+            expiry = EditorPrefs.GetInt(GetLegacySharedKey("TokenExpiry"), 0);
             if (string.IsNullOrEmpty(token))
             {
                 return false;
@@ -592,7 +692,27 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         {
             return session != null
                 && !string.IsNullOrEmpty(session.accessToken)
+                && HasRequiredScope(session.scope, RequiredCertificateScope)
                 && session.accessTokenExpiresAt > DateTimeOffset.UtcNow.ToUnixTimeSeconds() + AccessTokenSkewSeconds;
+        }
+
+        private static bool HasRequiredScope(string scopeValue, string requiredScope)
+        {
+            if (string.IsNullOrWhiteSpace(scopeValue) || string.IsNullOrWhiteSpace(requiredScope))
+            {
+                return false;
+            }
+
+            string[] scopes = scopeValue.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string scope in scopes)
+            {
+                if (string.Equals(scope.Trim(), requiredScope, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool IsRefreshableSession(OAuthSessionV2 session)
@@ -617,8 +737,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return;
             }
 
+            ClearCurrentDomainKeys();
+            ClearLegacySharedSessionArtifacts();
             PersistPresenceHints(session);
-            ClearLegacyKeys();
 
             if (!SupportsProtectedSessionStorage())
             {
@@ -732,12 +853,45 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             EditorPrefs.SetString(KeySessionVersion, CurrentSessionVersion);
         }
 
-        private static void ClearLegacyKeys()
+        private static void ClearCurrentDomainKeys()
         {
             EditorPrefs.DeleteKey(KeyToken);
             EditorPrefs.DeleteKey(KeyExpiry);
             EditorPrefs.DeleteKey(KeyUserId);
             EditorPrefs.DeleteKey(KeyDisplayName);
+            EditorPrefs.DeleteKey(KeySessionVersion);
+        }
+
+        private static string GetLegacySharedKey(string suffix)
+        {
+            return $"{LegacySharedStoragePrefix}_{suffix}";
+        }
+
+        private static void ClearLegacySharedSessionArtifacts()
+        {
+            EditorPrefs.DeleteKey(GetLegacySharedKey("AccessToken"));
+            EditorPrefs.DeleteKey(GetLegacySharedKey("TokenExpiry"));
+            EditorPrefs.DeleteKey(GetLegacySharedKey("UserId"));
+            EditorPrefs.DeleteKey(GetLegacySharedKey("DisplayName"));
+            EditorPrefs.DeleteKey(GetLegacySharedKey("SessionVersion"));
+
+            if (!SupportsProtectedSessionStorage())
+            {
+                return;
+            }
+
+            try
+            {
+                string legacySessionPath = GetLegacySharedSessionFilePath();
+                if (File.Exists(legacySessionPath))
+                {
+                    File.Delete(legacySessionPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP OAuth] Failed to clear legacy shared session: {ex.Message}");
+            }
         }
 
         private static bool SupportsProtectedSessionStorage()
@@ -752,7 +906,13 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         private static string GetSessionFilePath()
         {
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            return Path.Combine(localAppData, "YUCP", "Auth", "unity-oauth-session-v2.dat");
+            return Path.Combine(localAppData, "YUCP", "Auth", Domain.SessionFileName);
+        }
+
+        private static string GetLegacySharedSessionFilePath()
+        {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            return Path.Combine(localAppData, "YUCP", "Auth", LegacySharedSessionFileName);
         }
 
 #if UNITY_EDITOR_WIN
@@ -854,6 +1014,34 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             return responseBody.IndexOf("invalid_grant", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static string BuildTokenExchangeErrorMessage(long responseCode, string requestError, string tokenJson)
+        {
+            string oauthError = ExtractJsonString(tokenJson, "error");
+            string oauthDescription = ExtractJsonString(tokenJson, "error_description");
+            string detail = !string.IsNullOrEmpty(oauthDescription)
+                ? oauthDescription
+                : !string.IsNullOrEmpty(oauthError)
+                    ? oauthError
+                    : requestError;
+            return $"Token exchange failed ({responseCode}): {detail}";
+        }
+
+        private static string DescribeTokenResponse(string tokenJson)
+        {
+            bool hasAccessToken = !string.IsNullOrEmpty(ExtractJsonString(tokenJson, "access_token"));
+            bool hasRefreshToken = !string.IsNullOrEmpty(ExtractJsonString(tokenJson, "refresh_token"));
+            string scope = ExtractJsonString(tokenJson, "scope") ?? string.Empty;
+            return $"{{ hasAccessToken: {hasAccessToken.ToString().ToLowerInvariant()}, hasRefreshToken: {hasRefreshToken.ToString().ToLowerInvariant()}, scope: \"{scope}\" }}";
+        }
+
+        private static string BuildProfileResponseSummary(string profileJson)
+        {
+            string authUserId = ExtractJsonString(profileJson, "authUserId") ?? string.Empty;
+            string name = ExtractJsonString(profileJson, "name") ?? string.Empty;
+            bool hasImage = !string.IsNullOrEmpty(ExtractJsonString(profileJson, "image"));
+            return $"{{ authUserId: \"{authUserId}\", hasName: {(!string.IsNullOrEmpty(name)).ToString().ToLowerInvariant()}, hasImage: {hasImage.ToString().ToLowerInvariant()} }}";
+        }
+
         private static async Task SendSuccessPageAsync(HttpListenerContext ctx)
         {
             byte[] html = Encoding.UTF8.GetBytes(BuildSuccessHtml());
@@ -882,7 +1070,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 + "&code_challenge_method=S256"
                 + $"&redirect_uri={Uri.EscapeDataString(redirectUri)}"
                 + $"&state={Uri.EscapeDataString(state)}"
-                + "&scope=cert%3Aissue";
+                + $"&scope={Uri.EscapeDataString(Domain.RequestedScopeValue)}";
         }
 
         private static string Base64UrlEncode(byte[] data)
