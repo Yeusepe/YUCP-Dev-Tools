@@ -323,6 +323,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 }
 
                 PersistSession(session);
+                QueueFocusRelevantWindows();
                 Debug.Log($"[YUCP OAuth] Access token obtained (length {session.accessToken.Length}).");
                 Debug.Log($"[YUCP OAuth] Signed in as '{session.displayName}' (sub={session.userId}).");
 
@@ -337,6 +338,15 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 Debug.LogError($"[YUCP OAuth] Unhandled exception: {ex}");
                 onError?.Invoke($"Sign-in error: {ex.Message}");
             }
+        }
+
+        private static void QueueFocusRelevantWindows()
+        {
+            EditorApplication.delayCall += () =>
+            {
+                EditorWindow.FocusWindowIfItsOpen<YUCP.DevTools.Editor.PackageSigning.UI.SigningSettingsWindow>();
+                EditorWindow.FocusWindowIfItsOpen<YUCP.DevTools.Editor.PackageExporter.YUCPPackageExporterWindow>();
+            };
         }
 
         private static async Task RefreshInBackgroundAsync(string serverUrl, Action onStateChanged)
@@ -1105,6 +1115,13 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
   <link rel=""preconnect"" href=""https://fonts.googleapis.com"">
   <link rel=""preconnect"" href=""https://fonts.gstatic.com"" crossorigin>
   <link href=""https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700;800&family=DM+Sans:wght@400;500&display=swap"" rel=""stylesheet"">
+  <svg style=""display:none"" aria-hidden=""true"">
+    <filter id=""liq-sm"" x=""-8%"" y=""-8%"" width=""116%"" height=""116%"" color-interpolation-filters=""sRGB"">
+      <feTurbulence type=""fractalNoise"" baseFrequency=""0.018 0.024"" numOctaves=""3"" seed=""7"" result=""noise"" />
+      <feGaussianBlur in=""noise"" stdDeviation=""2.5"" result=""smooth"" />
+      <feDisplacementMap in=""SourceGraphic"" in2=""smooth"" scale=""6"" xChannelSelector=""R"" yChannelSelector=""G"" />
+    </filter>
+  </svg>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -1118,7 +1135,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
       padding: 24px;
       overflow-x: hidden;
     }
-    /* Static sky placeholder — mirrors web app PageLoadingOverlay sky */
+    /* Static sky placeholder with white blobs */
     .sky {
       position: fixed;
       inset: -8%;
@@ -1161,16 +1178,19 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
     /* Glass card */
     .card {
       position: relative;
-      background: rgba(10,10,10,0.80);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-      border: 1px solid rgba(255,255,255,0.09);
-      box-shadow: 0 24px 64px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
-      border-radius: 22px;
-      padding: 30px 26px 26px;
+      background: rgba(0,0,0,0.28);
+      backdrop-filter: blur(24px) saturate(160%);
+      -webkit-backdrop-filter: blur(24px) saturate(160%);
+      border: 1px solid rgba(255,255,255,0.13);
+      box-shadow:
+        0 24px 64px rgba(0,0,0,0.45),
+        inset 0 1px 0 rgba(255,255,255,0.10),
+        inset 0 -1px 0 rgba(0,0,0,0.15);
+      border-radius: 28px;
+      padding: 40px 36px 32px;
       overflow: hidden;
+      text-align: center;
     }
-    /* Accent highlight at top of card */
     .card::before {
       content: """";
       position: absolute;
@@ -1181,29 +1201,17 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
       opacity: 0.6;
       pointer-events: none;
     }
-    /* Status badge */
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      padding: 5px 12px 5px 10px;
-      border-radius: 999px;
-      border: 1px solid __ACCENT_START__;
-      color: __ACCENT_START__;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      margin-bottom: 18px;
-      font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+    .card::after {
+      content: """";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.06) 14%, transparent 34%),
+        radial-gradient(circle at 22% 0%, rgba(255,255,255,0.14), transparent 34%);
+      filter: url(#liq-sm);
       opacity: 0.9;
-    }
-    .badge-dot {
-      width: 7px; height: 7px;
-      border-radius: 50%;
-      background: __ACCENT_START__;
-      box-shadow: 0 0 8px __ACCENT_START__;
-      flex-shrink: 0;
     }
     h1 {
       font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
@@ -1255,15 +1263,16 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
       color: rgba(255,255,255,0.78);
       word-break: break-word;
     }
-    .footer {
-      margin-top: 14px;
-      text-align: center;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: rgba(255,255,255,0.28);
-      font-family: 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif;
+    .logo-wrap {
+      display: flex;
+      justify-content: center;
+      margin-top: 18px;
+    }
+    .logo-wrap img {
+      width: min(220px, 72%);
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 10px 28px rgba(0,0,0,0.22));
     }
     @media (prefers-reduced-motion: reduce) {
       .shell { animation: none; }
@@ -1274,13 +1283,14 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
   <div class=""sky""></div>
   <div class=""shell"">
     <div class=""card"">
-      <div class=""badge""><span class=""badge-dot""></span>__BADGE__</div>
       <h1>__TITLE__</h1>
       <p class=""body-copy"">__MESSAGE__</p>
       <div class=""divider""></div>
       __DETAIL_HTML__
     </div>
-    <div class=""footer"">YUCP &middot; Loopback sign-in</div>
+    <div class=""logo-wrap"">
+      <img src=""https://raw.githubusercontent.com/Yeusepe/YUCP-Creator-Assistant/refs/heads/main/apps/web/public/Icons/MainLogo.png"" alt=""YUCP"" />
+    </div>
   </div>
 </body>
 </html>";
