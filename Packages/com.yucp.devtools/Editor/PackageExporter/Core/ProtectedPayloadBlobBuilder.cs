@@ -194,15 +194,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return true;
 
             if (normalized.StartsWith("Packages/yucp.installed-packages/", StringComparison.OrdinalIgnoreCase) ||
-                normalized.StartsWith("Packages/yucp.packageguardian/", StringComparison.OrdinalIgnoreCase) ||
-                normalized.StartsWith("Packages/com.yucp.temp/Editor/", StringComparison.OrdinalIgnoreCase) ||
-                normalized.StartsWith("Packages/com.yucp.temp/Plugins/", StringComparison.OrdinalIgnoreCase))
+                normalized.StartsWith("Packages/yucp.packageguardian/", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
-
-            if (normalized.Equals("Packages/com.yucp.temp/package.json", StringComparison.OrdinalIgnoreCase))
-                return true;
 
             return false;
         }
