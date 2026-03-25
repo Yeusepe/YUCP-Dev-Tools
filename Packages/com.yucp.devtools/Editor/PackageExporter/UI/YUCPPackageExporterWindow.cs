@@ -226,5 +226,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private const string PackageExporterWikiUrl = "https://github.com/Yeusepe/YUCP-Dev-Tools/wiki/Package-Exporter";
         /// <summary>Derived FBXs section (onboarding "Learn more" link).</summary>
         private const string DerivedFbxWikiUrl = "https://github.com/Yeusepe/YUCP-Dev-Tools/wiki/Package-Exporter#derived-fbxs";
+        private const string DevToolsListingWebsiteUrl = "https://dev.vpm.yucp.club/";
     }
 }

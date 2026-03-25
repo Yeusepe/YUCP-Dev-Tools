@@ -84,53 +84,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                     {
                         string responseJson = request.downloadHandler.text;
                         
-                        // Parse the full response including certificateChain
-                        PackageSigningData.SigningResponse response = JsonUtility.FromJson<PackageSigningData.SigningResponse>(responseJson);
-                        
-                        // Unity's JsonUtility doesn't properly deserialize nested arrays,
-                        // so we need to manually parse certificateChain if present
-                        PackageVerifierData.CertificateData[] certificateChain = null;
-                        if (response != null && responseJson.Contains("certificateChain"))
-                        {
-                            try
-                            {
-                                // Extract the certificateChain array from the JSON
-                                int chainStart = responseJson.IndexOf("\"certificateChain\":[");
-                                if (chainStart >= 0)
-                                {
-                                    int bracketCount = 0;
-                                    int arrayStart = responseJson.IndexOf('[', chainStart);
-                                    int arrayEnd = arrayStart;
-                                    
-                                    for (int i = arrayStart; i < responseJson.Length; i++)
-                                    {
-                                        if (responseJson[i] == '[') bracketCount++;
-                                        if (responseJson[i] == ']') bracketCount--;
-                                        if (bracketCount == 0)
-                                        {
-                                            arrayEnd = i;
-                                            break;
-                                        }
-                                    }
-                                    
-                                    if (arrayEnd > arrayStart)
-                                    {
-                                        string chainJson = responseJson.Substring(arrayStart, arrayEnd - arrayStart + 1);
-                                        // Parse the certificate chain array using a wrapper class
-                                        CertificateChainWrapper wrapper = JsonUtility.FromJson<CertificateChainWrapper>("{\"Items\":" + chainJson + "}");
-                                        if (wrapper != null && wrapper.Items != null)
-                                        {
-                                            certificateChain = wrapper.Items;
-                                        }
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Debug.LogWarning($"[PackageSigningService] Failed to parse certificateChain from response: {ex.Message}");
-                            }
-                        }
-                        
+                        PackageSigningData.SigningResponse response =
+                            SigningResponseParser.Parse(responseJson, "PackageSigningService");
+                        PackageVerifierData.CertificateData[] certificateChain = response?.certificateChain;
+                         
                         // Convert SigningResponse to SignatureData
                         PackageSigningData.SignatureData signature = new PackageSigningData.SignatureData
                         {
@@ -799,6 +756,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             public long currentPeriodEnd;
             public long graceUntil;
             public string reason;
+            public CertificateCapabilityState[] capabilities;
         }
 
         [Serializable]
@@ -816,6 +774,14 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             public int auditRetentionDays;
             public string supportTier;
             public int billingGraceDays;
+            public string[] capabilities;
+        }
+
+        [Serializable]
+        public class CertificateCapabilityState
+        {
+            public string capabilityKey;
+            public string status;
         }
 
         [Serializable]
@@ -837,14 +803,5 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         {
         }
 
-        /// <summary>
-        /// Wrapper class for parsing certificate chain arrays with Unity's JsonUtility
-        /// Unity's JsonUtility requires a wrapper class to deserialize arrays
-        /// </summary>
-        [Serializable]
-        private class CertificateChainWrapper
-        {
-            public PackageVerifierData.CertificateData[] Items;
-        }
     }
 }

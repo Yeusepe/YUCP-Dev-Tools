@@ -1254,6 +1254,7 @@ namespace YUCP.PatchCleanup
                         CleanupDerivedFbxImporterSettings();
                         // Also clean up DLLs after patches are applied
                         CleanupDllsAfterPatchApplication();
+                        CleanupTempPackageFolder();
                     };
                 };
 
@@ -1416,7 +1417,7 @@ namespace YUCP.PatchCleanup
                     try
                     {
                         Directory.Delete(tempPackagePath, true);
-                        WriteLog("Deleted Packages/com.yucp.temp after failure");
+                        WriteLog("Deleted Packages/com.yucp.temp after cleanup");
                     }
                     catch (Exception ex)
                     {

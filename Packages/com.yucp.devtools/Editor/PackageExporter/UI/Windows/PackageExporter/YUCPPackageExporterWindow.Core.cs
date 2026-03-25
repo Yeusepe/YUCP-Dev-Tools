@@ -1076,6 +1076,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             window.titleContent = new GUIContent("YUCP Package Exporter", icon);
             window.minSize = new Vector2(800, 700); // Increased default window size
             window.Show();
+            window.Focus();
+        }
+
+        public static void OpenListingWebsiteWithFocusCallback()
+        {
+            WebsiteFocusCallbackService.OpenUrlWithFocusCallback(
+                DevToolsListingWebsiteUrl,
+                EditorWindow.focusedWindow,
+                ShowWindow);
         }
 
     }

@@ -1,6 +1,8 @@
 import { baseLayerLuminance, StandardLuminance } from 'https://unpkg.com/@fluentui/web-components';
 
 const LISTING_URL = "{{ listingInfo.Url }}";
+const UNITY_CALLBACK_URL_PARAM = 'unityCallbackUrl';
+const UNITY_STATE_PARAM = 'unityState';
 
 const PACKAGES = {
 {{~ for package in packages ~}}
@@ -38,8 +40,130 @@ const setTheme = () => {
   }
 }
 
+const getUnityReturnContext = () => {
+  const params = new URLSearchParams(window.location.search);
+  const callbackUrl = params.get(UNITY_CALLBACK_URL_PARAM);
+  const state = params.get(UNITY_STATE_PARAM);
+  if (!callbackUrl || !state) {
+    return null;
+  }
+
+  try {
+    return {
+      callbackUrl: new URL(callbackUrl).toString(),
+      state,
+      notified: false,
+    };
+  } catch (error) {
+    console.warn('Invalid Unity callback URL:', callbackUrl, error);
+    return null;
+  }
+};
+
+const buildUnityCallbackUrl = (context, source) => {
+  const callbackUrl = new URL(context.callbackUrl);
+  callbackUrl.searchParams.set('state', context.state);
+  callbackUrl.searchParams.set('source', source);
+  return callbackUrl.toString();
+};
+
+const notifyUnityToFocus = async (context, statusElement, source) => {
+  if (!context || context.notified) {
+    return false;
+  }
+
+  context.notified = true;
+  if (statusElement) {
+    statusElement.textContent = 'Returning focus to Unity...';
+  }
+
+  try {
+    await fetch(buildUnityCallbackUrl(context, source), {
+      method: 'GET',
+      mode: 'no-cors',
+      cache: 'no-store',
+      keepalive: true,
+    });
+    return true;
+  } catch (error) {
+    context.notified = false;
+    if (statusElement) {
+      statusElement.textContent = 'Could not signal Unity automatically. Click Return to Unity to try again.';
+    }
+    console.warn('Failed to notify Unity to focus:', error);
+    return false;
+  }
+};
+
+const setupUnityReturn = () => {
+  const context = getUnityReturnContext();
+  const returnBlock = document.getElementById('unityReturnBlock');
+  const returnButton = document.getElementById('unityReturnButton');
+  const statusElement = document.getElementById('unityReturnStatus');
+  let pendingExternalAppReturn = false;
+  let sawBackgroundTransition = false;
+
+  if (!context || !returnBlock || !returnButton || !statusElement) {
+    return {
+      armAfterExternalLaunch: () => {},
+    };
+  }
+
+  returnBlock.hidden = false;
+
+  returnButton.addEventListener('click', async () => {
+    const notified = await notifyUnityToFocus(context, statusElement, 'manual');
+    if (notified) {
+      statusElement.textContent = 'Unity should be back in focus.';
+    }
+  });
+
+  document.addEventListener('visibilitychange', async () => {
+    if (!pendingExternalAppReturn) {
+      return;
+    }
+
+    if (document.visibilityState === 'hidden') {
+      sawBackgroundTransition = true;
+      return;
+    }
+
+    if (!sawBackgroundTransition || context.notified) {
+      return;
+    }
+
+    const notified = await notifyUnityToFocus(context, statusElement, 'visibility');
+    if (notified) {
+      pendingExternalAppReturn = false;
+      statusElement.textContent = 'Unity should be back in focus.';
+    }
+  });
+
+  window.addEventListener('focus', async () => {
+    if (!pendingExternalAppReturn || !sawBackgroundTransition || context.notified) {
+      return;
+    }
+
+    const notified = await notifyUnityToFocus(context, statusElement, 'focus');
+    if (notified) {
+      pendingExternalAppReturn = false;
+      statusElement.textContent = 'Unity should be back in focus.';
+    }
+  });
+
+  return {
+    armAfterExternalLaunch: () => {
+      pendingExternalAppReturn = true;
+      sawBackgroundTransition = document.visibilityState === 'hidden';
+      statusElement.textContent = 'Waiting for you to finish in VCC. This page will return focus to Unity when you come back.';
+    },
+  };
+};
+
 (() => {
   setTheme();
+
+  const unityReturn = setupUnityReturn();
 
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     setTheme();
@@ -88,7 +212,10 @@ const setTheme = () => {
   });
 
   const vccAddRepoButton = document.getElementById('vccAddRepoButton');
-  vccAddRepoButton.addEventListener('click', () => window.location.assign(`vcc://vpm/addRepo?url=${encodeURIComponent(LISTING_URL)}`));
+  vccAddRepoButton.addEventListener('click', () => {
+    unityReturn.armAfterExternalLaunch();
+    window.location.assign(`vcc://vpm/addRepo?url=${encodeURIComponent(LISTING_URL)}`);
+  });
 
   const vccUrlFieldCopy = document.getElementById('vccUrlFieldCopy');
   vccUrlFieldCopy.addEventListener('click', () => {
@@ -155,7 +282,10 @@ const setTheme = () => {
 
   const rowAddToVccButtons = document.querySelectorAll('.rowAddToVccButton');
   rowAddToVccButtons.forEach((button) => {
-    button.addEventListener('click', () => window.location.assign(`vcc://vpm/addRepo?url=${encodeURIComponent(LISTING_URL)}`));
+    button.addEventListener('click', () => {
+      unityReturn.armAfterExternalLaunch();
+      window.location.assign(`vcc://vpm/addRepo?url=${encodeURIComponent(LISTING_URL)}`);
+    });
   });
 
   const rowPackageInfoButton = document.querySelectorAll('.rowPackageInfoButton');

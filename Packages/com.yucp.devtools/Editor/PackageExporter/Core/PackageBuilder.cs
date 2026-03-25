@@ -62,6 +62,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public readonly string EmbeddedRoot;
             public readonly string TempInstallRoot;
             public readonly List<EmbeddedAsset> Assets = new List<EmbeddedAsset>();
+            public readonly HashSet<string> MetadataFallbackAssetPaths =
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             public string IconPath;
             public string BannerPath;
@@ -94,6 +96,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (!string.IsNullOrEmpty(assetPath) && assetPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
                 {
                     exportAssetPath = GetRelativePackagePath(assetPath);
+                    if (!string.IsNullOrEmpty(exportAssetPath))
+                    {
+                        MetadataFallbackAssetPaths.Add(exportAssetPath);
+                    }
                     return assetPath;
                 }
 
@@ -127,22 +133,119 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private sealed class ProtectedAssetRegistration
         {
             public string protectedAssetId;
+            public string unlockMode;
             public string wrappedContentKey;
+            public string contentKeyBase64;
             public string displayName;
         }
 
-        private sealed class EmbeddedPackagePreparedProfile
+        private sealed class ProtectedPayloadPreparedExport
         {
             public ExportProfile profile;
-            public string entryId;
-            public string iconPath;
-            public string bannerPath;
         }
 
-        private sealed class EmbeddedPackageExportArtifact
+        private sealed class ProtectedPayloadExportArtifact
         {
-            public EmbeddedPackageEntry entry;
             public string tempFilePath;
+            public ProtectedPayloadDescriptor protectedPayload;
+        }
+
+        private sealed class PatchRuntimeInjectedFile
+        {
+            public string sourcePath;
+            public string targetPath;
+            public bool rewritePatchRuntimeNamespace = true;
+        }
+
+        private static readonly PatchRuntimeInjectedFile[] s_patchRuntimeInjectedFiles = new[]
+        {
+            new PatchRuntimeInjectedFile
+            {
+                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Data/DerivedFbxAsset.cs",
+                targetPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs",
+            },
+            new PatchRuntimeInjectedFile
+            {
+                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/MetaFileManager.cs",
+                targetPath = "Packages/com.yucp.temp/Editor/MetaFileManager.cs",
+            },
+            new PatchRuntimeInjectedFile
+            {
+                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/DerivedFbxBuilder.cs",
+                targetPath = "Packages/com.yucp.temp/Editor/DerivedFbxBuilder.cs",
+            },
+            new PatchRuntimeInjectedFile
+            {
+                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/ProtectedContentKeyUtility.cs",
+                targetPath = "Packages/com.yucp.temp/Editor/ProtectedContentKeyUtility.cs",
+            },
+            new PatchRuntimeInjectedFile
+            {
+                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/HDiffPatchWrapper.cs",
+                targetPath = "Packages/com.yucp.temp/Editor/HDiffPatchWrapper.cs",
+            },
+            new PatchRuntimeInjectedFile
+            {
+                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/ManifestBuilder.cs",
+                targetPath = "Packages/com.yucp.temp/Editor/ManifestBuilder.cs",
+            },
+            new PatchRuntimeInjectedFile
+            {
+                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Correspondence/MapBuilder.cs",
+                targetPath = "Packages/com.yucp.temp/Editor/MapBuilder.cs",
+            },
+            new PatchRuntimeInjectedFile
+            {
+                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Backup/BackupManager.cs",
+                targetPath = "Packages/com.yucp.temp/Editor/BackupManager.cs",
+            },
+            new PatchRuntimeInjectedFile
+            {
+                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Validator.cs",
+                targetPath = "Packages/com.yucp.temp/Editor/Validator.cs",
+            },
+            new PatchRuntimeInjectedFile
+            {
+                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Templates/YUCPPatchImporter.cs",
+                targetPath = "Packages/com.yucp.temp/Editor/YUCPPatchImporter.cs",
+            },
+        };
+
+        private static string CreateDeterministicInjectedGuid(string seed)
+        {
+            using (var md5 = System.Security.Cryptography.MD5.Create())
+            {
+                string normalizedSeed = (seed ?? string.Empty)
+                    .Replace('\\', '/')
+                    .ToLowerInvariant();
+                byte[] hash = md5.ComputeHash(Encoding.UTF8.GetBytes(normalizedSeed));
+                var sb = new StringBuilder(hash.Length * 2);
+                for (int i = 0; i < hash.Length; i++)
+                {
+                    sb.Append(hash[i].ToString("x2"));
+                }
+
+                return sb.ToString();
+            }
+        }
+
+        private static string GetPatchRuntimeInjectedGuid(string targetPath)
+        {
+            return CreateDeterministicInjectedGuid($"yucp-patch-runtime:{targetPath}");
+        }
+
+        private static bool ShouldBuildProtectedPayload(ExportProfile profile)
+        {
+            return profile != null &&
+                   profile.UsesProtectedPayload();
+        }
+
+        private static ExportProfile CreateSyntheticProtectedPayloadProfile(ExportProfile containerProfile)
+        {
+            var payloadProfile = ScriptableObject.Instantiate(containerProfile);
+            payloadProfile.requiresLicenseVerification = false;
+
+            return payloadProfile;
         }
 
         private static readonly List<ProtectedAssetRegistration> s_pendingProtectedAssetRegistrations = new List<ProtectedAssetRegistration>();
@@ -326,7 +429,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }).ToList();
                 }
                 
-                if (assetsToExport.Count == 0 && !profile.useEmbeddedPackages)
+                if (assetsToExport.Count == 0 && !profile.UsesProtectedPayload())
                 {
                     result.success = false;
                     result.errorMessage = "No assets found to export";
@@ -352,8 +455,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 
                 var embedContext = new PackageEmbedContext(profile);
-                List<EmbeddedPackagePreparedProfile> preparedEmbeddedProfiles = null;
-                List<EmbeddedPackageExportArtifact> embeddedPackageArtifacts = null;
+                List<ProtectedPayloadPreparedExport> preparedProtectedPayloads = null;
+                List<ProtectedPayloadExportArtifact> protectedPayloadArtifacts = null;
 
                 if (profile.icon != null && !IsDefaultGridPlaceholder(profile.icon))
                 {
@@ -367,7 +470,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
 
-                preparedEmbeddedProfiles = PrepareEmbeddedProfilesForExport(profile, embedContext, assetsToExport);
+                preparedProtectedPayloads = PrepareProtectedPayloadsForExport(profile);
+                bool usesSyntheticLicensedPayload = preparedProtectedPayloads != null &&
+                    preparedProtectedPayloads.Count > 0;
+                if (usesSyntheticLicensedPayload && string.IsNullOrEmpty(profile.packageId))
+                {
+                    PackageIdManager.AssignPackageId(profile);
+                }
 
                 if (profile.banner != null)
                 {
@@ -450,9 +559,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Manually collect dependencies if enabled (respects ignore list)
                 CollectFilteredDependencies(assetsToExport, profile, progressCallback);
                 
-                // Convert derived FBXs after dependencies are collected so derived FBXs referenced only by exported
-                // assets (i.e., not directly in export folders) still get converted into patch artifacts.
-                hasPatchAssets = ConvertDerivedFbxToPatchAssets(assetsToExport, progressCallback, progress: 0.535f, profile: profile);
+                // Protected-payload exports build their real derived patch assets inside the synthetic payload export.
+                // The outer shell should stay metadata-only and must not create a second competing patch authoring pass.
+                if (profile.UsesProtectedPayload())
+                {
+                    hasPatchAssets = false;
+                }
+                else
+                {
+                    // Convert derived FBXs after dependencies are collected so derived FBXs referenced only by exported
+                    // assets (i.e., not directly in export folders) still get converted into patch artifacts.
+                    hasPatchAssets = ConvertDerivedFbxToPatchAssets(assetsToExport, progressCallback, progress: 0.535f, profile: profile);
+                }
                 
                 progressCallback?.Invoke(0.54f, $"Total assets after dependency collection: {assetsToExport.Count}");
                 
@@ -604,7 +722,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                      }
                  }
                 
-                if (validAssets.Count == 0 && bundledPackagePaths.Count == 0 && !profile.useEmbeddedPackages)
+                if (validAssets.Count == 0 && bundledPackagePaths.Count == 0 && !profile.UsesProtectedPayload())
                 {
                     throw new InvalidOperationException("No valid assets found to export. Check that the specified folders contain valid Unity assets.");
                 }
@@ -641,15 +759,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     return false;
                 });
                 
-                if (ignoredRemoved > 0)
-                {
-                    Debug.LogWarning($"[PackageBuilder] Final filter removed {ignoredRemoved} asset(s) that were in ignored folders");
-                }
+                 if (ignoredRemoved > 0)
+                 {
+                     Debug.LogWarning($"[PackageBuilder] Final filter removed {ignoredRemoved} asset(s) that were in ignored folders");
+                 }
+
+                 if (usesSyntheticLicensedPayload)
+                 {
+                      Debug.Log("[PackageBuilder] Licensed profile export will emit a bootstrap container shell and move the licensed payload into a synthetic protected blob.");
+                      finalValidAssets = finalValidAssets
+                          .Where(assetPath => embedContext.MetadataFallbackAssetPaths.Contains(assetPath))
+                          .ToList();
+                      bundledPackagePaths.Clear();
+                 }
                 
                 // Only specific DerivedFbxAsset files are added
                 // are added via patchAssetsToAdd in ConvertDerivedFbxToPatchAssets
                 
-                if (finalValidAssets.Count == 0 && !profile.useEmbeddedPackages)
+                if (finalValidAssets.Count == 0 && !profile.UsesProtectedPayload())
                  {
                       throw new InvalidOperationException("No valid assets remain for export after final validation.");
                   }
@@ -707,9 +834,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                  }
                 
                 
-                if (preparedEmbeddedProfiles != null && preparedEmbeddedProfiles.Count > 0)
+                if (preparedProtectedPayloads != null && preparedProtectedPayloads.Count > 0)
                 {
-                    embeddedPackageArtifacts = ExportEmbeddedPackages(profile, preparedEmbeddedProfiles, embedContext, progressCallback);
+                    protectedPayloadArtifacts = BuildProtectedPayloadArtifacts(profile, preparedProtectedPayloads, embedContext, progressCallback);
                 }
 
                 if (string.IsNullOrEmpty(profile.packageId))
@@ -717,29 +844,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     PackageIdManager.AssignPackageId(profile);
                 }
 
-                EmbeddedPackageCatalog embeddedPackageCatalog = null;
-                if (embeddedPackageArtifacts != null && embeddedPackageArtifacts.Count > 0)
-                {
-                    embeddedPackageCatalog = new EmbeddedPackageCatalog
-                    {
-                        containerPackageId = profile.packageId ?? profile.packageName ?? "",
-                        containerPackageName = profile.packageName ?? "",
-                        containerVersion = profile.version ?? "",
-                        packages = embeddedPackageArtifacts
-                            .Where(artifact => artifact?.entry != null)
-                            .Select(artifact => artifact.entry.Clone())
-                            .ToList()
-                    };
-                }
+                ProtectedPayloadDescriptor protectedPayloadDescriptor = protectedPayloadArtifacts?
+                    .Select(artifact => artifact?.protectedPayload)
+                    .FirstOrDefault(descriptor => descriptor != null);
 
                 // Generate package metadata JSON
-                string packageMetadataJson = GeneratePackageMetadataJson(profile, embedContext, validAssets, embeddedPackageCatalog);
-                string embeddedCatalogJson = embeddedPackageCatalog != null && embeddedPackageCatalog.packages.Count > 0
-                    ? JsonUtility.ToJson(embeddedPackageCatalog, true)
+                string packageMetadataJson = GeneratePackageMetadataJson(profile, embedContext, validAssets);
+                string protectedPayloadJson = protectedPayloadDescriptor != null
+                    ? JsonUtility.ToJson(protectedPayloadDescriptor, true)
                     : null;
                 
                 // Inject package.json, auto-installer, bundled packages, and metadata into the .unitypackage
-                if (!string.IsNullOrEmpty(packageJsonContent) || bundledPackagePaths.Count > 0 || !string.IsNullOrEmpty(packageMetadataJson) || !string.IsNullOrEmpty(embeddedCatalogJson))
+                if (!string.IsNullOrEmpty(packageJsonContent) || bundledPackagePaths.Count > 0 || !string.IsNullOrEmpty(packageMetadataJson) || !string.IsNullOrEmpty(protectedPayloadJson))
                 {
                     progressCallback?.Invoke(0.75f, "Injecting package.json, installer, bundled packages, and metadata...");
                     
@@ -750,7 +866,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             ? profile.assembliesToObfuscate.Where(a => a.enabled).ToList() 
                             : new List<AssemblyObfuscationSettings>();
                         
-                        InjectPackageJsonInstallerAndBundles(tempPackagePath, packageJsonContent, bundledPackagePaths, obfuscatedAssemblies, profile, hasPatchAssets, packageMetadataJson, embeddedCatalogJson, embedContext, progressCallback);
+                        InjectPackageJsonInstallerAndBundles(tempPackagePath, packageJsonContent, bundledPackagePaths, obfuscatedAssemblies, profile, hasPatchAssets, packageMetadataJson, protectedPayloadJson, embedContext, progressCallback);
                     }
                     catch (Exception ex)
                     {
@@ -900,9 +1016,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     File.Delete(tempPackagePath);
                 }
 
-                if (embeddedPackageArtifacts != null)
+                if (protectedPayloadArtifacts != null)
                 {
-                    foreach (var artifact in embeddedPackageArtifacts)
+                    foreach (var artifact in protectedPayloadArtifacts)
                     {
                         if (artifact != null && !string.IsNullOrEmpty(artifact.tempFilePath) && File.Exists(artifact.tempFilePath))
                         {
@@ -1365,6 +1481,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         s_pendingProtectedAssetRegistrations.Add(new ProtectedAssetRegistration
                         {
                             protectedAssetId = protectedAssetId,
+                            unlockMode = "wrapped_content_key",
                             wrappedContentKey = wrappedContentKey,
                             displayName = hints.friendlyName
                         });
@@ -1399,9 +1516,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     if (File.Exists(physicalAssetPath))
                     {
-                        // Find the DerivedFbxAsset.cs script GUID in the temp package
-                        string derivedFbxAssetScriptPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs";
-                        string derivedFbxAssetScriptGuid = AssetDatabase.AssetPathToGUID(derivedFbxAssetScriptPath);
+                        string derivedFbxAssetScriptGuid =
+                            GetPatchRuntimeInjectedGuid("Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs");
                         
                         if (!string.IsNullOrEmpty(derivedFbxAssetScriptGuid))
                         {
@@ -1697,135 +1813,96 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
-        private static List<EmbeddedPackagePreparedProfile> PrepareEmbeddedProfilesForExport(
-            ExportProfile containerProfile,
-            PackageEmbedContext embedContext,
-            List<string> assetsToExport)
+        private static List<ProtectedPayloadPreparedExport> PrepareProtectedPayloadsForExport(ExportProfile profile)
         {
-            var preparedProfiles = new List<EmbeddedPackagePreparedProfile>();
-            if (containerProfile == null || !containerProfile.useEmbeddedPackages || !containerProfile.HasEmbeddedProfiles())
-                return preparedProfiles;
-
-            foreach (var embeddedProfile in containerProfile.GetEmbeddedProfiles())
+            var preparedPayloads = new List<ProtectedPayloadPreparedExport>();
+            if (ShouldBuildProtectedPayload(profile))
             {
-                if (embeddedProfile == null)
-                    continue;
-
-                string iconPath = null;
-                string bannerPath = null;
-
-                if (embeddedProfile.icon != null && !IsDefaultGridPlaceholder(embeddedProfile.icon))
+                preparedPayloads.Add(new ProtectedPayloadPreparedExport
                 {
-                    iconPath = embedContext.RegisterTextureForExport(
-                        embeddedProfile.icon,
-                        embeddedProfile.packageName ?? embeddedProfile.profileName ?? "EmbeddedPackageIcon",
-                        "EmbeddedPackageIcons",
-                        out var exportAssetPath);
-                    if (!string.IsNullOrEmpty(exportAssetPath) && !assetsToExport.Contains(exportAssetPath))
-                        assetsToExport.Add(exportAssetPath);
-                }
-
-                if (embeddedProfile.banner != null)
-                {
-                    bannerPath = embedContext.RegisterTextureForExport(
-                        embeddedProfile.banner,
-                        embeddedProfile.packageName ?? embeddedProfile.profileName ?? "EmbeddedPackageBanner",
-                        "EmbeddedPackageBanners",
-                        out var exportAssetPath);
-                    if (!string.IsNullOrEmpty(exportAssetPath) && !assetsToExport.Contains(exportAssetPath))
-                        assetsToExport.Add(exportAssetPath);
-                }
-
-                preparedProfiles.Add(new EmbeddedPackagePreparedProfile
-                {
-                    profile = embeddedProfile,
-                    entryId = $"{MakeSafeFolderName(embeddedProfile.packageId ?? embeddedProfile.packageName ?? embeddedProfile.name)}-{Guid.NewGuid():N}",
-                    iconPath = iconPath ?? "",
-                    bannerPath = bannerPath ?? ""
+                    profile = profile
                 });
             }
 
-            return preparedProfiles;
+            return preparedPayloads;
         }
 
-        private static List<EmbeddedPackageExportArtifact> ExportEmbeddedPackages(
+        private static List<ProtectedPayloadExportArtifact> BuildProtectedPayloadArtifacts(
             ExportProfile containerProfile,
-            List<EmbeddedPackagePreparedProfile> preparedProfiles,
+            List<ProtectedPayloadPreparedExport> preparedPayloads,
             PackageEmbedContext embedContext,
             Action<float, string> progressCallback = null)
         {
-            var artifacts = new List<EmbeddedPackageExportArtifact>();
-            if (preparedProfiles == null || preparedProfiles.Count == 0)
+            var artifacts = new List<ProtectedPayloadExportArtifact>();
+            if (preparedPayloads == null || preparedPayloads.Count == 0)
                 return artifacts;
 
-            string tempOutputDir = Path.Combine(Path.GetTempPath(), $"YUCP_EmbeddedPackages_{Guid.NewGuid():N}");
+            string tempOutputDir = Path.Combine(Path.GetTempPath(), $"YUCP_ProtectedPayload_{Guid.NewGuid():N}");
             Directory.CreateDirectory(tempOutputDir);
 
             try
             {
-                for (int i = 0; i < preparedProfiles.Count; i++)
+                for (int i = 0; i < preparedPayloads.Count; i++)
                 {
-                    var prepared = preparedProfiles[i];
+                    var prepared = preparedPayloads[i];
                     if (prepared?.profile == null)
                         continue;
 
-                    progressCallback?.Invoke(0.72f + (0.03f * (i + 1) / preparedProfiles.Count),
-                        $"Exporting embedded package {i + 1}/{preparedProfiles.Count}: {prepared.profile.packageName}...");
+                    progressCallback?.Invoke(0.72f + (0.03f * (i + 1) / preparedPayloads.Count),
+                        $"Building protected payload {i + 1}/{preparedPayloads.Count}: {prepared.profile.packageName}...");
 
-                    if (string.IsNullOrEmpty(prepared.profile.packageId))
+                    var exportClone = CreateSyntheticProtectedPayloadProfile(prepared.profile);
+
+                    if (string.IsNullOrEmpty(exportClone.packageId))
                     {
-                        PackageIdManager.AssignPackageId(prepared.profile);
+                        PackageIdManager.AssignPackageId(exportClone);
                     }
 
                     string childOutputDir = Path.Combine(tempOutputDir, Guid.NewGuid().ToString("N"));
                     Directory.CreateDirectory(childOutputDir);
 
-                    var exportClone = ScriptableObject.Instantiate(prepared.profile);
                     exportClone.exportPath = childOutputDir;
                     exportClone.autoIncrementVersion = false;
 
                     var exportResult = ExportPackage(exportClone);
+                    string exportedPackageId = exportClone.packageId ?? prepared.profile.packageId ?? "";
+                    string exportedPackageName = exportClone.packageName ?? prepared.profile.packageName ?? prepared.profile.profileName ?? "";
+                    string exportedVersion = exportClone.version ?? prepared.profile.version ?? "";
+                    string exportedAuthor = exportClone.author ?? prepared.profile.author ?? "";
+                    string exportedDescription = exportClone.description ?? prepared.profile.description ?? "";
+                    string exportedTagline = exportClone.tagline ?? prepared.profile.tagline ?? "";
                     ScriptableObject.DestroyImmediate(exportClone);
 
                     if (!exportResult.success || string.IsNullOrEmpty(exportResult.outputPath) || !File.Exists(exportResult.outputPath))
                     {
                         throw new InvalidOperationException(
-                            $"Failed to export embedded package '{prepared.profile.packageName}': {exportResult.errorMessage ?? "missing output"}");
+                            $"Failed to export protected payload source package '{prepared.profile.packageName}': {exportResult.errorMessage ?? "missing output"}");
                     }
 
-                    string payloadFileName = $"{SanitizeFileName(prepared.profile.packageName ?? prepared.profile.profileName ?? "EmbeddedPackage")}_{Guid.NewGuid():N}.unitypackage";
-                    string payloadAssetPath = $"{embedContext.EmbeddedRoot}/Packages/{payloadFileName}";
-                    embedContext.Assets.Add(new EmbeddedAsset
+                    var blobBuild = ProtectedPayloadBlobBuilder.BuildFromUnityPackage(
+                        exportResult.outputPath,
+                        exportedPackageId,
+                        exportedPackageName);
+                    string blobAssetPath = embedContext.RegisterEmbeddedFile(
+                        blobBuild.blobFilePath,
+                        "Protected",
+                        exportedPackageName ?? prepared.profile.packageName ?? "ProtectedPayload");
+                    if (string.IsNullOrEmpty(blobAssetPath))
+                        throw new InvalidOperationException("Failed to register protected payload blob for export.");
+                    blobBuild.descriptor.blobAssetPath = blobAssetPath ?? "";
+
+                    s_pendingProtectedAssetRegistrations.Add(new ProtectedAssetRegistration
                     {
-                        sourcePath = exportResult.outputPath,
-                        unityPath = payloadAssetPath
+                        protectedAssetId = blobBuild.descriptor.protectedAssetId,
+                        unlockMode = "content_key_b64",
+                        contentKeyBase64 = blobBuild.contentKeyBase64,
+                        displayName = exportedPackageName ?? prepared.profile.packageName ?? prepared.profile.profileName ?? "Protected Payload"
                     });
 
-                    artifacts.Add(new EmbeddedPackageExportArtifact
+                    artifacts.Add(new ProtectedPayloadExportArtifact
                     {
                         tempFilePath = exportResult.outputPath,
-                        entry = new EmbeddedPackageEntry
-                        {
-                            entryId = prepared.entryId,
-                            packageId = prepared.profile.packageId ?? "",
-                            packageName = prepared.profile.packageName ?? prepared.profile.profileName ?? "",
-                            version = prepared.profile.version ?? "",
-                            author = prepared.profile.author ?? "",
-                            description = prepared.profile.description ?? "",
-                            tagline = prepared.profile.tagline ?? "",
-                            payloadType = "unitypackage",
-                            payloadAssetPath = payloadAssetPath,
-                            payloadSha256 = ComputeFileSha256Hex(exportResult.outputPath),
-                            iconPath = prepared.iconPath ?? "",
-                            bannerPath = prepared.bannerPath ?? "",
-                            requiresLicenseVerification = prepared.profile.requiresLicenseVerification,
-                            requiresOnlineUnlock = prepared.profile.requiresLicenseVerification,
-                            isEncrypted = false,
-                            encryptedPayloadAssetPath = "",
-                            payloadCipher = "",
-                            updateChannel = "",
-                            latestVersion = ""
-                        }
+                        protectedPayload = blobBuild.descriptor.Clone()
                     });
                 }
 
@@ -1937,55 +2014,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 string fileName = $"{sanitizedName}_{texture.GetInstanceID()}.png";
                 string filePath = Path.Combine(tempDir, fileName);
                 
-                byte[] pngData = null;
-
-                // Prefer direct encoding, but fall back to a readable copy for imported
-                // textures that have Read/Write disabled in their import settings.
-                try
-                {
-                    pngData = texture.EncodeToPNG();
-                }
-                catch (UnityException)
-                {
-                    Texture2D readableCopy = null;
-                    RenderTexture renderTexture = null;
-                    RenderTexture previousActive = RenderTexture.active;
-
-                    try
-                    {
-                        renderTexture = RenderTexture.GetTemporary(
-                            Mathf.Max(1, texture.width),
-                            Mathf.Max(1, texture.height),
-                            0,
-                            RenderTextureFormat.ARGB32,
-                            RenderTextureReadWrite.Linear);
-
-                        Graphics.Blit(texture, renderTexture);
-                        RenderTexture.active = renderTexture;
-
-                        readableCopy = new Texture2D(
-                            Mathf.Max(1, texture.width),
-                            Mathf.Max(1, texture.height),
-                            TextureFormat.RGBA32,
-                            false);
-                        readableCopy.ReadPixels(new Rect(0, 0, renderTexture.width, renderTexture.height), 0, 0);
-                        readableCopy.Apply(false, false);
-                        pngData = readableCopy.EncodeToPNG();
-                    }
-                    finally
-                    {
-                        RenderTexture.active = previousActive;
-                        if (renderTexture != null)
-                        {
-                            RenderTexture.ReleaseTemporary(renderTexture);
-                        }
-
-                        if (readableCopy != null)
-                        {
-                            UnityEngine.Object.DestroyImmediate(readableCopy);
-                        }
-                    }
-                }
+                byte[] pngData = TryEncodeTextureToPng(texture, baseName);
 
                 if (pngData == null || pngData.Length == 0)
                 {
@@ -2005,11 +2034,144 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return null;
             }
         }
+
+        private static byte[] TryEncodeTextureToPng(Texture2D texture, string baseName)
+        {
+            try
+            {
+                return texture.EncodeToPNG();
+            }
+            catch (Exception directEncodeError)
+            {
+                if (TryEncodeTextureViaReadableImport(texture, out var importedTexturePng))
+                    return importedTexturePng;
+
+                if (TryEncodeTextureViaRenderTexture(texture, out var renderTexturePng))
+                    return renderTexturePng;
+
+                Debug.LogWarning($"[PackageBuilder] Failed to encode texture to PNG for '{baseName}': {directEncodeError.Message}");
+                return null;
+            }
+        }
+
+        private static bool TryEncodeTextureViaRenderTexture(Texture2D texture, out byte[] pngData)
+        {
+            pngData = null;
+            Texture2D readableCopy = null;
+            RenderTexture renderTexture = null;
+            RenderTexture previousActive = RenderTexture.active;
+
+            try
+            {
+                renderTexture = RenderTexture.GetTemporary(
+                    Mathf.Max(1, texture.width),
+                    Mathf.Max(1, texture.height),
+                    0,
+                    RenderTextureFormat.ARGB32,
+                    RenderTextureReadWrite.Default);
+
+                Graphics.Blit(texture, renderTexture);
+                RenderTexture.active = renderTexture;
+
+                readableCopy = new Texture2D(
+                    Mathf.Max(1, texture.width),
+                    Mathf.Max(1, texture.height),
+                    TextureFormat.RGBA32,
+                    false);
+                readableCopy.ReadPixels(new Rect(0, 0, renderTexture.width, renderTexture.height), 0, 0);
+                readableCopy.Apply(false, false);
+                pngData = readableCopy.EncodeToPNG();
+                return pngData != null && pngData.Length > 0;
+            }
+            catch
+            {
+                pngData = null;
+                return false;
+            }
+            finally
+            {
+                RenderTexture.active = previousActive;
+                if (renderTexture != null)
+                {
+                    RenderTexture.ReleaseTemporary(renderTexture);
+                }
+
+                if (readableCopy != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(readableCopy);
+                }
+            }
+        }
+
+        private static bool TryEncodeTextureViaReadableImport(Texture2D texture, out byte[] pngData)
+        {
+            pngData = null;
+            Texture2D readableCopy = null;
+
+            string assetPath = AssetDatabase.GetAssetPath(texture);
+            if (string.IsNullOrEmpty(assetPath))
+                return false;
+
+            if (!(AssetImporter.GetAtPath(assetPath) is TextureImporter textureImporter))
+                return false;
+
+            bool restoreReadable = !textureImporter.isReadable;
+
+            try
+            {
+                if (restoreReadable)
+                {
+                    textureImporter.isReadable = true;
+                    textureImporter.SaveAndReimport();
+                }
+
+                var readableTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+                if (readableTexture == null)
+                    return false;
+
+                readableCopy = new Texture2D(
+                    Mathf.Max(1, readableTexture.width),
+                    Mathf.Max(1, readableTexture.height),
+                    TextureFormat.RGBA32,
+                    false,
+                    !textureImporter.sRGBTexture);
+                readableCopy.SetPixels(readableTexture.GetPixels());
+                readableCopy.Apply(false, false);
+
+                pngData = readableCopy.EncodeToPNG();
+                return pngData != null && pngData.Length > 0;
+            }
+            catch
+            {
+                pngData = null;
+                return false;
+            }
+            finally
+            {
+                if (restoreReadable)
+                {
+                    try
+                    {
+                        textureImporter.isReadable = false;
+                        textureImporter.SaveAndReimport();
+                    }
+                    catch (Exception restoreEx)
+                    {
+                        Debug.LogWarning($"[PackageBuilder] Failed to restore texture readability for '{assetPath}': {restoreEx.Message}");
+                    }
+                }
+
+                if (readableCopy != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(readableCopy);
+                }
+            }
+        }
         
         /// <summary>
         /// Generate YUCP_PackageInfo.json metadata for the export
         /// </summary>
-        private static string GeneratePackageMetadataJson(ExportProfile profile, PackageEmbedContext embedContext, List<string> exportedAssets, EmbeddedPackageCatalog embeddedPackageCatalog)
+        private static string GeneratePackageMetadataJson(ExportProfile profile, PackageEmbedContext embedContext, List<string> exportedAssets)
         {
             try
             {
@@ -2021,8 +2183,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     author = profile.author ?? "",
                     description = profile.description ?? "",
                     productLinks = new List<ProductLinkJson>(),
-                    updateSteps = profile.updateSteps,
-                    isEmbeddedPackageContainer = embeddedPackageCatalog != null && embeddedPackageCatalog.packages != null && embeddedPackageCatalog.packages.Count > 0
+                    updateSteps = profile.updateSteps
                 };
 
                 // Convert product links
@@ -2227,7 +2388,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         {
                             packageId = p.packageId,
                             packageName = p.packageName ?? p.packageId,
-                            productId = p.licenseProductId ?? "",
+                            productId = p.GetPrimaryLicenseProductId(),
                             gumroadPermalink = p.gumroadProductId ?? "",
                             jinxxyProductId = p.jinxxyProductId ?? "",
                             discordGuildId = p.licenseDiscordGuildId ?? "",
@@ -2285,7 +2446,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public long totalFileSize;
             public List<AssetBreakdownJson> assetBreakdown;
             public string exportDate;
-            public bool isEmbeddedPackageContainer;
         }
 
         [Serializable]
@@ -2706,7 +2866,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             ExportProfile profile,
             bool hasPatchAssets,
             string packageMetadataJson,
-            string embeddedCatalogJson,
+            string protectedPayloadJson,
             PackageEmbedContext embedContext,
             Action<float, string> progressCallback = null)
         {
@@ -2783,21 +2943,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     File.WriteAllText(Path.Combine(metadataFolder, "pathname"), metadataPath);
                 }
 
-                if (!string.IsNullOrEmpty(embeddedCatalogJson))
+                if (!string.IsNullOrEmpty(protectedPayloadJson))
                 {
-                    string catalogGuid = Guid.NewGuid().ToString("N");
-                    string catalogFolder = Path.Combine(tempExtractDir, catalogGuid);
-                    Directory.CreateDirectory(catalogFolder);
+                    string payloadGuid = Guid.NewGuid().ToString("N");
+                    string payloadFolder = Path.Combine(tempExtractDir, payloadGuid);
+                    Directory.CreateDirectory(payloadFolder);
 
-                    File.WriteAllText(Path.Combine(catalogFolder, "asset"), embeddedCatalogJson);
-                    string metaPath = Path.Combine(catalogFolder, "asset.meta");
+                    File.WriteAllText(Path.Combine(payloadFolder, "asset"), protectedPayloadJson);
+                    string metaPath = Path.Combine(payloadFolder, "asset.meta");
                     string metaContent = $"fileFormatVersion: 2\nguid: {Guid.NewGuid():N}\nTextScriptImporter:\n  externalObjects: {{}}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(metaPath, metaContent);
 
-                    string catalogPath = embedContext != null
-                        ? $"{InstalledPackagesRoot}/{embedContext.SafePackageName}/YUCP_EmbeddedPackages.json"
-                        : "Assets/YUCP_EmbeddedPackages.json";
-                    File.WriteAllText(Path.Combine(catalogFolder, "pathname"), catalogPath);
+                    string payloadPath = embedContext != null
+                        ? $"{InstalledPackagesRoot}/{embedContext.SafePackageName}/YUCP_ProtectedPayload.json"
+                        : "Assets/YUCP_ProtectedPayload.json";
+                    File.WriteAllText(Path.Combine(payloadFolder, "pathname"), payloadPath);
                 }
 
                 // 1c. Inject embedded assets (icons, banners, etc.)
@@ -3089,41 +3249,31 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     progressCallback?.Invoke(0.70f, "Injecting derived FBX runtime scripts...");
                     
-                    string[] patchScripts = new string[]
-                    {
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Data/DerivedFbxAsset.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Core/MetaFileManager.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Core/DerivedFbxBuilder.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Core/HDiffPatchWrapper.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Core/ManifestBuilder.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Correspondence/MapBuilder.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Backup/BackupManager.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Validator.cs",
-                        "Packages/com.yucp.devtools/Editor/PackageExporter/Templates/YUCPPatchImporter.cs"
-                    };
-                    
                     int injectedPatchScripts = 0;
-                    foreach (var scriptPath in patchScripts)
+                    foreach (var patchScript in s_patchRuntimeInjectedFiles)
                     {
                         string sourceScriptPath = null;
                         
                         // First, try direct path (most reliable)
-                        if (File.Exists(scriptPath))
+                        if (File.Exists(patchScript.sourcePath))
                         {
-                            sourceScriptPath = scriptPath;
+                            sourceScriptPath = patchScript.sourcePath;
                         }
                         else
                         {
                             // Fallback: Try to find by filename using AssetDatabase
-                            string fileName = Path.GetFileNameWithoutExtension(scriptPath);
+                            string fileName = Path.GetFileNameWithoutExtension(patchScript.sourcePath);
                             string[] patchFoundScripts = AssetDatabase.FindAssets($"{fileName} t:Script");
+                            string normalizedRelativeSourcePath = patchScript.sourcePath
+                                .Replace("Packages/com.yucp.devtools/", string.Empty)
+                                .Replace("\\", "/");
                             
                             // Filter results to find the exact match
                             foreach (var guid in patchFoundScripts)
                             {
-                                string foundPath = AssetDatabase.GUIDToAssetPath(guid);
-                                if (foundPath.EndsWith(scriptPath.Replace("Packages/com.yucp.devtools/", ""), StringComparison.OrdinalIgnoreCase) ||
-                                    foundPath.Replace("\\", "/").EndsWith(scriptPath.Replace("Packages/com.yucp.devtools/", ""), StringComparison.OrdinalIgnoreCase))
+                                string foundPath = AssetDatabase.GUIDToAssetPath(guid).Replace("\\", "/");
+                                if (string.Equals(foundPath, patchScript.sourcePath, StringComparison.OrdinalIgnoreCase) ||
+                                    foundPath.EndsWith(normalizedRelativeSourcePath, StringComparison.OrdinalIgnoreCase))
                                 {
                                     sourceScriptPath = foundPath;
                                     break;
@@ -3137,27 +3287,27 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             }
                         }
                         
-                          if (!string.IsNullOrEmpty(sourceScriptPath) && File.Exists(sourceScriptPath))
-                          {
-                              string scriptGuid = Guid.NewGuid().ToString("N");
-                              string scriptFolder = Path.Combine(tempExtractDir, scriptGuid);
-                              Directory.CreateDirectory(scriptFolder);
-                              
-                              string scriptContent = File.ReadAllText(sourceScriptPath);
-                              // Replace namespace to remove DevTools reference
-                              scriptContent = scriptContent.Replace(
-                                  "namespace YUCP.DevTools.Editor.PackageExporter",
-                                  "namespace YUCP.PatchRuntime"
-                              );
-                              scriptContent = scriptContent.Replace(
-                                  "using YUCP.DevTools.Editor.PackageExporter",
-                                  "using YUCP.PatchRuntime"
-                              );
-                              
-                              string fileName = Path.GetFileName(sourceScriptPath);
-                              string targetPath = $"Packages/com.yucp.temp/Editor/{fileName}";
-                              
-                              File.WriteAllText(Path.Combine(scriptFolder, "asset"), scriptContent);
+                        if (!string.IsNullOrEmpty(sourceScriptPath) && File.Exists(sourceScriptPath))
+                        {
+                            string scriptGuid = GetPatchRuntimeInjectedGuid(patchScript.targetPath);
+                            string targetPath = patchScript.targetPath;
+                            string scriptFolder = Path.Combine(tempExtractDir, scriptGuid);
+                            Directory.CreateDirectory(scriptFolder);
+                            
+                            string scriptContent = File.ReadAllText(sourceScriptPath);
+                            if (patchScript.rewritePatchRuntimeNamespace)
+                            {
+                                scriptContent = scriptContent.Replace(
+                                    "namespace YUCP.DevTools.Editor.PackageExporter",
+                                    "namespace YUCP.PatchRuntime"
+                                );
+                                scriptContent = scriptContent.Replace(
+                                    "using YUCP.DevTools.Editor.PackageExporter",
+                                    "using YUCP.PatchRuntime"
+                                );
+                            }
+                            
+                            File.WriteAllText(Path.Combine(scriptFolder, "asset"), scriptContent);
                             File.WriteAllText(Path.Combine(scriptFolder, "pathname"), targetPath);
                             
                             string scriptMeta = "fileFormatVersion: 2\nguid: " + scriptGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
@@ -3167,7 +3317,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                         else
                         {
-                            Debug.LogError($"[PackageBuilder] Could not find patch script: {scriptPath}. Tried direct path and AssetDatabase search.");
+                            Debug.LogError($"[PackageBuilder] Could not find patch script: {patchScript.sourcePath}. Tried direct path and AssetDatabase search.");
                         }
                     }
                     
@@ -3210,7 +3360,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
   ""name"": ""YUCP.PatchRuntime"",
   ""rootNamespace"": """",
   ""references"": [
-    ""Unity.Formats.Fbx.Editor""
+    ""Unity.Formats.Fbx.Editor"",
+    ""com.yucp.importer.Editor""
   ],
   ""includePlatforms"": [
     ""Editor""
@@ -3839,36 +3990,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // We want to use the hash we just computed to ensure consistency
                 manifest.archiveSha256 = archiveSha256;
 
-                progressCallback?.Invoke(0.723f, "Signing manifest with dev key...");
+                progressCallback?.Invoke(0.723f, "Preparing signing metadata...");
 
                 SigningRequestResult SubmitSigningRequest(
                     PackageSigningData.YucpCertificate activeCertificate,
                     PackageSigningData.SigningSettings activeSettings,
                     bool suppressFailureLog = false)
                 {
-                    var payloadObj = new SigningRequestPayload
-                    {
-                        publisherId = activeSettings.publisherId,
-                        vrchatUserId = activeSettings.vrchatUserId,
-                        manifest = manifest,
-                        yucpCert = activeCertificate,
-                        timestamp = System.DateTime.UtcNow.ToString("O"),
-                        nonce = System.Guid.NewGuid().ToString()
-                    };
-
-                    string payloadJson = CanonicalizeSigningPayload(payloadObj);
-                    byte[] payloadBytes = System.Text.Encoding.UTF8.GetBytes(payloadJson);
-                    byte[] devSignature = DevKeyManager.SignData(payloadBytes);
-
                     progressCallback?.Invoke(0.724f, "Sending signing request to server...");
                     return SendSigningRequestSynchronously(
                         resolvedServerUrl,
                         activeSettings.GetCertificateJson(),
-                        payloadObj.manifest?.packageId ?? "",
-                        payloadObj.manifest?.archiveSha256 ?? "",
-                        payloadObj.manifest?.version ?? "",
+                        manifest?.packageId ?? "",
+                        manifest?.archiveSha256 ?? "",
+                        manifest?.version ?? "",
                         s_pendingProtectedAssetRegistrations,
-                        devSignature,
                         progressCallback,
                         suppressFailureLog
                     );
@@ -3923,20 +4059,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 var signingResponse = signingResult.response;
 
-                // Extract certificate chain from response and add to manifest
-                if (signingResponse.certificateChain != null && signingResponse.certificateChain.Length > 0)
+                if (signingResponse.certificateChain == null || signingResponse.certificateChain.Length == 0)
                 {
-                    manifest.certificateChain = signingResponse.certificateChain;
+                    s_lastSigningFailureMessage = "Signing failed because the server did not return a certificate chain.";
+                    Debug.LogWarning("[PackageBuilder] Signing response did not include a certificate chain.");
+                    return false;
                 }
 
-                // Convert SigningResponse to SignatureData for embedding
-                PackageSigningData.SignatureData signatureData = new PackageSigningData.SignatureData
-                {
-                    algorithm = signingResponse.algorithm,
-                    keyId = signingResponse.keyId,
-                    signature = signingResponse.signature,
-                    certificateIndex = signingResponse.certificateIndex
-                };
+                manifest.certificateChain = signingResponse.certificateChain;
+
+                progressCallback?.Invoke(0.726f, "Signing manifest with device key...");
+
+                PackageSigningData.SignatureData signatureData =
+                    CreateLocalManifestSignatureData(manifest, signingResponse);
 
                 progressCallback?.Invoke(0.728f, "Embedding signature in package...");
 
@@ -4326,12 +4461,156 @@ namespace YUCP.DevTools.Editor.PackageExporter
             });
         }
 
+        private static PackageSigningData.SigningResponse ParseSigningResponseJson(string responseJson)
+        {
+            return SigningResponseParser.Parse(responseJson, "PackageBuilder");
+        }
+
+        private static PackageSigningData.SignatureData CreateLocalManifestSignatureData(
+            PackageSigningData.PackageManifest manifest,
+            PackageSigningData.SigningResponse signingResponse)
+        {
+            if (manifest == null)
+                throw new InvalidOperationException("Manifest is required for local signing.");
+            if (signingResponse?.certificateChain == null || signingResponse.certificateChain.Length == 0)
+                throw new InvalidOperationException("Certificate chain is required for local signing.");
+
+            int certificateIndex = signingResponse.certificateIndex;
+            if (certificateIndex < 0 || certificateIndex >= signingResponse.certificateChain.Length)
+                certificateIndex = 0;
+
+            string canonicalManifest = CanonicalizeManifestForSignature(manifest);
+            byte[] manifestBytes = Encoding.UTF8.GetBytes(canonicalManifest);
+            byte[] manifestSignature = DevKeyManager.SignData(manifestBytes);
+
+            return new PackageSigningData.SignatureData
+            {
+                algorithm = "Ed25519",
+                keyId = signingResponse.certificateChain[certificateIndex]?.keyId ?? signingResponse.keyId ?? string.Empty,
+                signature = Convert.ToBase64String(manifestSignature),
+                certificateIndex = certificateIndex,
+            };
+        }
+
+        private static string CanonicalizeManifestForSignature(PackageSigningData.PackageManifest manifest)
+        {
+            if (manifest == null)
+                return "null";
+
+            return CanonicalizeManifestValue(manifest);
+        }
+
+        private static string CanonicalizeManifestValue(object obj)
+        {
+            if (obj == null)
+                return "null";
+
+            var objType = obj.GetType();
+
+            if (obj is System.Collections.IList list)
+            {
+                var items = new List<string>();
+                foreach (var item in list)
+                {
+                    items.Add(CanonicalizeManifestValue(item));
+                }
+                return "[" + string.Join(",", items) + "]";
+            }
+
+            if (obj is System.Collections.IDictionary dict)
+            {
+                var sortedKeys = new List<string>();
+                foreach (var key in dict.Keys)
+                {
+                    sortedKeys.Add(key?.ToString() ?? "");
+                }
+                sortedKeys.Sort(StringComparer.Ordinal);
+
+                var items = new List<string>();
+                foreach (var key in sortedKeys)
+                {
+                    items.Add($"\"{EscapeJsonString(key)}\":{CanonicalizeManifestValue(dict[key])}");
+                }
+                return "{" + string.Join(",", items) + "}";
+            }
+
+            if (objType.IsClass && objType != typeof(string))
+            {
+                var items = new List<string>();
+                var fields = objType.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+                if (fields != null && fields.Length > 0)
+                {
+                    var sortedFields = new List<System.Reflection.FieldInfo>(fields);
+                    sortedFields.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.Ordinal));
+
+                    foreach (var field in sortedFields)
+                    {
+                        var value = field.GetValue(obj);
+                        if (value == null &&
+                            field.FieldType.IsGenericType &&
+                            field.FieldType.GetGenericTypeDefinition() == typeof(Dictionary<,>))
+                        {
+                            var dictType = typeof(Dictionary<,>).MakeGenericType(field.FieldType.GetGenericArguments());
+                            value = Activator.CreateInstance(dictType);
+                        }
+
+                        items.Add($"\"{field.Name}\":{CanonicalizeManifestValue(value)}");
+                    }
+                }
+                else
+                {
+                    var properties = objType.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                    var sortedProps = new List<System.Reflection.PropertyInfo>(properties);
+                    sortedProps.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.Ordinal));
+
+                    foreach (var prop in sortedProps)
+                    {
+                        var value = prop.GetValue(obj);
+                        if (value == null &&
+                            prop.PropertyType.IsGenericType &&
+                            prop.PropertyType.GetGenericTypeDefinition() == typeof(Dictionary<,>))
+                        {
+                            var dictType = typeof(Dictionary<,>).MakeGenericType(prop.PropertyType.GetGenericArguments());
+                            value = Activator.CreateInstance(dictType);
+                        }
+
+                        items.Add($"\"{prop.Name}\":{CanonicalizeManifestValue(value)}");
+                    }
+                }
+
+                return "{" + string.Join(",", items) + "}";
+            }
+
+            if (obj is string str)
+            {
+                return "\"" + EscapeJsonString(str) + "\"";
+            }
+
+            if (obj is bool b)
+            {
+                return b ? "true" : "false";
+            }
+
+            if (objType.IsEnum)
+            {
+                return "\"" + EscapeJsonString(obj.ToString()) + "\"";
+            }
+
+            if (obj is IConvertible && !(obj is string))
+            {
+                return Convert.ToString(obj, System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            return "\"" + EscapeJsonString(obj?.ToString() ?? string.Empty) + "\"";
+        }
+
         /// <summary>
         /// Send signing request to server synchronously.
         /// Calls POST /v1/signatures (transparency log). The server authenticates via the YUCP
         /// certificate envelope as a Bearer token and records the package hash.
-        /// Returns a synthetic SigningResponse built from the local certificate (the cert IS the
-        /// trust anchor — no separate CA signature is returned by the server).
+        /// Returns certificate-chain metadata from the server, then the manifest itself is signed
+        /// locally with the active device key.
         /// </summary>
         private static SigningRequestResult SendSigningRequestSynchronously(
             string serverUrl,
@@ -4340,7 +4619,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             string contentHash,
             string packageVersion,
             IReadOnlyList<ProtectedAssetRegistration> protectedAssets,
-            byte[] devSignature,
             Action<float, string> progressCallback,
             bool suppressFailureLog = false)
         {
@@ -4395,13 +4673,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (protectedAssets != null && protectedAssets.Count > 0)
                 {
                     var serializedProtectedAssets = protectedAssets
-                        .Where(asset => asset != null && !string.IsNullOrEmpty(asset.protectedAssetId) && !string.IsNullOrEmpty(asset.wrappedContentKey))
+                        .Where(asset =>
+                            asset != null &&
+                            !string.IsNullOrEmpty(asset.protectedAssetId) &&
+                            !string.IsNullOrEmpty(asset.unlockMode) &&
+                            ((asset.unlockMode == "wrapped_content_key" && !string.IsNullOrEmpty(asset.wrappedContentKey)) ||
+                             (asset.unlockMode == "content_key_b64" && !string.IsNullOrEmpty(asset.contentKeyBase64))))
                         .Select(asset =>
-                            "{"
-                            + $"\"protectedAssetId\":\"{EscapeJsonString(asset.protectedAssetId)}\","
-                            + $"\"wrappedContentKey\":\"{EscapeJsonString(asset.wrappedContentKey)}\","
-                            + $"\"displayName\":\"{EscapeJsonString(asset.displayName ?? string.Empty)}\""
-                            + "}");
+                        {
+                            string keyField = asset.unlockMode == "content_key_b64"
+                                ? $"\"contentKeyBase64\":\"{EscapeJsonString(asset.contentKeyBase64)}\","
+                                : $"\"wrappedContentKey\":\"{EscapeJsonString(asset.wrappedContentKey)}\",";
+                            return "{"
+                                + $"\"protectedAssetId\":\"{EscapeJsonString(asset.protectedAssetId)}\","
+                                + $"\"unlockMode\":\"{EscapeJsonString(asset.unlockMode)}\","
+                                + keyField
+                                + $"\"displayName\":\"{EscapeJsonString(asset.displayName ?? string.Empty)}\""
+                                + "}";
+                        });
                     bodyJson += ",\"protectedAssets\":[" + string.Join(",", serializedProtectedAssets) + "]";
                 }
 
@@ -4433,14 +4722,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     {
                         Debug.Log($"[PackageBuilder] Transparency log recorded: {responseText}");
 
-                        // Parse publisherId from the stored cert JSON to populate the synthetic response
-                        var response = new PackageSigningData.SigningResponse
+                        var response = ParseSigningResponseJson(responseText);
+                        if (response == null || response.certificateChain == null || response.certificateChain.Length == 0)
                         {
-                            algorithm        = "Ed25519",
-                            keyId            = parsedCert?.cert?.publisherId ?? "",
-                            signature        = System.Convert.ToBase64String(devSignature),
-                            certificateIndex = 0,
-                        };
+                            return new SigningRequestResult
+                            {
+                                rawError = responseText,
+                                normalizedError = "Signing server returned an invalid certificate chain response.",
+                                responseCode = request.responseCode,
+                            };
+                        }
+
+                        if (string.IsNullOrEmpty(response.algorithm))
+                            response.algorithm = "Ed25519";
+                        if (response.certificateIndex < 0 || response.certificateIndex >= response.certificateChain.Length)
+                            response.certificateIndex = 0;
+                        if (string.IsNullOrEmpty(response.keyId))
+                            response.keyId = response.certificateChain[response.certificateIndex]?.keyId ?? "";
+
                         return new SigningRequestResult
                         {
                             response = response,
@@ -4761,14 +5060,5 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return results;
         }
 
-        /// <summary>
-        /// Wrapper class for parsing certificate chain arrays with Unity's JsonUtility
-        /// Unity's JsonUtility requires a wrapper class to deserialize arrays
-        /// </summary>
-        [Serializable]
-        private class CertificateChainWrapper
-        {
-            public PackageVerifierData.CertificateData[] Items;
-        }
     }
 }

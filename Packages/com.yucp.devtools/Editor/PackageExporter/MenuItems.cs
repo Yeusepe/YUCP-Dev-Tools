@@ -328,6 +328,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             UpdateArchiveRestoreWindow.ShowWindow("_old");
         }
+
+        [MenuItem("Tools/YUCP/Others/Installation/Open DevTools Listing")]
+        public static void OpenDevToolsListing()
+        {
+            YUCPPackageExporterWindow.OpenListingWebsiteWithFocusCallback();
+        }
         
         private static void CreateCustomVersionRuleInternal()
         {

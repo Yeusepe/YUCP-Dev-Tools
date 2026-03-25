@@ -306,19 +306,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return errors.Count == 0;
         }
 
-        public static bool ValidateEmbeddedProfiles(ExportProfile profile, out List<string> errors)
-        {
-            errors = new List<string>();
-
-            if (profile == null || !profile.HasEmbeddedProfiles())
-                return true;
-
-            if (!ValidateProfileGraph(profile, p => p.GetEmbeddedProfiles(), "embedded", out var embeddedErrors))
-                errors.AddRange(embeddedErrors);
-
-            return errors.Count == 0;
-        }
-
         private static bool ValidateProfileGraph(
             ExportProfile root,
             Func<ExportProfile, List<ExportProfile>> getChildren,

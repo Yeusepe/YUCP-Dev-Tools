@@ -31,6 +31,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private double _accountStateRefreshedAt;
         private PackageSigningService.CertificateAccountState _accountState;
         private const double AccountStateRefreshIntervalSeconds = 15d;
+        private const string ProtectedExportsCapabilityKey = "protected_exports";
 
         // ── Product catalog cache ──────────────────────────────────────────────────
         // Loaded once per sign-in from GET /v1/products. The server groups by canonical
@@ -1986,7 +1987,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             // Info note
             var note = MakeLabel(
-                "When enabled, derived FBX assets require a verified purchase before they are applied.",
+                "When enabled, derived FBX assets require a verified purchase before they are applied. Licensed profiles automatically export through the embedded container/bootstrap path. Enabling this requires sign-in, an active certificate on this machine, and a plan with Protected Exports enabled.",
                 9, TextMute, wrap: true);
             note.style.marginTop = 10;
             body.Add(note);
@@ -1998,7 +1999,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         {
             bool isOn       = prof.requiresLicenseVerification;
             bool isSignedIn = YucpOAuthService.IsSignedIn();
-            bool locked     = !isOn && !isSignedIn;
+            bool hasCertificateContext = HasEligibleLicenseCertificateContext();
+            bool hasProtectedExports = HasActiveBillingCapability(ProtectedExportsCapabilityKey);
+            bool showSignInCta = !isOn && !isSignedIn;
+            bool showCertificateCta = !isOn && isSignedIn && !hasCertificateContext;
+            bool showUpgradeCta = !isOn && isSignedIn && hasCertificateContext && !hasProtectedExports;
+            string recommendedPlanKey = FindPlanKeyForCapability(ProtectedExportsCapabilityKey);
 
             // ── Row ───────────────────────────────────────────────────────────────
             var row = new VisualElement();
@@ -2033,6 +2039,31 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 idLbl.style.marginTop = 2;
                 nameCol.Add(idLbl);
             }
+
+            string stateMessage = null;
+            if (showSignInCta)
+            {
+                stateMessage = "Sign in to enable licensed exports.";
+            }
+            else if (showCertificateCta)
+            {
+                stateMessage = "Restore or enroll a certificate on this machine to enable licensed exports.";
+            }
+            else if (showUpgradeCta)
+            {
+                stateMessage = "Protected Exports are not enabled on the current plan.";
+            }
+            else if (isOn)
+            {
+                stateMessage = "Embedded container/bootstrap mode is enabled automatically for licensed exports.";
+            }
+
+            if (!string.IsNullOrEmpty(stateMessage))
+            {
+                var stateLbl = MakeLabel(stateMessage, 9, TextMute, mb: 0, wrap: true);
+                stateLbl.style.marginTop = 2;
+                nameCol.Add(stateLbl);
+            }
             row.Add(nameCol);
 
             // Right side
@@ -2042,51 +2073,55 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             rightCol.style.flexShrink    = 0;
             rightCol.style.marginLeft    = 10;
 
-            if (locked)
+            if (showSignInCta)
             {
-                // ── Sign-in CTA replaces the toggle when locked ────────────────
-                var cta = new VisualElement();
-                cta.style.flexDirection  = FlexDirection.Row;
-                cta.style.alignItems     = Align.Center;
-                cta.style.paddingLeft    = 10;
-                cta.style.paddingRight   = 10;
-                cta.style.paddingTop     = 5;
-                cta.style.paddingBottom  = 5;
-                cta.style.borderTopLeftRadius = cta.style.borderTopRightRadius =
-                    cta.style.borderBottomLeftRadius = cta.style.borderBottomRightRadius = 5;
-                cta.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f, 0.10f);
-                cta.style.borderTopWidth = cta.style.borderBottomWidth =
-                    cta.style.borderLeftWidth = cta.style.borderRightWidth = 1;
-                cta.style.borderTopColor = cta.style.borderBottomColor =
-                    cta.style.borderLeftColor = cta.style.borderRightColor =
-                        new Color(0.212f, 0.749f, 0.694f, 0.28f);
-
-                var lockImg = new Image { image = EditorGUIUtility.IconContent("LockIcon-On").image };
-                lockImg.style.width    = 11;
-                lockImg.style.height   = 11;
-                lockImg.style.flexShrink  = 0;
-                lockImg.style.marginRight = 6;
-                cta.Add(lockImg);
-                cta.Add(MakeLabel("Sign in to enable", 10, Teal, mb: 0));
-
-                cta.RegisterCallback<MouseEnterEvent>(_ =>
-                    cta.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f, 0.18f));
-                cta.RegisterCallback<MouseLeaveEvent>(_ =>
-                    cta.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f, 0.10f));
-                cta.RegisterCallback<ClickEvent>(evt =>
-                {
-                    evt.StopPropagation();
-                    if (_isSigningIn) return;
-                    _isSigningIn = true;
-                    RefreshUI();
+                rightCol.Add(BuildLicenseActionChip(
+                    "Sign in to enable",
+                    EditorGUIUtility.IconContent("LockIcon-On").image,
+                    new Color(0.212f, 0.749f, 0.694f, 0.10f),
+                    new Color(0.212f, 0.749f, 0.694f, 0.28f),
+                    Teal,
+                    () =>
+                    {
+                        if (_isSigningIn) return;
+                        _isSigningIn = true;
+                        RefreshUI();
 #pragma warning disable CS4014
-                    YucpOAuthService.SignInAsync(GetServerUrl(),
-                        onSuccess: () => EditorApplication.delayCall += () => { _isSigningIn = false; LoadSettings(); RefreshUI(); },
-                        onError:   e  => EditorApplication.delayCall += () => { _isSigningIn = false; RefreshUI(); EditorUtility.DisplayDialog("Sign-in failed", e, "OK"); });
+                        YucpOAuthService.SignInAsync(GetServerUrl(),
+                            onSuccess: () => EditorApplication.delayCall += () => { _isSigningIn = false; LoadSettings(); RefreshUI(); },
+                            onError:   e  => EditorApplication.delayCall += () => { _isSigningIn = false; RefreshUI(); EditorUtility.DisplayDialog("Sign-in failed", e, "OK"); });
 #pragma warning restore CS4014
-                });
-
-                rightCol.Add(cta);
+                    }));
+            }
+            else if (showCertificateCta)
+            {
+                rightCol.Add(BuildLicenseActionChip(
+                    "Certificates & Billing",
+                    EditorGUIUtility.IconContent("d_Settings").image,
+                    new Color(0.247f, 0.600f, 0.960f, 0.10f),
+                    new Color(0.247f, 0.600f, 0.960f, 0.26f),
+                    new Color(0.560f, 0.788f, 1.000f),
+                    OpenAccountCertificatesPage));
+            }
+            else if (showUpgradeCta)
+            {
+                rightCol.Add(BuildLicenseActionChip(
+                    "Creator Suite+ required",
+                    EditorGUIUtility.IconContent("d_winbtn_mac_max").image,
+                    new Color(0.925f, 0.690f, 0.255f, 0.12f),
+                    new Color(0.925f, 0.690f, 0.255f, 0.28f),
+                    new Color(1.000f, 0.855f, 0.486f),
+                    () =>
+                    {
+                        if (!string.IsNullOrEmpty(recommendedPlanKey))
+                        {
+                            OpenCheckoutForPlan(recommendedPlanKey);
+                        }
+                        else
+                        {
+                            OpenBillingPortalPage();
+                        }
+                    }));
             }
             else
             {
@@ -2150,6 +2185,99 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             row.Add(rightCol);
             return row;
+        }
+
+        private bool HasEligibleLicenseCertificateContext()
+        {
+            return _accountState?.currentDeviceKnown == true && _accountState?.billing != null && _accountState.billing.allowSigning;
+        }
+
+        private bool HasActiveBillingCapability(string capabilityKey)
+        {
+            if (string.IsNullOrEmpty(capabilityKey) || _accountState?.billing?.capabilities == null)
+                return false;
+
+            foreach (var capability in _accountState.billing.capabilities)
+            {
+                if (capability == null)
+                    continue;
+
+                if (string.Equals(capability.capabilityKey, capabilityKey, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(capability.status, "active", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private string FindPlanKeyForCapability(string capabilityKey)
+        {
+            if (string.IsNullOrEmpty(capabilityKey) || _accountState?.availablePlans == null)
+                return null;
+
+            foreach (var plan in _accountState.availablePlans.OrderByDescending(plan => plan.priority))
+            {
+                if (plan?.capabilities == null)
+                    continue;
+
+                if (plan.capabilities.Any(entry => string.Equals(entry, capabilityKey, StringComparison.OrdinalIgnoreCase)))
+                    return plan.planKey;
+            }
+
+            return null;
+        }
+
+        private VisualElement BuildLicenseActionChip(
+            string label,
+            Texture iconTexture,
+            Color backgroundColor,
+            Color borderColor,
+            Color textColor,
+            Action onClick)
+        {
+            var chip = new VisualElement();
+            chip.style.flexDirection = FlexDirection.Row;
+            chip.style.alignItems = Align.Center;
+            chip.style.paddingLeft = 10;
+            chip.style.paddingRight = 10;
+            chip.style.paddingTop = 5;
+            chip.style.paddingBottom = 5;
+            chip.style.borderTopLeftRadius = chip.style.borderTopRightRadius =
+                chip.style.borderBottomLeftRadius = chip.style.borderBottomRightRadius = 5;
+            chip.style.backgroundColor = backgroundColor;
+            chip.style.borderTopWidth = chip.style.borderBottomWidth =
+                chip.style.borderLeftWidth = chip.style.borderRightWidth = 1;
+            chip.style.borderTopColor = chip.style.borderBottomColor =
+                chip.style.borderLeftColor = chip.style.borderRightColor = borderColor;
+
+            if (iconTexture != null)
+            {
+                var icon = new Image { image = iconTexture };
+                icon.style.width = 11;
+                icon.style.height = 11;
+                icon.style.flexShrink = 0;
+                icon.style.marginRight = 6;
+                chip.Add(icon);
+            }
+
+            chip.Add(MakeLabel(label, 10, textColor, mb: 0));
+
+            chip.RegisterCallback<MouseEnterEvent>(_ =>
+                chip.style.backgroundColor = new Color(
+                    Mathf.Clamp01(backgroundColor.r + 0.05f),
+                    Mathf.Clamp01(backgroundColor.g + 0.05f),
+                    Mathf.Clamp01(backgroundColor.b + 0.05f),
+                    Mathf.Clamp01(backgroundColor.a + 0.08f)));
+            chip.RegisterCallback<MouseLeaveEvent>(_ => chip.style.backgroundColor = backgroundColor);
+            chip.RegisterCallback<ClickEvent>(evt =>
+            {
+                evt.StopPropagation();
+                onClick?.Invoke();
+            });
+
+            return chip;
         }
 
         private VisualElement _licenseSectionSlot;
@@ -2613,7 +2741,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private string GetAccountCertificatesUrl()
         {
-            return _settings?.GetEffectiveAccountCertificatesUrl() ?? "https://creators.yucp.club/dashboard/certificates";
+            return _settings?.GetEffectiveAccountCertificatesUrl(GetServerUrl()) ?? "https://creators.yucp.club/dashboard/certificates";
         }
 
         private static Dictionary<string, string> ParseUrlQuery(string query)

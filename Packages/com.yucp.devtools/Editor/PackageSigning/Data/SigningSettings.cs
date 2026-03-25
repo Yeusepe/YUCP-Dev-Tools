@@ -80,7 +80,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         /// <summary>
         /// Returns the effective account certificates URL for billing and device management.
         /// </summary>
-        public string GetEffectiveAccountCertificatesUrl()
+        public string GetEffectiveAccountCertificatesUrl(string serverUrlOverride = null)
         {
             string explicitBaseUrl = null;
             if (certificateProviders != null && certificateProviders.Count > 0
@@ -98,7 +98,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                 return $"{explicitBaseUrl.TrimEnd('/')}/dashboard/certificates";
             }
 
-            string server = GetEffectiveServerUrl();
+            string server = !string.IsNullOrEmpty(serverUrlOverride)
+                ? serverUrlOverride
+                : GetEffectiveServerUrl();
             if (string.IsNullOrEmpty(server))
                 return "https://creators.yucp.club/dashboard/certificates";
 
@@ -121,6 +123,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                     host = remainder.StartsWith("creators.", StringComparison.OrdinalIgnoreCase)
                         ? remainder
                         : $"creators.{remainder}";
+                }
+                else if (!host.StartsWith("creators.", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "https://creators.yucp.club/dashboard/certificates";
                 }
 
                 var builder = new UriBuilder(serverUri)

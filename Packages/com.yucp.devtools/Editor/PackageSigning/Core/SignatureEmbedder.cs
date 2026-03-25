@@ -28,13 +28,13 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             }
 
             // Create manifest TextAsset
-            string manifestJson = JsonUtility.ToJson(manifest, true);
+            string manifestJson = PackageSigningJson.SerializeManifest(manifest);
             string manifestPath = $"{SigningFolder}/{ManifestFileName}";
             File.WriteAllText(manifestPath, manifestJson);
             AssetDatabase.ImportAsset(manifestPath);
 
             // Create signature TextAsset
-            string signatureJson = JsonUtility.ToJson(signature, true);
+            string signatureJson = PackageSigningJson.SerializeSignature(signature);
             string signaturePath = $"{SigningFolder}/{SignatureFileName}";
             File.WriteAllText(signaturePath, signatureJson);
             AssetDatabase.ImportAsset(signaturePath);

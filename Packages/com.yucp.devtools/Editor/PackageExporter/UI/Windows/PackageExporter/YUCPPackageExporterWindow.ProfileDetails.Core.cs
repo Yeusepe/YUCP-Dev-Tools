@@ -36,6 +36,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         public void UpdateProfileDetails()
         {
+            if (_emptyState == null || _profileDetailsContainer == null || _rightPaneScrollView == null)
+            {
+                return;
+            }
+
             if (selectedProfile == null)
             {
                 _emptyState.style.display = DisplayStyle.Flex;

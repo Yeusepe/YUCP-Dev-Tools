@@ -81,13 +81,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Also export each bundled profile separately (in addition to the composite package)")]
         public bool alsoExportIncludedSeparately = false;
 
-        [Header("Embedded Packages")]
-        [Tooltip("Export this profile as a container package with child Unity packages stored as embedded payloads.")]
-        public bool useEmbeddedPackages = false;
-
-        [Tooltip("Profiles to export as whole embedded .unitypackage payloads inside this container package.")]
-        [SerializeField] private List<string> embeddedProfileGuids = new List<string>();
-        
         [Header("Export Inspector")]
         [Tooltip("Discovered assets from export folders (populated by scanning)")]
         public List<DiscoveredAsset> discoveredAssets = new List<DiscoveredAsset>();
@@ -260,6 +253,25 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Require consumers to verify a purchase license before derived FBX assets are applied.\n" +
                  "Enables the YUCP Importer license gate; adds com.yucp.importer as a VPM dependency.")]
         public bool requiresLicenseVerification = false;
+
+        public bool UsesProtectedPayload()
+        {
+            return requiresLicenseVerification;
+        }
+
+        public string GetPrimaryLicenseProductId()
+        {
+            if (licenseProductIds != null)
+            {
+                foreach (string productId in licenseProductIds)
+                {
+                    if (!string.IsNullOrWhiteSpace(productId))
+                        return productId;
+                }
+            }
+
+            return licenseProductId ?? "";
+        }
         
         [Header("Assembly Obfuscation")]
         [Tooltip("Enable ConfuserEx obfuscation for selected assemblies")]
@@ -507,9 +519,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             
             // Allow composite profiles without folders (they get assets from bundled profiles)
-            if ((foldersToExport == null || foldersToExport.Count == 0) && !HasIncludedProfiles() && !HasEmbeddedProfiles())
+            if ((foldersToExport == null || foldersToExport.Count == 0) && !HasIncludedProfiles())
             {
-                errorMessage = "At least one folder must be selected for export, or configure bundled/embedded profiles";
+                errorMessage = "At least one folder must be selected for export, or configure bundled profiles";
                 return false;
             }
             
@@ -540,22 +552,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
 
-            if (useEmbeddedPackages)
-            {
-                if (!HasEmbeddedProfiles())
-                {
-                    errorMessage = "Embedded Packages mode is enabled, but no embedded profiles are configured";
-                    return false;
-                }
-
-                List<string> embeddedErrors;
-                if (!CompositeProfileResolver.ValidateEmbeddedProfiles(this, out embeddedErrors))
-                {
-                    errorMessage = "Embedded package validation failed: " + string.Join("; ", embeddedErrors);
-                    return false;
-                }
-            }
-            
             return true;
         }
         
@@ -642,71 +638,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return includedProfileGuids != null && includedProfileGuids.Count > 0;
         }
 
-        public List<ExportProfile> GetEmbeddedProfiles()
-        {
-            var profiles = new List<ExportProfile>();
-
-            if (embeddedProfileGuids == null || embeddedProfileGuids.Count == 0)
-                return profiles;
-
-            foreach (string guid in embeddedProfileGuids)
-            {
-                if (string.IsNullOrEmpty(guid))
-                    continue;
-
-                string assetPath = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
-                if (string.IsNullOrEmpty(assetPath))
-                    continue;
-
-                var profile = UnityEditor.AssetDatabase.LoadAssetAtPath<ExportProfile>(assetPath);
-                if (profile != null)
-                    profiles.Add(profile);
-            }
-
-            return profiles;
-        }
-
-        public void AddEmbeddedProfile(ExportProfile profile)
-        {
-            if (profile == null)
-                return;
-
-            if (embeddedProfileGuids == null)
-                embeddedProfileGuids = new List<string>();
-
-            string guid = UnityEditor.AssetDatabase.AssetPathToGUID(UnityEditor.AssetDatabase.GetAssetPath(profile));
-            if (string.IsNullOrEmpty(guid))
-                return;
-
-            string selfGuid = UnityEditor.AssetDatabase.AssetPathToGUID(UnityEditor.AssetDatabase.GetAssetPath(this));
-            if (guid == selfGuid)
-                return;
-
-            if (!embeddedProfileGuids.Contains(guid))
-            {
-                embeddedProfileGuids.Add(guid);
-                UnityEditor.EditorUtility.SetDirty(this);
-            }
-        }
-
-        public void RemoveEmbeddedProfile(ExportProfile profile)
-        {
-            if (profile == null || embeddedProfileGuids == null)
-                return;
-
-            string guid = UnityEditor.AssetDatabase.AssetPathToGUID(UnityEditor.AssetDatabase.GetAssetPath(profile));
-            if (string.IsNullOrEmpty(guid))
-                return;
-
-            if (embeddedProfileGuids.Remove(guid))
-                UnityEditor.EditorUtility.SetDirty(this);
-        }
-
-        public bool HasEmbeddedProfiles()
-        {
-            return embeddedProfileGuids != null && embeddedProfileGuids.Count > 0;
-        }
-        
         /// <summary>
         /// Get all tags (preset + custom)
         /// </summary>
