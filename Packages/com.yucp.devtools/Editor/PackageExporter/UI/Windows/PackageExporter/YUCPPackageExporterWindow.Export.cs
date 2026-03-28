@@ -242,10 +242,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 else
                 {
-                    string message = $"Export failed: {result.errorMessage}\n\nCheck the console for more details.";
+                    bool isActionableUserMessage =
+                        !string.IsNullOrWhiteSpace(result.errorMessage) &&
+                        result.errorMessage.IndexOf("Certificates & Billing", StringComparison.OrdinalIgnoreCase) >= 0;
+                    string message = isActionableUserMessage
+                        ? $"Export failed: {result.errorMessage}"
+                        : $"Export failed: {result.errorMessage}\n\nCheck the console for more details.";
                     if (_toast != null)
                     {
-                        _toast.ShowWarning(message, "Export Failed", 6f);
+                        _toast.ShowError(message, "Export Failed", 6f);
                     }
                     else
                     {

@@ -187,6 +187,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		/// </summary>
 		private static void CheckPackageManifestOnImport(string manifestAssetPath)
 		{
+			if (Application.isBatchMode)
+			{
+				return;
+			}
+
 			try
 			{
 				string fullPath = Path.GetFullPath(manifestAssetPath);

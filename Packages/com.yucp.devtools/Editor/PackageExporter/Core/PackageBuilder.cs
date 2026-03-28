@@ -136,6 +136,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public string unlockMode;
             public string wrappedContentKey;
             public string contentKeyBase64;
+            public string contentHash;
             public string displayName;
         }
 
@@ -243,7 +244,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private static ExportProfile CreateSyntheticProtectedPayloadProfile(ExportProfile containerProfile)
         {
             var payloadProfile = ScriptableObject.Instantiate(containerProfile);
-            payloadProfile.requiresLicenseVerification = false;
+            payloadProfile.skipProtectedPayloadBuild = true;
 
             return payloadProfile;
         }
@@ -943,7 +944,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     {
                         signingWasRequired = true;
                         progressCallback?.Invoke(0.82f, "Signing package...");
-                        packageSigned = SignPackageBeforeExport(contentPackagePath, profile, progressCallback);
+                        packageSigned = SignPackageBeforeExport(
+                            contentPackagePath,
+                            profile,
+                            progressCallback,
+                            protectedPayloadArtifacts);
                         if (packageSigned)
                         {
                             progressCallback?.Invoke(0.84f, "Package signed successfully");
@@ -1896,6 +1901,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         protectedAssetId = blobBuild.descriptor.protectedAssetId,
                         unlockMode = "content_key_b64",
                         contentKeyBase64 = blobBuild.contentKeyBase64,
+                        contentHash = blobBuild.descriptor.ciphertextSha256,
                         displayName = exportedPackageName ?? prepared.profile.packageName ?? prepared.profile.profileName ?? "Protected Payload"
                     });
 
@@ -3881,7 +3887,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// <summary>
         /// Sign package before final export - creates manifest, gets signature from server, and embeds it
         /// </summary>
-        private static bool SignPackageBeforeExport(string packagePath, ExportProfile profile, Action<float, string> progressCallback)
+        private static bool SignPackageBeforeExport(
+            string packagePath,
+            ExportProfile profile,
+            Action<float, string> progressCallback,
+            List<ProtectedPayloadExportArtifact> protectedPayloadArtifacts = null)
         {
             try
             {
@@ -3989,6 +3999,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Override the hash computed by BuildManifest (which also computes it from packagePath)
                 // We want to use the hash we just computed to ensure consistency
                 manifest.archiveSha256 = archiveSha256;
+                if (protectedPayloadArtifacts != null && protectedPayloadArtifacts.Count > 0)
+                {
+                    manifest.protectedPayloads = protectedPayloadArtifacts
+                        .Select(artifact => artifact?.protectedPayload)
+                        .Where(descriptor => descriptor != null)
+                        .Select(ProtectedPayloadIntegrityUtility.CreateManifestEntry)
+                        .Where(entry => entry != null)
+                        .ToArray();
+                }
 
                 progressCallback?.Invoke(0.723f, "Preparing signing metadata...");
 
@@ -4002,6 +4021,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         resolvedServerUrl,
                         activeSettings.GetCertificateJson(),
                         manifest?.packageId ?? "",
+                        profile.packageName ?? "",
                         manifest?.archiveSha256 ?? "",
                         manifest?.version ?? "",
                         s_pendingProtectedAssetRegistrations,
@@ -4616,6 +4636,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             string serverUrl,
             string rawCertJson,
             string packageId,
+            string packageName,
             string contentHash,
             string packageVersion,
             IReadOnlyList<ProtectedAssetRegistration> protectedAssets,
@@ -4664,6 +4685,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 string proofSignatureBase64 = Convert.ToBase64String(proofSignature);
 
                 string bodyJson = $"{{\"packageId\":\"{EscapeJsonString(packageId)}\","
+                                + $"\"packageName\":\"{EscapeJsonString(packageName ?? string.Empty)}\","
                                 + $"\"contentHash\":\"{EscapeJsonString(contentHash)}\","
                                 + $"\"packageVersion\":\"{EscapeJsonString(packageVersion)}\","
                                 + $"\"requestNonce\":\"{EscapeJsonString(requestNonce)}\","
@@ -4684,10 +4706,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             string keyField = asset.unlockMode == "content_key_b64"
                                 ? $"\"contentKeyBase64\":\"{EscapeJsonString(asset.contentKeyBase64)}\","
                                 : $"\"wrappedContentKey\":\"{EscapeJsonString(asset.wrappedContentKey)}\",";
+                            string contentHashField = !string.IsNullOrEmpty(asset.contentHash)
+                                ? $"\"contentHash\":\"{EscapeJsonString(asset.contentHash)}\","
+                                : string.Empty;
                             return "{"
                                 + $"\"protectedAssetId\":\"{EscapeJsonString(asset.protectedAssetId)}\","
                                 + $"\"unlockMode\":\"{EscapeJsonString(asset.unlockMode)}\","
                                 + keyField
+                                + contentHashField
                                 + $"\"displayName\":\"{EscapeJsonString(asset.displayName ?? string.Empty)}\""
                                 + "}";
                         });

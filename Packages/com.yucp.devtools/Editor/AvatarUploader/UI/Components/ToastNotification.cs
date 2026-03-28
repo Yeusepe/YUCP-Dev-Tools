@@ -1,5 +1,5 @@
 using System;
-using System.Collections;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -7,8 +7,7 @@ using UnityEngine.UIElements;
 namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 {
 	/// <summary>
-	/// Toast notification component for displaying temporary messages.
-	/// Matches PackageExporter's toast design pattern.
+	/// Toast notification component for displaying temporary, non-blocking messages.
 	/// </summary>
 	public class ToastNotification
 	{
@@ -16,8 +15,7 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 		private Label _titleLabel;
 		private Label _messageLabel;
 		private Button _closeButton;
-		private VisualElement _root;
-		private Coroutine _autoHideCoroutine;
+		private readonly VisualElement _root;
 
 		public enum ToastType
 		{
@@ -32,157 +30,125 @@ namespace YUCP.DevTools.Editor.AvatarUploader.UI.Components
 			_root = root;
 		}
 
-		/// <summary>
-		/// Show a toast notification.
-		/// </summary>
 		public void Show(string message, ToastType type = ToastType.Info, string title = null, float duration = 3f, Action onClose = null)
 		{
-			Hide(); // Hide any existing toast
+			if (_toast != null && _toast.parent != null)
+				_toast.RemoveFromHierarchy();
+			_toast = null;
 
-			_toast = new VisualElement();
-			_toast.AddToClassList("yucp-toast");
-			_toast.AddToClassList($"yucp-toast-{type.ToString().ToLower()}");
+			var toast = new VisualElement();
+			toast.AddToClassList("yucp-toast");
+			toast.AddToClassList($"yucp-toast-{type.ToString().ToLower()}");
 
-			// Position at top-right
-			_toast.style.position = Position.Absolute;
-			_toast.style.top = 20;
-			_toast.style.right = 20;
-			_toast.style.width = 380;
-			_toast.style.maxWidth = Length.Percent(90);
+			// Body row: icon | content | close
+			var body = new VisualElement();
+			body.AddToClassList("yucp-toast-body");
 
-			// Header row with title and close button
+			var icon = new VisualElement();
+			icon.AddToClassList("yucp-toast-icon");
+			icon.AddToClassList($"yucp-toast-icon--{type.ToString().ToLower()}");
+			body.Add(icon);
+
+			var content = new VisualElement();
+			content.AddToClassList("yucp-toast-content");
+
 			if (!string.IsNullOrEmpty(title))
 			{
-				var headerRow = new VisualElement();
-				headerRow.AddToClassList("yucp-toast-header");
-				headerRow.style.flexDirection = FlexDirection.Row;
-				headerRow.style.alignItems = Align.Center;
-				headerRow.style.marginBottom = 8;
-
 				_titleLabel = new Label(title);
 				_titleLabel.AddToClassList("yucp-toast-title");
-				_titleLabel.style.flexGrow = 1;
-				headerRow.Add(_titleLabel);
-
-				_closeButton = new Button()
-				{
-					text = "×"
-				};
-				_closeButton.AddToClassList("yucp-toast-close");
-				_closeButton.clicked += () => { Hide(); };
-				_closeButton.RegisterCallback<ClickEvent>(evt =>
-				{
-					evt.StopPropagation();
-				});
-				headerRow.Add(_closeButton);
-
-				_toast.Add(headerRow);
-			}
-			else
-			{
-				// Close button in top-right corner if no title
-				_closeButton = new Button()
-				{
-					text = "×"
-				};
-				_closeButton.AddToClassList("yucp-toast-close");
-				_closeButton.style.position = Position.Absolute;
-				_closeButton.style.top = 8;
-				_closeButton.style.right = 8;
-				_closeButton.clicked += () => { Hide(); };
-				_closeButton.RegisterCallback<ClickEvent>(evt =>
-				{
-					evt.StopPropagation();
-				});
-				_toast.Add(_closeButton);
+				content.Add(_titleLabel);
 			}
 
-			// Message text
 			_messageLabel = new Label(message);
 			_messageLabel.AddToClassList("yucp-toast-message");
-			_messageLabel.style.whiteSpace = WhiteSpace.Normal;
-			_toast.Add(_messageLabel);
+			content.Add(_messageLabel);
 
-			_root.Add(_toast);
+			body.Add(content);
+
+			_closeButton = new Button { text = "×" };
+			_closeButton.AddToClassList("yucp-toast-close");
+			_closeButton.clicked += () => { onClose?.Invoke(); Hide(); };
+			_closeButton.RegisterCallback<ClickEvent>(evt => evt.StopPropagation());
+			body.Add(_closeButton);
+
+			toast.Add(body);
+
+			// Auto-dismiss progress bar
+			VisualElement progressFill = null;
+			if (duration > 0)
+			{
+				var progressBg = new VisualElement();
+				progressBg.AddToClassList("yucp-toast-progress");
+
+				progressFill = new VisualElement();
+				progressFill.AddToClassList("yucp-toast-progress-fill");
+				progressFill.AddToClassList($"yucp-toast-progress-fill--{type.ToString().ToLower()}");
+				progressBg.Add(progressFill);
+				toast.Add(progressBg);
+			}
+
+			_root.Add(toast);
+			_toast = toast;
+
+			// Slide + fade in
+			toast.schedule.Execute(() =>
+			{
+				if (toast.parent != null)
+					toast.AddToClassList("yucp-toast--visible");
+			}).StartingIn(30);
+
+			// Drain progress bar
+			if (progressFill != null)
+			{
+				var fill = progressFill;
+				toast.schedule.Execute(() =>
+				{
+					if (fill.parent == null) return;
+					fill.style.transitionDuration = new List<TimeValue> { new TimeValue(duration, TimeUnit.Second) };
+					fill.style.transitionProperty = new List<StylePropertyName> { new StylePropertyName("width") };
+					fill.style.transitionTimingFunction = new List<EasingFunction> { new EasingFunction(EasingMode.Linear) };
+					fill.style.width = Length.Percent(0);
+				}).StartingIn(60);
+			}
 
 			// Auto-hide after duration
 			if (duration > 0)
 			{
-				EditorApplication.delayCall += () =>
+				var toastRef = toast;
+				toast.schedule.Execute(() =>
 				{
-					if (_toast != null && _toast.parent != null)
-					{
-						EditorApplication.delayCall += () => Hide();
-					}
-				};
+					if (_toast == toastRef)
+						Hide();
+				}).StartingIn((long)(duration * 1000));
 			}
-
-			// Fade in animation
-			_toast.style.opacity = 0;
-			_toast.schedule.Execute(() =>
-			{
-				_toast.style.opacity = 1;
-			}).StartingIn(0);
 		}
 
-		/// <summary>
-		/// Hide the toast notification.
-		/// </summary>
 		public void Hide()
 		{
-			if (_toast != null && _toast.parent != null)
+			if (_toast == null || _toast.parent == null)
+				return;
+
+			var toastToRemove = _toast;
+			_toast = null;
+
+			toastToRemove.RemoveFromClassList("yucp-toast--visible");
+			toastToRemove.schedule.Execute(() =>
 			{
-				// Fade out animation
-				_toast.style.opacity = 1;
-				_toast.schedule.Execute(() =>
-				{
-					if (_toast != null)
-					{
-						_toast.style.opacity = 0;
-						EditorApplication.delayCall += () =>
-						{
-							if (_toast != null && _toast.parent != null)
-							{
-								_toast.RemoveFromHierarchy();
-							}
-							_toast = null;
-						};
-					}
-				}).StartingIn(0);
-			}
+				if (toastToRemove.parent != null)
+					toastToRemove.RemoveFromHierarchy();
+			}).StartingIn(300);
 		}
 
-		/// <summary>
-		/// Show a success toast.
-		/// </summary>
-		public void ShowSuccess(string message, string title = "Success", float duration = 3f)
-		{
+		public void ShowSuccess(string message, string title = "Success", float duration = 3f) =>
 			Show(message, ToastType.Success, title, duration);
-		}
 
-		/// <summary>
-		/// Show an error toast.
-		/// </summary>
-		public void ShowError(string message, string title = "Error", float duration = 5f)
-		{
+		public void ShowError(string message, string title = "Error", float duration = 5f) =>
 			Show(message, ToastType.Error, title, duration);
-		}
 
-		/// <summary>
-		/// Show a warning toast.
-		/// </summary>
-		public void ShowWarning(string message, string title = "Warning", float duration = 4f)
-		{
+		public void ShowWarning(string message, string title = "Warning", float duration = 4f) =>
 			Show(message, ToastType.Warning, title, duration);
-		}
 
-		/// <summary>
-		/// Show an info toast.
-		/// </summary>
-		public void ShowInfo(string message, string title = null, float duration = 3f)
-		{
+		public void ShowInfo(string message, string title = null, float duration = 3f) =>
 			Show(message, ToastType.Info, title, duration);
-		}
 	}
 }
-

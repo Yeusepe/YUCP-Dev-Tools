@@ -1,5 +1,6 @@
 using System.Reflection;
 using NUnit.Framework;
+using YUCP.DevTools.Editor.PackageSigning.Core;
 using PackageVerifierData = YUCP.Importer.Editor.PackageVerifier.Data;
 using PackageSigningData = YUCP.DevTools.Editor.PackageSigning.Data;
 
@@ -50,6 +51,18 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             Assert.That(parsed.certificateChain[1].certificateType, Is.EqualTo(PackageVerifierData.CertificateType.Root));
             Assert.That(parsed.certificateChain[0].notBefore, Is.EqualTo("2026-03-24T00:00:00.000Z"));
             Assert.That(parsed.certificateChain[0].notAfter, Is.EqualTo("2026-06-24T00:00:00.000Z"));
+        }
+
+        [Test]
+        public void NormalizeSigningError_ReturnsFriendlyGuidance_ForArchivedPackageConflict()
+        {
+            const string rawError = "{\"error\":\"PACKAGE_ARCHIVED\",\"message\":\"Archived packages cannot be updated. Restore the package before signing or changing it.\"}";
+
+            string normalized = PackageSigningService.NormalizeSigningError(409, rawError);
+
+            Assert.That(normalized, Is.EqualTo(
+                "This package is archived in your package registry. Restore it from Certificates & Billing, then retry the export."
+            ));
         }
     }
 }

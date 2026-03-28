@@ -82,11 +82,20 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private static readonly Color TextMute     = new Color(0.302f, 0.302f, 0.302f); // #4D4D4D
 
         private Action _onProfileChanged;
+        private readonly PackageRegistrySection _packageRegistrySection;
 
         public PackageSigningTab(ExportProfile profile = null, Action onProfileChanged = null)
         {
             _profile = profile;
             _onProfileChanged = onProfileChanged;
+            if (_profile != null)
+            {
+                _packageRegistrySection = new PackageRegistrySection(
+                    _profile,
+                    GetServerUrl,
+                    RefreshUI,
+                    _onProfileChanged);
+            }
         }
 
         public VisualElement CreateUI()
@@ -124,7 +133,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 var wrapper = new VisualElement();
                 wrapper.Add(BuildSignInHero());
                 if (_profile != null)
+                {
                     wrapper.Add(BuildDetachedLicenseSection());
+                    wrapper.Add(BuildPackageRegistryCard());
+                }
                 return wrapper;
             }
 
@@ -138,8 +150,27 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             var noCertWrapper = new VisualElement();
             noCertWrapper.Add(BuildNoCertCard());
             if (_profile != null)
+            {
+                noCertWrapper.Add(BuildPackageRegistryCard());
                 noCertWrapper.Add(BuildDetachedLicenseSection());
+            }
             return noCertWrapper;
+        }
+
+        private VisualElement BuildPackageRegistryCard()
+        {
+            if (_packageRegistrySection == null)
+            {
+                return null;
+            }
+
+            var card = _packageRegistrySection.CreateCard();
+            if (card != null)
+            {
+                card.style.marginTop = 4;
+            }
+
+            return card;
         }
 
         /// <summary>
@@ -601,6 +632,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             {
                 card.Add(MakeDivider());
                 card.Add(BuildBillingInsightsSection(showPlanActions: true));
+            }
+
+            if (_profile != null)
+            {
+                card.Add(MakeDivider());
+                card.Add(BuildPackageRegistryCard());
             }
 
             // ── Package info ───────────────────────────────────────────────────────

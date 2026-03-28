@@ -7,12 +7,26 @@ using System.Linq;
 using System.Net;
 using Newtonsoft.Json.Linq;
 using System.Security.Cryptography;
+using System.Reflection;
 
 namespace YUCP.DirectVpmInstaller
 {
     [InitializeOnLoad]
     public static class DirectVpmInstaller
     {
+        private const string PendingProtectedImportStateKey = "YUCP.PendingProtectedImportBootstrap";
+
+        [Serializable]
+        private sealed class PendingProtectedImportState
+        {
+            public string packageName;
+            public string shellRootAssetPath;
+            public string tempInstallAssetPath;
+            public string metadataAssetPath;
+            public string protectedPayloadAssetPath;
+            public string originalPackagePath;
+        }
+
         internal static readonly string[] GeneratedInstallerArtifactPatterns = new[]
         {
             "YUCP_InstallerPreflight_*.cs",
@@ -35,6 +49,133 @@ namespace YUCP.DirectVpmInstaller
                 Path.Combine(Application.dataPath, "Editor"),
                 Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor")
             };
+        }
+
+        private static void PersistProtectedImportStateIfNeeded(string packageJsonPath, JObject packageInfo)
+        {
+            try
+            {
+                if (IsImporterPackageInstalled())
+                    return;
+
+                if (!TryGetProtectedShellPaths(packageJsonPath, out string shellRootDiskPath, out string metadataDiskPath, out string protectedPayloadDiskPath))
+                    return;
+
+                string stateJson = JsonUtility.ToJson(new PendingProtectedImportState
+                {
+                    packageName = packageInfo?["name"]?.Value<string>() ?? string.Empty,
+                    shellRootAssetPath = DiskPathToAssetPath(shellRootDiskPath),
+                    tempInstallAssetPath = DiskPathToAssetPath(packageJsonPath),
+                    metadataAssetPath = DiskPathToAssetPath(metadataDiskPath),
+                    protectedPayloadAssetPath = DiskPathToAssetPath(protectedPayloadDiskPath),
+                    originalPackagePath = TryGetCurrentImportPackagePath() ?? string.Empty,
+                });
+
+                EditorPrefs.SetString(PendingProtectedImportStateKey, stateJson);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[DirectVpmInstaller] Failed to persist protected import bootstrap state: {ex.Message}");
+            }
+        }
+
+        private static bool TryGetProtectedShellPaths(
+            string packageJsonPath,
+            out string shellRootDiskPath,
+            out string metadataDiskPath,
+            out string protectedPayloadDiskPath)
+        {
+            shellRootDiskPath = null;
+            metadataDiskPath = null;
+            protectedPayloadDiskPath = null;
+
+            if (string.IsNullOrWhiteSpace(packageJsonPath))
+                return false;
+
+            string normalized = Path.GetFullPath(packageJsonPath);
+            string fileName = Path.GetFileName(normalized);
+            if (!fileName.StartsWith("YUCP_TempInstall_", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            string parentDir = Path.GetDirectoryName(normalized);
+            if (string.IsNullOrWhiteSpace(parentDir))
+                return false;
+
+            if (string.Equals(Path.GetFileName(parentDir), "_temp", StringComparison.OrdinalIgnoreCase))
+            {
+                shellRootDiskPath = Path.GetDirectoryName(parentDir);
+            }
+            else
+            {
+                shellRootDiskPath = parentDir;
+            }
+
+            if (string.IsNullOrWhiteSpace(shellRootDiskPath))
+                return false;
+
+            metadataDiskPath = Path.Combine(shellRootDiskPath, "YUCP_PackageInfo.json");
+            protectedPayloadDiskPath = Path.Combine(shellRootDiskPath, "YUCP_ProtectedPayload.json");
+            return File.Exists(metadataDiskPath) && File.Exists(protectedPayloadDiskPath);
+        }
+
+        private static string TryGetCurrentImportPackagePath()
+        {
+            try
+            {
+                var unityEditorAssembly = typeof(Editor).Assembly;
+                Type wizardType = unityEditorAssembly.GetType("UnityEditor.PackageImportWizard");
+                if (wizardType == null)
+                    return null;
+
+                FieldInfo packagePathField = wizardType.GetField("m_PackagePath", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (packagePathField == null)
+                    return null;
+
+                Type scriptableSingletonType = unityEditorAssembly.GetType("UnityEditor.ScriptableSingleton`1");
+                if (scriptableSingletonType == null)
+                    return null;
+
+                Type genericType = scriptableSingletonType.MakeGenericType(wizardType);
+                PropertyInfo instanceProperty = genericType.GetProperty("instance", BindingFlags.Public | BindingFlags.Static);
+                object instance = instanceProperty?.GetValue(null);
+                if (instance == null)
+                    return null;
+
+                string packagePath = packagePathField.GetValue(instance) as string;
+                return !string.IsNullOrWhiteSpace(packagePath) && File.Exists(packagePath) ? packagePath : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool IsImporterPackageInstalled()
+        {
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string packagePath = Path.Combine(projectRoot, "Packages", "com.yucp.importer");
+                return Directory.Exists(packagePath);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string DiskPathToAssetPath(string diskPath)
+        {
+            if (string.IsNullOrWhiteSpace(diskPath))
+                return null;
+
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."))
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            string fullPath = Path.GetFullPath(diskPath);
+            if (!fullPath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            return fullPath.Substring(projectRoot.Length).Replace('\\', '/');
         }
 
         private static void EnableBundledPackagesAndFinalize(string packageJsonPath, string completionReason)
@@ -142,6 +283,15 @@ namespace YUCP.DirectVpmInstaller
                 var packageInfo = JObject.Parse(File.ReadAllText(packageJsonPath));
                 string bundledPackageName = packageInfo["name"]?.Value<string>();
                 string bundledPackageVersion = packageInfo["version"]?.Value<string>();
+                bool isProtectedBootstrapImport = false;
+                try
+                {
+                    PersistProtectedImportStateIfNeeded(packageJsonPath, packageInfo);
+                    isProtectedBootstrapImport = TryGetProtectedShellPaths(packageJsonPath, out _, out _, out _);
+                }
+                catch
+                {
+                }
                 
                 // Check if this bundled package is already installed
                 if (!string.IsNullOrEmpty(bundledPackageName))
@@ -304,9 +454,13 @@ namespace YUCP.DirectVpmInstaller
                 }
                 
                 string packageList = string.Join("\n", packagesToInstall.Select(p => $"  - {p.Item1}@{p.Item2}"));
+                bool installsImporter = packagesToInstall.Any(p => string.Equals(p.Item1, "com.yucp.importer", StringComparison.OrdinalIgnoreCase));
+                string dialogMessage = isProtectedBootstrapImport && installsImporter
+                    ? $"This protected package needs the YUCP Importer to finish setup.\n\nThe following VPM dependencies will be installed:\n\n{packageList}\n\nWould you like to install them now?\n\n(Required to continue protected package setup)"
+                    : $"This package requires the following VPM dependencies:\n\n{packageList}\n\nWould you like to install them now?\n\n(Required for compilation)";
                 bool install = EditorUtility.DisplayDialog(
                     "Install VPM Dependencies",
-                    $"This package requires the following VPM dependencies:\n\n{packageList}\n\nWould you like to install them now?\n\n(Required for compilation)",
+                    dialogMessage,
                     "Install",
                     "Cancel"
                 );

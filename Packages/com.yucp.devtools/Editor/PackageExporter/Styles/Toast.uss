@@ -1,30 +1,135 @@
-/* Toast styles for Package Exporter */
+/* Toast notification styles for Package Exporter */
+
 .yucp-toast {
     position: absolute;
-    top: 20px;
-    right: 20px;
-    width: 380px;
-    max-width: 90%;
-    padding: 12px 16px;
-    border-radius: 10px;
-    /* box-shadow removed - unsupported in USS */
-    background-color: #2b2b2b;
-    color: #ffffff;
-    font-size: 13px;
-    /* z-index removed - USS doesn't support z-index */
+    top: 16px;
+    right: 16px;
+    min-width: 300px;
+    max-width: 420px;
+    background-color: rgba(18, 18, 18, 0.97);
+    border-left-width: 4px;
+    border-top-width: 1px;
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.07);
+    border-right-color: rgba(255, 255, 255, 0.07);
+    border-bottom-color: rgba(255, 255, 255, 0.07);
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
     opacity: 0;
-    transition-duration: 0.18s;
-    transition-property: opacity, transform;
-    transition-timing-function: ease-out;
+    translate: 14px 0px;
+    transition-property: opacity, translate;
+    transition-duration: 0.22s, 0.28s;
+    transition-timing-function: ease-out, ease-out;
 }
 
-.yucp-toast-info { background-color: #2f80ed; }
-.yucp-toast-success { background-color: #36BFB1; }
-.yucp-toast-warning { background-color: #E2A54A; }
-.yucp-toast-error { background-color: #ff5c5c; }
+.yucp-toast--visible {
+    opacity: 1;
+    translate: 0px 0px;
+}
 
-.yucp-toast-header { flex-direction: row; align-items: center; margin-bottom: 8px; }
-.yucp-toast-title { font-size: 14px; -unity-font-style: bold; color: #ffffff; flex-grow: 1; }
-.yucp-toast-close { position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border-radius: 12px; background-color: rgba(0,0,0,0.16); color: #fff; border-width: 0; }
-.yucp-toast-close:hover { background-color: rgba(255,255,255,0.06); }
-.yucp-toast-message { white-space: normal; color: #ffffff; }
+.yucp-toast-info    { border-left-color: #5BA3FF; }
+.yucp-toast-success { border-left-color: #36BFB1; }
+.yucp-toast-warning { border-left-color: #E2A54A; }
+.yucp-toast-error   { border-left-color: #E24A4A; }
+
+/* Body row: icon | content | close */
+.yucp-toast-body {
+    flex-direction: row;
+    align-items: flex-start;
+    padding-top: 12px;
+    padding-right: 10px;
+    padding-bottom: 11px;
+    padding-left: 14px;
+}
+
+/* Type icon dot */
+.yucp-toast-icon {
+    width: 8px;
+    height: 8px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    flex-shrink: 0;
+    margin-right: 10px;
+    margin-top: 5px;
+}
+
+.yucp-toast-icon--info    { background-color: #5BA3FF; }
+.yucp-toast-icon--success { background-color: #36BFB1; }
+.yucp-toast-icon--warning { background-color: #E2A54A; }
+.yucp-toast-icon--error   { background-color: #E24A4A; }
+
+/* Content: title + message */
+.yucp-toast-content {
+    flex-grow: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.yucp-toast-title {
+    font-size: 12px;
+    color: #f0f0f0;
+    -unity-font-style: bold;
+    margin-bottom: 3px;
+}
+
+.yucp-toast-message {
+    font-size: 11px;
+    color: #909090;
+    white-space: normal;
+}
+
+/* Close button */
+.yucp-toast-close {
+    width: 20px;
+    height: 20px;
+    font-size: 13px;
+    background-color: transparent;
+    color: #484848;
+    border-width: 0;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    padding: 0;
+    margin: 0;
+    margin-left: 6px;
+    flex-shrink: 0;
+    -unity-text-align: middle-center;
+    transition-property: color, background-color;
+    transition-duration: 0.15s, 0.15s;
+    transition-timing-function: ease-out, ease-out;
+}
+
+.yucp-toast-close:hover {
+    color: #c8c8c8;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Auto-dismiss progress bar */
+.yucp-toast-progress {
+    height: 3px;
+    background-color: rgba(255, 255, 255, 0.05);
+    margin-left: 4px;
+    margin-right: 4px;
+    margin-bottom: 5px;
+    border-top-left-radius: 2px;
+    border-top-right-radius: 2px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    overflow: hidden;
+}
+
+.yucp-toast-progress-fill {
+    height: 3px;
+    width: 100%;
+}
+
+.yucp-toast-progress-fill--info    { background-color: rgba(91, 163, 255, 0.65); }
+.yucp-toast-progress-fill--success { background-color: rgba(54, 191, 177, 0.65); }
+.yucp-toast-progress-fill--warning { background-color: rgba(226, 165, 74, 0.65); }
+.yucp-toast-progress-fill--error   { background-color: rgba(226, 74, 74, 0.65); }

@@ -38,6 +38,12 @@ namespace YUCP.PatchCleanup
         static YUCPPatchImporter()
         {
             WriteLog("YUCPPatchImporter static constructor called - importer is loaded and compiled!");
+            if (IsImporterManagedProtectedInstallPending())
+            {
+                WriteLog("Importer-managed protected install detected. Automatic patch hooks are disabled for this transaction.");
+                return;
+            }
+
             EditorApplication.delayCall += CheckForPatchesOnLoad;
 
             // Clean up DLLs on editor load
@@ -53,6 +59,8 @@ namespace YUCP.PatchCleanup
         private static string _currentPatchPathForRetry = null;
         private const int MaxPatchRetryCount = 8;
         private const string ExportInProgressKey = "YUCP.PackageBuilder.ExportingTempPatchAssets";
+        private const string PendingFinalizationKey = "YUCP.PackageManager.ProtectedPayload.PendingFinalization";
+        private static bool s_useDeferredCleanup = true;
 
         private class PatchEntryInfo
         {
@@ -95,6 +103,18 @@ namespace YUCP.PatchCleanup
             }
 
             return false;
+        }
+
+        private static bool IsImporterManagedProtectedInstallPending()
+        {
+            try
+            {
+                return !string.IsNullOrEmpty(EditorPrefs.GetString(PendingFinalizationKey, string.Empty));
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool HasTempRuntimeFiles(string[] importedAssets = null)
@@ -251,6 +271,12 @@ namespace YUCP.PatchCleanup
 
         private static void CheckForPatchesOnLoad()
         {
+            if (IsImporterManagedProtectedInstallPending())
+            {
+                WriteLog("CheckForPatchesOnLoad skipped because the importer owns this protected install transaction.");
+                return;
+            }
+
             if (IsExporterGeneratingTempPatchAssets())
             {
                 WriteLog("CheckForPatchesOnLoad skipped because the exporter is generating temp patch assets.");
@@ -494,24 +520,7 @@ namespace YUCP.PatchCleanup
             {
                 WriteLog("Cleaning up DLLs after patch application...");
 
-                // Free the loaded DLL libraries first to release file locks
-                try
-                {
-                    var hdiffPatchWrapperType = System.Type.GetType("YUCP.DevTools.Editor.PackageExporter.HDiffPatchWrapper, yucp.devtools.Editor");
-                    if (hdiffPatchWrapperType != null)
-                    {
-                        var freeDllsMethod = hdiffPatchWrapperType.GetMethod("FreeDlls", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                        if (freeDllsMethod != null)
-                        {
-                            freeDllsMethod.Invoke(null, null);
-                            WriteLog("  Freed loaded DLL libraries");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    WriteLog($"  Warning: Could not free DLL libraries: {ex.Message}");
-                }
+                ReleaseLoadedDlls();
 
                 // Use delayCall to wait for file handles to be released
                 EditorApplication.delayCall += () =>
@@ -523,6 +532,59 @@ namespace YUCP.PatchCleanup
             {
                 WriteLog($"ERROR in CleanupDllsAfterPatchApplication: {ex.Message}\n{ex.StackTrace}");
             }
+        }
+
+        private static void ReleaseLoadedDlls()
+        {
+            try
+            {
+                foreach (string typeName in new[]
+                {
+                    "YUCP.PatchRuntime.HDiffPatchWrapper",
+                    "YUCP.DevTools.Editor.PackageExporter.HDiffPatchWrapper",
+                })
+                {
+                    var hdiffPatchWrapperType = FindLoadedType(typeName);
+                    if (hdiffPatchWrapperType == null)
+                    {
+                        continue;
+                    }
+
+                    var freeDllsMethod = hdiffPatchWrapperType.GetMethod("FreeDlls", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    if (freeDllsMethod == null)
+                    {
+                        continue;
+                    }
+
+                    freeDllsMethod.Invoke(null, null);
+                    WriteLog("  Freed loaded DLL libraries");
+                    break;
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"  Warning: Could not free DLL libraries: {ex.Message}");
+            }
+        }
+
+        private static Type FindLoadedType(string fullName)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    var type = assembly.GetType(fullName, false);
+                    if (type != null)
+                    {
+                        return type;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return null;
         }
 
         private static void CleanupDllsFromPluginsFolder()
@@ -599,6 +661,12 @@ namespace YUCP.PatchCleanup
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
             WriteLog($"OnPostprocessAllAssets called with {importedAssets?.Length ?? 0} imported assets");
+
+            if (IsImporterManagedProtectedInstallPending())
+            {
+                WriteLog("OnPostprocessAllAssets skipped because the importer owns this protected install transaction.");
+                return;
+            }
 
             // Skip temp patch processing while the exporter is generating scratch assets.
             if (IsExporterGeneratingTempPatchAssets())
@@ -709,7 +777,62 @@ namespace YUCP.PatchCleanup
             WriteLog($"Processed {patchCount} patch(es) from {importedAssets?.Length ?? 0} imported assets");
         }
 
-        private static void TryApplyPatch(string patchPath)
+        public static bool TryMaterializePatchAssets(string[] patchAssetPaths, out string[] createdAssetPaths, out string error)
+        {
+            createdAssetPaths = Array.Empty<string>();
+            error = null;
+
+            if (patchAssetPaths == null || patchAssetPaths.Length == 0)
+            {
+                return true;
+            }
+
+            bool previousDeferredCleanup = s_useDeferredCleanup;
+            s_useDeferredCleanup = false;
+
+            try
+            {
+                createdDerivedFbxPaths = new HashSet<string>();
+                processedPatches = processedPatches ?? new HashSet<string>();
+
+                foreach (string rawPath in patchAssetPaths)
+                {
+                    string patchPath = rawPath?.Replace('\\', '/');
+                    if (string.IsNullOrEmpty(patchPath))
+                    {
+                        continue;
+                    }
+
+                    processedPatches.Remove(patchPath);
+                    ClearPatchRetryState(patchPath);
+
+                    if (!TryApplyPatch(patchPath, false))
+                    {
+                        createdAssetPaths = createdDerivedFbxPaths?.ToArray() ?? Array.Empty<string>();
+                        error = "The package protection step could not be completed on this machine.";
+                        return false;
+                    }
+                }
+
+                createdAssetPaths = createdDerivedFbxPaths?.ToArray() ?? Array.Empty<string>();
+                CleanupDerivedFbxImporterSettings();
+                ReleaseLoadedDlls();
+                return true;
+            }
+            catch
+            {
+                createdAssetPaths = createdDerivedFbxPaths?.ToArray() ?? Array.Empty<string>();
+                error = "The package protection step could not be completed on this machine.";
+                return false;
+            }
+            finally
+            {
+                EditorPrefs.DeleteKey("YUCP.DerivedFbxBuilder.PendingPatchPath");
+                s_useDeferredCleanup = previousDeferredCleanup;
+            }
+        }
+
+        private static bool TryApplyPatch(string patchPath, bool allowAsyncRetry = true)
         {
             WriteLog($"TryApplyPatch called for: {patchPath}");
             _currentPatchPathForRetry = patchPath;
@@ -721,7 +844,7 @@ namespace YUCP.PatchCleanup
                 if (ShouldSkipPatchProcessing($"for patch '{patchPath}'"))
                 {
                     ClearPatchRetryState(patchPath);
-                    return;
+                    return false;
                 }
 
                 processedPatches.Add(patchPath);
@@ -812,27 +935,33 @@ namespace YUCP.PatchCleanup
                             AssetDatabase.ImportAsset(patchPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
                             WriteLog($"  Reimported asset after fixing references");
 
+                            if (!allowAsyncRetry)
+                            {
+                                return TryApplyPatchInternal(patchPath);
+                            }
+
                             // Wait a moment for Unity to process the reimport before continuing
                             EditorApplication.delayCall += () =>
                             {
                                 TryApplyPatchInternal(patchPath);
                             };
-                            return;
+                            return true;
                         }
                     }
                 }
 
                 // Continue with type lookup
-                TryApplyPatchInternal(patchPath);
+                return TryApplyPatchInternal(patchPath);
             }
             catch (Exception ex)
             {
                 WriteLog($"  ERROR in TryApplyPatch: {ex.Message}\n{ex.StackTrace}");
                 Debug.LogWarning($"[YUCP PatchImporter] Error processing patch {patchPath}: {ex.Message}");
+                return false;
             }
         }
 
-        private static void TryApplyPatchInternal(string patchPath)
+        private static bool TryApplyPatchInternal(string patchPath)
         {
             try
             {
@@ -917,7 +1046,7 @@ namespace YUCP.PatchCleanup
                         // Retry after a delay to allow compilation
                         WriteLog("  Script file exists, waiting for assembly compilation...");
                         ReleasePatchForRetry(patchPath, "DerivedFbxAsset type not compiled yet");
-                        return;
+                        return false;
                     }
                     else
                     {
@@ -925,7 +1054,7 @@ namespace YUCP.PatchCleanup
                         WriteLog("  ERROR: DerivedFbxAsset script file not found");
                         Debug.LogWarning($"[YUCP PatchImporter] DerivedFbxAsset runtime files are missing while processing patch {patchPath}. Retrying in case Unity is still importing the temp runtime.");
                         ReleasePatchForRetry(patchPath, "DerivedFbxAsset.cs missing from Packages/com.yucp.temp/Editor");
-                        return;
+                        return false;
                     }
                 }
 
@@ -962,7 +1091,7 @@ namespace YUCP.PatchCleanup
                 {
                     WriteLog($"  ERROR: Could not load patch asset at path: {patchPath}");
                     Debug.LogWarning($"[YUCP PatchImporter] Could not load patch asset: {patchPath}");
-                    return;
+                    return false;
                 }
 
                 // Check if the asset has patch entries (required for binary patching)
@@ -975,7 +1104,7 @@ namespace YUCP.PatchCleanup
                             "Please delete this asset file and re-export your package.\n" +
                             $"Delete: {patchPath}");
                         WriteLog($"  ERROR: Patch asset has no patch entries");
-                        return;
+                        return false;
                     }
 
                     bool hasAnyHdiff = false;
@@ -1001,7 +1130,7 @@ namespace YUCP.PatchCleanup
                             "Please delete this asset file and re-export your package.");
                         WriteLog($"  ERROR: Patch asset has no hdiff file paths");
                         CleanupAfterFailure("Patch asset has no diff file paths");
-                        return;
+                        return false;
                     }
 
                     if (!anyExists)
@@ -1010,7 +1139,7 @@ namespace YUCP.PatchCleanup
                             "The patch files may be missing from the package. Please re-export your package.");
                         WriteLog($"  ERROR: No diff payloads found for patch");
                         CleanupAfterFailure("No diff payloads found for patch");
-                        return;
+                        return false;
                     }
                 }
                 catch (Exception checkEx)
@@ -1019,22 +1148,23 @@ namespace YUCP.PatchCleanup
                         "This may be due to a format change. Please delete this asset file and re-export your package.\n" +
                         $"Delete: {patchPath}\nError: {checkEx.Message}");
                     CleanupAfterFailure("Patch asset corrupted or incompatible");
-                    return;
+                    return false;
                 }
 
                 WriteLog($"  Patch asset loaded successfully: {patch.GetType().FullName}");
                 ClearPatchRetryState(patchPath);
-                ApplyPatch(patch, patchPath);
+                return ApplyPatch(patch, patchPath);
             }
             catch (Exception ex)
             {
                 WriteLog($"  ERROR in TryApplyPatch: {ex.Message}\n{ex.StackTrace}");
                 Debug.LogWarning($"[YUCP PatchImporter] Error processing patch {patchPath}: {ex.Message}");
                 CleanupAfterFailure($"TryApplyPatchInternal exception: {ex.GetType().Name}");
+                return false;
             }
         }
 
-        private static void ApplyPatch(UnityEngine.Object patchObj, string patchPath)
+        private static bool ApplyPatch(UnityEngine.Object patchObj, string patchPath)
         {
             try
             {
@@ -1106,12 +1236,15 @@ namespace YUCP.PatchCleanup
                 {
                     CleanupAfterFailure("ApplyPatchWithBasePath returned false");
                 }
+
+                return success;
             }
             catch (Exception ex)
             {
                 WriteLog($"  ERROR in ApplyPatch: {ex.Message}\n{ex.StackTrace}");
                 Debug.LogError($"[YUCP PatchImporter] Error applying patch: {ex.Message}");
                 CleanupAfterFailure($"ApplyPatch exception: {ex.GetType().Name}");
+                return false;
             }
         }
         private static bool ApplyPatchWithBasePath(UnityEngine.Object patchObj, string patchPath, string baseFbxPath, string derivedFbxGuid, string targetFbxName, string originalDerivedFbxPath)
@@ -1243,20 +1376,27 @@ namespace YUCP.PatchCleanup
                 // Check if override original references is enabled
                 CheckAndHandleOverrideOriginalReferences(baseFbxPath, createdPath, patchPath);
 
-                // Clean up imported temp files after successful FBX build
-                // Use nested delayCall
-                EditorApplication.delayCall += () =>
+                if (s_useDeferredCleanup)
                 {
+                    // Clean up imported temp files after successful FBX build
+                    // Use nested delayCall
                     EditorApplication.delayCall += () =>
                     {
-                        CleanupImportedTempFiles();
-                        // Clean patching scripts from derived FBX importers
-                        CleanupDerivedFbxImporterSettings();
-                        // Also clean up DLLs after patches are applied
-                        CleanupDllsAfterPatchApplication();
-                        CleanupTempPackageFolder();
+                        EditorApplication.delayCall += () =>
+                        {
+                            CleanupImportedTempFiles();
+                            // Clean patching scripts from derived FBX importers
+                            CleanupDerivedFbxImporterSettings();
+                            // Also clean up DLLs after patches are applied
+                            CleanupDllsAfterPatchApplication();
+                            CleanupTempPackageFolder();
+                        };
                     };
-                };
+                }
+                else
+                {
+                    ReleaseLoadedDlls();
+                }
 
                 // Update prefab references if GUID was preserved
                 if (!string.IsNullOrEmpty(derivedFbxGuid))
@@ -1388,16 +1528,23 @@ namespace YUCP.PatchCleanup
             {
                 WriteLog($"CleanupAfterFailure: {reason}");
 
-                EditorApplication.delayCall += () =>
+                if (s_useDeferredCleanup)
                 {
                     EditorApplication.delayCall += () =>
                     {
-                        CleanupImportedTempFiles();
-                        CleanupDerivedFbxImporterSettings();
-                        CleanupDllsAfterPatchApplication();
-                        CleanupTempPackageFolder();
+                        EditorApplication.delayCall += () =>
+                        {
+                            CleanupImportedTempFiles();
+                            CleanupDerivedFbxImporterSettings();
+                            CleanupDllsAfterPatchApplication();
+                            CleanupTempPackageFolder();
+                        };
                     };
-                };
+                }
+                else
+                {
+                    ReleaseLoadedDlls();
+                }
             }
             catch (Exception ex)
             {

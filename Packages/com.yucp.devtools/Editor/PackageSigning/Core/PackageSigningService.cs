@@ -357,6 +357,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 message.IndexOf("payment required", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 message.IndexOf("plan required", StringComparison.OrdinalIgnoreCase) >= 0;
             bool looksLikeRevoked = message.IndexOf("Certificate has been revoked", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool looksLikeArchivedPackage =
+                message.IndexOf("PACKAGE_ARCHIVED", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                message.IndexOf("Archived packages cannot be updated", StringComparison.OrdinalIgnoreCase) >= 0;
 
             if (responseCode == 401)
             {
@@ -374,6 +377,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
             if (responseCode == 409)
             {
+                if (looksLikeArchivedPackage)
+                {
+                    return "This package is archived in your package registry. Restore it from Certificates & Billing, then retry the export.";
+                }
+
                 return message.IndexOf("nonce", StringComparison.OrdinalIgnoreCase) >= 0
                     ? "The signing proof was already used. Retry the export to generate a fresh signing proof."
                     : message;

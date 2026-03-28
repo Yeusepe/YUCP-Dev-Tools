@@ -115,7 +115,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             headerRow.Add(nameVersionColumn);
             section.Add(headerRow);
-            
             // Description - prominent, multiline
             var descLabel = new Label("Description");
             descLabel.AddToClassList("yucp-label");

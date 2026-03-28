@@ -36,8 +36,15 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 			window.minSize = new Vector2(400, 500);
 			window.Show();
 			
-			// Ensure control panel is open (required for sign-in and data retrieval)
-			ControlPanelBridge.EnsureBuilder(null, focusPanel: false);
+			if (CanInitializeControlPanel())
+			{
+				ControlPanelBridge.EnsureBuilder(null, focusPanel: false);
+			}
+		}
+
+		private static bool CanInitializeControlPanel()
+		{
+			return !Application.isBatchMode;
 		}
 		
 		private void ShowBridgeStatus(string message)
@@ -149,7 +156,10 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 		LoadResources();
 		// Wait for CreateGUI to initialize UI elements before restoring selected avatar
 		// RestoreSelectedAvatar will be called after CreateGUI completes
-		ControlPanelBridge.EnsureBuilder(null);
+		if (CanInitializeControlPanel())
+		{
+			ControlPanelBridge.EnsureBuilder(null);
+		}
 		
 		// Subscribe to scene changes to clean up temporary instances from previous scenes
 		UnityEditor.SceneManagement.EditorSceneManager.activeSceneChanged += OnActiveSceneChanged;
@@ -399,15 +409,21 @@ namespace YUCP.DevTools.Editor.AvatarUploader
 
 			InitializeControlPanelProxy();
 
-			ControlPanelBridge.EnsureBuilder(_ =>
+			if (CanInitializeControlPanel())
 			{
-				ShowBridgeStatus("Control Panel Ready");
-				InitializeControlPanelProxy();
-			});
+				ControlPanelBridge.EnsureBuilder(_ =>
+				{
+					ShowBridgeStatus("Control Panel Ready");
+					InitializeControlPanelProxy();
+				});
+			}
 		}
 
 		private void InitializeControlPanelProxy(bool forceRebuild = false)
 		{
+			if (!CanInitializeControlPanel())
+				return;
+
 			if (_metadataSectionHost == null || _visibilitySectionHost == null || _validationSectionHost == null || _buildActionsHost == null)
 				return;
 

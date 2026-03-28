@@ -43,7 +43,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 Directory.CreateDirectory(extractRoot);
                 ExtractUnityPackage(sourceUnityPackagePath, extractRoot);
 
-                int entryCount = BuildPlaintextArchive(extractRoot, archivePath);
+                string[] payloadAssetPaths;
+                int entryCount = BuildPlaintextArchive(extractRoot, archivePath, out payloadAssetPaths);
                 if (entryCount == 0)
                     throw new InvalidOperationException("Synthetic payload package did not contain any protected payload files.");
 
@@ -51,24 +52,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 RandomNumberGenerator.Fill(contentKey);
                 EncryptArchiveToBlob(archivePath, blobPath, contentKey);
 
+                var descriptor = new ProtectedPayloadDescriptor
+                {
+                    formatVersion = "1",
+                    protectedAssetId = Guid.NewGuid().ToString("N"),
+                    blobAssetPath = "",
+                    cipher = CipherName,
+                    archiveFormat = ArchiveFormat,
+                    ciphertextSha256 = ComputeFileSha256Hex(blobPath),
+                    ciphertextSize = new FileInfo(blobPath).Length,
+                    plaintextSha256 = ComputeFileSha256Hex(archivePath),
+                    plaintextSize = new FileInfo(archivePath).Length,
+                    entryCount = entryCount,
+                    payloadAssetPaths = payloadAssetPaths ?? Array.Empty<string>(),
+                    requiresOnlineUnlock = true,
+                    requiresBrokeredMaterialization = true,
+                    brokerProtocolVersion = 1,
+                };
+                descriptor.manifestBindingSha256 =
+                    ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor);
                 return new BuildResult
                 {
                     blobFilePath = blobPath,
                     contentKeyBase64 = Convert.ToBase64String(contentKey),
-                    descriptor = new ProtectedPayloadDescriptor
-                    {
-                        formatVersion = "1",
-                        protectedAssetId = Guid.NewGuid().ToString("N"),
-                        blobAssetPath = "",
-                        cipher = CipherName,
-                        archiveFormat = ArchiveFormat,
-                        ciphertextSha256 = ComputeFileSha256Hex(blobPath),
-                        ciphertextSize = new FileInfo(blobPath).Length,
-                        plaintextSha256 = ComputeFileSha256Hex(archivePath),
-                        plaintextSize = new FileInfo(archivePath).Length,
-                        entryCount = entryCount,
-                        requiresOnlineUnlock = true,
-                    },
+                    descriptor = descriptor,
                 };
             }
             catch
@@ -91,9 +98,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             tarArchive.ExtractContents(extractRoot);
         }
 
-        private static int BuildPlaintextArchive(string extractRoot, string archivePath)
+        private static int BuildPlaintextArchive(
+            string extractRoot,
+            string archivePath,
+            out string[] payloadAssetPaths)
         {
             int logicalEntryCount = 0;
+            var logicalAssetPaths = new List<string>();
             using var archive = ZipFile.Open(archivePath, ZipArchiveMode.Create);
 
             foreach (string entryDirectory in Directory.GetDirectories(extractRoot))
@@ -114,6 +125,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     AddFileEntry(archive, assetFile, destinationPath);
                     logicalEntryCount++;
+                    logicalAssetPaths.Add(destinationPath);
                 }
 
                 if (File.Exists(assetMetaFile))
@@ -122,6 +134,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
 
+            payloadAssetPaths = logicalAssetPaths
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
             return logicalEntryCount;
         }
 

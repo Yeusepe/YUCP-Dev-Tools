@@ -41,6 +41,26 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
 
         /// <summary>
+        /// Force a brand-new packageId for this profile.
+        /// Use this when intentionally starting a separate package lineage.
+        /// </summary>
+        public static string AssignNewPackageId(ExportProfile profile)
+        {
+            if (profile == null)
+            {
+                Debug.LogError("[PackageIdManager] ExportProfile is null");
+                return null;
+            }
+
+            string newPackageId = GenerateNewPackageId();
+            profile.packageId = newPackageId;
+            EditorUtility.SetDirty(profile);
+
+            Debug.Log($"[PackageIdManager] Assigned new packageId: {newPackageId} for profile: {profile.profileName}");
+            return newPackageId;
+        }
+
+        /// <summary>
         /// Get the packageId from the profile
         /// </summary>
         public static string GetPackageId(ExportProfile profile)
@@ -70,6 +90,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
             EditorUtility.SetDirty(profile);
             
             Debug.Log($"[PackageIdManager] Unlinked packageId: {oldPackageId} from profile: {profile.profileName}");
+        }
+
+        /// <summary>
+        /// Assign a known existing packageId to the profile.
+        /// </summary>
+        public static void SetPackageId(ExportProfile profile, string packageId)
+        {
+            if (profile == null)
+            {
+                Debug.LogError("[PackageIdManager] ExportProfile is null");
+                return;
+            }
+
+            profile.packageId = string.IsNullOrWhiteSpace(packageId)
+                ? string.Empty
+                : packageId.Trim();
+            EditorUtility.SetDirty(profile);
         }
 
         /// <summary>

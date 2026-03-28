@@ -27,7 +27,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Package version (e.g., 1.0.0)")]
         public string version = "1.0.0";
         
-        [Tooltip("Package ID (assigned by server when signed, can be used to revoke/remove package)")]
+        [Tooltip("Stable package ID for this package. Keep the same ID across projects when you want exports to map to the same package on the website.")]
         public string packageId = "";
         
         [Tooltip("Gumroad Product ID (for Gumroad integration)")]
@@ -254,9 +254,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                  "Enables the YUCP Importer license gate; adds com.yucp.importer as a VPM dependency.")]
         public bool requiresLicenseVerification = false;
 
+        [NonSerialized] internal bool skipProtectedPayloadBuild = false;
+
         public bool UsesProtectedPayload()
         {
-            return requiresLicenseVerification;
+            return requiresLicenseVerification && !skipProtectedPayloadBuild;
         }
 
         public string GetPrimaryLicenseProductId()

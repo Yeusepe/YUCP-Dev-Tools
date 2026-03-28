@@ -18,5 +18,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         public CertificateData[] certificateChain; // Certificate chain: [Publisher, Intermediate?, Root]
         public string gumroadProductId; // Gumroad product ID
         public string jinxxyProductId; // Jinxxy product ID
+        public ProtectedPayloadManifestEntry[] protectedPayloads;
     }
 }
