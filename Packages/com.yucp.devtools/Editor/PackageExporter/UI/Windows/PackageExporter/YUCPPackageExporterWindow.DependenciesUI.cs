@@ -34,8 +34,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         packageName       = YucpImporterPackageName,
                         displayName       = "YUCP Package Importer",
                         packageVersion    = "1.0.0",
+                        specificVersion   = "1.0.0",
                         enabled           = true,
                         isVpmDependency   = true,
+                        versionMode       = DependencyVersionMode.Latest,
                         exportMode        = DependencyExportMode.Dependency,
                     };
                     profile.dependencies.Insert(0, importerDep);
@@ -617,6 +619,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
             string vpmRepoUrl = "";
             bool vpmHasDownloadUrl = false;
             List<string> vpmCheckedUrls = new List<string>();
+            List<string> vpmAvailableVersions = new List<string>();
+            bool vpmVersionsLookupOk = false;
+            string vpmVersionsLookupError = "";
+            string installedProjectVersion = dep.isVpmDependency
+                ? DependencyScanner.GetInstalledPackageVersion(dep.packageName)
+                : dep.packageVersion;
             
             if (dep.enabled && dep.exportMode == DependencyExportMode.Dependency && dep.isVpmDependency)
             {
@@ -634,6 +642,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     showVpmMissingWarning = true;
                 }
+
+                vpmVersionsLookupOk = DependencyScanner.TryGetAvailableVpmVersions(
+                    dep,
+                    out vpmAvailableVersions,
+                    out _,
+                    out _,
+                    out vpmVersionsLookupError
+                );
             }
             
             if (showVpmMissingWarning)
@@ -660,6 +676,31 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 card.Add(warningBox);
             }
+
+            bool showDowngradeWarning = dep.isVpmDependency &&
+                dep.versionMode == DependencyVersionMode.Specific &&
+                !string.IsNullOrWhiteSpace(installedProjectVersion) &&
+                !string.IsNullOrWhiteSpace(dep.GetSpecificVersionOrDefault()) &&
+                CompareDependencyVersions(installedProjectVersion, dep.GetSpecificVersionOrDefault()) > 0;
+
+            if (showDowngradeWarning)
+            {
+                var warningBox = new VisualElement();
+                warningBox.name = "dependency-warning-box-version";
+                warningBox.AddToClassList("yucp-help-box");
+                warningBox.style.marginTop = 8;
+                warningBox.style.marginBottom = 8;
+                warningBox.style.backgroundColor = new Color(0.7f, 0.45f, 0.15f, 0.25f);
+
+                var warningText = new Label(
+                    $"This project already has {dep.packageName}@{installedProjectVersion} installed. " +
+                    $"The selected version {dep.GetSpecificVersionOrDefault()} is lower, so the installer will keep the installed version and only warn the user.");
+                warningText.AddToClassList("yucp-help-box-text");
+                warningText.style.color = new StyleColor(new Color(0.9f, 0.9f, 0.9f, 1f));
+                warningBox.Add(warningText);
+
+                card.Add(warningBox);
+            }
             
             // Content area - only show if enabled
             if (dep.enabled)
@@ -672,23 +713,125 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 packageNameField.RegisterValueChangedCallback(evt =>
                 {
                     dep.packageName = evt.newValue;
+                    if (dep.versionMode == DependencyVersionMode.Specific && string.IsNullOrWhiteSpace(dep.specificVersion))
+                    {
+                        dep.specificVersion = DependencyScanner.GetInstalledPackageVersion(evt.newValue);
+                    }
                     EditorUtility.SetDirty(profile);
+                    UpdateProfileDetails();
                 });
                 packageNameRow.Add(packageNameField);
                 card.Add(packageNameRow);
                 
-                // Version field
-                var versionRow = CreateFormRow("Version", tooltip: "Package version");
-                var versionField = new TextField { value = dep.packageVersion };
-                versionField.AddToClassList("yucp-input");
-                versionField.AddToClassList("yucp-form-field");
-                versionField.RegisterValueChangedCallback(evt =>
+                if (dep.isVpmDependency)
                 {
-                    dep.packageVersion = evt.newValue;
-                    EditorUtility.SetDirty(profile);
-                });
-                versionRow.Add(versionField);
-                card.Add(versionRow);
+                    var versionModeToggle = new Toggle("Download Latest Version")
+                    {
+                        value = dep.versionMode == DependencyVersionMode.Latest
+                    };
+                    versionModeToggle.AddToClassList("yucp-toggle");
+                    if (!_isCompactMode)
+                        versionModeToggle.tooltip = "When enabled, the installer resolves the newest available VPM version. When disabled, an exact version is used.";
+                    versionModeToggle.RegisterValueChangedCallback(evt =>
+                    {
+                        dep.versionMode = evt.newValue ? DependencyVersionMode.Latest : DependencyVersionMode.Specific;
+                        if (dep.versionMode == DependencyVersionMode.Specific && string.IsNullOrWhiteSpace(dep.specificVersion))
+                        {
+                            dep.specificVersion = !string.IsNullOrWhiteSpace(installedProjectVersion)
+                                ? installedProjectVersion
+                                : dep.packageVersion;
+                        }
+
+                        EditorUtility.SetDirty(profile);
+                        UpdateProfileDetails();
+                    });
+                    card.Add(versionModeToggle);
+
+                    if (!string.IsNullOrWhiteSpace(installedProjectVersion))
+                    {
+                        var projectVersionRow = CreateFormRow("Installed In Project", tooltip: "Version currently installed in this project");
+                        var projectVersionLabel = new Label(installedProjectVersion);
+                        projectVersionLabel.AddToClassList("yucp-label-secondary");
+                        projectVersionLabel.AddToClassList("yucp-form-field");
+                        projectVersionRow.Add(projectVersionLabel);
+                        card.Add(projectVersionRow);
+                    }
+
+                    if (dep.versionMode == DependencyVersionMode.Specific)
+                    {
+                        string selectedVersion = dep.GetSpecificVersionOrDefault();
+                        if (string.IsNullOrWhiteSpace(selectedVersion))
+                        {
+                            selectedVersion = !string.IsNullOrWhiteSpace(installedProjectVersion)
+                                ? installedProjectVersion
+                                : dep.packageVersion;
+                            dep.specificVersion = selectedVersion;
+                        }
+
+                        var versionChoices = new List<string>(vpmAvailableVersions ?? new List<string>());
+                        if (!string.IsNullOrWhiteSpace(selectedVersion) &&
+                            !versionChoices.Contains(selectedVersion, StringComparer.OrdinalIgnoreCase))
+                        {
+                            versionChoices.Insert(0, selectedVersion);
+                        }
+
+                        if (versionChoices.Count == 0 && !string.IsNullOrWhiteSpace(selectedVersion))
+                        {
+                            versionChoices.Add(selectedVersion);
+                        }
+                        else if (versionChoices.Count == 0)
+                        {
+                            versionChoices.Add("No versions available");
+                        }
+
+                        var versionRow = CreateFormRow("Specific Version", tooltip: "Exact VPM version to request");
+                        var versionPicker = CreateDependencyVersionPicker(
+                            dep,
+                            profile,
+                            versionChoices,
+                            selectedVersion,
+                            installedProjectVersion,
+                            vpmVersionsLookupOk && vpmAvailableVersions.Count > 0);
+                        versionRow.Add(versionPicker);
+                        card.Add(versionRow);
+
+                        if (!vpmVersionsLookupOk)
+                        {
+                            var versionsWarning = new Label(string.IsNullOrWhiteSpace(vpmVersionsLookupError)
+                                ? "No repository versions were found for this dependency."
+                                : vpmVersionsLookupError);
+                            versionsWarning.AddToClassList("yucp-label-secondary");
+                            versionsWarning.style.marginTop = 4;
+                            versionsWarning.style.whiteSpace = WhiteSpace.Normal;
+                            card.Add(versionsWarning);
+                        }
+                    }
+                    else
+                    {
+                        var versionRow = CreateFormRow("Version", tooltip: "The latest available VPM version will be resolved when users install this package");
+                        var versionLabel = new Label("Latest available");
+                        versionLabel.AddToClassList("yucp-label-secondary");
+                        versionLabel.AddToClassList("yucp-form-field");
+                        versionRow.Add(versionLabel);
+                        card.Add(versionRow);
+                    }
+                }
+                else
+                {
+                    // Version field
+                    var versionRow = CreateFormRow("Version", tooltip: "Package version");
+                    var versionField = new TextField { value = dep.packageVersion };
+                    versionField.AddToClassList("yucp-input");
+                    versionField.AddToClassList("yucp-form-field");
+                    versionField.RegisterValueChangedCallback(evt =>
+                    {
+                        dep.packageVersion = evt.newValue;
+                        dep.specificVersion = string.IsNullOrWhiteSpace(dep.specificVersion) ? evt.newValue : dep.specificVersion;
+                        EditorUtility.SetDirty(profile);
+                    });
+                    versionRow.Add(versionField);
+                    card.Add(versionRow);
+                }
                 
                 // Display Name field
                 var displayNameRow = CreateFormRow("Display Name", tooltip: "Human-readable name");
@@ -793,6 +936,296 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             
             return card;
+        }
+
+        private static int CompareDependencyVersions(string version1, string version2)
+        {
+            var v1 = ParseDependencyVersion(version1);
+            var v2 = ParseDependencyVersion(version2);
+
+            if (v1.major != v2.major) return v1.major.CompareTo(v2.major);
+            if (v1.minor != v2.minor) return v1.minor.CompareTo(v2.minor);
+            return v1.patch.CompareTo(v2.patch);
+        }
+
+        private static (int major, int minor, int patch) ParseDependencyVersion(string version)
+        {
+            if (string.IsNullOrWhiteSpace(version))
+                return (0, 0, 0);
+
+            string normalized = version.Trim().TrimStart('v', 'V');
+            int dashIndex = normalized.IndexOf('-');
+            if (dashIndex > 0)
+                normalized = normalized.Substring(0, dashIndex);
+
+            string[] parts = normalized.Split('.');
+            int major = parts.Length > 0 ? SafeParseDependencyVersionPart(parts[0]) : 0;
+            int minor = parts.Length > 1 ? SafeParseDependencyVersionPart(parts[1]) : 0;
+            int patch = parts.Length > 2 ? SafeParseDependencyVersionPart(parts[2]) : 0;
+            return (major, minor, patch);
+        }
+
+        private static int SafeParseDependencyVersionPart(string value)
+        {
+            return int.TryParse(value, out int parsed) ? parsed : 0;
+        }
+
+        private VisualElement CreateDependencyVersionPicker(
+            PackageDependency dep,
+            ExportProfile profile,
+            List<string> versionChoices,
+            string selectedVersion,
+            string installedProjectVersion,
+            bool canPickVersion)
+        {
+            var field = new VisualElement();
+            field.AddToClassList("yucp-form-field");
+
+            bool isExpanded = false;
+            VisualElement trigger = null;
+            VisualElement listPanel = null;
+
+            var normalBg = new Color(0.125f, 0.125f, 0.125f);
+            var hoverBg = new Color(0.155f, 0.155f, 0.155f);
+            var listBg = new Color(0.105f, 0.105f, 0.105f);
+            var border = new Color(0.157f, 0.157f, 0.157f);
+            var accent = new Color(0.212f, 0.749f, 0.694f);
+            var textPrimary = new Color(0.961f, 0.961f, 0.961f);
+            var textSecondary = new Color(0.78f, 0.78f, 0.80f);
+            var textMuted = new Color(0.549f, 0.549f, 0.549f);
+
+            void ClosePicker()
+            {
+                isExpanded = false;
+                if (listPanel != null)
+                    listPanel.style.display = DisplayStyle.None;
+                if (trigger != null)
+                {
+                    trigger.style.borderBottomLeftRadius = 5;
+                    trigger.style.borderBottomRightRadius = 5;
+                    trigger.style.borderBottomColor = border;
+                    trigger.style.borderLeftColor = border;
+                    trigger.style.borderRightColor = border;
+                    trigger.style.borderTopColor = border;
+                    trigger.style.backgroundColor = normalBg;
+                }
+            }
+
+            void OpenPicker()
+            {
+                if (!canPickVersion)
+                    return;
+
+                isExpanded = true;
+                if (listPanel != null)
+                    listPanel.style.display = DisplayStyle.Flex;
+                if (trigger != null)
+                {
+                    trigger.style.borderBottomLeftRadius = 0;
+                    trigger.style.borderBottomRightRadius = 0;
+                    trigger.style.borderBottomColor = normalBg;
+                    trigger.style.borderLeftColor = accent;
+                    trigger.style.borderRightColor = accent;
+                    trigger.style.borderTopColor = accent;
+                    trigger.style.backgroundColor = normalBg;
+                }
+            }
+
+            string BuildSecondaryText()
+            {
+                if (!canPickVersion)
+                    return "Version list unavailable";
+
+                if (!string.IsNullOrWhiteSpace(installedProjectVersion) &&
+                    string.Equals(selectedVersion, installedProjectVersion, StringComparison.OrdinalIgnoreCase))
+                {
+                    return "Matches installed project version";
+                }
+
+                if (!string.IsNullOrWhiteSpace(installedProjectVersion))
+                    return $"Project has {installedProjectVersion} installed";
+
+                return "Exact VPM version";
+            }
+
+            trigger = new VisualElement();
+            trigger.style.flexDirection = FlexDirection.Row;
+            trigger.style.alignItems = Align.Center;
+            trigger.style.paddingLeft = 12;
+            trigger.style.paddingRight = 10;
+            trigger.style.paddingTop = 9;
+            trigger.style.paddingBottom = 9;
+            trigger.style.backgroundColor = normalBg;
+            trigger.style.borderTopLeftRadius = 5;
+            trigger.style.borderTopRightRadius = 5;
+            trigger.style.borderBottomLeftRadius = 5;
+            trigger.style.borderBottomRightRadius = 5;
+            trigger.style.borderLeftWidth = 1;
+            trigger.style.borderRightWidth = 1;
+            trigger.style.borderTopWidth = 1;
+            trigger.style.borderBottomWidth = 1;
+            trigger.style.borderLeftColor = border;
+            trigger.style.borderRightColor = border;
+            trigger.style.borderTopColor = border;
+            trigger.style.borderBottomColor = border;
+            trigger.style.opacity = canPickVersion ? 1f : 0.6f;
+
+            var valueCol = new VisualElement();
+            valueCol.style.flexGrow = 1;
+            valueCol.style.minWidth = 0;
+
+            var primaryLabel = new Label(selectedVersion);
+            primaryLabel.style.fontSize = 12;
+            primaryLabel.style.color = textPrimary;
+            primaryLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+            primaryLabel.style.marginBottom = 0;
+            valueCol.Add(primaryLabel);
+
+            var secondaryLabel = new Label(BuildSecondaryText());
+            secondaryLabel.style.fontSize = 9;
+            secondaryLabel.style.color = canPickVersion ? textMuted : new Color(0.910f, 0.659f, 0.294f);
+            secondaryLabel.style.marginTop = 2;
+            valueCol.Add(secondaryLabel);
+
+            trigger.Add(valueCol);
+
+            var chevron = new Label("▾");
+            chevron.style.color = textMuted;
+            chevron.style.fontSize = 10;
+            chevron.style.marginLeft = 6;
+            chevron.style.unityTextAlign = TextAnchor.MiddleCenter;
+            trigger.Add(chevron);
+
+            if (canPickVersion)
+            {
+                trigger.RegisterCallback<MouseEnterEvent>(_ =>
+                {
+                    if (!isExpanded)
+                        trigger.style.backgroundColor = hoverBg;
+                });
+                trigger.RegisterCallback<MouseLeaveEvent>(_ =>
+                {
+                    if (!isExpanded)
+                        trigger.style.backgroundColor = normalBg;
+                });
+                trigger.RegisterCallback<ClickEvent>(_ =>
+                {
+                    if (isExpanded)
+                    {
+                        ClosePicker();
+                        chevron.text = "▾";
+                    }
+                    else
+                    {
+                        OpenPicker();
+                        chevron.text = "▴";
+                    }
+                });
+            }
+
+            field.Add(trigger);
+
+            listPanel = new VisualElement();
+            listPanel.style.display = DisplayStyle.None;
+            listPanel.style.backgroundColor = listBg;
+            listPanel.style.borderLeftWidth = 1;
+            listPanel.style.borderRightWidth = 1;
+            listPanel.style.borderBottomWidth = 1;
+            listPanel.style.borderTopWidth = 0;
+            listPanel.style.borderLeftColor = accent;
+            listPanel.style.borderRightColor = accent;
+            listPanel.style.borderBottomColor = accent;
+            listPanel.style.borderBottomLeftRadius = 5;
+            listPanel.style.borderBottomRightRadius = 5;
+            listPanel.style.overflow = Overflow.Hidden;
+
+            var scroll = new ScrollView(ScrollViewMode.Vertical);
+            scroll.style.maxHeight = 220;
+            scroll.style.flexGrow = 1;
+            scroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            scroll.verticalScrollerVisibility = ScrollerVisibility.Auto;
+
+            for (int i = 0; i < versionChoices.Count; i++)
+            {
+                string choice = versionChoices[i];
+                bool isSelected = string.Equals(choice, selectedVersion, StringComparison.OrdinalIgnoreCase);
+
+                var row = new VisualElement();
+                row.style.flexDirection = FlexDirection.Row;
+                row.style.alignItems = Align.Center;
+                row.style.justifyContent = Justify.SpaceBetween;
+                row.style.paddingLeft = 12;
+                row.style.paddingRight = 12;
+                row.style.paddingTop = 8;
+                row.style.paddingBottom = 8;
+                row.style.backgroundColor = isSelected
+                    ? new Color(0.212f, 0.749f, 0.694f, 0.18f)
+                    : listBg;
+
+                var labels = new VisualElement();
+                labels.style.flexGrow = 1;
+                labels.style.minWidth = 0;
+
+                var versionLabel = new Label(choice);
+                versionLabel.style.fontSize = 11;
+                versionLabel.style.color = isSelected ? textPrimary : textSecondary;
+                versionLabel.style.unityFontStyleAndWeight = isSelected ? FontStyle.Bold : FontStyle.Normal;
+                labels.Add(versionLabel);
+
+                if (!string.IsNullOrWhiteSpace(installedProjectVersion) &&
+                    string.Equals(choice, installedProjectVersion, StringComparison.OrdinalIgnoreCase))
+                {
+                    var installedLabel = new Label("Installed in project");
+                    installedLabel.style.fontSize = 9;
+                    installedLabel.style.color = textMuted;
+                    installedLabel.style.marginTop = 2;
+                    labels.Add(installedLabel);
+                }
+
+                row.Add(labels);
+
+                if (isSelected)
+                {
+                    var check = new Label("✓");
+                    check.style.fontSize = 9;
+                    check.style.color = accent;
+                    check.style.unityFontStyleAndWeight = FontStyle.Bold;
+                    row.Add(check);
+                }
+
+                row.RegisterCallback<MouseEnterEvent>(_ =>
+                {
+                    if (!isSelected)
+                        row.style.backgroundColor = new Color(1f, 1f, 1f, 0.04f);
+                });
+                row.RegisterCallback<MouseLeaveEvent>(_ =>
+                {
+                    row.style.backgroundColor = isSelected
+                        ? new Color(0.212f, 0.749f, 0.694f, 0.18f)
+                        : listBg;
+                });
+                row.RegisterCallback<ClickEvent>(_ =>
+                {
+                    dep.specificVersion = choice;
+                    EditorUtility.SetDirty(profile);
+                    UpdateProfileDetails();
+                });
+
+                scroll.Add(row);
+
+                if (i < versionChoices.Count - 1)
+                {
+                    var divider = new VisualElement();
+                    divider.style.height = 1;
+                    divider.style.backgroundColor = new Color(1f, 1f, 1f, 0.04f);
+                    scroll.Add(divider);
+                }
+            }
+
+            listPanel.Add(scroll);
+            field.Add(listPanel);
+
+            return field;
         }
 
     }

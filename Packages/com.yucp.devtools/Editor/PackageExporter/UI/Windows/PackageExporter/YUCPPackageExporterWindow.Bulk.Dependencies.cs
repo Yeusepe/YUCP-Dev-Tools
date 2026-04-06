@@ -73,6 +73,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                 var newDep = new PackageDependency(dep.packageName, dep.packageVersion, dep.displayName, dep.isVpmDependency);
                                 newDep.enabled = dep.enabled;
                                 newDep.exportMode = dep.exportMode;
+                                newDep.versionMode = dep.versionMode;
+                                newDep.specificVersion = dep.specificVersion;
+                                newDep.vpmRepositoryUrl = dep.vpmRepositoryUrl;
                                 profile.dependencies.Add(newDep);
                             }
                         }
@@ -95,7 +98,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 labelContainer.style.flexGrow = 1;
                 labelContainer.style.alignItems = Align.Center;
                 
-                var depLabel = new Label($"{dep.displayName} ({dep.packageName}@{dep.packageVersion})");
+                var depLabel = new Label($"{dep.displayName} ({dep.packageName}@{dep.GetVersionLabel()})");
                 depLabel.AddToClassList("yucp-folder-item-path");
                 depLabel.style.flexGrow = 1;
                 if (!allHaveDep && someHaveDep)
@@ -163,6 +166,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         var clonedDep = new PackageDependency(newDep.packageName, newDep.packageVersion, newDep.displayName, newDep.isVpmDependency);
                         clonedDep.enabled = newDep.enabled;
                         clonedDep.exportMode = newDep.exportMode;
+                        clonedDep.versionMode = newDep.versionMode;
+                        clonedDep.specificVersion = newDep.specificVersion;
+                        clonedDep.vpmRepositoryUrl = newDep.vpmRepositoryUrl;
                         profile.dependencies.Add(clonedDep);
                     }
                     EditorUtility.SetDirty(profile);

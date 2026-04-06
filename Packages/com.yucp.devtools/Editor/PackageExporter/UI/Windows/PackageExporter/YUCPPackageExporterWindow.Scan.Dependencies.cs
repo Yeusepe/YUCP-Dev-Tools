@@ -74,8 +74,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         dep.exportMode = settings.exportMode;
                         dep.isVpmDependency = settings.isVpmDependency;
                         dep.packageVersion = string.IsNullOrEmpty(dep.packageVersion) ? settings.packageVersion : dep.packageVersion;
+                        dep.versionMode = settings.versionMode;
+                        dep.specificVersion = string.IsNullOrEmpty(settings.specificVersion) ? dep.packageVersion : settings.specificVersion;
                         dep.displayName = string.IsNullOrEmpty(dep.displayName) ? settings.displayName : dep.displayName;
                         dep.vpmRepositoryUrl = settings.vpmRepositoryUrl;
+                    }
+                    else
+                    {
+                        dep.specificVersion = string.IsNullOrEmpty(dep.specificVersion) ? dep.packageVersion : dep.specificVersion;
                     }
                     profile.dependencies.Add(dep);
                 }

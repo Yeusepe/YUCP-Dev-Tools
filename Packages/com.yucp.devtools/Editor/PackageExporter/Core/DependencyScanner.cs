@@ -14,6 +14,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
     /// </summary>
     public static class DependencyScanner
     {
+        private static readonly Dictionary<string, JObject> RepoJsonCache = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
+
         private class VpmRepositorySource
         {
             public string name;
@@ -45,6 +47,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// Scan all installed packages in the project
         /// </summary>
         public static List<PackageInfo> ScanInstalledPackages()
+        {
+            return ScanInstalledPackages(logResults: true);
+        }
+
+        private static List<PackageInfo> ScanInstalledPackages(bool logResults)
         {
             var packages = new List<PackageInfo>();
 
@@ -105,9 +112,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
 
-            Debug.Log($"[DependencyScanner] Found {packages.Count} installed packages");
+            if (logResults)
+            {
+                Debug.Log($"[DependencyScanner] Found {packages.Count} installed packages");
+            }
 
             return packages;
+        }
+
+        public static string GetInstalledPackageVersion(string packageName)
+        {
+            if (string.IsNullOrWhiteSpace(packageName))
+                return "";
+
+            try
+            {
+                var installedPackage = ScanInstalledPackages(logResults: false)
+                    .FirstOrDefault(p => string.Equals(p.packageName, packageName, StringComparison.OrdinalIgnoreCase));
+
+                return installedPackage?.version ?? "";
+            }
+            catch
+            {
+                return "";
+            }
         }
 
         /// <summary>
@@ -449,8 +477,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         var vpmDepsObj = new JObject();
                         foreach (var dep in resolvedVpmDeps)
                         {
-                            // Use >= for VPM dependencies to allow updates
-                            vpmDepsObj[dep.packageName] = $">={dep.packageVersion}";
+                            vpmDepsObj[dep.packageName] = dep.GetVpmVersionRequirement();
                         }
                         packageJson["vpmDependencies"] = vpmDepsObj;
 
@@ -559,57 +586,74 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return false;
             }
 
-            var repoSources = GetVpmRepositorySources();
-            checkedUrls = repoSources
-                .Select(r => !string.IsNullOrEmpty(r.url) ? r.url : r.localPath)
-                .Where(s => !string.IsNullOrEmpty(s))
-                .ToList();
-
-            if (!string.IsNullOrWhiteSpace(dep.vpmRepositoryUrl))
+            if (TryResolveVpmRepository(dep, out var resolvedRepo, out var resolvedJson, out checkedUrls, out lookupError))
             {
-                var customUrl = dep.vpmRepositoryUrl.Trim();
-                checkedUrls.Insert(0, customUrl);
-                if (TryLoadRepoJson(new VpmRepositorySource
-                    {
-                        name = "Custom",
-                        url = customUrl,
-                        localPath = null
-                    }, out var customJson))
-                {
-                    string packageName = dep.packageName;
-                    if (!string.IsNullOrEmpty(packageName) &&
-                        RepoHasDownloadUrlForPackage(customJson, dep, packageName, out _))
-                    {
-                        repoName = "Custom";
-                        repoUrl = customUrl;
-                        hasDownloadUrl = true;
-                        return true;
-                    }
-                }
-            }
-
-            string pkgName = dep.packageName;
-            if (string.IsNullOrEmpty(pkgName))
-            {
-                lookupError = "Package name is empty";
+                repoName = resolvedRepo.name;
+                repoUrl = !string.IsNullOrEmpty(resolvedRepo.url) ? resolvedRepo.url : resolvedRepo.localPath;
+                hasDownloadUrl = RepoHasDownloadUrlForPackage(resolvedJson, dep, dep.packageName, out _);
                 return true;
             }
 
-            foreach (var repo in repoSources)
-            {
-                if (!TryLoadRepoJson(repo, out var repoJson))
-                    continue;
+            return true;
+        }
 
-                if (RepoHasDownloadUrlForPackage(repoJson, dep, pkgName, out _))
+        public static bool TryGetAvailableVpmVersions(
+            PackageDependency dep,
+            out List<string> versions,
+            out string repoName,
+            out string repoUrl,
+            out string lookupError)
+        {
+            versions = new List<string>();
+            repoName = "";
+            repoUrl = "";
+            lookupError = "";
+
+            if (dep == null || !dep.isVpmDependency)
+            {
+                lookupError = "Not a VPM dependency";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(dep.packageName))
+            {
+                lookupError = "Package name is empty";
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(dep.vpmRepositoryUrl))
+            {
+                var customRepo = new VpmRepositorySource
                 {
-                    repoName = repo.name;
-                    repoUrl = !string.IsNullOrEmpty(repo.url) ? repo.url : repo.localPath;
-                    hasDownloadUrl = true;
+                    name = "Custom",
+                    url = dep.vpmRepositoryUrl.Trim(),
+                    localPath = null
+                };
+
+                if (TryLoadRepoJson(customRepo, out var customJson) &&
+                    TryGetRepoVersionsForPackage(customJson, dep.packageName, out versions))
+                {
+                    repoName = customRepo.name;
+                    repoUrl = customRepo.url;
                     return true;
                 }
             }
 
-            return true;
+            foreach (var repo in GetVpmRepositorySources())
+            {
+                if (!TryLoadRepoJson(repo, out var repoJson))
+                    continue;
+
+                if (TryGetRepoVersionsForPackage(repoJson, dep.packageName, out versions))
+                {
+                    repoName = repo.name;
+                    repoUrl = !string.IsNullOrEmpty(repo.url) ? repo.url : repo.localPath;
+                    return true;
+                }
+            }
+
+            lookupError = "No downloadable versions found in any repository";
+            return false;
         }
 
         private static List<VpmRepositorySource> GetVpmRepositorySources()
@@ -684,17 +728,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             repoJson = null;
 
-            if (repo != null && !string.IsNullOrEmpty(repo.localPath) && File.Exists(repo.localPath))
+            if (repo == null)
+                return false;
+
+            string cacheKey = !string.IsNullOrEmpty(repo.localPath) ? repo.localPath : repo.url;
+            if (!string.IsNullOrEmpty(cacheKey) && RepoJsonCache.TryGetValue(cacheKey, out var cachedJson))
+            {
+                repoJson = cachedJson;
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(repo.localPath) && File.Exists(repo.localPath))
             {
                 try
                 {
                     repoJson = JObject.Parse(File.ReadAllText(repo.localPath));
+                    if (!string.IsNullOrEmpty(cacheKey))
+                        RepoJsonCache[cacheKey] = repoJson;
                     return true;
                 }
                 catch { }
             }
 
-            if (repo != null && !string.IsNullOrEmpty(repo.url))
+            if (!string.IsNullOrEmpty(repo.url))
             {
                 try
                 {
@@ -702,6 +758,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     {
                         string repoData = client.DownloadString(repo.url);
                         repoJson = JObject.Parse(repoData);
+                        if (!string.IsNullOrEmpty(cacheKey))
+                            RepoJsonCache[cacheKey] = repoJson;
                         return true;
                     }
                 }
@@ -736,7 +794,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (versions == null || versions.Count == 0)
                 return false;
 
-            string requirement = dep.packageVersion;
+            string requirement = dep.GetVpmVersionRequirement();
             if (!string.IsNullOrEmpty(requirement) && versions[requirement] is JObject exact)
             {
                 string exactUrl = exact["url"]?.ToString();
@@ -762,6 +820,89 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
 
             return false;
+        }
+
+        private static bool TryResolveVpmRepository(
+            PackageDependency dep,
+            out VpmRepositorySource resolvedRepo,
+            out JObject resolvedJson,
+            out List<string> checkedUrls,
+            out string lookupError)
+        {
+            resolvedRepo = null;
+            resolvedJson = null;
+            checkedUrls = new List<string>();
+            lookupError = "";
+
+            string packageName = dep?.packageName;
+            if (string.IsNullOrWhiteSpace(packageName))
+            {
+                lookupError = "Package name is empty";
+                return false;
+            }
+
+            var repoSources = GetVpmRepositorySources();
+            checkedUrls = repoSources
+                .Select(r => !string.IsNullOrEmpty(r.url) ? r.url : r.localPath)
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToList();
+
+            if (!string.IsNullOrWhiteSpace(dep.vpmRepositoryUrl))
+            {
+                string customUrl = dep.vpmRepositoryUrl.Trim();
+                checkedUrls.Insert(0, customUrl);
+
+                var customRepo = new VpmRepositorySource
+                {
+                    name = "Custom",
+                    url = customUrl,
+                    localPath = null
+                };
+
+                if (TryLoadRepoJson(customRepo, out var customJson) &&
+                    RepoHasDownloadUrlForPackage(customJson, dep, packageName, out _))
+                {
+                    resolvedRepo = customRepo;
+                    resolvedJson = customJson;
+                    return true;
+                }
+            }
+
+            foreach (var repo in repoSources)
+            {
+                if (!TryLoadRepoJson(repo, out var repoJson))
+                    continue;
+
+                if (RepoHasDownloadUrlForPackage(repoJson, dep, packageName, out _))
+                {
+                    resolvedRepo = repo;
+                    resolvedJson = repoJson;
+                    return true;
+                }
+            }
+
+            lookupError = "No download URL found in any repository";
+            return false;
+        }
+
+        private static bool TryGetRepoVersionsForPackage(JObject repoJson, string packageName, out List<string> versions)
+        {
+            versions = new List<string>();
+
+            var packages = GetRepoPackagesObject(repoJson);
+            var packageObj = packages?[packageName] as JObject;
+            var versionObjects = packageObj?["versions"] as JObject;
+            if (versionObjects == null || versionObjects.Count == 0)
+                return false;
+
+            versions = versionObjects.Properties()
+                .Where(p => IsValidDownloadUrl((p.Value as JObject)?["url"]?.ToString()))
+                .Select(p => p.Name)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(v => v, Comparer<string>.Create(CompareVersions))
+                .ToList();
+
+            return versions.Count > 0;
         }
 
         private static bool IsValidDownloadUrl(string url)
@@ -830,6 +971,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             string req = requirement.Trim();
 
+            if (req == "*")
+                return true;
+
             if (req.StartsWith(">="))
             {
                 string minVersion = req.Substring(2).Trim();
@@ -858,7 +1002,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return CompareVersions(version, baseVersion) >= 0;
             }
 
-            return CompareVersions(version, req) >= 0;
+            return CompareVersions(version, req) == 0;
         }
 
         private static int CompareVersions(string version1, string version2)

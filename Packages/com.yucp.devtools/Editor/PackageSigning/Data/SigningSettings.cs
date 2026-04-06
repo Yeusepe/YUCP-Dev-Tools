@@ -95,14 +95,14 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
 
             if (!string.IsNullOrEmpty(explicitBaseUrl))
             {
-                return $"{explicitBaseUrl.TrimEnd('/')}/dashboard/certificates";
+                return $"{explicitBaseUrl.TrimEnd('/')}/dashboard/billing";
             }
 
             string server = !string.IsNullOrEmpty(serverUrlOverride)
                 ? serverUrlOverride
                 : GetEffectiveServerUrl();
             if (string.IsNullOrEmpty(server))
-                return "https://creators.yucp.club/dashboard/certificates";
+                return "https://verify.creators.yucp.club/dashboard/billing";
 
             try
             {
@@ -126,7 +126,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                 }
                 else if (!host.StartsWith("creators.", StringComparison.OrdinalIgnoreCase))
                 {
-                    return "https://creators.yucp.club/dashboard/certificates";
+                    return "https://verify.creators.yucp.club/dashboard/billing";
                 }
 
                 var builder = new UriBuilder(serverUri)
@@ -134,7 +134,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                     Scheme = scheme,
                     Host = host,
                     Port = port,
-                    Path = "/dashboard/certificates",
+                    Path = "/dashboard/billing",
                     Query = string.Empty,
                     Fragment = string.Empty,
                 };
@@ -142,7 +142,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
             }
             catch
             {
-                return "https://creators.yucp.club/dashboard/certificates";
+                return "https://verify.creators.yucp.club/dashboard/billing";
             }
         }
 

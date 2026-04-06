@@ -621,15 +621,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
                          bool alreadyListed = effectiveDeps.Any(d => d.packageName == "com.yucp.importer");
                          if (!alreadyListed)
                          {
-                             effectiveDeps.Add(new PackageDependency
-                             {
-                                 packageName = "com.yucp.importer",
-                                 packageVersion = "0.1.0",
-                                 displayName = "YUCP Importer",
-                                 enabled = true,
-                                 exportMode = DependencyExportMode.Dependency,
-                                 isVpmDependency = true,
-                             });
+                            effectiveDeps.Add(new PackageDependency
+                            {
+                                packageName = "com.yucp.importer",
+                                packageVersion = "0.1.0",
+                                specificVersion = "0.1.0",
+                                versionMode = DependencyVersionMode.Latest,
+                                displayName = "YUCP Importer",
+                                enabled = true,
+                                exportMode = DependencyExportMode.Dependency,
+                                isVpmDependency = true,
+                            });
                          }
                      }
                      

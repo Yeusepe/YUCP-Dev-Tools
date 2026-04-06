@@ -426,6 +426,7 @@ namespace YUCP.DirectVpmInstaller
 
                 // Direct (top-level) dependencies for the UI prompt
                 var packagesToInstall = new List<Tuple<string, string>>();
+                var installWarnings = new List<string>();
 
                 // Work queue + set to install dependencies recursively (transitive closure)
                 var installQueue = new Queue<Tuple<string, string>>();
@@ -436,7 +437,7 @@ namespace YUCP.DirectVpmInstaller
                     string packageName = dep.Name;
                     string versionRequirement = dep.Value.ToString();
                     
-                    if (!IsPackageInstalled(packageName, versionRequirement))
+                    if (ShouldInstallPackage(packageName, versionRequirement, out string installWarning))
                     {
                         var tuple = new Tuple<string, string>(packageName, versionRequirement);
                         packagesToInstall.Add(tuple);
@@ -445,19 +446,37 @@ namespace YUCP.DirectVpmInstaller
                             installQueue.Enqueue(tuple);
                         }
                     }
+                    else if (!string.IsNullOrEmpty(installWarning))
+                    {
+                        installWarnings.Add(installWarning);
+                        Debug.LogWarning($"[DirectVpmInstaller] {installWarning}");
+                    }
                 }
                 
                 if (packagesToInstall.Count == 0)
                 {
+                    if (installWarnings.Count > 0)
+                    {
+                        EditorUtility.DisplayDialog(
+                            "Dependency Version Warning",
+                            string.Join("\n\n", installWarnings),
+                            "Continue"
+                        );
+                    }
+
                     EnableBundledPackagesAndFinalize(packageJsonPath, "All VPM dependencies are already installed. Enabling bundled packages directly.");
                     return;
                 }
                 
-                string packageList = string.Join("\n", packagesToInstall.Select(p => $"  - {p.Item1}@{p.Item2}"));
+                string packageList = string.Join("\n", packagesToInstall.Select(p => $"  - {p.Item1}@{FormatVersionRequirementForDisplay(p.Item2)}"));
                 bool installsImporter = packagesToInstall.Any(p => string.Equals(p.Item1, "com.yucp.importer", StringComparison.OrdinalIgnoreCase));
                 string dialogMessage = isProtectedBootstrapImport && installsImporter
                     ? $"This protected package needs the YUCP Importer to finish setup.\n\nThe following VPM dependencies will be installed:\n\n{packageList}\n\nWould you like to install them now?\n\n(Required to continue protected package setup)"
                     : $"This package requires the following VPM dependencies:\n\n{packageList}\n\nWould you like to install them now?\n\n(Required for compilation)";
+                if (installWarnings.Count > 0)
+                {
+                    dialogMessage += "\n\nWarnings:\n\n" + string.Join("\n\n", installWarnings);
+                }
                 bool install = EditorUtility.DisplayDialog(
                     "Install VPM Dependencies",
                     dialogMessage,
@@ -488,8 +507,12 @@ namespace YUCP.DirectVpmInstaller
                         var package = installQueue.Dequeue();
                         
                         // Double-check we still need this package (it may have been installed as a transitive dependency)
-                        if (IsPackageInstalled(package.Item1, package.Item2))
+                        if (!ShouldInstallPackage(package.Item1, package.Item2, out string queuedWarning))
+                        {
+                            if (!string.IsNullOrEmpty(queuedWarning))
+                                Debug.LogWarning($"[DirectVpmInstaller] {queuedWarning}");
                             continue;
+                        }
                         
                         if (!InstallPackage(package.Item1, package.Item2, repositories))
                         {
@@ -1089,21 +1112,45 @@ namespace YUCP.DirectVpmInstaller
             return safe;
         }
         
-        private static bool IsPackageInstalled(string packageName, string versionRequirement)
+        private static bool ShouldInstallPackage(string packageName, string versionRequirement, out string warningMessage)
+        {
+            warningMessage = null;
+
+            string installedVersion = GetInstalledPackageVersion(packageName);
+            if (string.IsNullOrEmpty(installedVersion))
+                return true;
+
+            string normalizedRequirement = NormalizeRequirement(versionRequirement);
+            if (IsExactVersionRequirement(normalizedRequirement))
+            {
+                int compare = CompareVersions(installedVersion, normalizedRequirement);
+                if (compare > 0)
+                {
+                    warningMessage =
+                        $"Requested {packageName}@{normalizedRequirement}, but the project already has newer {installedVersion}. Downgrades are not supported, so the installed version will be kept.";
+                    return false;
+                }
+
+                return compare < 0;
+            }
+
+            return !VersionSatisfiesRequirement(installedVersion, normalizedRequirement);
+        }
+
+        private static string GetInstalledPackageVersion(string packageName)
         {
             string packageJsonPath = $"Packages/{packageName}/package.json";
             if (!File.Exists(packageJsonPath))
-                return false;
-            
+                return null;
+
             try
             {
                 var packageData = JObject.Parse(File.ReadAllText(packageJsonPath));
-                string installedVersion = packageData["version"]?.ToString();
-                return !string.IsNullOrEmpty(installedVersion) && VersionSatisfiesRequirement(installedVersion, versionRequirement);
+                return packageData["version"]?.ToString();
             }
             catch
             {
-                return false;
+                return null;
             }
         }
         
@@ -1266,7 +1313,10 @@ namespace YUCP.DirectVpmInstaller
         
         private static bool VersionSatisfiesRequirement(string installedVersion, string requirement)
         {
-            requirement = requirement.Trim();
+            requirement = NormalizeRequirement(requirement);
+
+            if (string.IsNullOrEmpty(requirement) || requirement == "*")
+                return true;
             
             if (requirement.StartsWith(">="))
             {
@@ -1298,7 +1348,7 @@ namespace YUCP.DirectVpmInstaller
                 return CompareVersions(installedVersion, baseVersion) >= 0;
             }
             
-            return CompareVersions(installedVersion, requirement) >= 0;
+            return CompareVersions(installedVersion, requirement) == 0;
         }
         
         private static int CompareVersions(string version1, string version2)
@@ -1313,17 +1363,45 @@ namespace YUCP.DirectVpmInstaller
         
         private static (int major, int minor, int patch) ParseVersion(string version)
         {
+            if (string.IsNullOrWhiteSpace(version))
+                return (0, 0, 0);
+
             version = version.Trim().TrimStart('v', 'V');
             int dashIndex = version.IndexOf('-');
             if (dashIndex > 0)
                 version = version.Substring(0, dashIndex);
             
             var parts = version.Split('.');
-            int major = parts.Length > 0 ? int.Parse(parts[0]) : 0;
-            int minor = parts.Length > 1 ? int.Parse(parts[1]) : 0;
-            int patch = parts.Length > 2 ? int.Parse(parts[2]) : 0;
+            int major = parts.Length > 0 ? SafeParseVersionPart(parts[0]) : 0;
+            int minor = parts.Length > 1 ? SafeParseVersionPart(parts[1]) : 0;
+            int patch = parts.Length > 2 ? SafeParseVersionPart(parts[2]) : 0;
             
             return (major, minor, patch);
+        }
+
+        private static string NormalizeRequirement(string requirement)
+        {
+            return string.IsNullOrWhiteSpace(requirement) ? "" : requirement.Trim();
+        }
+
+        private static bool IsExactVersionRequirement(string requirement)
+        {
+            string normalized = NormalizeRequirement(requirement);
+            if (string.IsNullOrEmpty(normalized) || normalized == "*")
+                return false;
+
+            return !normalized.StartsWith(">=") && !normalized.StartsWith("^") && !normalized.StartsWith("~");
+        }
+
+        private static string FormatVersionRequirementForDisplay(string requirement)
+        {
+            string normalized = NormalizeRequirement(requirement);
+            return normalized == ">=0.0.0" ? "latest" : normalized;
+        }
+
+        private static int SafeParseVersionPart(string value)
+        {
+            return int.TryParse(value, out int parsed) ? parsed : 0;
         }
         
         private static void CleanupInstallerScript()
@@ -1444,9 +1522,13 @@ namespace YUCP.DirectVpmInstaller
                     string depName = dep.Name;
                     string versionRequirement = dep.Value.ToString();
 
-                    // Skip if already installed at a satisfying version
-                    if (IsPackageInstalled(depName, versionRequirement))
+                    // Skip if already installed or if the request would require a downgrade.
+                    if (!ShouldInstallPackage(depName, versionRequirement, out string installWarning))
+                    {
+                        if (!string.IsNullOrEmpty(installWarning))
+                            Debug.LogWarning($"[DirectVpmInstaller] {installWarning}");
                         continue;
+                    }
 
                     // Skip if we've already planned to install this package
                     if (!plannedPackages.Add(depName))

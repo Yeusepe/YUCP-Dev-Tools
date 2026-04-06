@@ -267,7 +267,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             string label = string.IsNullOrEmpty(dependency.displayName) 
                                 ? dependency.packageName 
                                 : dependency.displayName;
-                            label += $" v{dependency.packageVersion}";
+                            label += $" v{dependency.GetVersionLabel()}";
                             
                             if (dependency.isVpmDependency)
                             {
