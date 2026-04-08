@@ -177,6 +177,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
             },
             new PatchRuntimeInjectedFile
             {
+                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/EmbeddedTextEncodingUtility.cs",
+                targetPath = "Packages/com.yucp.temp/Editor/EmbeddedTextEncodingUtility.cs",
+            },
+            new PatchRuntimeInjectedFile
+            {
                 sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/ProtectedContentKeyUtility.cs",
                 targetPath = "Packages/com.yucp.temp/Editor/ProtectedContentKeyUtility.cs",
             },
@@ -239,6 +244,41 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             return profile != null &&
                    profile.UsesProtectedPayload();
+        }
+
+        private static bool UsesProtectedPayloadRuntime(ExportProfile profile)
+        {
+            return profile != null &&
+                   profile.UsesProtectedPayload();
+        }
+
+        private static bool AnyProfileUsesProtectedPayloadRuntime(ExportProfile profile)
+        {
+            if (UsesProtectedPayloadRuntime(profile))
+            {
+                return true;
+            }
+
+            if (profile == null || !profile.HasIncludedProfiles())
+            {
+                return false;
+            }
+
+            foreach (var sub in profile.GetIncludedProfiles())
+            {
+                if (UsesProtectedPayloadRuntime(sub))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ShouldRequireDerivedFbxServerUnlock(ExportProfile profile)
+        {
+            return UsesProtectedPayloadRuntime(profile) &&
+                   !string.IsNullOrEmpty(profile.packageId);
         }
 
         private static ExportProfile CreateSyntheticProtectedPayloadProfile(ExportProfile containerProfile)
@@ -604,21 +644,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                  {
                      progressCallback?.Invoke(0.58f, "Generating package.json...");
 
-                     // Collect all profiles (main + bundled) to check if any require license verification
-                     bool anyProfileRequiresLicense = profile.requiresLicenseVerification;
-                     if (!anyProfileRequiresLicense && profile.HasIncludedProfiles())
-                     {
-                         foreach (var sub in profile.GetIncludedProfiles())
-                         {
-                             if (sub != null && sub.requiresLicenseVerification) { anyProfileRequiresLicense = true; break; }
-                         }
-                     }
+                     // Collect all profiles (main + bundled) to check if any emit protected runtime content.
+                     bool anyProfileRequiresLicense = AnyProfileUsesProtectedPayloadRuntime(profile);
 
-                     // Build effective dependency list — inject com.yucp.importer when any profile requires license
+                     // Build effective dependency list — inject com.yucp.importer when any profile emits protected runtime content.
                      var effectiveDeps = new List<PackageDependency>(profile.dependencies ?? new List<PackageDependency>());
                      if (anyProfileRequiresLicense)
                      {
-                         bool alreadyListed = effectiveDeps.Any(d => d.packageName == "com.yucp.importer");
+                          bool alreadyListed = effectiveDeps.Any(d => d.packageName == "com.yucp.importer");
                          if (!alreadyListed)
                          {
                             effectiveDeps.Add(new PackageDependency
@@ -897,16 +930,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (profile.icon != null && !IsDefaultGridPlaceholder(profile.icon))
                 {
                     progressCallback?.Invoke(0.8f, "Adding package icon...");
-                    
-                    string iconPath = AssetDatabase.GetAssetPath(profile.icon);
-                    if (!string.IsNullOrEmpty(iconPath))
+
+                    string iconSourcePath = ResolvePackageIconSourcePath(profile.icon, profile.packageName ?? "PackageIcon");
+                    if (!string.IsNullOrEmpty(iconSourcePath))
                     {
-                        string fullIconPath = Path.GetFullPath(iconPath);
-                        
                         // Write icon-injected package to a new temp file, which becomes our content package
                         string iconTempPath = Path.Combine(Path.GetTempPath(), $"YUCP_ContentWithIcon_{Guid.NewGuid():N}.unitypackage");
-                        
-                        if (PackageIconInjector.AddIconToPackage(tempPackagePath, fullIconPath, iconTempPath))
+
+                        if (PackageIconInjector.AddIconToPackage(tempPackagePath, iconSourcePath, iconTempPath))
                         {
                             contentPackagePath = iconTempPath;
                         }
@@ -917,7 +948,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                     else
                     {
-                        Debug.LogWarning("[PackageBuilder] Could not find icon asset path");
+                        Debug.LogWarning("[PackageBuilder] Could not resolve a PNG source for the package icon");
                     }
                 }
                 
@@ -1428,7 +1459,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         continue;
                     }
                     
-                    bool requiresServerUnlock = profile != null && profile.requiresLicenseVerification && !string.IsNullOrEmpty(profile.packageId);
+                    bool requiresServerUnlock = ShouldRequireDerivedFbxServerUnlock(profile);
                     bool builtEntries;
                     string protectedAssetId = string.Empty;
                     string wrappedContentKey = string.Empty;
@@ -1478,7 +1509,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     PatchBuilder.EmbedMetaFile(normalizedModifiedPath, derivedAsset);
 
                     // Propagate license gate from the export profile
-                    if (profile != null && profile.requiresLicenseVerification && !string.IsNullOrEmpty(profile.packageId))
+                    if (ShouldRequireDerivedFbxServerUnlock(profile))
                     {
                         derivedAsset.requiresLicense = true;
                         derivedAsset.licensePackageId = profile.packageId;
@@ -1559,20 +1590,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                 "com.yucp.devtools.Editor",
                                 "YUCP.PatchRuntime"
                             );
-                            assetContent = System.Text.RegularExpressions.Regex.Replace(
-                                assetContent,
-                                @"YUCP\.DevTools[^\s/]+/",
-                                "YUCP.PatchRuntime.DerivedFbxAsset/",
-                                System.Text.RegularExpressions.RegexOptions.Multiline
-                            );
-                            
-                            assetContent = System.Text.RegularExpressions.Regex.Replace(
-                                assetContent,
-                                @"YUCP\.DevTools[^\s,}]+",
-                                "YUCP.PatchRuntime",
-                                System.Text.RegularExpressions.RegexOptions.Multiline
-                            );
-                            
                             if (assetContent != originalContent)
                             {
                                 Debug.Log($"[PackageBuilder] Fixed namespace references in DerivedFbxAsset at {pkgPath}");
@@ -2041,6 +2058,36 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 Debug.LogError($"[PackageBuilder] Failed to cache texture: {ex.Message}");
                 return null;
             }
+        }
+
+        private static string ResolvePackageIconSourcePath(Texture2D texture, string baseName)
+        {
+            if (texture == null)
+            {
+                return null;
+            }
+
+            string cachedPngPath = SaveTextureToLibraryCache(texture, baseName);
+            if (!string.IsNullOrEmpty(cachedPngPath) && File.Exists(cachedPngPath))
+            {
+                return cachedPngPath;
+            }
+
+            string assetPath = AssetDatabase.GetAssetPath(texture);
+            if (string.IsNullOrEmpty(assetPath))
+            {
+                return null;
+            }
+
+            string fullAssetPath = Path.GetFullPath(assetPath);
+            if (!File.Exists(fullAssetPath))
+            {
+                return null;
+            }
+
+            return string.Equals(Path.GetExtension(fullAssetPath), ".png", StringComparison.OrdinalIgnoreCase)
+                ? fullAssetPath
+                : null;
         }
 
         private static byte[] TryEncodeTextureToPng(Texture2D texture, string baseName)
@@ -3368,8 +3415,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
   ""name"": ""YUCP.PatchRuntime"",
   ""rootNamespace"": """",
   ""references"": [
-    ""Unity.Formats.Fbx.Editor"",
-    ""com.yucp.importer.Editor""
+    ""Unity.Formats.Fbx.Editor""
   ],
   ""includePlatforms"": [
     ""Editor""

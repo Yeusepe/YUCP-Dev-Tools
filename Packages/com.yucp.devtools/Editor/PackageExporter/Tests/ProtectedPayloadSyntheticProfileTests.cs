@@ -32,5 +32,42 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 UnityEngine.Object.DestroyImmediate(original);
             }
         }
+
+        [Test]
+        public void SyntheticProtectedPayloadProfile_DoesNotEmitProtectedRuntimeContent()
+        {
+            var original = UnityEngine.ScriptableObject.CreateInstance<ExportProfile>();
+            try
+            {
+                original.requiresLicenseVerification = true;
+                original.packageId = "pkg-protected-import";
+
+                var createClone = typeof(PackageBuilder).GetMethod(
+                    "CreateSyntheticProtectedPayloadProfile",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+                var anyRuntimeGate = typeof(PackageBuilder).GetMethod(
+                    "AnyProfileUsesProtectedPayloadRuntime",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+                var derivedGate = typeof(PackageBuilder).GetMethod(
+                    "ShouldRequireDerivedFbxServerUnlock",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+
+                Assert.That(createClone, Is.Not.Null);
+                Assert.That(anyRuntimeGate, Is.Not.Null);
+                Assert.That(derivedGate, Is.Not.Null);
+
+                var clone = createClone.Invoke(null, new object[] { original }) as ExportProfile;
+                Assert.That(clone, Is.Not.Null);
+
+                Assert.That((bool)anyRuntimeGate.Invoke(null, new object[] { original }), Is.True);
+                Assert.That((bool)derivedGate.Invoke(null, new object[] { original }), Is.True);
+                Assert.That((bool)anyRuntimeGate.Invoke(null, new object[] { clone }), Is.False);
+                Assert.That((bool)derivedGate.Invoke(null, new object[] { clone }), Is.False);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(original);
+            }
+        }
     }
 }

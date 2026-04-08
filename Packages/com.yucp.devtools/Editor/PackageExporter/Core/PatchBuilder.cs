@@ -818,7 +818,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					System.Text.RegularExpressions.RegexOptions.IgnoreCase
 				);
 				
-				asset.embeddedMetaFileContent = metaContent;
+				asset.embeddedMetaFileContent = EmbeddedTextEncodingUtility.Encode(metaContent);
 				Debug.Log($"[PatchBuilder] Extracted and embedded meta file content from '{modifiedFbxPath}' (preserves humanoid Avatar mappings)");
 			}
 			catch (Exception ex)

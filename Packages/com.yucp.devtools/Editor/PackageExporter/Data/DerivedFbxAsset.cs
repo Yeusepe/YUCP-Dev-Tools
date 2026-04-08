@@ -16,7 +16,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		[SerializeField] public string originalDerivedFbxPath; // Original path of the derived FBX (for reconstruction)
 		[SerializeField] public string canonicalBaseGuid; // Base FBX used for patch application (all bases required to decrypt)
 		[SerializeField] public bool overrideOriginalReferences = false; // If true, replace all references to original FBX with new FBX
-		[SerializeField] public string embeddedMetaFileContent; // Embedded meta file content from original derived FBX (preserves humanoid Avatar mappings)
+		[SerializeField] public string embeddedMetaFileContent; // Embedded meta file content from original derived FBX, encoded when exported to keep the patch asset YAML-safe.
 		
 		[SerializeField] public List<PatchEntry> entries = new List<PatchEntry>();
 		
