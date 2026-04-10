@@ -249,7 +249,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private static bool UsesProtectedPayloadRuntime(ExportProfile profile)
         {
             return profile != null &&
-                   profile.UsesProtectedPayload();
+                   profile.requiresLicenseVerification;
         }
 
         private static bool AnyProfileUsesProtectedPayloadRuntime(ExportProfile profile)

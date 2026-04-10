@@ -34,7 +34,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
-        public void SyntheticProtectedPayloadProfile_DoesNotEmitProtectedRuntimeContent()
+        public void SyntheticProtectedPayloadProfile_KeepsDerivedPatchLicenseGate()
         {
             var original = UnityEngine.ScriptableObject.CreateInstance<ExportProfile>();
             try
@@ -61,8 +61,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
 
                 Assert.That((bool)anyRuntimeGate.Invoke(null, new object[] { original }), Is.True);
                 Assert.That((bool)derivedGate.Invoke(null, new object[] { original }), Is.True);
-                Assert.That((bool)anyRuntimeGate.Invoke(null, new object[] { clone }), Is.False);
-                Assert.That((bool)derivedGate.Invoke(null, new object[] { clone }), Is.False);
+                Assert.That((bool)anyRuntimeGate.Invoke(null, new object[] { clone }), Is.True);
+                Assert.That((bool)derivedGate.Invoke(null, new object[] { clone }), Is.True);
             }
             finally
             {
