@@ -242,6 +242,83 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return CreateDeterministicInjectedGuid($"yucp-patch-runtime:{targetPath}");
         }
 
+        private static bool IsSigningPathname(string pathname)
+        {
+            if (string.IsNullOrWhiteSpace(pathname))
+            {
+                return false;
+            }
+
+            string normalized = pathname.Replace('\\', '/');
+            return normalized.EndsWith("/_Signing/PackageManifest.json", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.EndsWith("/_Signing/PackageManifest.sig", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ResolveSigningRootPathname(string tempExtractDir)
+        {
+            if (string.IsNullOrWhiteSpace(tempExtractDir) || !Directory.Exists(tempExtractDir))
+            {
+                return "Assets";
+            }
+
+            foreach (string folder in Directory.GetDirectories(tempExtractDir))
+            {
+                string pathnameFile = Path.Combine(folder, "pathname");
+                if (!File.Exists(pathnameFile))
+                {
+                    continue;
+                }
+
+                string pathname = File.ReadAllText(pathnameFile).Trim().Replace('\\', '/');
+                if (pathname.EndsWith("/YUCP_PackageInfo.json", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Path.GetDirectoryName(pathname)?.Replace('\\', '/') ?? "Assets";
+                }
+            }
+
+            return "Assets";
+        }
+
+        private static bool TryInjectInstallerPreflightBootstrap(string tempExtractDir, string installerRoot, string installerScriptPath)
+        {
+            if (string.IsNullOrEmpty(installerScriptPath) || !File.Exists(installerScriptPath))
+            {
+                Debug.LogWarning("[PackageBuilder] Could not find DirectVpmInstaller.cs template for InstallerPreflight bootstrap injection");
+                return false;
+            }
+
+            string installerDir = Path.GetDirectoryName(installerScriptPath);
+            if (string.IsNullOrEmpty(installerDir))
+            {
+                Debug.LogWarning("[PackageBuilder] Could not resolve the DirectVpmInstaller template directory for InstallerPreflight bootstrap injection");
+                return false;
+            }
+
+            string preflightTemplatePath = Path.Combine(installerDir, "InstallerPreflight.cs");
+            if (!File.Exists(preflightTemplatePath))
+            {
+                Debug.LogWarning("[PackageBuilder] Could not find InstallerPreflight.cs template");
+                return false;
+            }
+
+            string preflightGuid = Guid.NewGuid().ToString("N");
+            string preflightFolder = Path.Combine(tempExtractDir, preflightGuid);
+            Directory.CreateDirectory(preflightFolder);
+
+            string preflightFileName = $"YUCP_InstallerPreflight_{preflightGuid}.cs";
+            string preflightClassName = $"InstallerPreflight_{preflightGuid}";
+            string preflightContent = File.ReadAllText(preflightTemplatePath)
+                .Replace("__YUCP_PREFLIGHT_CLASS__", preflightClassName)
+                .Replace("__YUCP_PREFLIGHT_FILE__", preflightFileName);
+
+            File.WriteAllText(Path.Combine(preflightFolder, "asset"), preflightContent);
+            File.WriteAllText(Path.Combine(preflightFolder, "pathname"), $"{installerRoot}/{preflightFileName}");
+
+            string preflightMeta = "fileFormatVersion: 2\nguid: " + preflightGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+            File.WriteAllText(Path.Combine(preflightFolder, "asset.meta"), preflightMeta);
+            return true;
+        }
+
         private static bool TryInjectPrecompiledInstallerRuntime(string tempExtractDir, string installerRoot)
         {
             if (!File.Exists(PrecompiledInstallerRuntimePath))
@@ -3231,6 +3308,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // 2b. Inject DirectVpmInstaller runtime
                 string installerRoot = embedContext != null ? $"{InstalledPackagesRoot}/Editor" : "Assets/Editor";
                 bool deferInstallerActivation = embedContext != null;
+                string installerScriptPath = null;
+                string[] foundScripts = AssetDatabase.FindAssets("DirectVpmInstaller t:Script");
+                
+                if (foundScripts.Length > 0)
+                {
+                    installerScriptPath = AssetDatabase.GUIDToAssetPath(foundScripts[0]);
+                }
+
+                string installerDir = !string.IsNullOrEmpty(installerScriptPath)
+                    ? Path.GetDirectoryName(installerScriptPath)
+                    : null;
+                if (deferInstallerActivation)
+                {
+                    TryInjectInstallerPreflightBootstrap(tempExtractDir, installerRoot, installerScriptPath);
+                }
+
                 bool usingPrecompiledInstallerRuntime = false;
                 if (deferInstallerActivation)
                 {
@@ -3245,15 +3338,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
 
-                // Try to find the script in the package
-                string installerScriptPath = null;
-                string[] foundScripts = AssetDatabase.FindAssets("DirectVpmInstaller t:Script");
-                
-                if (foundScripts.Length > 0)
-                {
-                    installerScriptPath = AssetDatabase.GUIDToAssetPath(foundScripts[0]);
-                }
-                
                 if (!usingPrecompiledInstallerRuntime &&
                     !string.IsNullOrEmpty(installerScriptPath) &&
                     File.Exists(installerScriptPath))
@@ -3261,34 +3345,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     string installerGuid = Guid.NewGuid().ToString("N");
                     string installerFolder = Path.Combine(tempExtractDir, installerGuid);
                     Directory.CreateDirectory(installerFolder);
-                    
-                    string installerDir = Path.GetDirectoryName(installerScriptPath);
-                    if (deferInstallerActivation)
-                    {
-                        string preflightTemplatePath = Path.Combine(installerDir, "InstallerPreflight.cs");
-                        if (File.Exists(preflightTemplatePath))
-                        {
-                            string preflightGuid = Guid.NewGuid().ToString("N");
-                            string preflightFolder = Path.Combine(tempExtractDir, preflightGuid);
-                            Directory.CreateDirectory(preflightFolder);
-
-                            string preflightFileName = $"YUCP_InstallerPreflight_{installerGuid}.cs";
-                            string preflightClassName = $"InstallerPreflight_{installerGuid}";
-                            string preflightContent = File.ReadAllText(preflightTemplatePath)
-                                .Replace("__YUCP_PREFLIGHT_CLASS__", preflightClassName)
-                                .Replace("__YUCP_PREFLIGHT_FILE__", preflightFileName);
-
-                            File.WriteAllText(Path.Combine(preflightFolder, "asset"), preflightContent);
-                            File.WriteAllText(Path.Combine(preflightFolder, "pathname"), $"{installerRoot}/{preflightFileName}");
-
-                            string preflightMeta = "fileFormatVersion: 2\nguid: " + preflightGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
-                            File.WriteAllText(Path.Combine(preflightFolder, "asset.meta"), preflightMeta);
-                        }
-                        else
-                        {
-                            Debug.LogWarning("[PackageBuilder] Could not find InstallerPreflight.cs template");
-                        }
-                    }
 
                     string installerContent = File.ReadAllText(installerScriptPath);
                     File.WriteAllText(Path.Combine(installerFolder, "asset"), installerContent);
@@ -4152,7 +4208,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Compute archive SHA-256 using canonical content hashing:
                 // - Decompress .unitypackage
                 // - Enumerate all assets
-                // - Ignore Assets/_Signing/*
+                // - Ignore any */_Signing/*
                 // - Hash (pathname UTF8 + 0x00 + asset bytes) in sorted pathname order
                 string archiveSha256 = ComputeArchiveHashExcludingSigningData(packagePath);
 
@@ -5025,6 +5081,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     tarArchive.Close();
                 }
 
+                string signingRootPathname = ResolveSigningRootPathname(tempExtractDir);
+
                 // Remove existing signing files to avoid duplicates
                 string[] existingFolders = Directory.GetDirectories(tempExtractDir);
                 foreach (string folder in existingFolders)
@@ -5033,7 +5091,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     if (File.Exists(pathnameFile))
                     {
                         string pathname = File.ReadAllText(pathnameFile).Trim();
-                        if (pathname.StartsWith("Assets/_Signing/", StringComparison.OrdinalIgnoreCase))
+                        if (IsSigningPathname(pathname))
                         {
                             Directory.Delete(folder, true);
                         }
@@ -5055,7 +5113,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     // Copy asset file
                     File.Copy(assetPath, Path.Combine(fileFolder, "asset"), true);
 
-                    File.WriteAllText(Path.Combine(fileFolder, "pathname"), assetPath);
+                    File.WriteAllText(
+                        Path.Combine(fileFolder, "pathname"),
+                        $"{signingRootPathname}/_Signing/{fileName}".Replace('\\', '/'));
 
                     // Create .meta file
                     string metaGuid = Guid.NewGuid().ToString("N");
@@ -5133,7 +5193,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// Compute canonical archive hash over package contents, excluding signing data.
         /// Hash is SHA-256 over a deterministic stream of:
         ///   UTF8(pathname) + 0x00 + asset-bytes, in sorted pathname order,
-        /// ignoring any Assets/_Signing/* entries.
+        /// ignoring any */_Signing/* entries.
         /// </summary>
         private static string ComputeArchiveHashExcludingSigningData(string packagePath)
         {
@@ -5166,7 +5226,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     string pathname = File.ReadAllText(pathnameFile).Trim().Replace('\\', '/');
 
                     // Skip signing data
-                    if (pathname.StartsWith("Assets/_Signing/", StringComparison.OrdinalIgnoreCase))
+                    if (IsSigningPathname(pathname))
                         continue;
 
                     entries.Add((pathname, assetFile));
