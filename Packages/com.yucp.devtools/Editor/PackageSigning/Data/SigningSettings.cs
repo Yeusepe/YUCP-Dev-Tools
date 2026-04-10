@@ -7,6 +7,14 @@ using UnityEditor;
 
 namespace YUCP.DevTools.Editor.PackageSigning.Data
 {
+    [Serializable]
+    public class TrustedRootKey
+    {
+        public string keyId = "";
+        public string algorithm = "Ed25519";
+        public string publicKeyBase64 = "";
+    }
+
     /// <summary>
     /// A named certificate provider (signing authority) with its own server URL and root public key.
     /// </summary>
@@ -25,6 +33,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         [Tooltip("Root public key (Ed25519, base64) used to verify certificates issued by this provider. Leave empty to use the global YUCP root key.")]
         [TextArea(1, 3)]
         public string rootPublicKeyBase64 = "";
+
+        [Tooltip("Trusted root keys fetched from the authoritative signing server /v1/keys endpoint.")]
+        public List<TrustedRootKey> trustedRootKeys = new List<TrustedRootKey>();
     }
 
     [CreateAssetMenu(fileName = "SigningSettings", menuName = "YUCP/Package Signing Settings")]
@@ -54,6 +65,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         [TextArea(3, 10)]
         public string yucpRootPublicKeyBase64 = "y+8Zs9/mS1MFZFeF4CFjwqe0nsLW8lCcwmyvBx6H0Zo=";
 
+        [Tooltip("Trusted root keys fetched from the authoritative signing server /v1/keys endpoint.")]
+        public List<TrustedRootKey> yucpTrustedRootKeys = new List<TrustedRootKey>();
+
         /// <summary>
         /// Returns the effective server URL: first provider's URL if providers are configured,
         /// otherwise the legacy <see cref="serverUrl"/> field.
@@ -71,10 +85,127 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         /// </summary>
         public string GetEffectiveRootPublicKey()
         {
+            var trustedKeys = GetEffectiveTrustedRootKeys();
+            if (trustedKeys.Count > 0 && !string.IsNullOrEmpty(trustedKeys[0].publicKeyBase64))
+                return trustedKeys[0].publicKeyBase64;
             if (certificateProviders != null && certificateProviders.Count > 0
                 && !string.IsNullOrEmpty(certificateProviders[0].rootPublicKeyBase64))
                 return certificateProviders[0].rootPublicKeyBase64;
             return yucpRootPublicKeyBase64;
+        }
+
+        public void SetTrustedRootKeysForServer(string serverUrl, IEnumerable<TrustedRootKey> trustedKeys)
+        {
+            var sanitized = SanitizeTrustedRootKeys(trustedKeys);
+            var provider = GetProviderForServer(serverUrl);
+            if (provider != null)
+            {
+                provider.trustedRootKeys = sanitized;
+                if (sanitized.Count > 0)
+                    provider.rootPublicKeyBase64 = sanitized[0].publicKeyBase64;
+            }
+            else
+            {
+                yucpTrustedRootKeys = sanitized;
+                if (sanitized.Count > 0)
+                    yucpRootPublicKeyBase64 = sanitized[0].publicKeyBase64;
+            }
+        }
+
+        public bool TryGetTrustedRootPublicKey(string keyId, string algorithm, out string publicKeyBase64)
+        {
+            var trustedKeys = GetEffectiveTrustedRootKeys();
+            foreach (var trustedKey in trustedKeys)
+            {
+                if (trustedKey == null || string.IsNullOrEmpty(trustedKey.publicKeyBase64))
+                    continue;
+                if (!string.Equals(trustedKey.algorithm, algorithm, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!string.Equals(trustedKey.keyId, keyId, StringComparison.Ordinal))
+                    continue;
+
+                publicKeyBase64 = trustedKey.publicKeyBase64;
+                return true;
+            }
+
+            if (trustedKeys.Count == 0
+                && string.Equals(algorithm, "Ed25519", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrEmpty(GetEffectiveRootPublicKey()))
+            {
+                publicKeyBase64 = GetEffectiveRootPublicKey();
+                return true;
+            }
+
+            publicKeyBase64 = null;
+            return false;
+        }
+
+        private List<TrustedRootKey> GetEffectiveTrustedRootKeys()
+        {
+            if (certificateProviders != null && certificateProviders.Count > 0
+                && certificateProviders[0].trustedRootKeys != null
+                && certificateProviders[0].trustedRootKeys.Count > 0)
+            {
+                return certificateProviders[0].trustedRootKeys;
+            }
+
+            return yucpTrustedRootKeys ?? new List<TrustedRootKey>();
+        }
+
+        private CertificateProvider GetProviderForServer(string serverUrl)
+        {
+            if (certificateProviders == null || certificateProviders.Count == 0 || string.IsNullOrWhiteSpace(serverUrl))
+                return null;
+
+            string normalizedServerUrl = NormalizeServerUrl(serverUrl);
+            foreach (var provider in certificateProviders)
+            {
+                if (provider == null || string.IsNullOrWhiteSpace(provider.serverUrl))
+                    continue;
+                if (string.Equals(NormalizeServerUrl(provider.serverUrl), normalizedServerUrl, StringComparison.OrdinalIgnoreCase))
+                    return provider;
+            }
+
+            return null;
+        }
+
+        private static string NormalizeServerUrl(string serverUrl)
+        {
+            if (string.IsNullOrWhiteSpace(serverUrl))
+                return string.Empty;
+
+            try
+            {
+                return new Uri(serverUrl).GetLeftPart(UriPartial.Path).TrimEnd('/');
+            }
+            catch
+            {
+                return serverUrl.Trim().TrimEnd('/');
+            }
+        }
+
+        private static List<TrustedRootKey> SanitizeTrustedRootKeys(IEnumerable<TrustedRootKey> trustedKeys)
+        {
+            var sanitized = new List<TrustedRootKey>();
+            if (trustedKeys == null)
+                return sanitized;
+
+            foreach (var trustedKey in trustedKeys)
+            {
+                if (trustedKey == null || string.IsNullOrWhiteSpace(trustedKey.publicKeyBase64))
+                    continue;
+
+                sanitized.Add(new TrustedRootKey
+                {
+                    keyId = trustedKey.keyId?.Trim() ?? "",
+                    algorithm = string.IsNullOrWhiteSpace(trustedKey.algorithm)
+                        ? "Ed25519"
+                        : trustedKey.algorithm.Trim(),
+                    publicKeyBase64 = trustedKey.publicKeyBase64.Trim(),
+                });
+            }
+
+            return sanitized;
         }
 
         /// <summary>

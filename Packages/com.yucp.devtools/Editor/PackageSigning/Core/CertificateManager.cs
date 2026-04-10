@@ -80,14 +80,16 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             var certData  = cert.cert;
             var signature = cert.signature;
 
-            if (!string.Equals(signature.algorithm, "Ed25519", StringComparison.OrdinalIgnoreCase) || signature.keyId != "yucp-root-2025")
-                return new CertificateVerificationResult { valid = false, error = "Invalid signature algorithm or key ID" };
+            if (!string.Equals(signature.algorithm, "Ed25519", StringComparison.OrdinalIgnoreCase))
+                return new CertificateVerificationResult { valid = false, error = "Invalid signature algorithm" };
 
             var settings = GetSigningSettings();
-            if (settings == null || string.IsNullOrEmpty(settings.yucpRootPublicKeyBase64))
+            if (settings == null)
                 return new CertificateVerificationResult { valid = false, error = "YUCP root public key not configured" };
+            if (!settings.TryGetTrustedRootPublicKey(signature.keyId, signature.algorithm, out string rootPublicKeyBase64))
+                return new CertificateVerificationResult { valid = false, error = "Invalid signature algorithm or key ID" };
 
-            byte[] rootPublicKey  = Convert.FromBase64String(settings.yucpRootPublicKeyBase64);
+            byte[] rootPublicKey  = Convert.FromBase64String(rootPublicKeyBase64);
             string canonicalJson  = CanonicalizeJson(certData);
             byte[] certBytes      = Encoding.UTF8.GetBytes(canonicalJson);
             byte[] signatureBytes = Convert.FromBase64String(signature.value);

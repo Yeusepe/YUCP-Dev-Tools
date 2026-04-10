@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using UnityEditor;
@@ -570,19 +571,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 if (req.result != UnityWebRequest.Result.Success) return false;
 
                 string json = req.downloadHandler.text;
-
-                // Parse x field from first key: { "keys": [{ "x": "...", "kid": "..." }] }
-                int xIdx = json.IndexOf("\"x\"", StringComparison.Ordinal);
-                if (xIdx < 0) return false;
-                int colonIdx = json.IndexOf(':', xIdx + 3);
-                if (colonIdx < 0) return false;
-                int q1 = json.IndexOf('"', colonIdx + 1);
-                if (q1 < 0) return false;
-                int q2 = json.IndexOf('"', q1 + 1);
-                if (q2 < 0) return false;
-                string publicKey = json.Substring(q1 + 1, q2 - q1 - 1);
-
-                if (string.IsNullOrEmpty(publicKey)) return false;
+                var trustedKeys = ParseTrustedRootKeys(json);
+                if (trustedKeys.Count == 0) return false;
 
                 // Persist in SigningSettings asset
                 string[] guids = AssetDatabase.FindAssets("t:PackageSigningData.SigningSettings");
@@ -593,11 +583,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 var settings = AssetDatabase.LoadAssetAtPath<PackageSigningData.SigningSettings>(path);
                 if (settings == null) return false;
 
-                settings.yucpRootPublicKeyBase64 = publicKey;
+                settings.SetTrustedRootKeysForServer(_serverUrl, trustedKeys);
                 EditorUtility.SetDirty(settings);
                 AssetDatabase.SaveAssets();
 
-                UnityEngine.Debug.Log($"[YUCP Keys] Root public key cached from server (kid from /v1/keys).");
+                UnityEngine.Debug.Log($"[YUCP Keys] Cached {trustedKeys.Count} root key(s) from server /v1/keys.");
                 return true;
             }
             catch (Exception ex)
@@ -609,6 +599,29 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static string EscapeJson(string s) =>
             s?.Replace("\\", "\\\\").Replace("\"", "\\\"") ?? "";
+
+        private static List<PackageSigningData.TrustedRootKey> ParseTrustedRootKeys(string json)
+        {
+            var response = JsonUtility.FromJson<TrustedRootKeysResponse>(json);
+            var trustedKeys = new List<PackageSigningData.TrustedRootKey>();
+            if (response?.keys == null)
+                return trustedKeys;
+
+            foreach (var key in response.keys)
+            {
+                if (key == null || string.IsNullOrWhiteSpace(key.x))
+                    continue;
+
+                trustedKeys.Add(new PackageSigningData.TrustedRootKey
+                {
+                    keyId = key.kid?.Trim() ?? "",
+                    algorithm = string.IsNullOrWhiteSpace(key.crv) ? "Ed25519" : key.crv.Trim(),
+                    publicKeyBase64 = key.x.Trim(),
+                });
+            }
+
+            return trustedKeys;
+        }
 
         private static string ExtractErrorMessage(string json)
         {
@@ -809,6 +822,20 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         [Serializable]
         private class CertificateDevicesResponse : CertificateAccountState
         {
+        }
+
+        [Serializable]
+        private class TrustedRootKeysResponse
+        {
+            public TrustedRootKeyResponse[] keys;
+        }
+
+        [Serializable]
+        private class TrustedRootKeyResponse
+        {
+            public string kid;
+            public string crv;
+            public string x;
         }
 
     }
