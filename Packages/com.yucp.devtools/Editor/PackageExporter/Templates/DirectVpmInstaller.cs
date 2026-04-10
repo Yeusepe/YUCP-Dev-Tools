@@ -39,7 +39,40 @@ namespace YUCP.DirectVpmInstaller
 
         static DirectVpmInstaller()
         {
+            try
+            {
+                if (HasPendingTempInstallJson())
+                {
+                    InstallerTxn.SetMarker("scheduled");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[DirectVpmInstaller] Failed to set scheduled installer marker: {ex.Message}");
+            }
+
             EditorApplication.delayCall += CheckAndInstallVpmPackages;
+        }
+
+        private static bool HasPendingTempInstallJson()
+        {
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string installedRoot = Path.Combine(projectRoot, "Packages", "yucp.installed-packages");
+                if (Directory.Exists(installedRoot) &&
+                    Directory.GetFiles(installedRoot, "YUCP_TempInstall_*.json", SearchOption.AllDirectories).Length > 0)
+                {
+                    return true;
+                }
+
+                return Directory.GetFiles(Application.dataPath, "YUCP_TempInstall_*.json", SearchOption.TopDirectoryOnly).Length > 0;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[DirectVpmInstaller] Failed to probe pending temp install descriptors: {ex.Message}");
+                return false;
+            }
         }
 
         internal static string[] GetInstallerEditorPaths(string projectRoot)
@@ -259,6 +292,8 @@ namespace YUCP.DirectVpmInstaller
             
             if (tempJsonFiles.Length == 0)
             {
+                try { InstallerTxn.ClearMarker("scheduled"); } catch { }
+
                 // If a previous install completed, ensure cleanup convergence
                 if (InstallerTxn.HasMarker("complete"))
                 {
@@ -278,6 +313,7 @@ namespace YUCP.DirectVpmInstaller
             try
             {
                 // Signal import coordination
+                try { InstallerTxn.ClearMarker("scheduled"); } catch { }
                 InstallerTxn.SetMarker("pending");
                 InstallerTxn.SetMarker("lock");
                 var packageInfo = JObject.Parse(File.ReadAllText(packageJsonPath));
@@ -682,6 +718,7 @@ namespace YUCP.DirectVpmInstaller
             }
             finally
             {
+                try { InstallerTxn.ClearMarker("scheduled"); } catch { }
                 // Clear coordination markers
                 try { InstallerTxn.ClearMarker("lock"); } catch { }
                 try { InstallerTxn.ClearMarker("pending"); } catch { }

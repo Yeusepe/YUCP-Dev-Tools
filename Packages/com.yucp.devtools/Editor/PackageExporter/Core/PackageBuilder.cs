@@ -31,6 +31,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private const string EmbeddedArtifactsFolderName = "Embedded";
         private const string TempInstallFolderName = "_temp";
         private const string TempPatchExportMarkerKey = "YUCP.PackageBuilder.ExportingTempPatchAssets";
+        private const string PrecompiledInstallerRuntimePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/YUCP.DirectVpmInstaller.Template.dll";
+        private const string PrecompiledInstallerRuntimeTargetFileName = "YUCP.DirectVpmInstaller.Template.dll";
         
         private static bool IsDefaultGridPlaceholder(Texture2D texture)
         {
@@ -238,6 +240,107 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private static string GetPatchRuntimeInjectedGuid(string targetPath)
         {
             return CreateDeterministicInjectedGuid($"yucp-patch-runtime:{targetPath}");
+        }
+
+        private static bool TryInjectPrecompiledInstallerRuntime(string tempExtractDir, string installerRoot)
+        {
+            if (!File.Exists(PrecompiledInstallerRuntimePath))
+            {
+                return false;
+            }
+
+            string dllGuid = CreateDeterministicInjectedGuid("yucp-precompiled-installer-runtime");
+            string dllFolder = Path.Combine(tempExtractDir, dllGuid);
+            Directory.CreateDirectory(dllFolder);
+
+            File.Copy(PrecompiledInstallerRuntimePath, Path.Combine(dllFolder, "asset"), true);
+            File.WriteAllText(
+                Path.Combine(dllFolder, "pathname"),
+                $"{installerRoot}/{PrecompiledInstallerRuntimeTargetFileName}");
+
+            string metaPath = PrecompiledInstallerRuntimePath + ".meta";
+            string metaContent = File.Exists(metaPath)
+                ? File.ReadAllText(metaPath)
+                : GenerateEditorOnlyDllMeta(dllGuid);
+            File.WriteAllText(Path.Combine(dllFolder, "asset.meta"), metaContent);
+            return true;
+        }
+
+        private static bool IsPatchRuntimeHandledByPrecompiledInstaller(PatchRuntimeInjectedFile patchScript)
+        {
+            return patchScript != null &&
+                   string.Equals(
+                       patchScript.targetPath,
+                       "Packages/com.yucp.temp/Editor/YUCPPatchImporter.cs",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GenerateEditorOnlyDllMeta(string guid)
+        {
+            return
+                "fileFormatVersion: 2\n" +
+                "guid: " + guid + "\n" +
+                "PluginImporter:\n" +
+                "  externalObjects: {}\n" +
+                "  serializedVersion: 2\n" +
+                "  iconMap: {}\n" +
+                "  executionOrder: {}\n" +
+                "  defineConstraints: []\n" +
+                "  isPreloaded: 0\n" +
+                "  isOverridable: 0\n" +
+                "  isExplicitlyReferenced: 0\n" +
+                "  validateReferences: 1\n" +
+                "  platformData:\n" +
+                "  - first:\n" +
+                "      : Any\n" +
+                "    second:\n" +
+                "      enabled: 0\n" +
+                "      settings:\n" +
+                "        Exclude Editor: 0\n" +
+                "        Exclude Linux64: 1\n" +
+                "        Exclude OSXUniversal: 1\n" +
+                "        Exclude Win: 0\n" +
+                "        Exclude Win64: 0\n" +
+                "  - first:\n" +
+                "      Any: \n" +
+                "    second:\n" +
+                "      enabled: 1\n" +
+                "      settings: {}\n" +
+                "  - first:\n" +
+                "      Editor: Editor\n" +
+                "    second:\n" +
+                "      enabled: 1\n" +
+                "      settings:\n" +
+                "        CPU: AnyCPU\n" +
+                "        DefaultValueInitialized: true\n" +
+                "        OS: AnyOS\n" +
+                "  - first:\n" +
+                "      Standalone: Linux64\n" +
+                "    second:\n" +
+                "      enabled: 0\n" +
+                "      settings:\n" +
+                "        CPU: None\n" +
+                "  - first:\n" +
+                "      Standalone: OSXUniversal\n" +
+                "    second:\n" +
+                "      enabled: 0\n" +
+                "      settings:\n" +
+                "        CPU: None\n" +
+                "  - first:\n" +
+                "      Standalone: Win\n" +
+                "    second:\n" +
+                "      enabled: 0\n" +
+                "      settings:\n" +
+                "        CPU: None\n" +
+                "  - first:\n" +
+                "      Standalone: Win64\n" +
+                "    second:\n" +
+                "      enabled: 0\n" +
+                "      settings:\n" +
+                "        CPU: None\n" +
+                "  userData: \n" +
+                "  assetBundleName: \n" +
+                "  assetBundleVariant: \n";
         }
 
         private static bool ShouldBuildProtectedPayload(ExportProfile profile)
@@ -3125,9 +3228,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
                 
-                // 2b. Inject DirectVpmInstaller.cs
+                // 2b. Inject DirectVpmInstaller runtime
                 string installerRoot = embedContext != null ? $"{InstalledPackagesRoot}/Editor" : "Assets/Editor";
                 bool deferInstallerActivation = embedContext != null;
+                bool usingPrecompiledInstallerRuntime = false;
+                if (deferInstallerActivation)
+                {
+                    usingPrecompiledInstallerRuntime = TryInjectPrecompiledInstallerRuntime(tempExtractDir, installerRoot);
+                    if (usingPrecompiledInstallerRuntime)
+                    {
+                        Debug.Log("[PackageBuilder] Injected precompiled DirectVpmInstaller runtime for embedded installer handoff.");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[PackageBuilder] Precompiled installer runtime was not available. Falling back to generated installer source injection.");
+                    }
+                }
+
                 // Try to find the script in the package
                 string installerScriptPath = null;
                 string[] foundScripts = AssetDatabase.FindAssets("DirectVpmInstaller t:Script");
@@ -3137,7 +3254,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     installerScriptPath = AssetDatabase.GUIDToAssetPath(foundScripts[0]);
                 }
                 
-                if (!string.IsNullOrEmpty(installerScriptPath) && File.Exists(installerScriptPath))
+                if (!usingPrecompiledInstallerRuntime &&
+                    !string.IsNullOrEmpty(installerScriptPath) &&
+                    File.Exists(installerScriptPath))
                 {
                     string installerGuid = Guid.NewGuid().ToString("N");
                     string installerFolder = Path.Combine(tempExtractDir, installerGuid);
@@ -3262,7 +3381,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         File.WriteAllText(Path.Combine(healthToolsFolder, "asset.meta"), healthToolsMeta);
                     }
                 }
-                else
+                else if (!usingPrecompiledInstallerRuntime)
                 {
                     Debug.LogWarning("[PackageBuilder] Could not find DirectVpmInstaller.cs template");
                 }
@@ -3276,7 +3395,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     fullReloadScriptPath = AssetDatabase.GUIDToAssetPath(foundReloadScripts[0]);
                 }
                 
-                if (!string.IsNullOrEmpty(fullReloadScriptPath) && File.Exists(fullReloadScriptPath))
+                if (!usingPrecompiledInstallerRuntime &&
+                    !string.IsNullOrEmpty(fullReloadScriptPath) &&
+                    File.Exists(fullReloadScriptPath))
                 {
                     string reloadGuid = Guid.NewGuid().ToString("N");
                     string reloadFolder = Path.Combine(tempExtractDir, reloadGuid);
@@ -3294,7 +3415,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     File.WriteAllText(Path.Combine(reloadFolder, "asset.meta"), reloadMeta);
                     
                 }
-                else
+                else if (!usingPrecompiledInstallerRuntime)
                 {
                     Debug.LogWarning("[PackageBuilder] Could not find FullDomainReload.cs template");
                 }
@@ -3307,6 +3428,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     int injectedPatchScripts = 0;
                     foreach (var patchScript in s_patchRuntimeInjectedFiles)
                     {
+                        if (usingPrecompiledInstallerRuntime && IsPatchRuntimeHandledByPrecompiledInstaller(patchScript))
+                        {
+                            continue;
+                        }
+
                         string sourceScriptPath = null;
                         
                         // First, try direct path (most reliable)

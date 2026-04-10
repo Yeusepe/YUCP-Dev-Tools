@@ -117,6 +117,27 @@ namespace YUCP.PatchCleanup
             }
         }
 
+        private static bool IsInstallerManagedInstallPending()
+        {
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string markerRoot = Path.Combine(projectRoot, "Library", "YUCP");
+                if (!Directory.Exists(markerRoot))
+                {
+                    return false;
+                }
+
+                return File.Exists(Path.Combine(markerRoot, "install.scheduled")) ||
+                       File.Exists(Path.Combine(markerRoot, "install.pending")) ||
+                       File.Exists(Path.Combine(markerRoot, "install.lock"));
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static bool HasTempRuntimeFiles(string[] importedAssets = null)
         {
             if (importedAssets != null)
@@ -665,6 +686,12 @@ namespace YUCP.PatchCleanup
             if (IsImporterManagedProtectedInstallPending())
             {
                 WriteLog("OnPostprocessAllAssets skipped because the importer owns this protected install transaction.");
+                return;
+            }
+
+            if (IsInstallerManagedInstallPending())
+            {
+                WriteLog("OnPostprocessAllAssets skipped because the installer owns this transaction.");
                 return;
             }
 
