@@ -137,9 +137,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
             try
             {
                 var uri = new Uri(configuredServerUrl.Trim(), UriKind.Absolute);
-                if (uri.Host.EndsWith(".ts.net", StringComparison.OrdinalIgnoreCase))
-                    return DefaultServerUrl;
-
                 string normalized = uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
                 return string.Equals(normalized, DefaultServerUrl, StringComparison.OrdinalIgnoreCase)
                     ? DefaultServerUrl
@@ -148,11 +145,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
             catch
             {
                 string trimmed = configuredServerUrl.Trim().TrimEnd('/');
-                if (trimmed.EndsWith(".ts.net", StringComparison.OrdinalIgnoreCase))
-                {
-                    return DefaultServerUrl;
-                }
-
                 return trimmed;
             }
         }
