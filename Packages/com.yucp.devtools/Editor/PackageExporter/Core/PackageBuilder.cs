@@ -909,10 +909,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                      validAssets.Add(unityPath);
                                  }
                                  else
-                                 {
-                                     // For other files, try importing
-                                     AssetDatabase.ImportAsset(unityPath, ImportAssetOptions.ForceSynchronousImport);
-                                     AssetDatabase.Refresh();
+                                    {
+                                        // For other files, try importing
+                                        progressCallback?.Invoke(
+                                            0.61f + 0.02f * (totalToValidate > 0 ? (float)validateCount / totalToValidate : 1f),
+                                            BuildUnityImportOverlayStatus($"Importing asset for validation: {Path.GetFileName(unityPath)}"));
+                                        AssetDatabase.ImportAsset(unityPath, ImportAssetOptions.ForceSynchronousImport);
+                                        AssetDatabase.Refresh();
                                      
                                      // Try loading again
                                      loadedAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(unityPath);
@@ -1023,7 +1026,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                  }
                  
                  // Wait for export to complete - Unity's export is synchronous but file I/O might be async
-                 AssetDatabase.Refresh();
+                 progressCallback?.Invoke(0.685f, BuildUnityImportOverlayStatus("Refreshing Unity after writing the package archive"));
+                  AssetDatabase.Refresh();
                  
                  // Wait for file to be created (with retry and longer delays)
                  int retryCount = 0;
@@ -1300,6 +1304,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 
                 // Refresh AssetDatabase to reflect deletions
+                progressCallback?.Invoke(0.93f, BuildUnityImportOverlayStatus("Refreshing Unity after cleaning temporary export artifacts"));
                 AssetDatabase.Refresh();
                 
                 // Restore original DLLs if obfuscation was used
@@ -3101,6 +3106,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return false;
             }
         }
+
+        private static string BuildUnityImportOverlayStatus(string phase)
+        {
+            if (string.IsNullOrWhiteSpace(phase))
+            {
+                return "Unity may briefly show a generic 'Importing' overlay during this step...";
+            }
+
+            return $"{phase}... Unity may briefly show a generic 'Importing' overlay.";
+        }
         
         /// <summary>
         /// Inject package.json, DirectVpmInstaller, and bundled packages into a .unitypackage file
@@ -3129,6 +3144,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 // Create temp directory
                 Directory.CreateDirectory(tempExtractDir);
+                progressCallback?.Invoke(0.751f, "Extracting exported package archive...");
                 
                 // Extract the .unitypackage (it's a tar.gz)
 #if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
@@ -3148,10 +3164,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 bool enableCustomUpdateSteps = profile != null && profile.updateSteps != null && profile.updateSteps.enabled;
                 if (enableCustomUpdateSteps)
                 {
+                    progressCallback?.Invoke(0.753f, "Preparing imported assets for staged update flow...");
                     DisablePackageEntriesByDefault(tempExtractDir);
                 }
 
                 // 1. Inject package.json (temporary, will be deleted by installer)
+                progressCallback?.Invoke(0.754f, "Injecting package shell metadata...");
                 if (!string.IsNullOrEmpty(packageJsonContent))
                 {
                     string packageJsonGuid = Guid.NewGuid().ToString("N");
@@ -3210,6 +3228,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // 1c. Inject embedded assets (icons, banners, etc.)
                 if (embedContext != null && embedContext.Assets.Count > 0)
                 {
+                    progressCallback?.Invoke(0.756f, $"Embedding {embedContext.Assets.Count} shell asset(s)...");
                     foreach (var embedded in embedContext.Assets)
                     {
                         if (embedded == null || string.IsNullOrEmpty(embedded.sourcePath) || !File.Exists(embedded.sourcePath))
@@ -3255,6 +3274,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // - Must be fully self-contained (must NOT reference YUCP.Components.*), because it is bundled for projects
                 //   that don't have com.yucp.components installed.
                 // - Must NOT be injected if the exported package.json will install com.yucp.components (avoids conflicts).
+                progressCallback?.Invoke(0.758f, "Injecting installer and protection runtime...");
                 bool hasYucpComponentsDependency = profile.dependencies != null &&
                     profile.dependencies.Any(d => d.enabled && d.packageName == "com.yucp.components");
 
@@ -3914,6 +3934,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Recompress the package
 #if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
                 string tempOutputPath = unityPackagePath + ".tmp";
+                progressCallback?.Invoke(0.799f, "Repacking final package archive...");
                 
                 using (var outputStream = File.Create(tempOutputPath))
                 using (var gzipStream = new ICSharpCode.SharpZipLib.GZip.GZipOutputStream(outputStream))

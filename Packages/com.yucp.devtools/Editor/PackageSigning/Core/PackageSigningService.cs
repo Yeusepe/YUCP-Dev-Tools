@@ -32,7 +32,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             if (guids.Length == 0) return null;
             string path = AssetDatabase.GUIDToAssetPath(guids[0]);
             var settings = AssetDatabase.LoadAssetAtPath<PackageSigningData.SigningSettings>(path);
-            return string.IsNullOrEmpty(settings?.serverUrl) ? null : settings.serverUrl;
+            return settings?.GetEffectiveServerUrl();
         }
 
         /// <summary>

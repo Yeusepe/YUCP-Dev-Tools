@@ -25,7 +25,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         public string name = "";
 
         [Tooltip("API server URL for certificate issuance and package signing")]
-        public string serverUrl = "https://api.creators.yucp.club";
+        public string serverUrl = SigningSettings.DefaultServerUrl;
 
         [Tooltip("Optional web account base URL for certificate billing and device management. Leave empty to derive from the server URL.")]
         public string accountAppUrl = "";
@@ -41,9 +41,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
     [CreateAssetMenu(fileName = "SigningSettings", menuName = "YUCP/Package Signing Settings")]
     public class SigningSettings : ScriptableObject
     {
+        public const string DefaultServerUrl = "https://api.creators.yucp.club";
+
         [Header("Server Configuration")]
         [Tooltip("Default signing server URL. Used when no per-profile or per-provider URL is configured.")]
-        public string serverUrl = "https://api.creators.yucp.club";
+        public string serverUrl = DefaultServerUrl;
 
         [Tooltip("Default web account base URL for certificate billing and device management. Leave empty to derive from the signing server URL.")]
         public string accountAppUrl = "";
@@ -76,8 +78,127 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         {
             if (certificateProviders != null && certificateProviders.Count > 0
                 && !string.IsNullOrEmpty(certificateProviders[0].serverUrl))
-                return certificateProviders[0].serverUrl;
-            return string.IsNullOrEmpty(serverUrl) ? "https://api.creators.yucp.club" : serverUrl;
+                return NormalizeConfiguredServerUrl(certificateProviders[0].serverUrl);
+            return NormalizeConfiguredServerUrl(serverUrl);
+        }
+
+        public bool NormalizeServerConfiguration()
+        {
+            bool changed = false;
+
+            string normalizedDefaultServerUrl = NormalizeConfiguredServerUrl(serverUrl);
+            if (!string.Equals(serverUrl, normalizedDefaultServerUrl, StringComparison.Ordinal))
+            {
+                serverUrl = normalizedDefaultServerUrl;
+                changed = true;
+            }
+
+            string normalizedAccountAppUrl = NormalizeAccountAppUrl(accountAppUrl);
+            if (!string.Equals(accountAppUrl ?? string.Empty, normalizedAccountAppUrl ?? string.Empty, StringComparison.Ordinal))
+            {
+                accountAppUrl = normalizedAccountAppUrl;
+                changed = true;
+            }
+
+            if (certificateProviders == null)
+            {
+                certificateProviders = new List<CertificateProvider>();
+                return true;
+            }
+
+            foreach (var provider in certificateProviders)
+            {
+                if (provider == null)
+                    continue;
+
+                string normalizedProviderServerUrl = NormalizeConfiguredServerUrl(provider.serverUrl);
+                if (!string.Equals(provider.serverUrl, normalizedProviderServerUrl, StringComparison.Ordinal))
+                {
+                    provider.serverUrl = normalizedProviderServerUrl;
+                    changed = true;
+                }
+
+                string normalizedProviderAccountAppUrl = NormalizeAccountAppUrl(provider.accountAppUrl);
+                if (!string.Equals(provider.accountAppUrl ?? string.Empty, normalizedProviderAccountAppUrl ?? string.Empty, StringComparison.Ordinal))
+                {
+                    provider.accountAppUrl = normalizedProviderAccountAppUrl;
+                    changed = true;
+                }
+            }
+
+            return changed;
+        }
+
+        public static string NormalizeConfiguredServerUrl(string configuredServerUrl, bool defaultIfEmpty = true)
+        {
+            if (string.IsNullOrWhiteSpace(configuredServerUrl))
+                return defaultIfEmpty ? DefaultServerUrl : string.Empty;
+
+            try
+            {
+                var uri = new Uri(configuredServerUrl.Trim(), UriKind.Absolute);
+                if (uri.Host.EndsWith(".ts.net", StringComparison.OrdinalIgnoreCase))
+                    return DefaultServerUrl;
+
+                string normalized = uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+                return string.Equals(normalized, DefaultServerUrl, StringComparison.OrdinalIgnoreCase)
+                    ? DefaultServerUrl
+                    : normalized;
+            }
+            catch
+            {
+                string trimmed = configuredServerUrl.Trim().TrimEnd('/');
+                if (trimmed.EndsWith(".ts.net", StringComparison.OrdinalIgnoreCase))
+                {
+                    return DefaultServerUrl;
+                }
+
+                return trimmed;
+            }
+        }
+
+        public static string NormalizeAccountAppUrl(string configuredAccountAppUrl)
+        {
+            if (string.IsNullOrWhiteSpace(configuredAccountAppUrl))
+                return string.Empty;
+
+            try
+            {
+                var uri = new Uri(configuredAccountAppUrl.Trim(), UriKind.Absolute);
+                string host = uri.Host;
+                int port = uri.IsDefaultPort ? -1 : uri.Port;
+
+                if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+                    host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (port == 3001)
+                        port = 3000;
+                }
+                else if (host.Equals("creators.yucp.club", StringComparison.OrdinalIgnoreCase) ||
+                         host.Equals("api.creators.yucp.club", StringComparison.OrdinalIgnoreCase))
+                {
+                    host = "verify.creators.yucp.club";
+                    port = -1;
+                }
+
+                var builder = new UriBuilder(uri)
+                {
+                    Host = host,
+                    Port = port,
+                    Query = string.Empty,
+                    Fragment = string.Empty,
+                };
+
+                return builder.Uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+            }
+            catch
+            {
+                string trimmed = configuredAccountAppUrl.Trim().TrimEnd('/');
+                if (trimmed.IndexOf("creators.yucp.club", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return "https://verify.creators.yucp.club";
+
+                return trimmed;
+            }
         }
 
         /// <summary>
@@ -171,17 +292,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
 
         private static string NormalizeServerUrl(string serverUrl)
         {
-            if (string.IsNullOrWhiteSpace(serverUrl))
-                return string.Empty;
-
-            try
-            {
-                return new Uri(serverUrl).GetLeftPart(UriPartial.Path).TrimEnd('/');
-            }
-            catch
-            {
-                return serverUrl.Trim().TrimEnd('/');
-            }
+            return NormalizeConfiguredServerUrl(serverUrl, defaultIfEmpty: false);
         }
 
         private static List<TrustedRootKey> SanitizeTrustedRootKeys(IEnumerable<TrustedRootKey> trustedKeys)
@@ -226,7 +337,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
 
             if (!string.IsNullOrEmpty(explicitBaseUrl))
             {
-                return $"{explicitBaseUrl.TrimEnd('/')}/dashboard/billing";
+                return $"{NormalizeAccountAppUrl(explicitBaseUrl).TrimEnd('/')}/dashboard/billing";
             }
 
             string server = !string.IsNullOrEmpty(serverUrlOverride)
@@ -251,11 +362,17 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                 else if (host.StartsWith("api.", StringComparison.OrdinalIgnoreCase))
                 {
                     string remainder = host.Substring(4);
-                    host = remainder.StartsWith("creators.", StringComparison.OrdinalIgnoreCase)
+                    host = remainder.StartsWith("verify.", StringComparison.OrdinalIgnoreCase)
                         ? remainder
-                        : $"creators.{remainder}";
+                        : $"verify.{remainder}";
+                    port = -1;
                 }
-                else if (!host.StartsWith("creators.", StringComparison.OrdinalIgnoreCase))
+                else if (host.StartsWith("creators.", StringComparison.OrdinalIgnoreCase))
+                {
+                    host = $"verify.{host}";
+                    port = -1;
+                }
+                else if (!host.StartsWith("verify.", StringComparison.OrdinalIgnoreCase))
                 {
                     return "https://verify.creators.yucp.club/dashboard/billing";
                 }
@@ -361,6 +478,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                     }
                 }
             };
+        }
+
+        private void OnValidate()
+        {
+            if (NormalizeServerConfiguration())
+                EditorUtility.SetDirty(this);
         }
     }
 }

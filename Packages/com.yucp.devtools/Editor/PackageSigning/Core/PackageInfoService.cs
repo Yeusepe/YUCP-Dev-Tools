@@ -79,7 +79,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return;
             }
 
-            string serverUrl = settings.serverUrl;
+            string serverUrl = settings.GetEffectiveServerUrl();
             if (string.IsNullOrEmpty(serverUrl))
             {
                 EditorApplication.delayCall += () => onError?.Invoke("Server URL not configured");
@@ -124,7 +124,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return;
             }
 
-            string serverUrl = settings.serverUrl;
+            string serverUrl = settings.GetEffectiveServerUrl();
             if (string.IsNullOrEmpty(serverUrl))
             {
                 onError?.Invoke("Server URL not configured");
@@ -275,7 +275,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return;
             }
 
-            string serverUrl = settings.serverUrl;
+            string serverUrl = settings.GetEffectiveServerUrl();
             if (string.IsNullOrEmpty(serverUrl))
             {
                 onError?.Invoke("Server URL not configured");

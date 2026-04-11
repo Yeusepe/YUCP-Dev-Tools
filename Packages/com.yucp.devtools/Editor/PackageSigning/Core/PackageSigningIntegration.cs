@@ -85,7 +85,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             progressCallback?.Invoke(0.5f, "Sending signing request to server...");
 
             // Send to server
-            var signingService = new PackageSigningService(settings.serverUrl);
+            var signingService = new PackageSigningService(settings.GetEffectiveServerUrl());
             bool requestComplete = false;
             PackageSigningData.SignatureData signatureData = null;
             PackageVerifierData.CertificateData[] certificateChain = null;

@@ -42,7 +42,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Settings
                 if (_settings != null)
                 {
                     EditorGUI.BeginChangeCheck();
-                    _settings.serverUrl = EditorGUILayout.TextField("Server URL", _settings.serverUrl);
+                    _settings.serverUrl = SigningSettings.NormalizeConfiguredServerUrl(
+                        EditorGUILayout.TextField("Server URL", _settings.serverUrl));
                     if (EditorGUI.EndChangeCheck())
                     {
                         EditorUtility.SetDirty(_settings);
@@ -199,6 +200,11 @@ namespace YUCP.DevTools.Editor.PackageExporter.Settings
             {
                 string path = AssetDatabase.GUIDToAssetPath(guids[0]);
                 _settings = AssetDatabase.LoadAssetAtPath<SigningSettings>(path);
+                if (_settings != null && _settings.NormalizeServerConfiguration())
+                {
+                    EditorUtility.SetDirty(_settings);
+                    AssetDatabase.SaveAssets();
+                }
             }
             else
             {

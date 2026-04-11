@@ -2765,20 +2765,25 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             {
                 string path = AssetDatabase.GUIDToAssetPath(guids[0]);
                 _settings = AssetDatabase.LoadAssetAtPath<SigningSettings>(path);
+                if (_settings != null && _settings.NormalizeServerConfiguration())
+                {
+                    EditorUtility.SetDirty(_settings);
+                    AssetDatabase.SaveAssets();
+                }
             }
         }
 
         private string GetServerUrl()
         {
             if (!string.IsNullOrEmpty(_profile?.signingServerUrl)) return _profile.signingServerUrl;
-            if (!string.IsNullOrEmpty(_settings?.serverUrl)) return _settings.serverUrl;
+            if (_settings != null) return _settings.GetEffectiveServerUrl();
             string fromService = PackageSigningService.GetServerUrl();
-            return !string.IsNullOrEmpty(fromService) ? fromService : "https://api.creators.yucp.club";
+            return !string.IsNullOrEmpty(fromService) ? fromService : SigningSettings.DefaultServerUrl;
         }
 
         private string GetAccountCertificatesUrl()
         {
-            return _settings?.GetEffectiveAccountCertificatesUrl(GetServerUrl()) ?? "https://creators.yucp.club/dashboard/certificates";
+            return _settings?.GetEffectiveAccountCertificatesUrl(GetServerUrl()) ?? "https://verify.creators.yucp.club/dashboard/billing";
         }
 
         private static Dictionary<string, string> ParseUrlQuery(string query)

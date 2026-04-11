@@ -579,11 +579,14 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             var content = YUCPUIToolkitHelper.GetCardContent(card);
 
             var serverField = new TextField("Default Server URL");
-            serverField.value = _settings.serverUrl;
+            serverField.value = SigningSettings.NormalizeConfiguredServerUrl(_settings.serverUrl);
             serverField.AddToClassList("yucp-input");
             serverField.RegisterValueChangedCallback(evt =>
             {
-                _settings.serverUrl = evt.newValue;
+                string normalized = SigningSettings.NormalizeConfiguredServerUrl(evt.newValue);
+                _settings.serverUrl = normalized;
+                if (!string.Equals(serverField.value, normalized, StringComparison.Ordinal))
+                    serverField.SetValueWithoutNotify(normalized);
                 EditorUtility.SetDirty(_settings);
             });
             content.Add(serverField);
@@ -591,11 +594,14 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             YUCPUIToolkitHelper.AddSpacing(content, 4);
 
             var accountField = new TextField("Account Certificates URL");
-            accountField.value = _settings.accountAppUrl;
+            accountField.value = SigningSettings.NormalizeAccountAppUrl(_settings.accountAppUrl);
             accountField.AddToClassList("yucp-input");
             accountField.RegisterValueChangedCallback(evt =>
             {
-                _settings.accountAppUrl = evt.newValue;
+                string normalized = SigningSettings.NormalizeAccountAppUrl(evt.newValue);
+                _settings.accountAppUrl = normalized;
+                if (!string.Equals(accountField.value, normalized, StringComparison.Ordinal))
+                    accountField.SetValueWithoutNotify(normalized);
                 EditorUtility.SetDirty(_settings);
             });
             content.Add(accountField);
@@ -666,22 +672,28 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
                     YUCPUIToolkitHelper.AddSpacing(row, 4);
 
-                    var urlField = new TextField("Server URL") { value = provider.serverUrl };
+                    var urlField = new TextField("Server URL") { value = SigningSettings.NormalizeConfiguredServerUrl(provider.serverUrl) };
                     urlField.AddToClassList("yucp-input");
                     urlField.RegisterValueChangedCallback(evt =>
                     {
-                        _settings.certificateProviders[idx].serverUrl = evt.newValue;
+                        string normalized = SigningSettings.NormalizeConfiguredServerUrl(evt.newValue);
+                        _settings.certificateProviders[idx].serverUrl = normalized;
+                        if (!string.Equals(urlField.value, normalized, StringComparison.Ordinal))
+                            urlField.SetValueWithoutNotify(normalized);
                         EditorUtility.SetDirty(_settings);
                     });
                     row.Add(urlField);
 
                     YUCPUIToolkitHelper.AddSpacing(row, 4);
 
-                    var accountUrlField = new TextField("Account Certificates URL") { value = provider.accountAppUrl };
+                    var accountUrlField = new TextField("Account Certificates URL") { value = SigningSettings.NormalizeAccountAppUrl(provider.accountAppUrl) };
                     accountUrlField.AddToClassList("yucp-input");
                     accountUrlField.RegisterValueChangedCallback(evt =>
                     {
-                        _settings.certificateProviders[idx].accountAppUrl = evt.newValue;
+                        string normalized = SigningSettings.NormalizeAccountAppUrl(evt.newValue);
+                        _settings.certificateProviders[idx].accountAppUrl = normalized;
+                        if (!string.Equals(accountUrlField.value, normalized, StringComparison.Ordinal))
+                            accountUrlField.SetValueWithoutNotify(normalized);
                         EditorUtility.SetDirty(_settings);
                     });
                     row.Add(accountUrlField);
@@ -712,7 +724,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                     _settings.certificateProviders.Add(new CertificateProvider
                     {
                         name = "New Provider",
-                        serverUrl = "https://api.creators.yucp.club",
+                        serverUrl = SigningSettings.DefaultServerUrl,
                         rootPublicKeyBase64 = ""
                     });
                     EditorUtility.SetDirty(_settings);
@@ -1093,6 +1105,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             {
                 string path = AssetDatabase.GUIDToAssetPath(guids[0]);
                 _settings = AssetDatabase.LoadAssetAtPath<SigningSettings>(path);
+                if (_settings != null && _settings.NormalizeServerConfiguration())
+                {
+                    EditorUtility.SetDirty(_settings);
+                    AssetDatabase.SaveAssets();
+                }
             }
             else
             {
@@ -1155,6 +1172,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         }
 
         private string GetServerUrl() =>
-            _settings?.serverUrl ?? "https://api.creators.yucp.club";
+            _settings?.GetEffectiveServerUrl() ?? SigningSettings.DefaultServerUrl;
     }
 }
