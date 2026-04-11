@@ -2093,7 +2093,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         exportedPackageName ?? prepared.profile.packageName ?? "ProtectedPayload");
                     if (string.IsNullOrEmpty(blobAssetPath))
                         throw new InvalidOperationException("Failed to register protected payload blob for export.");
-                    blobBuild.descriptor.blobAssetPath = blobAssetPath ?? "";
+                    FinalizeProtectedPayloadDescriptorForEmbeddedBlob(blobBuild.descriptor, blobAssetPath);
 
                     s_pendingProtectedAssetRegistrations.Add(new ProtectedAssetRegistration
                     {
@@ -2125,6 +2125,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
         
+        private static void FinalizeProtectedPayloadDescriptorForEmbeddedBlob(
+            ProtectedPayloadDescriptor descriptor,
+            string blobAssetPath)
+        {
+            if (descriptor == null)
+                return;
+
+            descriptor.blobAssetPath = ProtectedPayloadIntegrityUtility.NormalizeUnityPath(blobAssetPath);
+            descriptor.manifestBindingSha256 =
+                ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor);
+        }
+
         /// <summary>
         /// Generate a package.json file for the export
         /// </summary>

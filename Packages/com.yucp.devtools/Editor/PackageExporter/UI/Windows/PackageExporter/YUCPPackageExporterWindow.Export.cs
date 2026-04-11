@@ -16,6 +16,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
     public partial class YUCPPackageExporterWindow
     {
+        private int _unityProgressId = -1;
+        private string _unityProgressTitle = "Exporting Package";
+
         private void ExportSingleProfile(ExportProfile profile)
         {
             ExportProfile(profile);
@@ -69,7 +72,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     _progressDetailScroll.verticalScroller.value = _progressDetailScroll.verticalScroller.highValue;
             }
             
-            // Force repaint so UI updates during blocking export (otherwise it looks stuck)
+            if (isExporting)
+            {
+                float clampedProgress = Mathf.Clamp01(progress);
+                EditorUtility.DisplayProgressBar(_unityProgressTitle, status ?? string.Empty, clampedProgress);
+                if (_unityProgressId >= 0)
+                {
+                    Progress.Report(_unityProgressId, clampedProgress, status ?? string.Empty);
+                }
+            }
+
+            // Force repaint so UI updates before the blocking export continues.
             Repaint();
         }
         
@@ -77,6 +90,39 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             _exportStepLog.Clear();
             _progressDetail.text = "";
+        }
+
+        private void BeginExportProgressUi(string progressTitle, string initialStatus)
+        {
+            isExporting = true;
+            _unityProgressTitle = progressTitle;
+            _progressContainer.style.display = DisplayStyle.Flex;
+            ClearExportStepLog();
+            UpdateBottomBar();
+
+            if (_unityProgressId >= 0)
+            {
+                Progress.Remove(_unityProgressId);
+            }
+
+            _unityProgressId = Progress.Start(progressTitle, initialStatus ?? string.Empty, Progress.Options.Sticky);
+            UpdateProgress(0f, initialStatus);
+            rootVisualElement?.MarkDirtyRepaint();
+            Repaint();
+        }
+
+        private void EndExportProgressUi()
+        {
+            EditorUtility.ClearProgressBar();
+            if (_unityProgressId >= 0)
+            {
+                Progress.Remove(_unityProgressId);
+                _unityProgressId = -1;
+            }
+
+            isExporting = false;
+            _progressContainer.style.display = DisplayStyle.None;
+            UpdateBottomBar();
         }
 
         private void ExportSelectedProfiles()
@@ -190,90 +236,85 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             if (!confirm)
                 return;
-            
-            isExporting = true;
-            _progressContainer.style.display = DisplayStyle.Flex;
-            ClearExportStepLog();
-            UpdateProgress(0f, "Starting export...");
-            UpdateBottomBar();
-            
-            try
+
+            BeginExportProgressUi($"Exporting {profile.packageName}", "Starting export...");
+            // Run after the click event returns so the UI can paint progress instead of looking stuck in MouseUp.
+            EditorApplication.delayCall += () =>
             {
-                var result = PackageBuilder.ExportPackage(profile, (progress, status) =>
+                try
                 {
-                    UpdateProgress(progress, status);
-                });
-                
-                isExporting = false;
-                _progressContainer.style.display = DisplayStyle.None;
-                UpdateBottomBar();
-                
-                if (result.success)
-                {
-                    string warningSuffix = string.IsNullOrEmpty(result.warningMessage)
-                        ? string.Empty
-                        : $"\n\nWarning:\n{result.warningMessage}";
+                    var result = PackageBuilder.ExportPackage(profile, (progress, status) =>
+                    {
+                        UpdateProgress(progress, status);
+                    });
 
-                    bool openFolder = EditorUtility.DisplayDialog(
-                        "Export Successful",
-                        $"Package exported successfully!\n\n" +
-                        $"Package: {profile.packageName} v{profile.version}\n" +
-                        $"Output: {result.outputPath}\n" +
-                        $"Files: {result.filesExported}\n" +
-                        $"Assemblies Obfuscated: {result.assembliesObfuscated}\n" +
-                        $"Build Time: {result.buildTimeSeconds:F2}s" +
-                        warningSuffix,
-                        "Open Folder",
-                        "OK"
-                    );
-                    
-                    if (openFolder)
-                    {
-                        EditorUtility.RevealInFinder(result.outputPath);
-                    }
-                    
-                    LoadProfiles();
-                    UpdateProfileDetails();
+                    EndExportProgressUi();
 
-                    if (!string.IsNullOrEmpty(result.warningMessage) && _toast != null)
+                    if (result.success)
                     {
-                        _toast.ShowWarning(result.warningMessage, "Export Warning", 6f);
-                    }
-                }
-                else
-                {
-                    bool isActionableUserMessage =
-                        !string.IsNullOrWhiteSpace(result.errorMessage) &&
-                        result.errorMessage.IndexOf("Certificates & Billing", StringComparison.OrdinalIgnoreCase) >= 0;
-                    string message = isActionableUserMessage
-                        ? $"Export failed: {result.errorMessage}"
-                        : $"Export failed: {result.errorMessage}\n\nCheck the console for more details.";
-                    if (_toast != null)
-                    {
-                        _toast.ShowError(message, "Export Failed", 6f);
+                        string warningSuffix = string.IsNullOrEmpty(result.warningMessage)
+                            ? string.Empty
+                            : $"\n\nWarning:\n{result.warningMessage}";
+
+                        bool openFolder = EditorUtility.DisplayDialog(
+                            "Export Successful",
+                            $"Package exported successfully!\n\n" +
+                            $"Package: {profile.packageName} v{profile.version}\n" +
+                            $"Output: {result.outputPath}\n" +
+                            $"Files: {result.filesExported}\n" +
+                            $"Assemblies Obfuscated: {result.assembliesObfuscated}\n" +
+                            $"Build Time: {result.buildTimeSeconds:F2}s" +
+                            warningSuffix,
+                            "Open Folder",
+                            "OK"
+                        );
+
+                        if (openFolder)
+                        {
+                            EditorUtility.RevealInFinder(result.outputPath);
+                        }
+
+                        LoadProfiles();
+                        UpdateProfileDetails();
+
+                        if (!string.IsNullOrEmpty(result.warningMessage) && _toast != null)
+                        {
+                            _toast.ShowWarning(result.warningMessage, "Export Warning", 6f);
+                        }
                     }
                     else
                     {
-                        EditorUtility.DisplayDialog("Export Failed", message, "OK");
+                        bool isActionableUserMessage =
+                            !string.IsNullOrWhiteSpace(result.errorMessage) &&
+                            result.errorMessage.IndexOf("Certificates & Billing", StringComparison.OrdinalIgnoreCase) >= 0;
+                        string message = isActionableUserMessage
+                            ? $"Export failed: {result.errorMessage}"
+                            : $"Export failed: {result.errorMessage}\n\nCheck the console for more details.";
+                        if (_toast != null)
+                        {
+                            _toast.ShowError(message, "Export Failed", 6f);
+                        }
+                        else
+                        {
+                            EditorUtility.DisplayDialog("Export Failed", message, "OK");
+                        }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                isExporting = false;
-                _progressContainer.style.display = DisplayStyle.None;
-                UpdateBottomBar();
-                
-                Debug.LogError($"[Package Exporter] Export failed: {ex.Message}");
-                if (_toast != null)
+                catch (Exception ex)
                 {
-                    _toast.ShowError($"An error occurred: {ex.Message}", "Export Failed", 6f);
+                    EndExportProgressUi();
+
+                    Debug.LogError($"[Package Exporter] Export failed: {ex.Message}");
+                    if (_toast != null)
+                    {
+                        _toast.ShowError($"An error occurred: {ex.Message}", "Export Failed", 6f);
+                    }
+                    else
+                    {
+                        EditorUtility.DisplayDialog("Export Failed", $"An error occurred: {ex.Message}", "OK");
+                    }
                 }
-                else
-                {
-                    EditorUtility.DisplayDialog("Export Failed", $"An error occurred: {ex.Message}", "OK");
-                }
-            }
+            };
         }
 
         private void ExportAllProfiles(List<ExportProfile> profilesToExport = null)
@@ -310,58 +351,54 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (!confirm)
                 return;
             
-            isExporting = true;
-            _progressContainer.style.display = DisplayStyle.Flex;
-            ClearExportStepLog();
-            UpdateProgress(0f, $"Starting batch export ({profiles.Count} profile(s))...");
-            UpdateBottomBar();
-            
-            try
+            BeginExportProgressUi("Batch Export", $"Starting batch export ({profiles.Count} profile(s))...");
+            var queuedProfiles = profiles.ToList();
+            // Run after the click event returns so the UI can paint progress instead of looking stuck in MouseUp.
+            EditorApplication.delayCall += () =>
             {
-                var results = PackageBuilder.ExportMultiple(profiles, (index, total, progress, status) =>
+                try
                 {
-                    float overallProgress = (index + progress) / total;
-                    UpdateProgress(overallProgress, $"[{index + 1}/{total}] {status}");
-                });
-                
-                isExporting = false;
-                _progressContainer.style.display = DisplayStyle.None;
-                UpdateBottomBar();
-                
-                int successCount = results.Count(r => r.success);
-                int failCount = results.Count - successCount;
-                
-                string summaryMessage = $"Batch export complete!\n\n" +
-                                      $"Successful: {successCount}\n" +
-                                      $"Failed: {failCount}\n\n";
-                
-                if (failCount > 0)
-                {
-                    var failures = results.Where(r => !r.success).ToList();
-                    summaryMessage += "Failed profiles:\n" + string.Join("\n", failures.Select(r => $"• {r.errorMessage}"));
+                    var results = PackageBuilder.ExportMultiple(queuedProfiles, (index, total, progress, status) =>
+                    {
+                        float overallProgress = (index + progress) / total;
+                        UpdateProgress(overallProgress, $"[{index + 1}/{total}] {status}");
+                    });
+
+                    EndExportProgressUi();
+
+                    int successCount = results.Count(r => r.success);
+                    int failCount = results.Count - successCount;
+
+                    string summaryMessage = $"Batch export complete!\n\n" +
+                                          $"Successful: {successCount}\n" +
+                                          $"Failed: {failCount}\n\n";
+
+                    if (failCount > 0)
+                    {
+                        var failures = results.Where(r => !r.success).ToList();
+                        summaryMessage += "Failed profiles:\n" + string.Join("\n", failures.Select(r => $"• {r.errorMessage}"));
+                    }
+
+                    EditorUtility.DisplayDialog("Batch Export Complete", summaryMessage, "OK");
+
+                    LoadProfiles();
+                    UpdateProfileDetails();
                 }
-                
-                EditorUtility.DisplayDialog("Batch Export Complete", summaryMessage, "OK");
-                
-                LoadProfiles();
-                UpdateProfileDetails();
-            }
-            catch (Exception ex)
-            {
-                isExporting = false;
-                _progressContainer.style.display = DisplayStyle.None;
-                UpdateBottomBar();
-                
-                Debug.LogError($"[Package Exporter] Batch export failed: {ex.Message}");
-                if (_toast != null)
+                catch (Exception ex)
                 {
-                    _toast.ShowError($"An error occurred: {ex.Message}", "Batch Export Failed", 6f);
+                    EndExportProgressUi();
+
+                    Debug.LogError($"[Package Exporter] Batch export failed: {ex.Message}");
+                    if (_toast != null)
+                    {
+                        _toast.ShowError($"An error occurred: {ex.Message}", "Batch Export Failed", 6f);
+                    }
+                    else
+                    {
+                        EditorUtility.DisplayDialog("Batch Export Failed", $"An error occurred: {ex.Message}", "OK");
+                    }
                 }
-                else
-                {
-                    EditorUtility.DisplayDialog("Batch Export Failed", $"An error occurred: {ex.Message}", "OK");
-                }
-            }
+            };
         }
 
     }

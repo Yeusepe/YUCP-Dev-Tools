@@ -64,5 +64,72 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 "This package is archived in your package registry. Restore it from Certificates & Billing, then retry the export."
             ));
         }
+
+        [Test]
+        public void BuildSessionFromTokenResponse_ParsesCamelCaseRefreshTokenFields()
+        {
+            const string tokenJson = "{"
+                + "\"access_token\":\"header.payload.signature\","
+                + "\"accessTokenExpiresAt\":4102444800,"
+                + "\"refreshToken\":\"refresh-token-value\","
+                + "\"refreshTokenExpiresAt\":4102531200,"
+                + "\"scope\":\"cert:issue profile:read\""
+                + "}";
+
+            object session = InvokeBuildSessionFromTokenResponse(tokenJson);
+
+            Assert.That(session, Is.Not.Null);
+            Assert.That(GetStringField(session, "accessToken"), Is.EqualTo("header.payload.signature"));
+            Assert.That(GetLongField(session, "accessTokenExpiresAt"), Is.EqualTo(4102444800));
+            Assert.That(GetStringField(session, "refreshToken"), Is.EqualTo("refresh-token-value"));
+            Assert.That(GetLongField(session, "refreshTokenExpiresAt"), Is.EqualTo(4102531200));
+            Assert.That(GetStringField(session, "scope"), Is.EqualTo("cert:issue profile:read"));
+        }
+
+        [Test]
+        public void DescribeTokenResponse_RecognizesCamelCaseTokenFields()
+        {
+            const string tokenJson = "{"
+                + "\"accessToken\":\"access-token-value\","
+                + "\"refreshToken\":\"refresh-token-value\","
+                + "\"scope\":\"cert:issue profile:read\""
+                + "}";
+
+            MethodInfo describeMethod = typeof(YucpOAuthService).GetMethod(
+                "DescribeTokenResponse",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(describeMethod, Is.Not.Null, "Expected YucpOAuthService.DescribeTokenResponse to exist.");
+
+            string summary = describeMethod.Invoke(null, new object[] { tokenJson }) as string;
+
+            Assert.That(summary, Does.Contain("hasAccessToken: true"));
+            Assert.That(summary, Does.Contain("hasRefreshToken: true"));
+            Assert.That(summary, Does.Contain("cert:issue profile:read"));
+        }
+
+        private static object InvokeBuildSessionFromTokenResponse(string tokenJson)
+        {
+            MethodInfo buildMethod = typeof(YucpOAuthService).GetMethod(
+                "BuildSessionFromTokenResponse",
+                BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.That(buildMethod, Is.Not.Null, "Expected YucpOAuthService.BuildSessionFromTokenResponse to exist.");
+            return buildMethod.Invoke(null, new object[] { tokenJson, null });
+        }
+
+        private static string GetStringField(object target, string fieldName)
+        {
+            FieldInfo field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public);
+            Assert.That(field, Is.Not.Null, $"Expected field '{fieldName}' on {target.GetType().FullName}.");
+            return field.GetValue(target) as string;
+        }
+
+        private static long GetLongField(object target, string fieldName)
+        {
+            FieldInfo field = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.Public);
+            Assert.That(field, Is.Not.Null, $"Expected field '{fieldName}' on {target.GetType().FullName}.");
+            return (long)field.GetValue(target);
+        }
     }
 }

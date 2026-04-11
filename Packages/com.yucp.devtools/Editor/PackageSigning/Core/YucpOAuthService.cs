@@ -466,22 +466,28 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static OAuthSessionV2 BuildSessionFromTokenResponse(string tokenJson, OAuthSessionV2 previousSession)
         {
-            string accessToken = ExtractJsonString(tokenJson, "access_token");
+            string accessToken = ExtractJsonStringAny(tokenJson, "access_token", "accessToken");
             if (string.IsNullOrEmpty(accessToken))
             {
                 return null;
             }
 
             long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            long accessTokenExpiresAt = ResolveExpiryTimestamp(tokenJson, "expires_in", "expires_at", now + 3600 - AccessTokenSkewSeconds);
+            long accessTokenExpiresAt = ResolveExpiryTimestamp(
+                ExtractJsonValueAny(tokenJson, "access_token_expires_at", "accessTokenExpiresAt", "expires_at", "expiresAt"),
+                ExtractJsonValueAny(tokenJson, "expires_in", "expiresIn"),
+                now + 3600 - AccessTokenSkewSeconds);
 
-            string refreshToken = ExtractJsonString(tokenJson, "refresh_token");
+            string refreshToken = ExtractJsonStringAny(tokenJson, "refresh_token", "refreshToken");
             if (string.IsNullOrEmpty(refreshToken))
             {
                 refreshToken = previousSession?.refreshToken;
             }
 
-            long refreshTokenExpiresAt = ResolveRefreshExpiryTimestamp(tokenJson, previousSession?.refreshTokenExpiresAt ?? 0);
+            long refreshTokenExpiresAt = ResolveRefreshExpiryTimestamp(
+                ExtractJsonValueAny(tokenJson, "refresh_token_expires_at", "refreshTokenExpiresAt"),
+                ExtractJsonValueAny(tokenJson, "refresh_token_expires_in", "refreshTokenExpiresIn"),
+                previousSession?.refreshTokenExpiresAt ?? 0);
             string scope = ExtractJsonString(tokenJson, "scope");
             if (string.IsNullOrEmpty(scope))
             {
@@ -606,15 +612,13 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             return Uri.EscapeDataString(value ?? string.Empty).Replace("%20", "+");
         }
 
-        private static long ResolveExpiryTimestamp(string tokenJson, string expiresInKey, string expiresAtKey, long fallback)
+        private static long ResolveExpiryTimestamp(string absoluteExpiryRaw, string expiresInRaw, long fallback)
         {
-            string expiresAtRaw = ExtractJsonValue(tokenJson, expiresAtKey);
-            if (long.TryParse(expiresAtRaw, out long absoluteExpiry) && absoluteExpiry > 0)
+            if (long.TryParse(absoluteExpiryRaw, out long absoluteExpiry) && absoluteExpiry > 0)
             {
                 return absoluteExpiry;
             }
 
-            string expiresInRaw = ExtractJsonValue(tokenJson, expiresInKey);
             if (int.TryParse(expiresInRaw, out int expiresInSeconds) && expiresInSeconds > 0)
             {
                 return DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expiresInSeconds - AccessTokenSkewSeconds;
@@ -623,16 +627,14 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             return fallback;
         }
 
-        private static long ResolveRefreshExpiryTimestamp(string tokenJson, long previousValue)
+        private static long ResolveRefreshExpiryTimestamp(string absoluteExpiryRaw, string expiresInRaw, long previousValue)
         {
-            string refreshExpiresAtRaw = ExtractJsonValue(tokenJson, "refresh_token_expires_at");
-            if (long.TryParse(refreshExpiresAtRaw, out long absoluteExpiry) && absoluteExpiry > 0)
+            if (long.TryParse(absoluteExpiryRaw, out long absoluteExpiry) && absoluteExpiry > 0)
             {
                 return absoluteExpiry;
             }
 
-            string refreshExpiresInRaw = ExtractJsonValue(tokenJson, "refresh_token_expires_in");
-            if (int.TryParse(refreshExpiresInRaw, out int expiresInSeconds) && expiresInSeconds > 0)
+            if (int.TryParse(expiresInRaw, out int expiresInSeconds) && expiresInSeconds > 0)
             {
                 return DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expiresInSeconds;
             }
@@ -1028,8 +1030,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static string DescribeTokenResponse(string tokenJson)
         {
-            bool hasAccessToken = !string.IsNullOrEmpty(ExtractJsonString(tokenJson, "access_token"));
-            bool hasRefreshToken = !string.IsNullOrEmpty(ExtractJsonString(tokenJson, "refresh_token"));
+            bool hasAccessToken = !string.IsNullOrEmpty(ExtractJsonStringAny(tokenJson, "access_token", "accessToken"));
+            bool hasRefreshToken = !string.IsNullOrEmpty(ExtractJsonStringAny(tokenJson, "refresh_token", "refreshToken"));
             string scope = ExtractJsonString(tokenJson, "scope") ?? string.Empty;
             return $"{{ hasAccessToken: {hasAccessToken.ToString().ToLowerInvariant()}, hasRefreshToken: {hasRefreshToken.ToString().ToLowerInvariant()}, scope: \"{scope}\" }}";
         }
@@ -1162,6 +1164,25 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             return builder.ToString();
         }
 
+        private static string ExtractJsonStringAny(string json, params string[] keys)
+        {
+            if (keys == null)
+            {
+                return null;
+            }
+
+            foreach (string key in keys)
+            {
+                string value = ExtractJsonString(json, key);
+                if (!string.IsNullOrEmpty(value))
+                {
+                    return value;
+                }
+            }
+
+            return null;
+        }
+
         private static string ExtractJsonValue(string json, string key)
         {
             string needle = $"\"{key}\"";
@@ -1189,6 +1210,25 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             }
 
             return builder.ToString().Trim().Trim('"');
+        }
+
+        private static string ExtractJsonValueAny(string json, params string[] keys)
+        {
+            if (keys == null)
+            {
+                return null;
+            }
+
+            foreach (string key in keys)
+            {
+                string value = ExtractJsonValue(json, key);
+                if (!string.IsNullOrEmpty(value))
+                {
+                    return value;
+                }
+            }
+
+            return null;
         }
 
         private static string ParseJwtClaim(string jwt, string claim)

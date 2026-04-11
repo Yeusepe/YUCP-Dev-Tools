@@ -10,6 +10,7 @@ using System.Text;
 using NUnit.Framework;
 using YUCP.DevTools.Editor.PackageSigning.Core;
 using YUCP.DevTools.Editor.PackageSigning.Data;
+using YUCP.Importer.Editor.PackageManager;
 using UnityEngine;
 
 namespace YUCP.DevTools.Editor.PackageExporter.Tests
@@ -198,11 +199,62 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             }
         }
 
+        [Test]
+        public void PrecompiledInstallerRuntime_RebindsProtectedPayloadDescriptorAfterEmbeddingBlob()
+        {
+            string packagePath = null;
+            string blobFilePath = null;
+
+            try
+            {
+                packagePath = CreateUnityPackage(new Dictionary<string, byte[]>
+                {
+                    ["payload/pathname"] = Encoding.UTF8.GetBytes("Assets/Protected/Test.prefab"),
+                    ["payload/asset"] = new byte[] { 1, 2, 3, 4 },
+                    ["payload/asset.meta"] = Encoding.UTF8.GetBytes(
+                        "fileFormatVersion: 2\nguid: 11111111111111111111111111111111\n"),
+                });
+
+                MethodInfo buildMethod = typeof(ProtectedPayloadBlobBuilder).GetMethod(
+                    "BuildFromUnityPackage",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That(buildMethod, Is.Not.Null);
+
+                object buildResult = buildMethod.Invoke(null, new object[] { packagePath, "pkg-test", "Wasbeer" });
+                Assert.That(buildResult, Is.Not.Null);
+
+                Type buildResultType = buildResult.GetType();
+                blobFilePath = buildResultType.GetField("blobFilePath")?.GetValue(buildResult) as string;
+                var descriptor = buildResultType.GetField("descriptor")?.GetValue(buildResult) as ProtectedPayloadDescriptor;
+
+                Assert.That(blobFilePath, Is.Not.Null.And.Not.Empty);
+                Assert.That(descriptor, Is.Not.Null);
+
+                MethodInfo finalizeMethod = typeof(PackageBuilder).GetMethod(
+                    "FinalizeProtectedPayloadDescriptorForEmbeddedBlob",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That(finalizeMethod, Is.Not.Null);
+
+                string blobAssetPath = "Packages/yucp.installed-packages/Wasbeer/Embedded/Protected/Wasbeer_payload.yucpblob";
+                finalizeMethod.Invoke(null, new object[] { descriptor, blobAssetPath });
+
+                Assert.That(descriptor.blobAssetPath, Is.EqualTo(blobAssetPath));
+                Assert.That(
+                    descriptor.manifestBindingSha256,
+                    Is.EqualTo(ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor)));
+            }
+            finally
+            {
+                DeleteIfPresent(blobFilePath);
+                DeleteIfPresent(packagePath);
+            }
+        }
+
         private static string CreateUnityPackage(IReadOnlyDictionary<string, byte[]> entries)
         {
             string packagePath = Path.Combine(Path.GetTempPath(), $"yucp-exporter-test-{Guid.NewGuid():N}.unitypackage");
             using var fileStream = File.Create(packagePath);
-            using var gzipStream = new GZipStream(fileStream, CompressionLevel.Optimal, leaveOpen: false);
+            using var gzipStream = new GZipStream(fileStream, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: false);
             foreach (var entry in entries)
             {
                 WriteTarEntry(gzipStream, entry.Key.Replace('\\', '/'), entry.Value ?? Array.Empty<byte>());
