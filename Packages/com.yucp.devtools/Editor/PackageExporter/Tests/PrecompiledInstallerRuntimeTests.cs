@@ -250,6 +250,83 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             }
         }
 
+        [Test]
+        public void PrecompiledInstallerRuntime_InjectsProtectedImportIntentIntoProtectedShellRoot()
+        {
+            string packagePath = null;
+
+            try
+            {
+                packagePath = CreateUnityPackage(new Dictionary<string, byte[]>
+                {
+                    ["shell/pathname"] = Encoding.UTF8.GetBytes("Assets/Dummy.txt"),
+                    ["shell/asset"] = Encoding.UTF8.GetBytes("dummy"),
+                });
+
+                var profile = ScriptableObject.CreateInstance<ExportProfile>();
+                profile.packageName = "Wasbeer";
+                profile.packageId = "pkg-test-123";
+
+                Type embedContextType = typeof(PackageBuilder).GetNestedType("PackageEmbedContext", BindingFlags.NonPublic);
+                Assert.That(embedContextType, Is.Not.Null);
+                ConstructorInfo embedContextCtor = embedContextType.GetConstructor(
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    binder: null,
+                    types: new[] { typeof(ExportProfile) },
+                    modifiers: null);
+                Assert.That(embedContextCtor, Is.Not.Null);
+                object embedContext = embedContextCtor.Invoke(new object[] { profile });
+                Assert.That(embedContext, Is.Not.Null);
+
+                MethodInfo method = typeof(PackageBuilder).GetMethod(
+                    "InjectPackageJsonInstallerAndBundles",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That(method, Is.Not.Null);
+
+                var descriptor = new ProtectedPayloadDescriptor
+                {
+                    formatVersion = "1",
+                    protectedAssetId = "protected-asset-123",
+                    blobAssetPath = "Packages/yucp.installed-packages/Wasbeer/Protected/payload.blob",
+                    cipher = "aes-256-cbc+hmac-sha256",
+                    archiveFormat = "zip",
+                    ciphertextSha256 = "ciphertext-sha",
+                    plaintextSha256 = "plaintext-sha",
+                    payloadAssetPaths = new[] { "Assets/Protected/source.prefab" },
+                    requiresOnlineUnlock = true,
+                    requiresBrokeredMaterialization = true,
+                    brokerProtocolVersion = 1,
+                };
+                descriptor.manifestBindingSha256 =
+                    ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor);
+
+                method.Invoke(null, new object[]
+                {
+                    packagePath,
+                    "{ \"name\": \"com.example.protected-shell\" }",
+                    new Dictionary<string, string>(),
+                    new List<AssemblyObfuscationSettings>(),
+                    profile,
+                    false,
+                    "{\"packageName\":\"Wasbeer\"}",
+                    descriptor,
+                    profile.packageId,
+                    embedContext,
+                    null,
+                });
+
+                string[] pathnames = ReadPackagePathnames(packagePath);
+                Assert.That(pathnames, Has.Some.EqualTo("Packages/yucp.installed-packages/Wasbeer/YUCP_ProtectedImportIntent.json"));
+            }
+            finally
+            {
+                if (packagePath != null)
+                {
+                    DeleteIfPresent(packagePath);
+                }
+            }
+        }
+
         private static string CreateUnityPackage(IReadOnlyDictionary<string, byte[]> entries)
         {
             string packagePath = Path.Combine(Path.GetTempPath(), $"yucp-exporter-test-{Guid.NewGuid():N}.unitypackage");

@@ -139,6 +139,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public string wrappedContentKey;
             public string contentKeyBase64;
             public string contentHash;
+            public string manifestBindingSha256;
             public string displayName;
         }
 
@@ -1086,7 +1087,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             ? profile.assembliesToObfuscate.Where(a => a.enabled).ToList() 
                             : new List<AssemblyObfuscationSettings>();
                         
-                        InjectPackageJsonInstallerAndBundles(tempPackagePath, packageJsonContent, bundledPackagePaths, obfuscatedAssemblies, profile, hasPatchAssets, packageMetadataJson, protectedPayloadJson, embedContext, progressCallback);
+                        InjectPackageJsonInstallerAndBundles(
+                            tempPackagePath,
+                            packageJsonContent,
+                            bundledPackagePaths,
+                            obfuscatedAssemblies,
+                            profile,
+                            hasPatchAssets,
+                            packageMetadataJson,
+                            protectedPayloadDescriptor,
+                            profile.packageId,
+                            embedContext,
+                            progressCallback);
                     }
                     catch (Exception ex)
                     {
@@ -2106,6 +2118,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         unlockMode = "content_key_b64",
                         contentKeyBase64 = blobBuild.contentKeyBase64,
                         contentHash = blobBuild.descriptor.ciphertextSha256,
+                        manifestBindingSha256 = blobBuild.descriptor.manifestBindingSha256,
                         displayName = exportedPackageName ?? prepared.profile.packageName ?? prepared.profile.profileName ?? "Protected Payload"
                     });
 
@@ -3128,7 +3141,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             ExportProfile profile,
             bool hasPatchAssets,
             string packageMetadataJson,
-            string protectedPayloadJson,
+            ProtectedPayloadDescriptor protectedPayloadDescriptor,
+            string protectedImportPackageId,
             PackageEmbedContext embedContext,
             Action<float, string> progressCallback = null)
         {
@@ -3168,6 +3182,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     DisablePackageEntriesByDefault(tempExtractDir);
                 }
 
+                string protectedPayloadJson = protectedPayloadDescriptor != null
+                    ? JsonUtility.ToJson(protectedPayloadDescriptor, true)
+                    : null;
+                string tempInstallAssetPath = null;
+                string protectedPayloadAssetPath = null;
+
                 // 1. Inject package.json (temporary, will be deleted by installer)
                 progressCallback?.Invoke(0.754f, "Injecting package shell metadata...");
                 if (!string.IsNullOrEmpty(packageJsonContent))
@@ -3179,7 +3199,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     File.WriteAllText(Path.Combine(packageJsonFolder, "asset"), packageJsonContent);
                     // Use a unique path
                     string tempInstallRoot = embedContext != null ? embedContext.TempInstallRoot : "Assets";
-                    File.WriteAllText(Path.Combine(packageJsonFolder, "pathname"), $"{tempInstallRoot}/YUCP_TempInstall_{packageJsonGuid}.json");
+                    tempInstallAssetPath = $"{tempInstallRoot}/YUCP_TempInstall_{packageJsonGuid}.json";
+                    File.WriteAllText(Path.Combine(packageJsonFolder, "pathname"), tempInstallAssetPath);
                     
                     string packageJsonMeta = "fileFormatVersion: 2\nguid: " + packageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(Path.Combine(packageJsonFolder, "asset.meta"), packageJsonMeta);
@@ -3222,7 +3243,39 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     string payloadPath = embedContext != null
                         ? $"{InstalledPackagesRoot}/{embedContext.SafePackageName}/YUCP_ProtectedPayload.json"
                         : "Assets/YUCP_ProtectedPayload.json";
+                    protectedPayloadAssetPath = payloadPath;
                     File.WriteAllText(Path.Combine(payloadFolder, "pathname"), payloadPath);
+                }
+
+                if (protectedPayloadDescriptor != null &&
+                    !string.IsNullOrWhiteSpace(protectedImportPackageId) &&
+                    !string.IsNullOrWhiteSpace(tempInstallAssetPath) &&
+                    !string.IsNullOrWhiteSpace(protectedPayloadAssetPath))
+                {
+                    string intentGuid = Guid.NewGuid().ToString("N");
+                    string intentFolder = Path.Combine(tempExtractDir, intentGuid);
+                    Directory.CreateDirectory(intentFolder);
+
+                    var intentDescriptor = new ProtectedImportIntentDescriptor
+                    {
+                        formatVersion = "1",
+                        packageId = protectedImportPackageId,
+                        protectedAssetId = protectedPayloadDescriptor.protectedAssetId ?? string.Empty,
+                        protectedPayloadAssetPath = protectedPayloadAssetPath,
+                        tempInstallAssetPath = tempInstallAssetPath,
+                        manifestBindingSha256 = protectedPayloadDescriptor.manifestBindingSha256 ?? string.Empty,
+                        requiresProtectedPayload = true,
+                    };
+
+                    File.WriteAllText(Path.Combine(intentFolder, "asset"), JsonUtility.ToJson(intentDescriptor, true));
+                    File.WriteAllText(
+                        Path.Combine(intentFolder, "asset.meta"),
+                        $"fileFormatVersion: 2\nguid: {Guid.NewGuid():N}\nTextScriptImporter:\n  externalObjects: {{}}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n");
+
+                    string intentPath = embedContext != null
+                        ? $"{InstalledPackagesRoot}/{embedContext.SafePackageName}/YUCP_ProtectedImportIntent.json"
+                        : "Assets/YUCP_ProtectedImportIntent.json";
+                    File.WriteAllText(Path.Combine(intentFolder, "pathname"), intentPath);
                 }
 
                 // 1c. Inject embedded assets (icons, banners, etc.)
@@ -4972,11 +5025,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             string contentHashField = !string.IsNullOrEmpty(asset.contentHash)
                                 ? $"\"contentHash\":\"{EscapeJsonString(asset.contentHash)}\","
                                 : string.Empty;
+                            string manifestBindingSha256Field = !string.IsNullOrEmpty(asset.manifestBindingSha256)
+                                ? $"\"manifestBindingSha256\":\"{EscapeJsonString(asset.manifestBindingSha256)}\","
+                                : string.Empty;
                             return "{"
                                 + $"\"protectedAssetId\":\"{EscapeJsonString(asset.protectedAssetId)}\","
                                 + $"\"unlockMode\":\"{EscapeJsonString(asset.unlockMode)}\","
                                 + keyField
                                 + contentHashField
+                                + manifestBindingSha256Field
                                 + $"\"displayName\":\"{EscapeJsonString(asset.displayName ?? string.Empty)}\""
                                 + "}";
                         });
