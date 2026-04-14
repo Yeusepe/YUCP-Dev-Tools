@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 
 namespace PackageGuardian.Core.Transactions
@@ -10,7 +11,9 @@ namespace PackageGuardian.Core.Transactions
     /// </summary>
     public class GuardianTransaction : IDisposable
     {
-        private readonly Dictionary<string, byte[]> _fileBackups = new Dictionary<string, byte[]>();
+        private readonly Dictionary<string, byte[]> _fileBackups = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<string> _backupOrder = new List<string>();
+        private readonly HashSet<string> _createdFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _committed;
         public string TransactionId { get; }
         public bool IsActive { get; private set; }
@@ -28,12 +31,9 @@ namespace PackageGuardian.Core.Transactions
             if (_fileBackups.ContainsKey(filePath))
                 return;
 
-            try
-            {
-                _fileBackups[filePath] = File.ReadAllBytes(filePath);
-                Debug.Log($"[Guardian Transaction] Backed up: {Path.GetFileName(filePath)}");
-            }
-            catch { }
+            _fileBackups[filePath] = File.ReadAllBytes(filePath);
+            _backupOrder.Add(filePath);
+            Debug.Log($"[Guardian Transaction] Backed up: {Path.GetFileName(filePath)}");
         }
 
         public void ExecuteFileOperation(string sourcePath, string destPath, FileOperationType operationType)
@@ -45,7 +45,11 @@ namespace PackageGuardian.Core.Transactions
             if (operationType == FileOperationType.Move || operationType == FileOperationType.Delete)
                 BackupFile(sourcePath);
             if ((operationType == FileOperationType.Move || operationType == FileOperationType.Copy) && !string.IsNullOrEmpty(destPath))
+            {
+                if (!File.Exists(destPath))
+                    _createdFiles.Add(destPath);
                 BackupFile(destPath);
+            }
 
             // Execute
             switch (operationType)
@@ -72,6 +76,8 @@ namespace PackageGuardian.Core.Transactions
             _committed = true;
             IsActive = false;
             _fileBackups.Clear();
+            _backupOrder.Clear();
+            _createdFiles.Clear();
             Debug.Log($"[Guardian Transaction] Committed transaction {TransactionId}");
         }
 
@@ -80,12 +86,23 @@ namespace PackageGuardian.Core.Transactions
             if (_committed)
                 return;
 
-            foreach (var kvp in _fileBackups)
+            foreach (string createdPath in _createdFiles.OrderByDescending(path => path.Length))
             {
                 try
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(kvp.Key) ?? "");
-                    File.WriteAllBytes(kvp.Key, kvp.Value);
+                    if (File.Exists(createdPath))
+                        File.Delete(createdPath);
+                }
+                catch { }
+            }
+
+            for (int i = _backupOrder.Count - 1; i >= 0; i--)
+            {
+                string path = _backupOrder[i];
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(path) ?? "");
+                    File.WriteAllBytes(path, _fileBackups[path]);
                 }
                 catch { }
             }
@@ -97,6 +114,8 @@ namespace PackageGuardian.Core.Transactions
             if (IsActive && !_committed)
                 Rollback();
             _fileBackups.Clear();
+            _backupOrder.Clear();
+            _createdFiles.Clear();
         }
     }
 

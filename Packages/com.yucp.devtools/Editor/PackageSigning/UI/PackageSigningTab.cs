@@ -1002,8 +1002,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                     "Per-profile signing server overrides are ignored until authenticated trust rotation is implemented.",
                     9,
                     TextMute,
-                    mt: 4,
                     mb: 4);
+                warning.style.marginTop = 4;
                 warning.style.whiteSpace = WhiteSpace.Normal;
                 container.Add(warning);
 
