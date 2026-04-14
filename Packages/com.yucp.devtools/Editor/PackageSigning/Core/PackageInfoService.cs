@@ -387,13 +387,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static SigningSettings GetSigningSettings()
         {
-            string[] guids = AssetDatabase.FindAssets("t:SigningSettings");
-            if (guids.Length > 0)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                return AssetDatabase.LoadAssetAtPath<SigningSettings>(path);
-            }
-            return null;
+            return SigningSettingsLocator.Load();
         }
     }
 

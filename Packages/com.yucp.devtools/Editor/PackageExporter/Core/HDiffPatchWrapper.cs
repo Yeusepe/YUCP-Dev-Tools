@@ -1,12 +1,127 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using UnityEngine;
 using UnityEditor;
+using YUCP.DevTools.Editor.Security;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
+	internal static class HDiffPatchTrust
+	{
+#if UNITY_EDITOR_WIN
+		private const string HdiffzSha256 = "11493E1D8947E6DA3CCA4A6C4D03AD55DC973D8766CEB25ECCDCA4811B8C0235";
+		private const string HpatchzSha256 = "DBCD3320D0889CA894F1C404097A0B73918E13771A3902BC7F7CB99EAD47400E";
+		private const string HdiffinfoSha256 = "28A2785870938EE45F98D5BBE6CFD0F0689980BCF3FFCE703E777FCBD5F51294";
+
+		internal static bool IsTrustedNativeLibrary(string fileName, string path)
+		{
+			if (string.IsNullOrWhiteSpace(fileName) || string.IsNullOrWhiteSpace(path))
+				return false;
+
+			string expectedHash = GetExpectedHash(fileName);
+			if (string.IsNullOrEmpty(expectedHash))
+				return false;
+
+			string normalizedPath = Path.GetFullPath(path);
+			string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+			bool isTrustedPath = GetCandidatePaths(projectPath, fileName)
+				.Any(candidate => TrustedFileUtility.PathsEqual(candidate, normalizedPath));
+
+			return isTrustedPath &&
+				   TrustedFileUtility.FileMatchesSha256(normalizedPath, expectedHash, out _);
+		}
+
+		internal static string EnsureTrustedCopy(string projectPath, string libraryDir, string fileName, string logPrefix)
+		{
+			string expectedHash = GetExpectedHash(fileName);
+			if (string.IsNullOrEmpty(expectedHash))
+				throw new InvalidOperationException($"No pinned hash is configured for {fileName}.");
+
+			Directory.CreateDirectory(libraryDir);
+			string destinationPath = Path.Combine(libraryDir, fileName);
+			string sourcePath = GetTrustedSource(projectPath, fileName, logPrefix);
+
+			if (sourcePath == null)
+			{
+				if (TrustedFileUtility.FileMatchesSha256(destinationPath, expectedHash, out _))
+				{
+					return destinationPath;
+				}
+
+				throw new FileNotFoundException($"{logPrefix} No trusted copy of {fileName} was found.");
+			}
+
+			if (!TrustedFileUtility.FileMatchesSha256(destinationPath, expectedHash, out _))
+			{
+				try
+				{
+					File.Copy(sourcePath, destinationPath, overwrite: true);
+					Debug.Log($"{logPrefix} Copied trusted {fileName} from {sourcePath} to {destinationPath}");
+				}
+				catch
+				{
+					if (!TrustedFileUtility.FileMatchesSha256(destinationPath, expectedHash, out _))
+						throw;
+
+					Debug.Log($"{logPrefix} Using existing pinned {fileName} copy at {destinationPath}");
+				}
+			}
+
+			TrustedFileUtility.EnsureFileMatchesSha256(destinationPath, expectedHash, fileName);
+			return destinationPath;
+		}
+
+		internal static void PrepareLibraries(string projectPath, string libraryDir, string logPrefix)
+		{
+			EnsureTrustedCopy(projectPath, libraryDir, "hdiffz.dll", logPrefix);
+			EnsureTrustedCopy(projectPath, libraryDir, "hpatchz.dll", logPrefix);
+			EnsureTrustedCopy(projectPath, libraryDir, "hdiffinfo.dll", logPrefix);
+		}
+
+		private static string GetTrustedSource(string projectPath, string fileName, string logPrefix)
+		{
+			foreach (string candidatePath in GetCandidatePaths(projectPath, fileName))
+			{
+				if (!File.Exists(candidatePath))
+					continue;
+				if (IsTrustedNativeLibrary(fileName, candidatePath))
+					return candidatePath;
+
+				Debug.LogError($"{logPrefix} Refusing to use untrusted {fileName} from {candidatePath}");
+			}
+
+			return null;
+		}
+
+		private static string[] GetCandidatePaths(string projectPath, string fileName)
+		{
+			return new[]
+			{
+				Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", fileName),
+				Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", fileName),
+			};
+		}
+
+		private static string GetExpectedHash(string fileName)
+		{
+			switch (fileName?.ToLowerInvariant())
+			{
+				case "hdiffz.dll":
+					return HdiffzSha256;
+				case "hpatchz.dll":
+					return HpatchzSha256;
+				case "hdiffinfo.dll":
+					return HdiffinfoSha256;
+				default:
+					return null;
+			}
+		}
+#endif
+	}
+
 	/// <summary>
 	/// Initializes DLL copying and search path BEFORE HDiffPatchWrapper is accessed.
 	/// This ensures DllImport attributes find the DLLs in Library/YUCP/ instead of Plugins/.
@@ -26,94 +141,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			{
 				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 				string libraryDir = Path.Combine(projectPath, "Library", "YUCP");
-				
-				// Ensure directory exists
-				Directory.CreateDirectory(libraryDir);
-				
-				// Source locations to check
-				string[] hdiffzSources = new string[]
-				{
-					Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", "hdiffz.dll"),
-					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hdiffz.dll")
-				};
-				
-				string[] hpatchzSources = new string[]
-				{
-					Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", "hpatchz.dll"),
-					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hpatchz.dll")
-				};
-				
-				string[] hdiffinfoSources = new string[]
-				{
-					Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", "hdiffinfo.dll"),
-					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hdiffinfo.dll")
-				};
-				string hdiffzDest = Path.Combine(libraryDir, "hdiffz.dll");
-				string hpatchzDest = Path.Combine(libraryDir, "hpatchz.dll");
-				string hdiffinfoDest = Path.Combine(libraryDir, "hdiffinfo.dll");
-				
-				// Copy hdiffz.dll if source exists and destination doesn't or is older
-				foreach (var source in hdiffzSources)
-				{
-					if (File.Exists(source))
-					{
-						try
-						{
-							if (!File.Exists(hdiffzDest) || File.GetLastWriteTime(source) > File.GetLastWriteTime(hdiffzDest))
-							{
-								File.Copy(source, hdiffzDest, overwrite: true);
-								Debug.Log($"[HDiffPatchDllInitializer] Copied hdiffz.dll to {hdiffzDest}");
-							}
-							break;
-						}
-						catch (Exception ex)
-						{
-							Debug.LogWarning($"[HDiffPatchDllInitializer] Could not copy hdiffz.dll: {ex.Message}");
-						}
-					}
-				}
-				
-				// Copy hpatchz.dll if source exists and destination doesn't or is older
-				foreach (var source in hpatchzSources)
-				{
-					if (File.Exists(source))
-					{
-						try
-						{
-							if (!File.Exists(hpatchzDest) || File.GetLastWriteTime(source) > File.GetLastWriteTime(hpatchzDest))
-							{
-								File.Copy(source, hpatchzDest, overwrite: true);
-								Debug.Log($"[HDiffPatchDllInitializer] Copied hpatchz.dll to {hpatchzDest}");
-							}
-							break;
-						}
-						catch (Exception ex)
-						{
-							Debug.LogWarning($"[HDiffPatchDllInitializer] Could not copy hpatchz.dll: {ex.Message}");
-						}
-					}
-				}
-				
-				// Copy hdiffinfo.dll if source exists and destination doesn't or is older
-				foreach (var source in hdiffinfoSources)
-				{
-					if (File.Exists(source))
-					{
-						try
-						{
-							if (!File.Exists(hdiffinfoDest) || File.GetLastWriteTime(source) > File.GetLastWriteTime(hdiffinfoDest))
-							{
-								File.Copy(source, hdiffinfoDest, overwrite: true);
-								Debug.Log($"[HDiffPatchDllInitializer] Copied hdiffinfo.dll to {hdiffinfoDest}");
-							}
-							break;
-						}
-						catch (Exception ex)
-						{
-							Debug.LogWarning($"[HDiffPatchDllInitializer] Could not copy hdiffinfo.dll: {ex.Message}");
-						}
-					}
-				}
+				HDiffPatchTrust.PrepareLibraries(projectPath, libraryDir, "[HDiffPatchDllInitializer]");
 				
 				// Set DLL directory BEFORE any DllImport attributes try to resolve
 				SetDllDirectory(libraryDir);
@@ -169,95 +197,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			{
 				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 				string libraryDir = Path.Combine(projectPath, "Library", "YUCP");
-				
-				// Ensure directory exists
-				Directory.CreateDirectory(libraryDir);
-				
-				// Source locations to check
-				string[] hdiffzSources = new string[]
-				{
-					Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", "hdiffz.dll"),
-					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hdiffz.dll")
-				};
-				
-				string[] hpatchzSources = new string[]
-				{
-					Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", "hpatchz.dll"),
-					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hpatchz.dll")
-				};
-				
-				string[] hdiffinfoSources = new string[]
-				{
-					Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", "hdiffinfo.dll"),
-					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hdiffinfo.dll")
-				};
-				
-				string hdiffzDest = Path.Combine(libraryDir, "hdiffz.dll");
-				string hpatchzDest = Path.Combine(libraryDir, "hpatchz.dll");
-				string hdiffinfoDest = Path.Combine(libraryDir, "hdiffinfo.dll");
-				
-				// Copy hdiffz.dll if source exists and destination doesn't or is older
-				foreach (var source in hdiffzSources)
-				{
-					if (File.Exists(source))
-					{
-						try
-						{
-							if (!File.Exists(hdiffzDest) || File.GetLastWriteTime(source) > File.GetLastWriteTime(hdiffzDest))
-							{
-								File.Copy(source, hdiffzDest, overwrite: true);
-								Debug.Log($"[HDiffPatchWrapper] Copied hdiffz.dll to {hdiffzDest} (static constructor)");
-							}
-							break;
-						}
-						catch (Exception ex)
-						{
-							Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hdiffz.dll in static constructor: {ex.Message}");
-						}
-					}
-				}
-				
-				// Copy hpatchz.dll if source exists and destination doesn't or is older
-				foreach (var source in hpatchzSources)
-				{
-					if (File.Exists(source))
-					{
-						try
-						{
-							if (!File.Exists(hpatchzDest) || File.GetLastWriteTime(source) > File.GetLastWriteTime(hpatchzDest))
-							{
-								File.Copy(source, hpatchzDest, overwrite: true);
-								Debug.Log($"[HDiffPatchWrapper] Copied hpatchz.dll to {hpatchzDest} (static constructor)");
-							}
-							break;
-						}
-						catch (Exception ex)
-						{
-							Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hpatchz.dll in static constructor: {ex.Message}");
-						}
-					}
-				}
-				
-				// Copy hdiffinfo.dll if source exists and destination doesn't or is older
-				foreach (var source in hdiffinfoSources)
-				{
-					if (File.Exists(source))
-					{
-						try
-						{
-							if (!File.Exists(hdiffinfoDest) || File.GetLastWriteTime(source) > File.GetLastWriteTime(hdiffinfoDest))
-							{
-								File.Copy(source, hdiffinfoDest, overwrite: true);
-								Debug.Log($"[HDiffPatchWrapper] Copied hdiffinfo.dll to {hdiffinfoDest} (static constructor)");
-							}
-							break;
-						}
-						catch (Exception ex)
-						{
-							Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hdiffinfo.dll in static constructor: {ex.Message}");
-						}
-					}
-				}
+				HDiffPatchTrust.PrepareLibraries(projectPath, libraryDir, "[HDiffPatchWrapper]");
 				
 				// Set DLL directory BEFORE any DllImport attributes try to resolve
 				SetDllDirectory(libraryDir);
@@ -267,6 +207,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			{
 				Debug.LogWarning($"[HDiffPatchWrapper] Error in static constructor: {ex.Message}");
 			}
+#endif
+		}
+
+		internal static bool IsTrustedNativeLibrary(string fileName, string path)
+		{
+#if UNITY_EDITOR_WIN
+			return HDiffPatchTrust.IsTrustedNativeLibrary(fileName, path);
+#else
+			return false;
 #endif
 		}
 		
@@ -338,269 +287,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				string hpatchzDest = Path.Combine(libraryDir, "hpatchz.dll");
 				string hdiffinfoDest = Path.Combine(libraryDir, "hdiffinfo.dll");
 				
-				// Source locations to check (in order of preference)
-				string[] hdiffzSources = new string[]
-				{
-					Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", "hdiffz.dll"),
-					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hdiffz.dll")
-				};
-				
-				string[] hpatchzSources = new string[]
-				{
-					Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", "hpatchz.dll"),
-					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hpatchz.dll")
-				};
-				
-				string[] hdiffinfoSources = new string[]
-				{
-					Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", "hdiffinfo.dll"),
-					Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", "hdiffinfo.dll")
-				};
-				
 				// Ensure Library/YUCP directory exists
 				Directory.CreateDirectory(libraryDir);
-				
-				// Convert to absolute paths
-				hdiffzDest = Path.GetFullPath(hdiffzDest);
-				hpatchzDest = Path.GetFullPath(hpatchzDest);
-				hdiffinfoDest = Path.GetFullPath(hdiffinfoDest);
+				hdiffzDest = HDiffPatchTrust.EnsureTrustedCopy(projectPath, libraryDir, "hdiffz.dll", "[HDiffPatchWrapper]");
+				hpatchzDest = HDiffPatchTrust.EnsureTrustedCopy(projectPath, libraryDir, "hpatchz.dll", "[HDiffPatchWrapper]");
+				hdiffinfoDest = HDiffPatchTrust.EnsureTrustedCopy(projectPath, libraryDir, "hdiffinfo.dll", "[HDiffPatchWrapper]");
 				
 				// Get the Library/YUCP directory for SetDllDirectory
 				string dllDir = Path.GetDirectoryName(hdiffzDest);
 				
 				// Set DLL directory FIRST before copying/loading
 				SetDllDirectory(dllDir);
-				
-				// Find source hdiffz.dll
-				string sourceHdiffz = null;
-				foreach (var source in hdiffzSources)
-				{
-					if (File.Exists(source))
-					{
-						sourceHdiffz = source;
-						break;
-					}
-				}
-				
-				// Copy hdiffz.dll only if destination doesn't exist or source is newer
-				// If copy fails due to file lock, use existing copy if available
-				if (sourceHdiffz != null)
-				{
-					bool needsCopy = !File.Exists(hdiffzDest);
-					if (!needsCopy && File.Exists(sourceHdiffz))
-					{
-						try
-						{
-							var sourceTime = File.GetLastWriteTime(sourceHdiffz);
-							var destTime = File.GetLastWriteTime(hdiffzDest);
-							needsCopy = sourceTime > destTime;
-						}
-						catch
-						{
-							needsCopy = false;
-						}
-					}
-					
-					if (needsCopy)
-					{
-						try
-						{
-							File.Copy(sourceHdiffz, hdiffzDest, overwrite: true);
-							Debug.Log($"[HDiffPatchWrapper] Copied hdiffz.dll from {sourceHdiffz} to {hdiffzDest}");
-							
-							// If source is in temp Plugins, try to delete it immediately
-							if (sourceHdiffz.Contains("com.yucp.temp"))
-							{
-								try
-								{
-									File.SetAttributes(sourceHdiffz, FileAttributes.Normal);
-									File.Delete(sourceHdiffz);
-									Debug.Log($"[HDiffPatchWrapper] Deleted source hdiffz.dll from Plugins to prevent DllImport from using it");
-								}
-								catch
-								{
-									// Ignore - will be cleaned up later
-								}
-							}
-						}
-						catch (Exception ex)
-						{
-							// If copy fails due to file lock, check if existing copy is usable
-							if (File.Exists(hdiffzDest))
-							{
-								Debug.Log($"[HDiffPatchWrapper] Could not copy hdiffz.dll (file locked), using existing copy: {hdiffzDest}");
-							}
-							else
-							{
-								Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hdiffz.dll: {ex.Message}");
-							}
-						}
-					}
-					else if (File.Exists(hdiffzDest))
-					{
-						Debug.Log($"[HDiffPatchWrapper] Using existing hdiffz.dll copy: {hdiffzDest}");
-					}
-				}
-				else
-				{
-					if (!File.Exists(hdiffzDest))
-					{
-						Debug.LogError($"[HDiffPatchWrapper] hdiffz.dll not found in any source location");
-					}
-				}
-				
-				// Find source hpatchz.dll
-				string sourceHpatchz = null;
-				foreach (var source in hpatchzSources)
-				{
-					if (File.Exists(source))
-					{
-						sourceHpatchz = source;
-						break;
-					}
-				}
-				
-				// Find source hdiffinfo.dll
-				string sourceHdiffinfo = null;
-				foreach (var source in hdiffinfoSources)
-				{
-					if (File.Exists(source))
-					{
-						sourceHdiffinfo = source;
-						break;
-					}
-				}
-				
-				// Copy hpatchz.dll only if destination doesn't exist or source is newer
-				// If copy fails due to file lock, use existing copy if available
-				if (sourceHpatchz != null)
-				{
-					bool needsCopy = !File.Exists(hpatchzDest);
-					if (!needsCopy && File.Exists(sourceHpatchz))
-					{
-						try
-						{
-							var sourceTime = File.GetLastWriteTime(sourceHpatchz);
-							var destTime = File.GetLastWriteTime(hpatchzDest);
-							needsCopy = sourceTime > destTime;
-						}
-						catch
-						{
-							needsCopy = false;
-						}
-					}
-					
-					if (needsCopy)
-					{
-						try
-						{
-							File.Copy(sourceHpatchz, hpatchzDest, overwrite: true);
-							Debug.Log($"[HDiffPatchWrapper] Copied hpatchz.dll from {sourceHpatchz} to {hpatchzDest}");
-							
-							// If source is in temp Plugins, try to delete it immediately
-							if (sourceHpatchz.Contains("com.yucp.temp"))
-							{
-								try
-								{
-									File.SetAttributes(sourceHpatchz, FileAttributes.Normal);
-									File.Delete(sourceHpatchz);
-									Debug.Log($"[HDiffPatchWrapper] Deleted source hpatchz.dll from Plugins to prevent DllImport from using it");
-								}
-								catch
-								{
-									// Ignore - will be cleaned up later
-								}
-							}
-						}
-						catch (Exception ex)
-						{
-							// If copy fails due to file lock, check if existing copy is usable
-							if (File.Exists(hpatchzDest))
-							{
-								Debug.Log($"[HDiffPatchWrapper] Could not copy hpatchz.dll (file locked), using existing copy: {hpatchzDest}");
-							}
-							else
-							{
-								Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hpatchz.dll: {ex.Message}");
-							}
-						}
-					}
-					else if (File.Exists(hpatchzDest))
-					{
-						Debug.Log($"[HDiffPatchWrapper] Using existing hpatchz.dll copy: {hpatchzDest}");
-					}
-				}
-				else
-				{
-					if (!File.Exists(hpatchzDest))
-					{
-						Debug.LogError($"[HDiffPatchWrapper] hpatchz.dll not found in any source location");
-					}
-				}
-				
-				// Copy hdiffinfo.dll only if destination doesn't exist or source is newer
-				if (sourceHdiffinfo != null)
-				{
-					bool needsCopy = !File.Exists(hdiffinfoDest);
-					if (!needsCopy && File.Exists(sourceHdiffinfo))
-					{
-						try
-						{
-							var sourceTime = File.GetLastWriteTime(sourceHdiffinfo);
-							var destTime = File.GetLastWriteTime(hdiffinfoDest);
-							needsCopy = sourceTime > destTime;
-						}
-						catch
-						{
-							needsCopy = false;
-						}
-					}
-					
-					if (needsCopy)
-					{
-						try
-						{
-							File.Copy(sourceHdiffinfo, hdiffinfoDest, overwrite: true);
-							Debug.Log($"[HDiffPatchWrapper] Copied hdiffinfo.dll from {sourceHdiffinfo} to {hdiffinfoDest}");
-
-							if (sourceHdiffinfo.Contains("com.yucp.temp"))
-							{
-								try
-								{
-									File.SetAttributes(sourceHdiffinfo, FileAttributes.Normal);
-									File.Delete(sourceHdiffinfo);
-									Debug.Log($"[HDiffPatchWrapper] Deleted source hdiffinfo.dll from Plugins to prevent DllImport from using it");
-								}
-								catch
-								{
-									// Ignore - will be cleaned up later
-								}
-							}
-						}
-						catch (Exception ex)
-						{
-							if (File.Exists(hdiffinfoDest))
-							{
-								Debug.Log($"[HDiffPatchWrapper] Could not copy hdiffinfo.dll (file locked), using existing copy: {hdiffinfoDest}");
-							}
-							else
-							{
-								Debug.LogWarning($"[HDiffPatchWrapper] Could not copy hdiffinfo.dll: {ex.Message}");
-							}
-						}
-					}
-					else if (File.Exists(hdiffinfoDest))
-					{
-						Debug.Log($"[HDiffPatchWrapper] Using existing hdiffinfo.dll copy: {hdiffinfoDest}");
-					}
-				}
-				else
-				{
-					if (!File.Exists(hdiffinfoDest))
-					{
-						Debug.LogError($"[HDiffPatchWrapper] hdiffinfo.dll not found in any source location");
-					}
-				}
 				
 				// Explicitly load DLLs from Library/YUCP/ using full paths
 				// Only load if not already loaded

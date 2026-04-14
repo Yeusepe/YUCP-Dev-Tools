@@ -4,27 +4,24 @@ using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using UnityEngine;
+using YUCP.DevTools.Editor.Security;
 
 namespace YUCP.DevTools.Editor.PackageSigning.Crypto
 {
     /// <summary>
-    /// Ed25519 wrapper for Unity using Chaos.NaCl.Standard
-    /// 
-    /// Installation:
-    /// 1. Download from: https://www.nuget.org/packages/Chaos.NaCl.Standard/1.0.0
-    /// 2. Extract the .nupkg file (rename to .zip)
-    /// 3. Copy lib/netstandard2.0/Chaos.NaCl.dll to Assets/Plugins/
-    /// 4. The wrapper will automatically detect and use it
+    /// Ed25519 wrapper for Unity using a pinned Chaos.NaCl.Standard binary.
     /// </summary>
     public static class Ed25519Wrapper
     {
         private const int PublicKeySize = 32;
         private const int PrivateKeySize = 32; // Seed size for Chaos.NaCl
-        private const int ExpandedPrivateKeySize = 64; // Expanded private key size
         private const int SignatureSize = 64;
+        private const string TrustedChaosNaClSha256 = "F442B14191F55536E7B72EC83A056F5ED1C55AAA2F44A0F95F00A4A24A286311";
 
-        private static bool _useChaosNaCl = false;
-        private static bool _initialized = false;
+        private static bool _useChaosNaCl;
+        private static bool _initialized;
+        private static Assembly _chaosNaClAssembly;
+        private static Type _ed25519Type;
 
         static Ed25519Wrapper()
         {
@@ -33,194 +30,103 @@ namespace YUCP.DevTools.Editor.PackageSigning.Crypto
 
         private static void Initialize()
         {
-            if (_initialized) return;
+            if (_initialized)
+                return;
 
-            // Try to detect Chaos.NaCl by checking loaded assemblies (similar to Harmony pattern)
             try
             {
-                Assembly chaosNaClAssembly = null;
-                
-                // First, check already loaded assemblies
-                Debug.Log("[Ed25519Wrapper] Checking loaded assemblies...");
-                foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+                _chaosNaClAssembly = FindTrustedLoadedChaosNaClAssembly();
+                if (_chaosNaClAssembly == null)
                 {
-                    var fullName = assembly.FullName;
-                    // Check for various possible assembly name patterns
-                    if (fullName.StartsWith("Chaos.NaCl") || 
-                        fullName.Contains("Chaos.NaCl") ||
-                        fullName.StartsWith("ChaosNaCl") ||
-                        assembly.GetName().Name == "Chaos.NaCl" ||
-                        assembly.GetName().Name == "ChaosNaCl")
+                    foreach (string dllPath in GetTrustedChaosNaClCandidatePaths())
                     {
-                        chaosNaClAssembly = assembly;
-                        Debug.Log($"[Ed25519Wrapper] Found Chaos.NaCl in loaded assemblies: {fullName}");
+                        if (!File.Exists(dllPath))
+                            continue;
+                        if (!IsTrustedChaosNaClBinary(dllPath))
+                        {
+                            Debug.LogError($"[Ed25519Wrapper] Refusing to load Chaos.NaCl from untrusted path: {dllPath}");
+                            continue;
+                        }
+
+                        _chaosNaClAssembly = Assembly.LoadFrom(dllPath);
+                        Debug.Log($"[Ed25519Wrapper] Loaded trusted Chaos.NaCl from {dllPath}");
                         break;
                     }
                 }
 
-                // If not found in loaded assemblies, try to load from Plugins folder
-                // Check both main project and package locations
-                if (chaosNaClAssembly == null)
+                if (_chaosNaClAssembly != null)
                 {
-                    // Get package path
-                    string packagePath = "Packages/com.yucp.devtools";
-                    string packageFullPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", packagePath));
-                    
-                    // Get the root project folder (parent of Assets)
-                    string projectRoot = Path.GetDirectoryName(Application.dataPath);
-                    
-                    string[] possiblePaths = new[]
-                    {
-                        // Root Plugins folder (where it actually is!)
-                        Path.Combine(projectRoot, "Plugins", "Chaos.NaCl.dll"),
-                        // Main project Plugins
-                        Path.Combine(Application.dataPath, "Plugins", "Chaos.NaCl.dll"),
-                        Path.Combine(Application.dataPath, "Plugins", "x86_64", "Chaos.NaCl.dll"),
-                        Path.Combine(Application.dataPath, "Plugins", "x86", "Chaos.NaCl.dll"),
-                        // Package Plugins
-                        Path.Combine(packageFullPath, "Plugins", "Chaos.NaCl.dll"),
-                        Path.Combine(packageFullPath, "Runtime", "Plugins", "Chaos.NaCl.dll"),
-                        Path.Combine(packageFullPath, "Editor", "Plugins", "Chaos.NaCl.dll"),
-                    };
-
-                    foreach (var dllPath in possiblePaths)
+                    _ed25519Type = _chaosNaClAssembly.GetType("Chaos.NaCl.Ed25519", throwOnError: false);
+                    if (_ed25519Type == null)
                     {
                         try
                         {
-                            if (File.Exists(dllPath))
-                            {
-                                Debug.Log($"[Ed25519Wrapper] Found DLL at: {dllPath}, attempting to load...");
-                                chaosNaClAssembly = Assembly.LoadFrom(dllPath);
-                                Debug.Log($"[Ed25519Wrapper] Successfully loaded Chaos.NaCl from {dllPath}, Assembly: {chaosNaClAssembly.FullName}");
-                                break;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.LogWarning($"[Ed25519Wrapper] Failed to load Chaos.NaCl from {dllPath}: {ex.Message}");
-                        }
-                    }
-                    
-                    // If still not found, list all assemblies to help debug
-                    if (chaosNaClAssembly == null)
-                    {
-                        Debug.LogWarning("[Ed25519Wrapper] Chaos.NaCl.dll not found. Listing all loaded assemblies that might be related:");
-                        foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
-                        {
-                            var name = assembly.GetName().Name;
-                            if (name.Contains("Chaos") || name.Contains("NaCl") || name.Contains("Ed25519"))
-                            {
-                                Debug.Log($"[Ed25519Wrapper] Found potentially related assembly: {assembly.FullName} at {assembly.Location}");
-                            }
-                        }
-                    }
-                }
-
-                // Try to get the Ed25519 type - try multiple approaches
-                Type ed25519Type = null;
-                
-                if (chaosNaClAssembly != null)
-                {
-                    // Try multiple type name variations
-                    ed25519Type = chaosNaClAssembly.GetType("Chaos.NaCl.Ed25519");
-                    if (ed25519Type == null)
-                    {
-                        // Try to find it by searching all types
-                        try
-                        {
-                            var types = chaosNaClAssembly.GetTypes();
-                            foreach (var type in types)
-                            {
-                                if (type.Name == "Ed25519" && type.Namespace == "Chaos.NaCl")
-                                {
-                                    ed25519Type = type;
-                                    break;
-                                }
-                            }
+                            _ed25519Type = _chaosNaClAssembly
+                                .GetTypes()
+                                .FirstOrDefault(type => type?.Namespace == "Chaos.NaCl" && type.Name == "Ed25519");
                         }
                         catch (ReflectionTypeLoadException ex)
                         {
-                            // Some types might not be loadable, try the ones that are
-                            foreach (var type in ex.Types)
-                            {
-                                if (type != null && type.Name == "Ed25519" && type.Namespace == "Chaos.NaCl")
-                                {
-                                    ed25519Type = type;
-                                    break;
-                                }
-                            }
+                            _ed25519Type = ex.Types
+                                .FirstOrDefault(type => type?.Namespace == "Chaos.NaCl" && type.Name == "Ed25519");
                         }
-                    }
-                }
-                
-                // Also try Type.GetType directly (Unity might have loaded it with a different assembly name)
-                if (ed25519Type == null)
-                {
-                    ed25519Type = Type.GetType("Chaos.NaCl.Ed25519, Chaos.NaCl");
-                }
-                
-                // Try searching all loaded assemblies for the type
-                if (ed25519Type == null)
-                {
-                    foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
-                    {
-                        try
-                        {
-                            ed25519Type = assembly.GetType("Chaos.NaCl.Ed25519");
-                            if (ed25519Type != null)
-                            {
-                                Debug.Log($"[Ed25519Wrapper] Found Ed25519 type in assembly: {assembly.FullName}");
-                                break;
-                            }
-                        }
-                        catch { }
                     }
                 }
 
-                if (ed25519Type != null)
+                _useChaosNaCl = _ed25519Type != null;
+                if (_useChaosNaCl)
                 {
-                    _useChaosNaCl = true;
-                    _initialized = true;
-                    UnityEngine.Debug.Log($"[Ed25519Wrapper] Using Chaos.NaCl library, Type: {ed25519Type.FullName}");
-                    return;
+                    Debug.Log($"[Ed25519Wrapper] Using trusted Chaos.NaCl type {_ed25519Type.FullName}");
                 }
-                else if (chaosNaClAssembly != null)
+                else
                 {
-                    Debug.LogWarning($"[Ed25519Wrapper] Chaos.NaCl assembly loaded ({chaosNaClAssembly.FullName}) but Ed25519 type not found.");
+                    Debug.LogError("[Ed25519Wrapper] Trusted Chaos.NaCl.Standard not found. Ed25519 operations require the pinned Chaos.NaCl.dll binary.");
                 }
             }
             catch (Exception ex)
             {
-                UnityEngine.Debug.LogWarning($"[Ed25519Wrapper] Error detecting Chaos.NaCl: {ex.Message}\n{ex.StackTrace}");
+                Debug.LogWarning($"[Ed25519Wrapper] Error loading trusted Chaos.NaCl: {ex.Message}\n{ex.StackTrace}");
             }
+            finally
+            {
+                _initialized = true;
+            }
+        }
 
-            // No fallback - require Chaos.NaCl for security
-            UnityEngine.Debug.LogError("[Ed25519Wrapper] Chaos.NaCl.Standard not found. Ed25519 operations require Chaos.NaCl.dll to be installed in the Plugins folder.");
-            _initialized = true;
+        internal static bool IsTrustedChaosNaClBinary(string dllPath)
+        {
+            if (string.IsNullOrWhiteSpace(dllPath))
+                return false;
+
+            string fullPath = Path.GetFullPath(dllPath);
+            bool isTrustedPath = GetTrustedChaosNaClCandidatePaths()
+                .Any(candidate => TrustedFileUtility.PathsEqual(candidate, fullPath));
+
+            return isTrustedPath &&
+                   TrustedFileUtility.FileMatchesSha256(fullPath, TrustedChaosNaClSha256, out _);
         }
 
         /// <summary>
-        /// Generate a new Ed25519 keypair
-        /// Returns: (publicKey, privateKey) where privateKey is the 32-byte seed
+        /// Generate a new Ed25519 keypair.
+        /// Returns: (publicKey, privateKey) where privateKey is the 32-byte seed.
         /// </summary>
         public static (byte[] publicKey, byte[] privateKey) GenerateKeyPair()
         {
-            if (_useChaosNaCl)
+            EnsureAvailable();
+
+            byte[] seed = new byte[PrivateKeySize];
+            using (var rng = RandomNumberGenerator.Create())
             {
-                return GenerateKeyPairChaosNaCl();
+                rng.GetBytes(seed);
             }
-            else
-            {
-                throw new InvalidOperationException(
-                    "Ed25519 key generation requires Chaos.NaCl.Standard library. " +
-                    "Please install Chaos.NaCl.dll in your project's Plugins folder. " +
-                    "Download from: https://www.nuget.org/packages/Chaos.NaCl.Standard/1.0.0 " +
-                    "and extract lib/netstandard2.0/Chaos.NaCl.dll to Assets/Plugins/");
-            }
+
+            MethodInfo publicKeyFromSeedMethod = GetTrustedEd25519Type().GetMethod("PublicKeyFromSeed", new[] { typeof(byte[]) });
+            byte[] publicKey = (byte[])publicKeyFromSeedMethod.Invoke(null, new object[] { seed });
+            return (publicKey, seed);
         }
 
         /// <summary>
-        /// Sign data with private key (32-byte seed)
+        /// Sign data with a 32-byte private key seed.
         /// </summary>
         public static byte[] Sign(byte[] data, byte[] privateKey)
         {
@@ -228,22 +134,18 @@ namespace YUCP.DevTools.Editor.PackageSigning.Crypto
             if (privateKey == null || privateKey.Length != PrivateKeySize)
                 throw new ArgumentException("Invalid private key (must be 32 bytes)", nameof(privateKey));
 
-            if (_useChaosNaCl)
-            {
-                return SignChaosNaCl(data, privateKey);
-            }
-            else
-            {
-                throw new InvalidOperationException(
-                    "Ed25519 signing requires Chaos.NaCl.Standard library. " +
-                    "Please install Chaos.NaCl.dll in your project's Plugins folder. " +
-                    "Download from: https://www.nuget.org/packages/Chaos.NaCl.Standard/1.0.0 " +
-                    "and extract lib/netstandard2.0/Chaos.NaCl.dll to Assets/Plugins/");
-            }
+            EnsureAvailable();
+
+            Type ed25519Type = GetTrustedEd25519Type();
+            MethodInfo expandedPrivateKeyFromSeedMethod = ed25519Type.GetMethod("ExpandedPrivateKeyFromSeed", new[] { typeof(byte[]) });
+            byte[] expandedPrivateKey = (byte[])expandedPrivateKeyFromSeedMethod.Invoke(null, new object[] { privateKey });
+
+            MethodInfo signMethod = ed25519Type.GetMethod("Sign", new[] { typeof(byte[]), typeof(byte[]) });
+            return (byte[])signMethod.Invoke(null, new object[] { data, expandedPrivateKey });
         }
 
         /// <summary>
-        /// Verify signature with public key
+        /// Verify a signature with a public key.
         /// </summary>
         public static bool Verify(byte[] data, byte[] signature, byte[] publicKey)
         {
@@ -253,101 +155,97 @@ namespace YUCP.DevTools.Editor.PackageSigning.Crypto
             if (publicKey == null || publicKey.Length != PublicKeySize)
                 throw new ArgumentException("Invalid public key (must be 32 bytes)", nameof(publicKey));
 
-            if (_useChaosNaCl)
-            {
-                return VerifyChaosNaCl(data, signature, publicKey);
-            }
-            else
-            {
-                throw new InvalidOperationException(
-                    "Ed25519 verification requires Chaos.NaCl.Standard library. " +
-                    "Please install Chaos.NaCl.dll in your project's Plugins folder. " +
-                    "Download from: https://www.nuget.org/packages/Chaos.NaCl.Standard/1.0.0 " +
-                    "and extract lib/netstandard2.0/Chaos.NaCl.dll to Assets/Plugins/");
-            }
+            EnsureAvailable();
+
+            MethodInfo verifyMethod = GetTrustedEd25519Type().GetMethod("Verify", new[] { typeof(byte[]), typeof(byte[]), typeof(byte[]) });
+            return (bool)verifyMethod.Invoke(null, new object[] { signature, data, publicKey });
         }
 
         /// <summary>
-        /// Get public key from private key (32-byte seed)
+        /// Get a public key from a 32-byte private key seed.
         /// </summary>
         public static byte[] GetPublicKey(byte[] privateKey)
         {
             if (privateKey == null || privateKey.Length != PrivateKeySize)
                 throw new ArgumentException("Invalid private key (must be 32 bytes)", nameof(privateKey));
 
-            if (_useChaosNaCl)
+            EnsureAvailable();
+
+            MethodInfo publicKeyFromSeedMethod = GetTrustedEd25519Type().GetMethod("PublicKeyFromSeed", new[] { typeof(byte[]) });
+            return (byte[])publicKeyFromSeedMethod.Invoke(null, new object[] { privateKey });
+        }
+
+        private static void EnsureAvailable()
+        {
+            if (!_initialized)
             {
-                return GetPublicKeyChaosNaCl(privateKey);
+                Initialize();
             }
-            else
+
+            if (!_useChaosNaCl || _ed25519Type == null)
             {
                 throw new InvalidOperationException(
-                    "Ed25519 public key derivation requires Chaos.NaCl.Standard library. " +
-                    "Please install Chaos.NaCl.dll in your project's Plugins folder. " +
-                    "Download from: https://www.nuget.org/packages/Chaos.NaCl.Standard/1.0.0 " +
-                    "and extract lib/netstandard2.0/Chaos.NaCl.dll to Assets/Plugins/");
+                    "Ed25519 operations require the pinned Chaos.NaCl.Standard library. " +
+                    "Please install the trusted Chaos.NaCl.dll binary in the project's Plugins folder.");
             }
         }
 
-        #region Chaos.NaCl Implementation
-
-        private static (byte[] publicKey, byte[] privateKey) GenerateKeyPairChaosNaCl()
+        private static Type GetTrustedEd25519Type()
         {
-            // Generate 32-byte seed
-            byte[] seed = new byte[PrivateKeySize];
-            using (var rng = RandomNumberGenerator.Create())
+            EnsureAvailable();
+            return _ed25519Type;
+        }
+
+        private static Assembly FindTrustedLoadedChaosNaClAssembly()
+        {
+            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
-                rng.GetBytes(seed);
+                if (!string.Equals(assembly.GetName().Name, "Chaos.NaCl", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string location = string.Empty;
+                try
+                {
+                    location = assembly.Location;
+                }
+                catch
+                {
+                }
+
+                if (!string.IsNullOrWhiteSpace(location) && IsTrustedChaosNaClBinary(location))
+                {
+                    return assembly;
+                }
+
+                if (string.IsNullOrWhiteSpace(location))
+                {
+                    Debug.LogWarning("[Ed25519Wrapper] A loaded Chaos.NaCl assembly did not expose its location. Falling back to the pinned on-disk binary.");
+                    continue;
+                }
+
+                throw new InvalidOperationException(
+                    $"An untrusted Chaos.NaCl assembly is already loaded from '{location}'. " +
+                    "Refusing to continue with Ed25519 operations.");
             }
 
-            // Get Ed25519 type via reflection
-            var ed25519Type = Type.GetType("Chaos.NaCl.Ed25519, Chaos.NaCl");
-            var publicKeyFromSeedMethod = ed25519Type.GetMethod("PublicKeyFromSeed", new[] { typeof(byte[]) });
-            
-            byte[] publicKey = (byte[])publicKeyFromSeedMethod.Invoke(null, new object[] { seed });
-
-            // Return seed as private key (for storage)
-            return (publicKey, seed);
+            return null;
         }
 
-        private static byte[] SignChaosNaCl(byte[] data, byte[] seed)
+        private static string[] GetTrustedChaosNaClCandidatePaths()
         {
-            // Get Ed25519 type via reflection
-            var ed25519Type = Type.GetType("Chaos.NaCl.Ed25519, Chaos.NaCl");
-            
-            // Expand private key from seed
-            var expandedPrivateKeyFromSeedMethod = ed25519Type.GetMethod("ExpandedPrivateKeyFromSeed", new[] { typeof(byte[]) });
-            byte[] expandedPrivateKey = (byte[])expandedPrivateKeyFromSeedMethod.Invoke(null, new object[] { seed });
+            string projectRoot = Path.GetDirectoryName(Application.dataPath);
+            string packageRoot = Path.Combine(projectRoot, "Packages", "com.yucp.devtools");
 
-            // Sign with expanded private key
-            // Chaos.NaCl.Ed25519.Sign signature: Sign(byte[] message, byte[] expandedPrivateKey)
-            var signMethod = ed25519Type.GetMethod("Sign", new[] { typeof(byte[]), typeof(byte[]) });
-            byte[] signature = (byte[])signMethod.Invoke(null, new object[] { data, expandedPrivateKey });
-
-            return signature;
+            return new[]
+            {
+                Path.Combine(projectRoot, "Plugins", "Chaos.NaCl.dll"),
+                Path.Combine(Application.dataPath, "Plugins", "Chaos.NaCl.dll"),
+                Path.Combine(Application.dataPath, "Plugins", "x86_64", "Chaos.NaCl.dll"),
+                Path.Combine(Application.dataPath, "Plugins", "x86", "Chaos.NaCl.dll"),
+                Path.Combine(packageRoot, "Plugins", "Chaos.NaCl.dll"),
+                Path.Combine(packageRoot, "Runtime", "Plugins", "Chaos.NaCl.dll"),
+                Path.Combine(packageRoot, "Editor", "Plugins", "Chaos.NaCl.dll"),
+            };
         }
-
-        private static bool VerifyChaosNaCl(byte[] data, byte[] signature, byte[] publicKey)
-        {
-            // Get Ed25519 type via reflection
-            var ed25519Type = Type.GetType("Chaos.NaCl.Ed25519, Chaos.NaCl");
-            var verifyMethod = ed25519Type.GetMethod("Verify", new[] { typeof(byte[]), typeof(byte[]), typeof(byte[]) });
-            
-            bool isValid = (bool)verifyMethod.Invoke(null, new object[] { signature, data, publicKey });
-            return isValid;
-        }
-
-        private static byte[] GetPublicKeyChaosNaCl(byte[] seed)
-        {
-            // Get Ed25519 type via reflection
-            var ed25519Type = Type.GetType("Chaos.NaCl.Ed25519, Chaos.NaCl");
-            var publicKeyFromSeedMethod = ed25519Type.GetMethod("PublicKeyFromSeed", new[] { typeof(byte[]) });
-            
-            byte[] publicKey = (byte[])publicKeyFromSeedMethod.Invoke(null, new object[] { seed });
-            return publicKey;
-        }
-
-        #endregion
-
     }
 }

@@ -700,13 +700,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
                     YUCPUIToolkitHelper.AddSpacing(row, 4);
 
-                    var keyField = new TextField("Root Public Key (base64)") { value = provider.rootPublicKeyBase64 };
+                    var keyField = new TextField("Root Public Key (base64)") { value = SigningTrustDefaults.PinnedRootPublicKeyBase64 };
                     keyField.AddToClassList("yucp-input");
-                    keyField.RegisterValueChangedCallback(evt =>
-                    {
-                        _settings.certificateProviders[idx].rootPublicKeyBase64 = evt.newValue;
-                        EditorUtility.SetDirty(_settings);
-                    });
+                    keyField.isReadOnly = true;
+                    keyField.tooltip = "Pinned in code until authenticated trust rotation is implemented.";
                     row.Add(keyField);
 
                     providersContainer.Add(row);
@@ -725,7 +722,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                     {
                         name = "New Provider",
                         serverUrl = SigningSettings.DefaultServerUrl,
-                        rootPublicKeyBase64 = ""
+                        rootPublicKeyBase64 = SigningTrustDefaults.PinnedRootPublicKeyBase64
                     });
                     EditorUtility.SetDirty(_settings);
                     RebuildProviders();
@@ -757,23 +754,20 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             var content = YUCPUIToolkitHelper.GetCardContent(card);
 
             content.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                "The root public key for verifying certificates. Set this from server configuration.",
+                "The YUCP root trust anchor is pinned in code. Server responses can only confirm the pinned key set.",
                 YUCPUIToolkitHelper.MessageType.Info));
 
             YUCPUIToolkitHelper.AddSpacing(content, 12);
 
             var rootField = new TextField();
             rootField.multiline = true;
-            rootField.value     = _settings.yucpRootPublicKeyBase64 ?? "";
+            rootField.value     = SigningTrustDefaults.PinnedRootPublicKeyBase64;
             rootField.AddToClassList("yucp-input");
             rootField.AddToClassList("yucp-input-multiline");
             rootField.style.minHeight = 80;
             rootField.style.fontSize  = 11;
-            rootField.RegisterValueChangedCallback(evt =>
-            {
-                _settings.yucpRootPublicKeyBase64 = evt.newValue;
-                EditorUtility.SetDirty(_settings);
-            });
+            rootField.isReadOnly = true;
+            rootField.tooltip = "Pinned in code until authenticated trust rotation is implemented.";
             content.Add(rootField);
 
             return card;
@@ -1100,26 +1094,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private void LoadSettings()
         {
-            string[] guids = AssetDatabase.FindAssets("t:SigningSettings");
-            if (guids.Length > 0)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                _settings = AssetDatabase.LoadAssetAtPath<SigningSettings>(path);
-                if (_settings != null && _settings.NormalizeServerConfiguration())
-                {
-                    EditorUtility.SetDirty(_settings);
-                    AssetDatabase.SaveAssets();
-                }
-            }
-            else
-            {
-                _settings = ScriptableObject.CreateInstance<SigningSettings>();
-                string settingsPath = "Assets/YUCP/SigningSettings.asset";
-                string dir          = Path.GetDirectoryName(settingsPath);
-                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                AssetDatabase.CreateAsset(_settings, settingsPath);
-                AssetDatabase.SaveAssets();
-            }
+            _settings = PackageSigning.Core.SigningSettingsLocator.GetOrCreate();
         }
 
         private void RefreshDevKey()

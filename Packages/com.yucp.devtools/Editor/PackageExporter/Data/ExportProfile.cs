@@ -353,7 +353,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         };
 
         [Header("Signing")]
-        [Tooltip("Override the certificate provider server URL for this profile. Leave empty to use the default from Signing Settings.")]
+        [Tooltip("Legacy signing server override. Trusted signing server URLs are now pinned in code and this field is ignored.")]
         public string signingServerUrl = "";
 
         [Header("Custom Update Steps")]

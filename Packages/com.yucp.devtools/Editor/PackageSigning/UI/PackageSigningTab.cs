@@ -986,62 +986,46 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             container.Add(MakeLabel("Certificate Provider", 10, TextMute, bold: true, mb: 6));
 
             string effectiveUrl = GetServerUrl();
-            bool hasOverride = !string.IsNullOrEmpty(_profile?.signingServerUrl);
-
-            var urlRow = new VisualElement();
-            urlRow.style.flexDirection = FlexDirection.Row;
-            urlRow.style.alignItems    = Align.Center;
-            urlRow.style.marginBottom  = 4;
+            bool hasIgnoredOverride = !string.IsNullOrEmpty(_profile?.signingServerUrl);
 
             var urlField = new TextField();
-            urlField.style.flexGrow   = 1;
-            urlField.style.marginRight = 6;
+            urlField.style.flexGrow = 1;
             urlField.AddToClassList("yucp-input");
-            urlField.value      = hasOverride ? _profile.signingServerUrl : effectiveUrl;
-            urlField.isReadOnly = !hasOverride;
-            urlField.tooltip    = hasOverride
-                ? "Custom certificate provider URL for this profile"
-                : "Using default from Signing Settings. Enable override to customize.";
-            if (!hasOverride)
-                urlField.style.opacity = 0.5f;
-            urlRow.Add(urlField);
+            urlField.value = effectiveUrl;
+            urlField.isReadOnly = true;
+            urlField.tooltip = "Trusted signing server URL pinned by YUCP trust policy.";
+            container.Add(urlField);
 
-            var overrideToggle = new Toggle("Override");
-            overrideToggle.value = hasOverride;
-            overrideToggle.style.flexShrink = 0;
-            overrideToggle.RegisterValueChangedCallback(evt =>
+            if (hasIgnoredOverride)
             {
-                if (_profile == null) return;
-                if (evt.newValue)
+                var warning = MakeLabel(
+                    "Per-profile signing server overrides are ignored until authenticated trust rotation is implemented.",
+                    9,
+                    TextMute,
+                    mt: 4,
+                    mb: 4);
+                warning.style.whiteSpace = WhiteSpace.Normal;
+                container.Add(warning);
+
+                var clearOverride = new Button(() =>
                 {
-                    _profile.signingServerUrl = urlField.value != effectiveUrl ? urlField.value : effectiveUrl;
-                    urlField.SetValueWithoutNotify(_profile.signingServerUrl);
-                    urlField.isReadOnly = false;
-                    urlField.style.opacity = 1f;
-                }
-                else
-                {
+                    if (_profile == null)
+                        return;
+
                     _profile.signingServerUrl = "";
-                    urlField.SetValueWithoutNotify(GetServerUrl());
-                    urlField.isReadOnly = true;
-                    urlField.style.opacity = 0.5f;
-                }
-                EditorUtility.SetDirty(_profile);
-            });
-            urlRow.Add(overrideToggle);
-
-            container.Add(urlRow);
-
-            urlField.RegisterValueChangedCallback(evt =>
+                    EditorUtility.SetDirty(_profile);
+                    RefreshUI();
+                })
+                {
+                    text = "Clear Ignored Override"
+                };
+                clearOverride.AddToClassList("yucp-button-secondary");
+                clearOverride.style.alignSelf = Align.FlexStart;
+                container.Add(clearOverride);
+            }
+            else
             {
-                if (_profile == null || !overrideToggle.value) return;
-                _profile.signingServerUrl = evt.newValue;
-                EditorUtility.SetDirty(_profile);
-            });
-
-            if (!hasOverride)
-            {
-                var hint = MakeLabel($"Default: {effectiveUrl}", 9, TextMute, mb: 0);
+                var hint = MakeLabel($"Trusted URL: {effectiveUrl}", 9, TextMute, mb: 0);
                 hint.style.whiteSpace = WhiteSpace.Normal;
                 container.Add(hint);
             }
@@ -2760,22 +2744,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private void LoadSettings()
         {
-            string[] guids = AssetDatabase.FindAssets("t:SigningSettings");
-            if (guids.Length > 0)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                _settings = AssetDatabase.LoadAssetAtPath<SigningSettings>(path);
-                if (_settings != null && _settings.NormalizeServerConfiguration())
-                {
-                    EditorUtility.SetDirty(_settings);
-                    AssetDatabase.SaveAssets();
-                }
-            }
+            _settings = PackageSigning.Core.SigningSettingsLocator.Load();
         }
 
         private string GetServerUrl()
         {
-            if (!string.IsNullOrEmpty(_profile?.signingServerUrl)) return _profile.signingServerUrl;
             if (_settings != null) return _settings.GetEffectiveServerUrl();
             string fromService = PackageSigningService.GetServerUrl();
             return !string.IsNullOrEmpty(fromService) ? fromService : SigningSettings.DefaultServerUrl;

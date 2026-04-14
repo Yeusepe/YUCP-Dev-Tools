@@ -92,10 +92,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private static void ExtractUnityPackage(string unityPackagePath, string extractRoot)
         {
-            using var fileStream = File.OpenRead(unityPackagePath);
-            using var gzipStream = new GZipInputStream(fileStream);
-            using var tarArchive = TarArchive.CreateInputTarArchive(gzipStream, Encoding.UTF8);
-            tarArchive.ExtractContents(extractRoot);
+            ArchiveExtractionUtility.ExtractUnityPackageSafely(unityPackagePath, extractRoot);
         }
 
         private static int BuildPlaintextArchive(

@@ -218,31 +218,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static Data.SigningSettings GetSigningSettings()
         {
-            string[] guids = AssetDatabase.FindAssets("t:SigningSettings");
-            if (guids.Length > 0)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                return AssetDatabase.LoadAssetAtPath<Data.SigningSettings>(path);
-            }
-            return null;
+            return SigningSettingsLocator.Load();
         }
 
         private static Data.SigningSettings GetOrCreateSigningSettings()
         {
-            var settings = GetSigningSettings();
-            if (settings == null)
-            {
-                settings = ScriptableObject.CreateInstance<Data.SigningSettings>();
-                string path = "Assets/YUCP/SigningSettings.asset";
-                string dir = Path.GetDirectoryName(path);
-                if (!Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
-                AssetDatabase.CreateAsset(settings, path);
-                AssetDatabase.SaveAssets();
-            }
-            return settings;
+            return SigningSettingsLocator.GetOrCreate();
         }
 
         public class CertificateVerificationResult

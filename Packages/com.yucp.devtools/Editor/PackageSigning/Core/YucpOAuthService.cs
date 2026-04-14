@@ -365,13 +365,17 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 }
 
                 session = await EnrichSessionWithProfileAsync(serverUrl, session);
+                var signingService = new PackageSigningService(serverUrl);
+                if (!await signingService.FetchAndCacheRootPublicKeyAsync())
+                {
+                    onError?.Invoke("The signing server did not advertise a pinned YUCP trust root.");
+                    return;
+                }
+
                 PersistSession(session);
                 QueueFocusRelevantWindows();
                 Debug.Log($"[YUCP OAuth] Access token obtained (length {session.accessToken.Length}).");
                 Debug.Log($"[YUCP OAuth] Signed in as '{session.displayName}' (sub={session.userId}).");
-
-                var signingService = new PackageSigningService(serverUrl);
-                await signingService.FetchAndCacheRootPublicKeyAsync();
 
                 Debug.Log("[YUCP OAuth] Sign-in complete.");
                 onSuccess?.Invoke();

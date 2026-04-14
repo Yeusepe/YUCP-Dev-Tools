@@ -187,16 +187,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             bool hasMilestone = false;
             try
             {
-                System.Type milestoneTrackerType = null;
-                
-                // Try to find the type by searching through all loaded assemblies
-                foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    milestoneTrackerType = assembly.GetType("YUCP.Components.Editor.SupportBanner.MilestoneTracker");
-                    if (milestoneTrackerType != null)
-                        break;
-                }
-                
+                System.Type milestoneTrackerType = TrustedMilestoneTracker.GetTrustedMilestoneTrackerType();
                 if (milestoneTrackerType != null)
                 {
                     var getMilestoneMethod = milestoneTrackerType.GetMethod("GetCurrentMilestone", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);

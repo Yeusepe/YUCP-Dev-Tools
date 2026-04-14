@@ -174,17 +174,14 @@ namespace YUCP.DevTools.Editor.PackageExporter.Settings
                 if (_showRootKey)
                 {
                     EditorGUI.indentLevel++;
-                    EditorGUILayout.HelpBox("The root public key for verifying certificates. Set this from server configuration.", MessageType.Info);
+                    EditorGUILayout.HelpBox("The YUCP root trust anchor is pinned in code. This field is read-only.", MessageType.Info);
 
-                    EditorGUI.BeginChangeCheck();
-                    _settings.yucpRootPublicKeyBase64 = EditorGUILayout.TextArea(
-                        _settings.yucpRootPublicKeyBase64,
+                    EditorGUI.BeginDisabledGroup(true);
+                    EditorGUILayout.TextArea(
+                        SigningTrustDefaults.PinnedRootPublicKeyBase64,
                         GUILayout.Height(80),
                         GUILayout.ExpandWidth(true));
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        EditorUtility.SetDirty(_settings);
-                    }
+                    EditorGUI.EndDisabledGroup();
                     EditorGUI.indentLevel--;
                 }
                 EditorGUILayout.EndFoldoutHeaderGroup();
@@ -195,30 +192,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Settings
 
         private void LoadSettings()
         {
-            string[] guids = AssetDatabase.FindAssets("t:SigningSettings");
-            if (guids.Length > 0)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                _settings = AssetDatabase.LoadAssetAtPath<SigningSettings>(path);
-                if (_settings != null && _settings.NormalizeServerConfiguration())
-                {
-                    EditorUtility.SetDirty(_settings);
-                    AssetDatabase.SaveAssets();
-                }
-            }
-            else
-            {
-                // Create settings if they don't exist
-                _settings = ScriptableObject.CreateInstance<SigningSettings>();
-                string settingsPath = "Assets/YUCP/SigningSettings.asset";
-                string dir = Path.GetDirectoryName(settingsPath);
-                if (!Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
-                AssetDatabase.CreateAsset(_settings, settingsPath);
-                AssetDatabase.SaveAssets();
-            }
+            _settings = PackageSigning.Core.SigningSettingsLocator.GetOrCreate();
         }
 
         private void RefreshDevKey()

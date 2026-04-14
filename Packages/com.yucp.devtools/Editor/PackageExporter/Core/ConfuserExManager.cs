@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
+using YUCP.DevTools.Editor.Security;
 #if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
 using ICSharpCode.SharpZipLib.Zip;
 #endif
@@ -23,17 +24,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
     {
         private const string CONFUSEREX_VERSION = "1.6.0";
         private const string CONFUSEREX_DOWNLOAD_URL = "https://github.com/mkaring/ConfuserEx/releases/download/v1.6.0/ConfuserEx-CLI.zip";
+        private const string CONFUSEREX_ARCHIVE_SHA256 = "A00DE7CDDC740F7EDB1BAAB4C6C9073553DCC88F7E873D15B7FD34DDD33753D7";
+        private const string CONFUSEREX_CLI_SHA256 = "0790671F930BD1375FA06ECE29A776404CEE44695E083CACE46C905433644130";
         
         private static string ToolsDirectory => Path.Combine(Application.dataPath, "..", "Packages", "com.yucp.components", "Tools");
         private static string ConfuserExDirectory => Path.Combine(ToolsDirectory, "ConfuserEx");
         private static string ConfuserExCliPath => Path.Combine(ConfuserExDirectory, "Confuser.CLI.exe");
+        private static string ConfuserExWorkDirectory => Path.Combine(Application.dataPath, "..", "Library", "YUCP", "ConfuserEx");
+
+        internal static bool IsTrustedConfuserExArchive(string archivePath)
+        {
+            return TrustedFileUtility.FileMatchesSha256(archivePath, CONFUSEREX_ARCHIVE_SHA256, out _);
+        }
+
+        private static bool IsTrustedConfuserExCli(string executablePath)
+        {
+            return TrustedFileUtility.FileMatchesSha256(executablePath, CONFUSEREX_CLI_SHA256, out _);
+        }
         
         /// <summary>
         /// Check if ConfuserEx is installed and ready to use
         /// </summary>
         public static bool IsInstalled()
         {
-            return File.Exists(ConfuserExCliPath);
+            return File.Exists(ConfuserExCliPath) && IsTrustedConfuserExCli(ConfuserExCliPath);
         }
         
         /// <summary>
@@ -46,34 +60,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 return true;
             }
-            
-            
+
+            string tempZipPath = null;
+            string stagingDirectory = null;
+
             try
             {
-                // Create directory
-                progressCallback?.Invoke(0.1f, "Creating tools directory...");
-                if (!Directory.Exists(ConfuserExDirectory))
-                {
-                    Directory.CreateDirectory(ConfuserExDirectory);
-                }
-                
+                progressCallback?.Invoke(0.1f, "Preparing trusted tools workspace...");
+                Directory.CreateDirectory(ToolsDirectory);
+                Directory.CreateDirectory(ConfuserExWorkDirectory);
+
                 // Download with progress feedback
                 progressCallback?.Invoke(0.2f, "Downloading ConfuserEx CLI...");
-                string tempZipPath = Path.Combine(Path.GetTempPath(), "ConfuserEx-CLI.zip");
-                
-                // Delete any existing temp file (from previous failed downloads)
+                tempZipPath = Path.Combine(ConfuserExWorkDirectory, "ConfuserEx-CLI.zip");
+                stagingDirectory = Path.Combine(ConfuserExWorkDirectory, $"staging_{Guid.NewGuid():N}");
+
                 if (File.Exists(tempZipPath))
                 {
-                    try
-                    {
-                        File.Delete(tempZipPath);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[ConfuserEx] Could not delete existing temp file: {ex.Message}");
-                        // Generate unique temp filename
-                        tempZipPath = Path.Combine(Path.GetTempPath(), $"ConfuserEx-CLI_{Guid.NewGuid().ToString("N").Substring(0, 8)}.zip");
-                    }
+                    File.Delete(tempZipPath);
                 }
                 
                 using (var client = new WebClient())
@@ -88,17 +92,25 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     // Synchronous download - will block but with progress updates
                     client.DownloadFile(new Uri(CONFUSEREX_DOWNLOAD_URL), tempZipPath);
                 }
-                
-                // Extract
+
+                TrustedFileUtility.EnsureFileMatchesSha256(tempZipPath, CONFUSEREX_ARCHIVE_SHA256, "ConfuserEx archive");
+
+                // Extract to a staging directory first so partially extracted files never become authoritative.
                 progressCallback?.Invoke(0.7f, "Extracting ConfuserEx...");
-                ExtractZipFile(tempZipPath, ConfuserExDirectory);
-                
-                // Cleanup
-                progressCallback?.Invoke(0.9f, "Cleaning up...");
-                if (File.Exists(tempZipPath))
+                Directory.CreateDirectory(stagingDirectory);
+                ExtractZipFile(tempZipPath, stagingDirectory);
+
+                string stagedCliPath = Path.Combine(stagingDirectory, "Confuser.CLI.exe");
+                TrustedFileUtility.EnsureFileMatchesSha256(stagedCliPath, CONFUSEREX_CLI_SHA256, "Confuser.CLI.exe");
+
+                progressCallback?.Invoke(0.9f, "Installing verified ConfuserEx...");
+                if (Directory.Exists(ConfuserExDirectory))
                 {
-                    File.Delete(tempZipPath);
+                    Directory.Delete(ConfuserExDirectory, true);
                 }
+
+                Directory.Move(stagingDirectory, ConfuserExDirectory);
+                stagingDirectory = null;
                 
                 // Complete
                 progressCallback?.Invoke(1.0f, "ConfuserEx installed successfully!");
@@ -111,6 +123,26 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 progressCallback?.Invoke(0f, "Installation failed");
                 return false;
             }
+            finally
+            {
+                try
+                {
+                    if (!string.IsNullOrEmpty(tempZipPath) && File.Exists(tempZipPath))
+                    {
+                        File.Delete(tempZipPath);
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    if (!string.IsNullOrEmpty(stagingDirectory) && Directory.Exists(stagingDirectory))
+                    {
+                        Directory.Delete(stagingDirectory, true);
+                    }
+                }
+                catch { }
+            }
         }
         
         /// <summary>
@@ -119,33 +151,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private static void ExtractZipFile(string zipPath, string extractPath)
         {
 #if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
-            using (ZipInputStream zipStream = new ZipInputStream(File.OpenRead(zipPath)))
-            {
-                ZipEntry entry;
-                while ((entry = zipStream.GetNextEntry()) != null)
-                {
-                    string entryPath = Path.Combine(extractPath, entry.Name);
-                    string directoryName = Path.GetDirectoryName(entryPath);
-                    
-                    if (!string.IsNullOrEmpty(directoryName))
-                    {
-                        Directory.CreateDirectory(directoryName);
-                    }
-                    
-                    if (!entry.IsDirectory && !string.IsNullOrEmpty(entry.Name))
-                    {
-                        using (FileStream streamWriter = File.Create(entryPath))
-                        {
-                            byte[] buffer = new byte[4096];
-                            int bytesRead;
-                            while ((bytesRead = zipStream.Read(buffer, 0, buffer.Length)) > 0)
-                            {
-                                streamWriter.Write(buffer, 0, bytesRead);
-                            }
-                        }
-                    }
-                }
-            }
+            ArchiveExtractionUtility.ExtractZipSafely(zipPath, extractPath);
 #else
             Debug.LogError("[ConfuserExManager] ICSharpCode.SharpZipLib not available. Please install the ICSharpCode.SharpZipLib package.");
 #endif

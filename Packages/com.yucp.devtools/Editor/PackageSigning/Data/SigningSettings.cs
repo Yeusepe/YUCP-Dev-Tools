@@ -32,10 +32,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
 
         [Tooltip("Root public key (Ed25519, base64) used to verify certificates issued by this provider. Leave empty to use the global YUCP root key.")]
         [TextArea(1, 3)]
-        public string rootPublicKeyBase64 = "";
+        public string rootPublicKeyBase64 = SigningTrustDefaults.PinnedRootPublicKeyBase64;
 
         [Tooltip("Trusted root keys fetched from the authoritative signing server /v1/keys endpoint.")]
-        public List<TrustedRootKey> trustedRootKeys = new List<TrustedRootKey>();
+        public List<TrustedRootKey> trustedRootKeys = SigningTrustDefaults.CreatePinnedTrustedRootKeys();
     }
 
     [CreateAssetMenu(fileName = "SigningSettings", menuName = "YUCP/Package Signing Settings")]
@@ -65,10 +65,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         
         [Header("YUCP Root Public Key")]
         [TextArea(3, 10)]
-        public string yucpRootPublicKeyBase64 = "y+8Zs9/mS1MFZFeF4CFjwqe0nsLW8lCcwmyvBx6H0Zo=";
+        public string yucpRootPublicKeyBase64 = SigningTrustDefaults.PinnedRootPublicKeyBase64;
 
         [Tooltip("Trusted root keys fetched from the authoritative signing server /v1/keys endpoint.")]
-        public List<TrustedRootKey> yucpTrustedRootKeys = new List<TrustedRootKey>();
+        public List<TrustedRootKey> yucpTrustedRootKeys = SigningTrustDefaults.CreatePinnedTrustedRootKeys();
 
         /// <summary>
         /// Returns the effective server URL: first provider's URL if providers are configured,
@@ -78,8 +78,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         {
             if (certificateProviders != null && certificateProviders.Count > 0
                 && !string.IsNullOrEmpty(certificateProviders[0].serverUrl))
-                return NormalizeConfiguredServerUrl(certificateProviders[0].serverUrl);
-            return NormalizeConfiguredServerUrl(serverUrl);
+                return SigningTrustDefaults.ResolveTrustedServerUrl(certificateProviders[0].serverUrl);
+            return SigningTrustDefaults.ResolveTrustedServerUrl(serverUrl);
         }
 
         public bool NormalizeServerConfiguration()
@@ -87,6 +87,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
             bool changed = false;
 
             string normalizedDefaultServerUrl = NormalizeConfiguredServerUrl(serverUrl);
+            normalizedDefaultServerUrl = SigningTrustDefaults.ResolveTrustedServerUrl(normalizedDefaultServerUrl);
             if (!string.Equals(serverUrl, normalizedDefaultServerUrl, StringComparison.Ordinal))
             {
                 serverUrl = normalizedDefaultServerUrl;
@@ -103,7 +104,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
             if (certificateProviders == null)
             {
                 certificateProviders = new List<CertificateProvider>();
-                return true;
+                changed = true;
             }
 
             foreach (var provider in certificateProviders)
@@ -111,7 +112,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                 if (provider == null)
                     continue;
 
-                string normalizedProviderServerUrl = NormalizeConfiguredServerUrl(provider.serverUrl);
+                string normalizedProviderServerUrl = SigningTrustDefaults.ResolveTrustedServerUrl(provider.serverUrl);
                 if (!string.Equals(provider.serverUrl, normalizedProviderServerUrl, StringComparison.Ordinal))
                 {
                     provider.serverUrl = normalizedProviderServerUrl;
@@ -124,6 +125,38 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                     provider.accountAppUrl = normalizedProviderAccountAppUrl;
                     changed = true;
                 }
+
+                if (!string.Equals(
+                        provider.rootPublicKeyBase64 ?? string.Empty,
+                        SigningTrustDefaults.PinnedRootPublicKeyBase64,
+                        StringComparison.Ordinal))
+                {
+                    provider.rootPublicKeyBase64 = SigningTrustDefaults.PinnedRootPublicKeyBase64;
+                    changed = true;
+                }
+
+                var pinnedProviderKeys = SigningTrustDefaults.CreatePinnedTrustedRootKeys();
+                if (!TrustedRootKeysEqual(provider.trustedRootKeys, pinnedProviderKeys))
+                {
+                    provider.trustedRootKeys = pinnedProviderKeys;
+                    changed = true;
+                }
+            }
+
+            if (!string.Equals(
+                    yucpRootPublicKeyBase64 ?? string.Empty,
+                    SigningTrustDefaults.PinnedRootPublicKeyBase64,
+                    StringComparison.Ordinal))
+            {
+                yucpRootPublicKeyBase64 = SigningTrustDefaults.PinnedRootPublicKeyBase64;
+                changed = true;
+            }
+
+            var pinnedRootKeys = SigningTrustDefaults.CreatePinnedTrustedRootKeys();
+            if (!TrustedRootKeysEqual(yucpTrustedRootKeys, pinnedRootKeys))
+            {
+                yucpTrustedRootKeys = pinnedRootKeys;
+                changed = true;
             }
 
             return changed;
@@ -198,71 +231,34 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
         /// </summary>
         public string GetEffectiveRootPublicKey()
         {
-            var trustedKeys = GetEffectiveTrustedRootKeys();
-            if (trustedKeys.Count > 0 && !string.IsNullOrEmpty(trustedKeys[0].publicKeyBase64))
-                return trustedKeys[0].publicKeyBase64;
-            if (certificateProviders != null && certificateProviders.Count > 0
-                && !string.IsNullOrEmpty(certificateProviders[0].rootPublicKeyBase64))
-                return certificateProviders[0].rootPublicKeyBase64;
-            return yucpRootPublicKeyBase64;
+            return SigningTrustDefaults.PinnedRootPublicKeyBase64;
         }
 
         public void SetTrustedRootKeysForServer(string serverUrl, IEnumerable<TrustedRootKey> trustedKeys)
         {
-            var sanitized = SanitizeTrustedRootKeys(trustedKeys);
+            var sanitized = SigningTrustDefaults.FilterPinnedTrustedRoots(SanitizeTrustedRootKeys(trustedKeys));
+            if (sanitized.Count == 0)
+                return;
+
             var provider = GetProviderForServer(serverUrl);
             if (provider != null)
             {
                 provider.trustedRootKeys = sanitized;
-                if (sanitized.Count > 0)
-                    provider.rootPublicKeyBase64 = sanitized[0].publicKeyBase64;
             }
             else
             {
                 yucpTrustedRootKeys = sanitized;
-                if (sanitized.Count > 0)
-                    yucpRootPublicKeyBase64 = sanitized[0].publicKeyBase64;
             }
         }
 
         public bool TryGetTrustedRootPublicKey(string keyId, string algorithm, out string publicKeyBase64)
         {
-            var trustedKeys = GetEffectiveTrustedRootKeys();
-            foreach (var trustedKey in trustedKeys)
-            {
-                if (trustedKey == null || string.IsNullOrEmpty(trustedKey.publicKeyBase64))
-                    continue;
-                if (!string.Equals(trustedKey.algorithm, algorithm, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (!string.Equals(trustedKey.keyId, keyId, StringComparison.Ordinal))
-                    continue;
-
-                publicKeyBase64 = trustedKey.publicKeyBase64;
-                return true;
-            }
-
-            if (trustedKeys.Count == 0
-                && string.Equals(algorithm, "Ed25519", StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrEmpty(GetEffectiveRootPublicKey()))
-            {
-                publicKeyBase64 = GetEffectiveRootPublicKey();
-                return true;
-            }
-
-            publicKeyBase64 = null;
-            return false;
+            return SigningTrustDefaults.TryGetPinnedRootPublicKey(keyId, algorithm, out publicKeyBase64);
         }
 
         private List<TrustedRootKey> GetEffectiveTrustedRootKeys()
         {
-            if (certificateProviders != null && certificateProviders.Count > 0
-                && certificateProviders[0].trustedRootKeys != null
-                && certificateProviders[0].trustedRootKeys.Count > 0)
-            {
-                return certificateProviders[0].trustedRootKeys;
-            }
-
-            return yucpTrustedRootKeys ?? new List<TrustedRootKey>();
+            return SigningTrustDefaults.CreatePinnedTrustedRootKeys();
         }
 
         private CertificateProvider GetProviderForServer(string serverUrl)
@@ -309,6 +305,36 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
             }
 
             return sanitized;
+        }
+
+        private static bool TrustedRootKeysEqual(List<TrustedRootKey> left, List<TrustedRootKey> right)
+        {
+            int leftCount = left?.Count ?? 0;
+            int rightCount = right?.Count ?? 0;
+            if (leftCount != rightCount)
+                return false;
+
+            for (int i = 0; i < leftCount; i++)
+            {
+                var leftKey = left[i];
+                var rightKey = right[i];
+                if (leftKey == null || rightKey == null)
+                {
+                    if (!ReferenceEquals(leftKey, rightKey))
+                        return false;
+
+                    continue;
+                }
+
+                if (!string.Equals(leftKey.keyId, rightKey.keyId, StringComparison.Ordinal) ||
+                    !string.Equals(leftKey.algorithm, rightKey.algorithm, StringComparison.Ordinal) ||
+                    !string.Equals(leftKey.publicKeyBase64, rightKey.publicKeyBase64, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>

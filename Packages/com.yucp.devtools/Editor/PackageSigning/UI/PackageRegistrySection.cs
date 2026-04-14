@@ -96,11 +96,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private string GetPackageRegistryServerUrl()
         {
-            if (!string.IsNullOrWhiteSpace(_profile?.signingServerUrl))
-            {
-                return _profile.signingServerUrl.Trim();
-            }
-
             string configuredServerUrl = _getServerUrl?.Invoke();
             return string.IsNullOrWhiteSpace(configuredServerUrl) ? null : configuredServerUrl.Trim();
         }

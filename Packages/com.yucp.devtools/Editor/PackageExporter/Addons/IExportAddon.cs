@@ -30,7 +30,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Addons
     
     /// <summary>
     /// Interface for export addons that can extend the package export process.
-    /// Addons are discovered via TypeCache and invoked in Order sequence.
+    /// Addons must be explicitly trusted via AddonManager.RegisterTrustedAddonType(Type)
+    /// before they will be discovered and invoked.
     /// </summary>
     public interface IExportAddon
     {

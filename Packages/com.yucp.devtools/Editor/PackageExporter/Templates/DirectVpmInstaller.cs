@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEditor;
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -211,6 +212,303 @@ namespace YUCP.DirectVpmInstaller
             return fullPath.Substring(projectRoot.Length).Replace('\\', '/');
         }
 
+        private static Dictionary<string, string> LoadTrustedRepositories(JObject vpmRepositories)
+        {
+            var repositories = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (vpmRepositories == null)
+                return repositories;
+
+            foreach (var repo in vpmRepositories.Properties())
+            {
+                string repoUrl = repo.Value.Type == JTokenType.Object
+                    ? (repo.Value as JObject)?["url"]?.ToString()
+                    : repo.Value?.ToString();
+                if (!IsTrustedWebUrl(repoUrl))
+                {
+                    Debug.LogWarning($"[DirectVpmInstaller] Ignoring untrusted repository URL declared by the package: {repoUrl}");
+                    continue;
+                }
+
+                string key = string.IsNullOrWhiteSpace(repo.Name) ? repoUrl.Trim() : repo.Name.Trim();
+                if (!repositories.ContainsKey(key))
+                {
+                    repositories[key] = repoUrl.Trim();
+                }
+            }
+
+            return repositories;
+        }
+
+        private static void AddBuiltInRepositories(Dictionary<string, string> repositories)
+        {
+            const string vrchatOfficialName = "VRChat Official";
+            const string vrchatCuratedName = "VRChat Curated";
+            const string vrchatOfficialUrl = "https://packages.vrchat.com/official?download";
+            const string vrchatCuratedUrl = "https://packages.vrchat.com/curated?download";
+
+            if (!repositories.ContainsKey(vrchatOfficialName))
+                repositories[vrchatOfficialName] = vrchatOfficialUrl;
+            if (!repositories.ContainsKey(vrchatCuratedName))
+                repositories[vrchatCuratedName] = vrchatCuratedUrl;
+        }
+
+        private static bool IsTrustedWebUrl(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri uri))
+                return false;
+
+            if (uri.Scheme == Uri.UriSchemeHttps)
+                return true;
+
+            return uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback;
+        }
+
+        private static bool IsSafePackageName(string packageName)
+        {
+            if (string.IsNullOrWhiteSpace(packageName))
+                return false;
+            if (packageName.Contains("/") || packageName.Contains("\\") || packageName.Contains(":"))
+                return false;
+
+            string[] segments = packageName.Split('.');
+            if (segments.Length < 2)
+                return false;
+
+            foreach (string segment in segments)
+            {
+                if (string.IsNullOrWhiteSpace(segment) || segment == "." || segment == "..")
+                    return false;
+
+                foreach (char c in segment)
+                {
+                    if (!(char.IsLetterOrDigit(c) || c == '-' || c == '_'))
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static string GetPackagesRoot()
+        {
+            return Path.Combine(Path.GetFullPath(Path.Combine(Application.dataPath, "..")), "Packages");
+        }
+
+        private static bool TryGetInstalledPackageJsonPath(string packageName, out string packageJsonPath)
+        {
+            packageJsonPath = null;
+            if (!IsSafePackageName(packageName))
+                return false;
+
+            packageJsonPath = Path.Combine(GetPackagesRoot(), packageName, "package.json");
+            return true;
+        }
+
+        private static string GetValidatedPackageDestination(string packageName)
+        {
+            if (!IsSafePackageName(packageName))
+                throw new InvalidDataException($"Invalid package name '{packageName}'.");
+
+            string packagesRoot = Path.GetFullPath(GetPackagesRoot())
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            string destination = Path.GetFullPath(Path.Combine(packagesRoot, packageName));
+            if (!destination.StartsWith(packagesRoot, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Package '{packageName}' resolves outside the Packages directory.");
+
+            return destination;
+        }
+
+        private static string GetInstallerWorkspaceRoot()
+        {
+            return Path.Combine(Path.GetFullPath(Path.Combine(Application.dataPath, "..")), "Library", "YUCP", "DirectVpmInstaller");
+        }
+
+        private static string NormalizeSha256(string hash)
+        {
+            if (string.IsNullOrWhiteSpace(hash))
+                return null;
+
+            string normalized = hash.Trim().Replace("-", string.Empty).ToUpperInvariant();
+            return normalized.Length == 64 && normalized.All(Uri.IsHexDigit)
+                ? normalized
+                : null;
+        }
+
+        private static string ComputeFileSha256(string path)
+        {
+            using var stream = File.OpenRead(path);
+            using var sha256 = SHA256.Create();
+            return BitConverter.ToString(sha256.ComputeHash(stream)).Replace("-", string.Empty);
+        }
+
+        private static string GetValidatedExtractionPath(string extractionRoot, string entryName, string sourceDescription)
+        {
+            string normalizedRoot = Path.GetFullPath(extractionRoot)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            string normalizedEntry = entryName
+                .Replace('/', Path.DirectorySeparatorChar)
+                .Replace('\\', Path.DirectorySeparatorChar);
+            string candidate = Path.GetFullPath(Path.Combine(normalizedRoot, normalizedEntry));
+            if (!candidate.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Archive entry '{entryName}' from '{sourceDescription}' escapes '{normalizedRoot}'.");
+
+            return candidate;
+        }
+
+        private static void ExtractZipToDirectorySafely(string zipPath, string destinationDirectory)
+        {
+            Directory.CreateDirectory(destinationDirectory);
+            using var archive = ZipFile.OpenRead(zipPath);
+            foreach (ZipArchiveEntry entry in archive.Entries)
+            {
+                if (string.IsNullOrEmpty(entry.FullName))
+                    continue;
+
+                string destinationPath = GetValidatedExtractionPath(destinationDirectory, entry.FullName, zipPath);
+                bool isDirectory = string.IsNullOrEmpty(entry.Name) &&
+                                   (entry.FullName.EndsWith("/", StringComparison.Ordinal) ||
+                                    entry.FullName.EndsWith("\\", StringComparison.Ordinal));
+                if (isDirectory)
+                {
+                    Directory.CreateDirectory(destinationPath);
+                    continue;
+                }
+
+                string parentDirectory = Path.GetDirectoryName(destinationPath);
+                if (!string.IsNullOrEmpty(parentDirectory))
+                {
+                    Directory.CreateDirectory(parentDirectory);
+                }
+
+                using Stream input = entry.Open();
+                using Stream output = File.Create(destinationPath);
+                input.CopyTo(output);
+            }
+        }
+
+        private static bool TryGetExpectedArchiveHash(JObject versionMetadata, out string expectedHash)
+        {
+            expectedHash = NormalizeSha256(versionMetadata?["zipSHA256"]?.ToString())
+                ?? NormalizeSha256(versionMetadata?["sha256"]?.ToString());
+            return !string.IsNullOrEmpty(expectedHash);
+        }
+
+        private static bool TryResolvePackageDownload(
+            string packageName,
+            string versionRequirement,
+            Dictionary<string, string> repositories,
+            out string downloadUrl,
+            out string resolvedVersion,
+            out string expectedArchiveHash)
+        {
+            downloadUrl = null;
+            resolvedVersion = null;
+            expectedArchiveHash = null;
+
+            foreach (var repo in repositories)
+            {
+                if (!IsTrustedWebUrl(repo.Value))
+                {
+                    Debug.LogWarning($"[DirectVpmInstaller] Skipping untrusted repository URL '{repo.Value}'.");
+                    continue;
+                }
+
+                try
+                {
+                    using var repoClient = new WebClient();
+                    repoClient.Headers.Add(HttpRequestHeader.UserAgent, "VCC/2.3.0");
+                    var repoData = JObject.Parse(repoClient.DownloadString(repo.Value));
+                    var packages = repoData["packages"] as JObject;
+                    var packageData = packages?[packageName] as JObject;
+                    var versions = packageData?["versions"] as JObject;
+
+                    if (versions == null)
+                        continue;
+
+                    string bestVersion = null;
+                    string bestUrl = null;
+                    string bestHash = null;
+
+                    foreach (var versionEntry in versions.Properties())
+                    {
+                        try
+                        {
+                            string version = versionEntry.Name;
+                            if (!VersionSatisfiesRequirement(version, versionRequirement))
+                                continue;
+
+                            JObject versionMetadata = versionEntry.Value as JObject;
+                            string candidateUrl = versionMetadata?["url"]?.ToString();
+                            string declaredPackageName = versionMetadata?["name"]?.ToString();
+                            if (!string.IsNullOrWhiteSpace(declaredPackageName) &&
+                                !string.Equals(declaredPackageName, packageName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                Debug.LogWarning($"[DirectVpmInstaller] Repository {repo.Key} returned mismatched package metadata for {packageName}.");
+                                continue;
+                            }
+
+                            if (!IsTrustedWebUrl(candidateUrl))
+                                continue;
+                            if (!TryGetExpectedArchiveHash(versionMetadata, out string candidateHash))
+                            {
+                                Debug.LogWarning($"[DirectVpmInstaller] Repository {repo.Key} did not provide a valid SHA-256 for {packageName}@{version}.");
+                                continue;
+                            }
+
+                            if (bestVersion == null || CompareVersions(version, bestVersion) > 0)
+                            {
+                                bestVersion = version;
+                                bestUrl = candidateUrl;
+                                bestHash = candidateHash;
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    if (bestVersion != null && bestUrl != null && bestHash != null)
+                    {
+                        downloadUrl = bestUrl;
+                        resolvedVersion = bestVersion;
+                        expectedArchiveHash = bestHash;
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[DirectVpmInstaller] Failed to check repository {repo.Key}: {ex.Message}");
+                }
+            }
+
+            return false;
+        }
+
+        private static void MoveDirectoryIntoPlace(string sourceDirectory, string destinationDirectory)
+        {
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                try
+                {
+                    Directory.Move(sourceDirectory, destinationDirectory);
+                    return;
+                }
+                catch (Exception) when (attempt == 0 && (Directory.Exists(destinationDirectory) || File.Exists(destinationDirectory)))
+                {
+                    if (Directory.Exists(destinationDirectory))
+                    {
+                        Directory.Delete(destinationDirectory, true);
+                    }
+                    else if (File.Exists(destinationDirectory))
+                    {
+                        File.Delete(destinationDirectory);
+                    }
+                }
+            }
+
+            Directory.Move(sourceDirectory, destinationDirectory);
+        }
+
         private static void EnableBundledPackagesAndFinalize(string packageJsonPath, string completionReason)
         {
             Debug.Log($"[DirectVpmInstaller] {completionReason}");
@@ -401,64 +699,8 @@ namespace YUCP.DirectVpmInstaller
                 }
                 
                 // Seed repository list from the bundled package (if any)
-                var repositories = new Dictionary<string, string>();
-                if (vpmRepositories != null && vpmRepositories.Count > 0)
-                {
-                    repositories = vpmRepositories.Properties()
-                        .ToDictionary(p => p.Name, p => p.Value.ToString());
-                }
-                
-                // Merge user VCC repositories (do not write them into package.json)
-                try
-                {
-                    string vccSettingsPath = Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "VRChatCreatorCompanion",
-                        "settings.json"
-                    );
-                    
-                    if (File.Exists(vccSettingsPath))
-                    {
-                        var settings = JObject.Parse(File.ReadAllText(vccSettingsPath));
-                        var userRepos = settings["userRepos"] as JArray;
-                        
-                        if (userRepos != null)
-                        {
-                            foreach (var repoObj in userRepos)
-                            {
-                                var repo = repoObj as JObject;
-                                if (repo == null) continue;
-                                
-                                string repoUrl = repo["url"]?.ToString();
-                                string repoName = repo["name"]?.ToString();
-                                string repoId = repo["id"]?.ToString();
-                                
-                                if (string.IsNullOrEmpty(repoUrl)) continue;
-                                
-                                string key = !string.IsNullOrEmpty(repoName) ? repoName : repoId;
-                                if (!string.IsNullOrEmpty(key) && !repositories.ContainsKey(key))
-                                {
-                                    repositories[key] = repoUrl;
-                                }
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[DirectVpmInstaller] Failed to read VCC repositories: {ex.Message}");
-                }
-                
-                // Always ensure VRChat Official / Curated repos are available for resolution
-                const string vrchatOfficialName = "VRChat Official";
-                const string vrchatCuratedName = "VRChat Curated";
-                const string vrchatOfficialUrl = "https://vrchat.github.io/packages/index.json";
-                const string vrchatCuratedUrl = "https://vrchat-community.github.io/vpm-listing-curated/index.json";
-
-                if (!repositories.ContainsKey(vrchatOfficialName))
-                    repositories[vrchatOfficialName] = vrchatOfficialUrl;
-                if (!repositories.ContainsKey(vrchatCuratedName))
-                    repositories[vrchatCuratedName] = vrchatCuratedUrl;
+                var repositories = LoadTrustedRepositories(vpmRepositories);
+                AddBuiltInRepositories(repositories);
 
                 // Direct (top-level) dependencies for the UI prompt
                 var packagesToInstall = new List<Tuple<string, string>>();
@@ -1152,6 +1394,11 @@ namespace YUCP.DirectVpmInstaller
         private static bool ShouldInstallPackage(string packageName, string versionRequirement, out string warningMessage)
         {
             warningMessage = null;
+            if (!IsSafePackageName(packageName))
+            {
+                warningMessage = $"Skipping invalid package name '{packageName}'.";
+                return false;
+            }
 
             string installedVersion = GetInstalledPackageVersion(packageName);
             if (string.IsNullOrEmpty(installedVersion))
@@ -1176,7 +1423,8 @@ namespace YUCP.DirectVpmInstaller
 
         private static string GetInstalledPackageVersion(string packageName)
         {
-            string packageJsonPath = $"Packages/{packageName}/package.json";
+            if (!TryGetInstalledPackageJsonPath(packageName, out string packageJsonPath))
+                return null;
             if (!File.Exists(packageJsonPath))
                 return null;
 
@@ -1193,80 +1441,71 @@ namespace YUCP.DirectVpmInstaller
         
         private static bool InstallPackage(string packageName, string versionRequirement, Dictionary<string, string> repositories)
         {
+            string tempZipPath = null;
+            string stagingDirectory = null;
+
             try
             {
-                string downloadUrl = null;
-                string resolvedVersion = null;
-                
-                foreach (var repo in repositories)
+                if (!IsSafePackageName(packageName))
                 {
-                    try
-                    {
-                        var repoClient = new WebClient();
-                        repoClient.Headers.Add(HttpRequestHeader.UserAgent, "VCC/2.3.0");
-                        var repoData = JObject.Parse(repoClient.DownloadString(repo.Value));
-                        var packages = repoData["packages"] as JObject;
-                        
-                        if (packages?[packageName] == null)
-                            continue;
-                        
-                        var packageData = packages[packageName] as JObject;
-                        var versions = packageData["versions"] as JObject;
-                        
-                        if (versions == null)
-                            continue;
-                        
-                        string bestVersion = null;
-                        string bestUrl = null;
-                        
-                        foreach (var versionEntry in versions.Properties())
-                        {
-                            try
-                            {
-                                string version = versionEntry.Name;
-                                if (VersionSatisfiesRequirement(version, versionRequirement))
-                                {
-                                    if (bestVersion == null || CompareVersions(version, bestVersion) > 0)
-                                    {
-                                        bestVersion = version;
-                                        bestUrl = (versionEntry.Value as JObject)?["url"]?.ToString();
-                                    }
-                                }
-                            }
-                            catch { }
-                        }
-                        
-                        if (bestVersion != null && bestUrl != null)
-                        {
-                            downloadUrl = bestUrl;
-                            resolvedVersion = bestVersion;
-                            break;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[DirectVpmInstaller] Failed to check repository {repo.Key}: {ex.Message}");
-                    }
+                    Debug.LogError($"[DirectVpmInstaller] Refusing to install invalid package name '{packageName}'.");
+                    return false;
                 }
-                
-                if (string.IsNullOrEmpty(downloadUrl))
+
+                if (!TryResolvePackageDownload(packageName, versionRequirement, repositories, out string downloadUrl, out string resolvedVersion, out string expectedArchiveHash))
                 {
                     Debug.LogError($"[DirectVpmInstaller] Package {packageName} not found in any repository");
                     return false;
                 }
-                
-                string tempZipPath = Path.Combine(Path.GetTempPath(), $"{packageName}.zip");
-                string packageDestination = $"Packages/{packageName}";
-                
-                var downloadClient = new WebClient();
-                downloadClient.Headers.Add(HttpRequestHeader.UserAgent, "VCC/2.3.0");
-                downloadClient.DownloadFile(downloadUrl, tempZipPath);
-                
+
+                string workspaceRoot = GetInstallerWorkspaceRoot();
+                string downloadsRoot = Path.Combine(workspaceRoot, "Downloads");
+                Directory.CreateDirectory(downloadsRoot);
+                tempZipPath = Path.Combine(downloadsRoot, $"{MakeSafeFolderName(packageName)}-{resolvedVersion}.zip");
+                stagingDirectory = Path.Combine(workspaceRoot, "Staging", Guid.NewGuid().ToString("N"));
+
+                using (var downloadClient = new WebClient())
+                {
+                    downloadClient.Headers.Add(HttpRequestHeader.UserAgent, "VCC/2.3.0");
+                    downloadClient.DownloadFile(downloadUrl, tempZipPath);
+                }
+
+                string actualArchiveHash = NormalizeSha256(ComputeFileSha256(tempZipPath));
+                if (!string.Equals(actualArchiveHash, expectedArchiveHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.LogError($"[DirectVpmInstaller] SHA-256 mismatch for {packageName}@{resolvedVersion}. Expected {expectedArchiveHash}, got {actualArchiveHash}.");
+                    return false;
+                }
+
+                ExtractZipToDirectorySafely(tempZipPath, stagingDirectory);
+
+                string stagedPackageJsonPath = Path.Combine(stagingDirectory, "package.json");
+                if (!File.Exists(stagedPackageJsonPath))
+                {
+                    Debug.LogError($"[DirectVpmInstaller] Downloaded archive for {packageName}@{resolvedVersion} did not contain package.json.");
+                    return false;
+                }
+
+                JObject stagedPackageJson = JObject.Parse(File.ReadAllText(stagedPackageJsonPath));
+                string stagedPackageName = stagedPackageJson["name"]?.ToString();
+                string stagedPackageVersion = stagedPackageJson["version"]?.ToString();
+                if (!string.Equals(stagedPackageName, packageName, StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.LogError($"[DirectVpmInstaller] Downloaded archive name mismatch. Expected {packageName}, got {stagedPackageName ?? "<missing>"}.");
+                    return false;
+                }
+                if (!string.Equals(stagedPackageVersion, resolvedVersion, StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.LogError($"[DirectVpmInstaller] Downloaded archive version mismatch. Expected {resolvedVersion}, got {stagedPackageVersion ?? "<missing>"}.");
+                    return false;
+                }
+
+                string packageDestination = GetValidatedPackageDestination(packageName);
                 if (Directory.Exists(packageDestination))
                     Directory.Delete(packageDestination, true);
-                
-                System.IO.Compression.ZipFile.ExtractToDirectory(tempZipPath, packageDestination);
-                File.Delete(tempZipPath);
+
+                MoveDirectoryIntoPlace(stagingDirectory, packageDestination);
+                stagingDirectory = null;
                 
                 // Add to VPM manifest so VCC recognizes it as installed
                 // VPM packages from repositories should be in both dependencies and locked
@@ -1279,6 +1518,30 @@ namespace YUCP.DirectVpmInstaller
             {
                 Debug.LogError($"[DirectVpmInstaller] Failed to install {packageName}: {ex.Message}");
                 return false;
+            }
+            finally
+            {
+                try
+                {
+                    if (!string.IsNullOrEmpty(tempZipPath) && File.Exists(tempZipPath))
+                    {
+                        File.Delete(tempZipPath);
+                    }
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    if (!string.IsNullOrEmpty(stagingDirectory) && Directory.Exists(stagingDirectory))
+                    {
+                        Directory.Delete(stagingDirectory, true);
+                    }
+                }
+                catch
+                {
+                }
             }
         }
         
@@ -1518,7 +1781,6 @@ namespace YUCP.DirectVpmInstaller
         /// <summary>
         /// After installing a package, read its package.json and enqueue any vpmDependencies
         /// that are not yet installed, so that dependencies-of-dependencies are pulled in.
-        /// Also merges any vpmRepositories from the installed package into the shared repository list.
         /// </summary>
         private static void EnqueueTransitiveDependencies(
             string packageName,
@@ -1531,25 +1793,13 @@ namespace YUCP.DirectVpmInstaller
 
             try
             {
-                // Resolve Packages/<packageName>/package.json relative to project root
-                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                string packageJsonPath = Path.Combine(projectRoot, "Packages", packageName, "package.json");
-
+                if (!TryGetInstalledPackageJsonPath(packageName, out string packageJsonPath))
+                    return;
                 if (!File.Exists(packageJsonPath))
                     return;
 
                 var json = JObject.Parse(File.ReadAllText(packageJsonPath));
                 var vpmDependencies = json["vpmDependencies"] as JObject;
-                var vpmRepositories = json["vpmRepositories"] as JObject;
-
-                // Merge any new repositories from this package
-                if (vpmRepositories != null)
-                {
-                    foreach (var repo in vpmRepositories.Properties())
-                    {
-                        repositories[repo.Name] = repo.Value.ToString();
-                    }
-                }
 
                 if (vpmDependencies == null || vpmDependencies.Count == 0)
                     return;

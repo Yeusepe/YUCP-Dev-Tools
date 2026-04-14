@@ -96,13 +96,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private static void ExtractTarGz(string tarGzPath, string destFolder)
         {
 #if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
-            using (Stream inStream = File.OpenRead(tarGzPath))
-            using (Stream gzipStream = new GZipInputStream(inStream))
-            {
-                var tarArchive = TarArchive.CreateInputTarArchive(gzipStream, Encoding.UTF8);
-                tarArchive.ExtractContents(destFolder);
-                tarArchive.Close();
-            }
+            ArchiveExtractionUtility.ExtractUnityPackageSafely(tarGzPath, destFolder);
 #else
             Debug.LogError("[PackageIconInjector] ICSharpCode.SharpZipLib not available. Please install the ICSharpCode.SharpZipLib package.");
 #endif

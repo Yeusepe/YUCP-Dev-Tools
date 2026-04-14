@@ -169,21 +169,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Update profile count for milestones
             try
             {
-                System.Type milestoneTrackerType = null;
-                
-                // Try to find the type by searching through all loaded assemblies
-                foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    milestoneTrackerType = assembly.GetType("YUCP.Components.Editor.SupportBanner.MilestoneTracker");
-                    if (milestoneTrackerType != null)
-                        break;
-                }
-                
-                if (milestoneTrackerType != null)
-                {
-                    var updateMethod = milestoneTrackerType.GetMethod("UpdateProfileCountFromAssets", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                    updateMethod?.Invoke(null, null);
-                }
+                TrustedMilestoneTracker.InvokeStatic("UpdateProfileCountFromAssets");
             }
             catch
             {

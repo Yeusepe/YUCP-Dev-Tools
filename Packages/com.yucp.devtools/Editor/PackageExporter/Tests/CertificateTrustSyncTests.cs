@@ -55,7 +55,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
-        public void TryGetTrustedRootPublicKey_UsesServerFetchedKeyIdInsteadOfBakedValue()
+        public void TryGetTrustedRootPublicKey_UsesPinnedRootForKnownKeyIds()
         {
             var settings = ScriptableObject.CreateInstance<SigningSettings>();
             try
@@ -87,7 +87,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 var found = (bool)tryGetMethod.Invoke(settings, args);
 
                 Assert.That(found, Is.True);
-                Assert.That(args[2], Is.EqualTo("server-key"));
+                Assert.That(args[2], Is.EqualTo(SigningTrustDefaults.PinnedRootPublicKeyBase64));
             }
             finally
             {

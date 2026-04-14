@@ -8,13 +8,39 @@ namespace YUCP.DevTools.Editor.PackageExporter.Addons
 {
     /// <summary>
     /// Discovers and manages export addons using TypeCache.
-    /// Addons implementing IExportAddon are automatically discovered and sorted by Order.
+    /// Only explicitly trusted IExportAddon implementations are instantiated and invoked.
     /// </summary>
     public static class AddonManager
     {
+        private static readonly HashSet<string> TrustedAddonTypeNames = new HashSet<string>(StringComparer.Ordinal);
+        private static readonly HashSet<string> WarnedUntrustedAddonTypeNames = new HashSet<string>(StringComparer.Ordinal);
         private static IExportAddon[] _cachedAddons;
         private static bool _initialized;
-        
+
+        public static void RegisterTrustedAddonType(Type type)
+        {
+            if (type == null)
+                throw new ArgumentNullException(nameof(type));
+            if (!typeof(IExportAddon).IsAssignableFrom(type))
+                throw new ArgumentException($"{type.FullName} does not implement {nameof(IExportAddon)}.", nameof(type));
+            if (type.IsAbstract || type.IsInterface)
+                throw new ArgumentException($"{type.FullName} is not a concrete addon type.", nameof(type));
+
+            string key = type.AssemblyQualifiedName;
+            if (string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException($"Unable to trust addon type {type.FullName} because it has no assembly-qualified name.", nameof(type));
+
+            TrustedAddonTypeNames.Add(key);
+            WarnedUntrustedAddonTypeNames.Remove(key);
+            InvalidateCache();
+        }
+
+        internal static void ClearTrustedAddonRegistrationsForTests()
+        {
+            TrustedAddonTypeNames.Clear();
+            WarnedUntrustedAddonTypeNames.Clear();
+        }
+
         /// <summary>
         /// Gets all registered export addons, sorted by Order.
         /// </summary>
@@ -43,7 +69,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Addons
         private static void RefreshAddons()
         {
             _initialized = true;
-            
+
             try
             {
                 var types = TypeCache.GetTypesDerivedFrom<IExportAddon>();
@@ -53,7 +79,12 @@ namespace YUCP.DevTools.Editor.PackageExporter.Addons
                 {
                     if (type.IsAbstract || type.IsInterface)
                         continue;
-                    
+                    if (!IsTrustedAddonType(type))
+                    {
+                        LogUntrustedAddon(type);
+                        continue;
+                    }
+
                     try
                     {
                         var addon = Activator.CreateInstance(type) as IExportAddon;
@@ -82,6 +113,23 @@ namespace YUCP.DevTools.Editor.PackageExporter.Addons
                 Debug.LogError($"[AddonManager] Failed to discover addons: {ex.Message}");
                 _cachedAddons = Array.Empty<IExportAddon>();
             }
+        }
+
+        private static bool IsTrustedAddonType(Type type)
+        {
+            string key = type?.AssemblyQualifiedName;
+            return !string.IsNullOrWhiteSpace(key) && TrustedAddonTypeNames.Contains(key);
+        }
+
+        private static void LogUntrustedAddon(Type type)
+        {
+            string key = type?.AssemblyQualifiedName ?? type?.FullName ?? "<unknown>";
+            if (!WarnedUntrustedAddonTypeNames.Add(key))
+                return;
+
+            Debug.LogWarning(
+                $"[AddonManager] Ignoring untrusted addon {type.FullName}. " +
+                $"Call {nameof(RegisterTrustedAddonType)} from trusted code to opt in.");
         }
         
         /// <summary>

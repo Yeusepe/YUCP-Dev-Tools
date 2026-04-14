@@ -147,13 +147,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static Data.SigningSettings GetSigningSettings()
         {
-            string[] guids = AssetDatabase.FindAssets("t:SigningSettings");
-            if (guids.Length > 0)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                return AssetDatabase.LoadAssetAtPath<Data.SigningSettings>(path);
-            }
-            return null;
+            return SigningSettingsLocator.Load();
         }
 
         private static string ComputeFileHash(string filePath)

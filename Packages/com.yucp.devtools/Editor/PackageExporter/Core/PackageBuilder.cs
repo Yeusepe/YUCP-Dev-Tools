@@ -1352,24 +1352,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Track export for milestones
                 try
                 {
-                    System.Type milestoneTrackerType = null;
-                    
-                    // Try to find the type by searching through all loaded assemblies
-                    foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
-                    {
-                        milestoneTrackerType = assembly.GetType("YUCP.Components.Editor.SupportBanner.MilestoneTracker");
-                        if (milestoneTrackerType != null)
-                            break;
-                    }
-                    
-                    if (milestoneTrackerType != null)
-                    {
-                        var incrementMethod = milestoneTrackerType.GetMethod("IncrementExportCount", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                        if (incrementMethod != null)
-                        {
-                            incrementMethod.Invoke(null, null);
-                        }
-                    }
+                    TrustedMilestoneTracker.InvokeStatic("IncrementExportCount");
                 }
                 catch (System.Exception)
                 {
@@ -3162,12 +3145,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Extract the .unitypackage (it's a tar.gz)
 #if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
-                using (var fileStream = File.OpenRead(unityPackagePath))
-                using (var gzipStream = new ICSharpCode.SharpZipLib.GZip.GZipInputStream(fileStream))
-                using (var tarArchive = ICSharpCode.SharpZipLib.Tar.TarArchive.CreateInputTarArchive(gzipStream, System.Text.Encoding.UTF8))
-                {
-                    tarArchive.ExtractContents(tempExtractDir);
-                }
+                ArchiveExtractionUtility.ExtractUnityPackageSafely(unityPackagePath, tempExtractDir);
 #else
                 Debug.LogError("[PackageBuilder] ICSharpCode.SharpZipLib not available. Package injection disabled.");
                 return;
@@ -4212,9 +4190,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             try
             {
                 var settings = GetSigningSettings();
-                string resolvedServerUrl = !string.IsNullOrEmpty(profile?.signingServerUrl)
-                    ? profile.signingServerUrl
-                    : settings?.serverUrl;
+                string resolvedServerUrl = settings?.GetEffectiveServerUrl();
                 bool shouldAutoManageCertificate =
                     settings != null &&
                     !string.IsNullOrEmpty(resolvedServerUrl) &&
@@ -5163,13 +5139,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 // Extract package (using same approach as PackageIconInjector)
 #if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
-                using (Stream inStream = File.OpenRead(packagePath))
-                using (Stream gzipStream = new GZipInputStream(inStream))
-                {
-                    var tarArchive = TarArchive.CreateInputTarArchive(gzipStream, Encoding.UTF8);
-                    tarArchive.ExtractContents(tempExtractDir);
-                    tarArchive.Close();
-                }
+                ArchiveExtractionUtility.ExtractUnityPackageSafely(packagePath, tempExtractDir);
 
                 string signingRootPathname = ResolveSigningRootPathname(tempExtractDir);
 
@@ -5270,13 +5240,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// </summary>
         private static PackageSigningData.SigningSettings GetSigningSettings()
         {
-            string[] guids = AssetDatabase.FindAssets("t:SigningSettings");
-            if (guids.Length > 0)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                return AssetDatabase.LoadAssetAtPath<PackageSigningData.SigningSettings>(path);
-            }
-            return null;
+            return PackageSigning.Core.SigningSettingsLocator.Load();
         }
 
         /// <summary>
@@ -5293,13 +5257,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             try
             {
-                using (Stream inStream = File.OpenRead(packagePath))
-                using (Stream gzipStream = new GZipInputStream(inStream))
-                {
-                    var tarArchive = TarArchive.CreateInputTarArchive(gzipStream, Encoding.UTF8);
-                    tarArchive.ExtractContents(tempExtractDir);
-                    tarArchive.Close();
-                }
+                ArchiveExtractionUtility.ExtractUnityPackageSafely(packagePath, tempExtractDir);
 
                 // Collect all non-signing assets
                 var entries = new System.Collections.Generic.List<(string pathname, string assetPath)>();

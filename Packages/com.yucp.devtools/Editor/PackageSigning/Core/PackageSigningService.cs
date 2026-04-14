@@ -28,10 +28,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         /// </summary>
         public static string GetServerUrl()
         {
-            string[] guids = AssetDatabase.FindAssets("t:SigningSettings");
-            if (guids.Length == 0) return null;
-            string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-            var settings = AssetDatabase.LoadAssetAtPath<PackageSigningData.SigningSettings>(path);
+            var settings = SigningSettingsLocator.Load();
             return settings?.GetEffectiveServerUrl();
         }
 
@@ -555,8 +552,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         }
 
         /// <summary>
-        /// Fetches the YUCP CA root public key from GET /v1/keys and caches it in SigningSettings.
-        /// Called automatically after a successful sign-in so the key is always server-authoritative.
+        /// Validates that GET /v1/keys advertises the pinned YUCP root set and mirrors that
+        /// confirmation into SigningSettings metadata.
         /// </summary>
         public async System.Threading.Tasks.Task<bool> FetchAndCacheRootPublicKeyAsync()
         {
@@ -571,23 +568,22 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 if (req.result != UnityWebRequest.Result.Success) return false;
 
                 string json = req.downloadHandler.text;
-                var trustedKeys = ParseTrustedRootKeys(json);
-                if (trustedKeys.Count == 0) return false;
+                var trustedKeys = PackageSigningData.SigningTrustDefaults.FilterPinnedTrustedRoots(ParseTrustedRootKeys(json));
+                if (trustedKeys.Count == 0)
+                {
+                    UnityEngine.Debug.LogWarning("[YUCP Keys] Signing server did not advertise any pinned YUCP roots.");
+                    return false;
+                }
 
-                // Persist in SigningSettings asset
-                string[] guids = AssetDatabase.FindAssets("t:PackageSigningData.SigningSettings");
-                if (guids.Length == 0) guids = AssetDatabase.FindAssets("t:SigningSettings");
-                if (guids.Length == 0) return false;
+                var settings = SigningSettingsLocator.Load();
+                if (settings != null)
+                {
+                    settings.SetTrustedRootKeysForServer(_serverUrl, trustedKeys);
+                    EditorUtility.SetDirty(settings);
+                    AssetDatabase.SaveAssets();
+                }
 
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                var settings = AssetDatabase.LoadAssetAtPath<PackageSigningData.SigningSettings>(path);
-                if (settings == null) return false;
-
-                settings.SetTrustedRootKeysForServer(_serverUrl, trustedKeys);
-                EditorUtility.SetDirty(settings);
-                AssetDatabase.SaveAssets();
-
-                UnityEngine.Debug.Log($"[YUCP Keys] Cached {trustedKeys.Count} root key(s) from server /v1/keys.");
+                UnityEngine.Debug.Log($"[YUCP Keys] Validated {trustedKeys.Count} pinned root key(s) from server /v1/keys.");
                 return true;
             }
             catch (Exception ex)
