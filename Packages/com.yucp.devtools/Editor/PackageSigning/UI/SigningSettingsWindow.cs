@@ -703,7 +703,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                     var keyField = new TextField("Root Public Key (base64)") { value = SigningTrustDefaults.PinnedRootPublicKeyBase64 };
                     keyField.AddToClassList("yucp-input");
                     keyField.isReadOnly = true;
-                    keyField.tooltip = "Pinned in code until authenticated trust rotation is implemented.";
+                    keyField.tooltip = "Bootstrap trust anchor pinned in code. Active trust roots may rotate after an authenticated /v1/keys sync.";
                     row.Add(keyField);
 
                     providersContainer.Add(row);
@@ -754,7 +754,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             var content = YUCPUIToolkitHelper.GetCardContent(card);
 
             content.Add(YUCPUIToolkitHelper.CreateHelpBox(
-                "The YUCP root trust anchor is pinned in code. Server responses can only confirm the pinned key set.",
+                "The bootstrap YUCP trust anchor is pinned in code. Active trust roots can rotate only through an authenticated server trust bundle.",
                 YUCPUIToolkitHelper.MessageType.Info));
 
             YUCPUIToolkitHelper.AddSpacing(content, 12);
@@ -767,7 +767,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             rootField.style.minHeight = 80;
             rootField.style.fontSize  = 11;
             rootField.isReadOnly = true;
-            rootField.tooltip = "Pinned in code until authenticated trust rotation is implemented.";
+            rootField.tooltip = "Bootstrap trust anchor pinned in code. Active trust roots may rotate after an authenticated /v1/keys sync.";
             content.Add(rootField);
 
             return card;

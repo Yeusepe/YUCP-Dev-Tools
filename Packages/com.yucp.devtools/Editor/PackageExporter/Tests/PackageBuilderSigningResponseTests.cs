@@ -108,6 +108,47 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             Assert.That(summary, Does.Contain("cert:issue profile:read"));
         }
 
+        [Test]
+        public void CreateProfileRequest_UsesV1MeEndpoint()
+        {
+            MethodInfo createProfileRequestMethod = typeof(YucpOAuthService).GetMethod(
+                "CreateProfileRequest",
+                BindingFlags.NonPublic | BindingFlags.Static
+            );
+
+            Assert.That(createProfileRequestMethod, Is.Not.Null, "Expected YucpOAuthService.CreateProfileRequest to exist.");
+
+            using var request = createProfileRequestMethod.Invoke(
+                null,
+                new object[] { "https://api.creators.yucp.club", "access-token" }
+            ) as UnityEngine.Networking.UnityWebRequest;
+
+            Assert.That(request, Is.Not.Null);
+            Assert.That(request.url, Is.EqualTo("https://api.creators.yucp.club/v1/me"));
+        }
+
+        [Test]
+        public void BuildProfileResponseSummary_RecognizesV1MeFields()
+        {
+            const string profileJson = "{"
+                + "\"sub\":\"auth-user-123\","
+                + "\"name\":\"Creator Name\""
+                + "}";
+
+            MethodInfo buildSummaryMethod = typeof(YucpOAuthService).GetMethod(
+                "BuildProfileResponseSummary",
+                BindingFlags.NonPublic | BindingFlags.Static
+            );
+
+            Assert.That(buildSummaryMethod, Is.Not.Null, "Expected YucpOAuthService.BuildProfileResponseSummary to exist.");
+
+            string summary = buildSummaryMethod.Invoke(null, new object[] { profileJson }) as string;
+
+            Assert.That(summary, Does.Contain("authUserId: \"auth-user-123\""));
+            Assert.That(summary, Does.Contain("hasName: true"));
+            Assert.That(summary, Does.Contain("hasImage: false"));
+        }
+
         private static object InvokeBuildSessionFromTokenResponse(string tokenJson)
         {
             MethodInfo buildMethod = typeof(YucpOAuthService).GetMethod(

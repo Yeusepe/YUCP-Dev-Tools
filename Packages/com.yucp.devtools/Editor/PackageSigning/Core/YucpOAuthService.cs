@@ -543,7 +543,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static UnityWebRequest CreateProfileRequest(string serverUrl, string accessToken)
         {
-            string endpoint = $"{serverUrl.TrimEnd('/')}/api/public/v2/me/profile";
+            string endpoint = $"{serverUrl.TrimEnd('/')}/v1/me";
             var request = UnityWebRequest.Get(endpoint);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
@@ -577,7 +577,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return session;
             }
 
-            string profileUserId = ExtractJsonString(profileJson, "authUserId");
+            string profileUserId = ExtractJsonStringAny(profileJson, "authUserId", "sub");
             if (!string.IsNullOrEmpty(profileUserId))
             {
                 session.userId = profileUserId;
@@ -1042,7 +1042,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static string BuildProfileResponseSummary(string profileJson)
         {
-            string authUserId = ExtractJsonString(profileJson, "authUserId") ?? string.Empty;
+            string authUserId = ExtractJsonStringAny(profileJson, "authUserId", "sub") ?? string.Empty;
             string name = ExtractJsonString(profileJson, "name") ?? string.Empty;
             bool hasImage = !string.IsNullOrEmpty(ExtractJsonString(profileJson, "image"));
             return $"{{ authUserId: \"{authUserId}\", hasName: {(!string.IsNullOrEmpty(name)).ToString().ToLowerInvariant()}, hasImage: {hasImage.ToString().ToLowerInvariant()} }}";

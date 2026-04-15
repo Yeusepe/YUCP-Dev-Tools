@@ -26,18 +26,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
             },
         };
 
-        private static readonly HashSet<string> s_trustedServerUrls =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                SigningSettings.DefaultServerUrl,
-            };
-
         public static string ResolveTrustedServerUrl(string configuredServerUrl)
         {
-            string normalized = SigningSettings.NormalizeConfiguredServerUrl(configuredServerUrl);
-            return s_trustedServerUrls.Contains(normalized)
-                ? normalized
-                : SigningSettings.DefaultServerUrl;
+            // The server origin is user-configurable. Trust is established by the
+            // pinned bootstrap root and authenticated trust-bundle rotation, not by
+            // forcing every saved URL back to the production hostname.
+            return SigningSettings.NormalizeConfiguredServerUrl(configuredServerUrl);
         }
 
         public static bool TryGetPinnedRootPublicKey(string keyId, string algorithm, out string publicKeyBase64)

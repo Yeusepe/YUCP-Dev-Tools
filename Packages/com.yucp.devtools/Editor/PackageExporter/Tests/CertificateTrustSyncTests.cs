@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using YUCP.DevTools.Editor.PackageSigning.Core;
@@ -70,10 +71,11 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                     ("yucp-root-2025", "Ed25519", "legacy-key")
                 );
 
-                var storeMethod = typeof(SigningSettings).GetMethod(
-                    "SetTrustedRootKeysForServer",
+                var storeMethod = typeof(SigningSettings).GetMethods(
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
-                );
+                ).FirstOrDefault(method =>
+                    method.Name == "SetTrustedRootKeysForServer" &&
+                    method.GetParameters().Length == 2);
                 Assert.That(storeMethod, Is.Not.Null, "Expected SigningSettings.SetTrustedRootKeysForServer to exist.");
                 storeMethod.Invoke(settings, new object[] { "https://api.creators.yucp.club", trustedKeys });
 
@@ -88,6 +90,47 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
 
                 Assert.That(found, Is.True);
                 Assert.That(args[2], Is.EqualTo(SigningTrustDefaults.PinnedRootPublicKeyBase64));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(settings);
+            }
+        }
+
+        [Test]
+        public void TryGetTrustedRootPublicKey_UsesServerSyncedRootsForAuthenticatedRotation()
+        {
+            var settings = ScriptableObject.CreateInstance<SigningSettings>();
+            try
+            {
+                var trustedKeyType = typeof(SigningSettings).Assembly.GetType(
+                    "YUCP.DevTools.Editor.PackageSigning.Data.TrustedRootKey"
+                );
+                Assert.That(trustedKeyType, Is.Not.Null, "Expected TrustedRootKey to exist.");
+
+                var trustedKeys = CreateTrustedKeyList(trustedKeyType,
+                    ("yucp-root-2026", "Ed25519", "rotated-key")
+                );
+
+                var storeMethod = typeof(SigningSettings).GetMethods(
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                ).FirstOrDefault(method =>
+                    method.Name == "SetTrustedRootKeysForServer" &&
+                    method.GetParameters().Length == 2);
+                Assert.That(storeMethod, Is.Not.Null, "Expected SigningSettings.SetTrustedRootKeysForServer to exist.");
+                storeMethod.Invoke(settings, new object[] { "https://api.creators.yucp.club", trustedKeys });
+
+                var tryGetMethod = typeof(SigningSettings).GetMethod(
+                    "TryGetTrustedRootPublicKey",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+                );
+                Assert.That(tryGetMethod, Is.Not.Null, "Expected SigningSettings.TryGetTrustedRootPublicKey to exist.");
+
+                var args = new object[] { "yucp-root-2026", "Ed25519", null };
+                var found = (bool)tryGetMethod.Invoke(settings, args);
+
+                Assert.That(found, Is.True);
+                Assert.That(args[2], Is.EqualTo("rotated-key"));
             }
             finally
             {

@@ -7,6 +7,7 @@ using UnityEditor;
 using UnityEngine.Networking;
 using PackageVerifierData = YUCP.Importer.Editor.PackageVerifier.Data;
 using PackageSigningData = YUCP.DevTools.Editor.PackageSigning.Data;
+using YUCP.DevTools.Editor.PackageSigning.Crypto;
 
 namespace YUCP.DevTools.Editor.PackageSigning.Core
 {
@@ -552,8 +553,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         }
 
         /// <summary>
-        /// Validates that GET /v1/keys advertises the pinned YUCP root set and mirrors that
-        /// confirmation into SigningSettings metadata.
+        /// Validates that GET /v1/keys advertises an authenticated YUCP trust bundle and mirrors
+        /// the accepted roots into SigningSettings metadata. Falls back to the legacy pinned JWKS
+        /// payload only when the server does not yet advertise a signed bundle.
         /// </summary>
         public async System.Threading.Tasks.Task<bool> FetchAndCacheRootPublicKeyAsync()
         {
@@ -568,14 +570,42 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 if (req.result != UnityWebRequest.Result.Success) return false;
 
                 string json = req.downloadHandler.text;
-                var trustedKeys = PackageSigningData.SigningTrustDefaults.FilterPinnedTrustedRoots(ParseTrustedRootKeys(json));
+                var settings = SigningSettingsLocator.Load();
+
+                if (TryParseAuthenticatedTrustBundle(
+                        json,
+                        settings,
+                        _serverUrl,
+                        out var authenticatedTrustKeys,
+                        out int authenticatedTrustBundleVersion,
+                        out string trustBundleError))
+                {
+                    if (settings != null)
+                    {
+                        settings.SetTrustedRootKeysForServer(_serverUrl, authenticatedTrustKeys, authenticatedTrustBundleVersion);
+                        EditorUtility.SetDirty(settings);
+                        AssetDatabase.SaveAssets();
+                    }
+
+                    UnityEngine.Debug.Log(
+                        $"[YUCP Keys] Validated authenticated trust bundle v{authenticatedTrustBundleVersion} with {authenticatedTrustKeys.Count} root key(s).");
+                    return true;
+                }
+
+                var response = JsonUtility.FromJson<TrustedRootKeysResponse>(json);
+                if (!string.IsNullOrWhiteSpace(response?.trustBundle))
+                {
+                    UnityEngine.Debug.LogWarning($"[YUCP Keys] Rejected authenticated trust bundle: {trustBundleError}");
+                    return false;
+                }
+
+                var trustedKeys = PackageSigningData.SigningTrustDefaults.FilterPinnedTrustedRoots(ParseTrustedRootKeys(response?.keys));
                 if (trustedKeys.Count == 0)
                 {
                     UnityEngine.Debug.LogWarning("[YUCP Keys] Signing server did not advertise any pinned YUCP roots.");
                     return false;
                 }
 
-                var settings = SigningSettingsLocator.Load();
                 if (settings != null)
                 {
                     settings.SetTrustedRootKeysForServer(_serverUrl, trustedKeys);
@@ -596,14 +626,154 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         private static string EscapeJson(string s) =>
             s?.Replace("\\", "\\\\").Replace("\"", "\\\"") ?? "";
 
-        private static List<PackageSigningData.TrustedRootKey> ParseTrustedRootKeys(string json)
+        private static bool TryParseAuthenticatedTrustBundle(
+            string json,
+            PackageSigningData.SigningSettings settings,
+            string serverUrl,
+            out List<PackageSigningData.TrustedRootKey> trustedKeys,
+            out int trustedRootBundleVersion,
+            out string error)
         {
             var response = JsonUtility.FromJson<TrustedRootKeysResponse>(json);
+            trustedKeys = null;
+            trustedRootBundleVersion = 0;
+            error = null;
+            if (string.IsNullOrWhiteSpace(response?.trustBundle))
+            {
+                error = "The response did not include a trustBundle field.";
+                return false;
+            }
+
+            string[] parts = response.trustBundle.Split('.');
+            if (parts.Length != 3)
+            {
+                error = "The trust bundle is not a compact JWT.";
+                return false;
+            }
+
+            TrustBundleJwtHeader header;
+            AuthenticatedTrustBundleClaims claims;
+            try
+            {
+                header = JsonUtility.FromJson<TrustBundleJwtHeader>(
+                    Encoding.UTF8.GetString(Base64UrlDecode(parts[0]))
+                );
+                claims = JsonUtility.FromJson<AuthenticatedTrustBundleClaims>(
+                    Encoding.UTF8.GetString(Base64UrlDecode(parts[1]))
+                );
+            }
+            catch (Exception ex)
+            {
+                error = $"The trust bundle could not be decoded: {ex.Message}";
+                return false;
+            }
+
+            if (header == null || !string.Equals(header.alg, "EdDSA", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(header.kid))
+            {
+                error = "The trust bundle header is invalid.";
+                return false;
+            }
+
+            string trustedPublicKeyBase64 = null;
+            bool foundTrustedSigner =
+                (settings != null && settings.TryGetTrustedRootPublicKey(header.kid, "Ed25519", out trustedPublicKeyBase64))
+                || PackageSigningData.SigningTrustDefaults.TryGetPinnedRootPublicKey(header.kid, "Ed25519", out trustedPublicKeyBase64);
+            if (!foundTrustedSigner)
+            {
+                error = $"The trust bundle signer '{header.kid}' is not trusted.";
+                return false;
+            }
+
+            try
+            {
+                bool verified = Ed25519Wrapper.Verify(
+                    Encoding.UTF8.GetBytes($"{parts[0]}.{parts[1]}"),
+                    Base64UrlDecode(parts[2]),
+                    Convert.FromBase64String(trustedPublicKeyBase64));
+                if (!verified)
+                {
+                    error = "The trust bundle signature is invalid.";
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                error = $"The trust bundle signature could not be verified: {ex.Message}";
+                return false;
+            }
+
+            if (claims == null || claims.keys == null || claims.keys.Length == 0)
+            {
+                error = "The trust bundle payload did not include any keys.";
+                return false;
+            }
+
+            string normalizedIssuer = PackageSigningData.SigningSettings.NormalizeConfiguredServerUrl(serverUrl, defaultIfEmpty: false);
+            if (!string.Equals(claims.iss, normalizedIssuer, StringComparison.Ordinal))
+            {
+                error = "The trust bundle issuer did not match the signing server URL.";
+                return false;
+            }
+            if (!string.Equals(claims.aud, "yucp-trust-bundle", StringComparison.Ordinal))
+            {
+                error = "The trust bundle audience is invalid.";
+                return false;
+            }
+
+            long nowSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            if (claims.exp <= nowSeconds)
+            {
+                error = "The trust bundle is expired.";
+                return false;
+            }
+            if (claims.iat > nowSeconds + 300)
+            {
+                error = "The trust bundle issued-at time is too far in the future.";
+                return false;
+            }
+            if (claims.version < 1)
+            {
+                error = "The trust bundle version is invalid.";
+                return false;
+            }
+
+            int currentVersion = settings?.GetTrustedRootBundleVersionForServer(serverUrl) ?? 0;
+            if (currentVersion > 0 && claims.version < currentVersion)
+            {
+                error = $"The trust bundle version {claims.version} is older than the stored version {currentVersion}.";
+                return false;
+            }
+
+            trustedKeys = ParseTrustedRootKeys(claims.keys);
+            if (trustedKeys.Count == 0)
+            {
+                error = "The authenticated trust bundle did not contain any usable Ed25519 roots.";
+                return false;
+            }
+
+            trustedRootBundleVersion = claims.version;
+            return true;
+        }
+
+        private static byte[] Base64UrlDecode(string input)
+        {
+            string normalized = input.Replace('-', '+').Replace('_', '/');
+            int padLength = (4 - normalized.Length % 4) % 4;
+            return Convert.FromBase64String(normalized + new string('=', padLength));
+        }
+
+        private static List<PackageSigningData.TrustedRootKey> ParseTrustedRootKeys(string json)
+        {
+            return ParseTrustedRootKeys(JsonUtility.FromJson<TrustedRootKeysResponse>(json)?.keys);
+        }
+
+        private static List<PackageSigningData.TrustedRootKey> ParseTrustedRootKeys(TrustedRootKeyResponse[] keys)
+        {
             var trustedKeys = new List<PackageSigningData.TrustedRootKey>();
-            if (response?.keys == null)
+            if (keys == null)
                 return trustedKeys;
 
-            foreach (var key in response.keys)
+            foreach (var key in keys)
             {
                 if (key == null || string.IsNullOrWhiteSpace(key.x))
                     continue;
@@ -824,6 +994,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         private class TrustedRootKeysResponse
         {
             public TrustedRootKeyResponse[] keys;
+            public string trustBundle;
         }
 
         [Serializable]
@@ -832,6 +1003,24 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             public string kid;
             public string crv;
             public string x;
+        }
+
+        [Serializable]
+        private class TrustBundleJwtHeader
+        {
+            public string alg;
+            public string kid;
+        }
+
+        [Serializable]
+        private class AuthenticatedTrustBundleClaims
+        {
+            public string iss;
+            public string aud;
+            public long iat;
+            public long exp;
+            public int version;
+            public TrustedRootKeyResponse[] keys;
         }
 
     }

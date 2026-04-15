@@ -36,6 +36,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
 
         [Tooltip("Trusted root keys fetched from the authoritative signing server /v1/keys endpoint.")]
         public List<TrustedRootKey> trustedRootKeys = SigningTrustDefaults.CreatePinnedTrustedRootKeys();
+
+        [Tooltip("Highest authenticated trust-bundle version accepted from this signing server.")]
+        public int trustedRootBundleVersion = 0;
     }
 
     [CreateAssetMenu(fileName = "SigningSettings", menuName = "YUCP/Package Signing Settings")]
@@ -69,6 +72,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
 
         [Tooltip("Trusted root keys fetched from the authoritative signing server /v1/keys endpoint.")]
         public List<TrustedRootKey> yucpTrustedRootKeys = SigningTrustDefaults.CreatePinnedTrustedRootKeys();
+
+        [Tooltip("Highest authenticated trust-bundle version accepted from the default signing server.")]
+        public int yucpTrustedRootBundleVersion = 0;
 
         /// <summary>
         /// Returns the effective server URL: first provider's URL if providers are configured,
@@ -135,10 +141,18 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                     changed = true;
                 }
 
-                var pinnedProviderKeys = SigningTrustDefaults.CreatePinnedTrustedRootKeys();
-                if (!TrustedRootKeysEqual(provider.trustedRootKeys, pinnedProviderKeys))
+                var sanitizedProviderKeys = SanitizeTrustedRootKeys(provider.trustedRootKeys);
+                if (sanitizedProviderKeys.Count == 0)
+                    sanitizedProviderKeys = SigningTrustDefaults.CreatePinnedTrustedRootKeys();
+                if (!TrustedRootKeysEqual(provider.trustedRootKeys, sanitizedProviderKeys))
                 {
-                    provider.trustedRootKeys = pinnedProviderKeys;
+                    provider.trustedRootKeys = sanitizedProviderKeys;
+                    changed = true;
+                }
+
+                if (provider.trustedRootBundleVersion < 0)
+                {
+                    provider.trustedRootBundleVersion = 0;
                     changed = true;
                 }
             }
@@ -152,10 +166,18 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                 changed = true;
             }
 
-            var pinnedRootKeys = SigningTrustDefaults.CreatePinnedTrustedRootKeys();
-            if (!TrustedRootKeysEqual(yucpTrustedRootKeys, pinnedRootKeys))
+            var sanitizedRootKeys = SanitizeTrustedRootKeys(yucpTrustedRootKeys);
+            if (sanitizedRootKeys.Count == 0)
+                sanitizedRootKeys = SigningTrustDefaults.CreatePinnedTrustedRootKeys();
+            if (!TrustedRootKeysEqual(yucpTrustedRootKeys, sanitizedRootKeys))
             {
-                yucpTrustedRootKeys = pinnedRootKeys;
+                yucpTrustedRootKeys = sanitizedRootKeys;
+                changed = true;
+            }
+
+            if (yucpTrustedRootBundleVersion < 0)
+            {
+                yucpTrustedRootBundleVersion = 0;
                 changed = true;
             }
 
@@ -236,7 +258,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
 
         public void SetTrustedRootKeysForServer(string serverUrl, IEnumerable<TrustedRootKey> trustedKeys)
         {
-            var sanitized = SigningTrustDefaults.FilterPinnedTrustedRoots(SanitizeTrustedRootKeys(trustedKeys));
+            SetTrustedRootKeysForServer(serverUrl, trustedKeys, 0);
+        }
+
+        public void SetTrustedRootKeysForServer(string serverUrl, IEnumerable<TrustedRootKey> trustedKeys, int trustedRootBundleVersion)
+        {
+            var sanitized = SanitizeTrustedRootKeys(trustedKeys);
             if (sanitized.Count == 0)
                 return;
 
@@ -244,21 +271,64 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
             if (provider != null)
             {
                 provider.trustedRootKeys = sanitized;
+                if (trustedRootBundleVersion > 0)
+                    provider.trustedRootBundleVersion = trustedRootBundleVersion;
             }
             else
             {
                 yucpTrustedRootKeys = sanitized;
+                if (trustedRootBundleVersion > 0)
+                    yucpTrustedRootBundleVersion = trustedRootBundleVersion;
             }
         }
 
         public bool TryGetTrustedRootPublicKey(string keyId, string algorithm, out string publicKeyBase64)
         {
+            publicKeyBase64 = null;
+            if (string.IsNullOrWhiteSpace(keyId) ||
+                !string.Equals(algorithm, SigningTrustDefaults.RootAlgorithm, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            foreach (var trustedRootKey in GetEffectiveTrustedRootKeys())
+            {
+                if (trustedRootKey == null)
+                    continue;
+                if (!string.Equals(trustedRootKey.keyId, keyId.Trim(), StringComparison.Ordinal))
+                    continue;
+                if (!string.Equals(trustedRootKey.algorithm, SigningTrustDefaults.RootAlgorithm, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                publicKeyBase64 = trustedRootKey.publicKeyBase64;
+                return true;
+            }
+
             return SigningTrustDefaults.TryGetPinnedRootPublicKey(keyId, algorithm, out publicKeyBase64);
         }
 
         private List<TrustedRootKey> GetEffectiveTrustedRootKeys()
         {
+            if (certificateProviders != null && certificateProviders.Count > 0)
+            {
+                var provider = certificateProviders[0];
+                if (provider?.trustedRootKeys != null && provider.trustedRootKeys.Count > 0)
+                    return provider.trustedRootKeys;
+            }
+
+            if (yucpTrustedRootKeys != null && yucpTrustedRootKeys.Count > 0)
+                return yucpTrustedRootKeys;
+
             return SigningTrustDefaults.CreatePinnedTrustedRootKeys();
+        }
+
+        public int GetTrustedRootBundleVersionForServer(string serverUrl)
+        {
+            var provider = GetProviderForServer(serverUrl);
+            if (provider != null)
+                return Math.Max(0, provider.trustedRootBundleVersion);
+
+            return Math.Max(0, yucpTrustedRootBundleVersion);
         }
 
         private CertificateProvider GetProviderForServer(string serverUrl)
