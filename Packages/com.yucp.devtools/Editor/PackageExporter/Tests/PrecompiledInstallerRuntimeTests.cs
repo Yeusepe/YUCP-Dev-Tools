@@ -35,28 +35,46 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
-        public void PrecompiledInstallerRuntime_AbsorbsYucpPatchImporterInjection()
+        public void PrecompiledInstallerRuntime_CanInjectIntoTempPatchEditorFolder()
         {
-            FieldInfo field = typeof(PackageBuilder).GetField(
-                "s_patchRuntimeInjectedFiles",
-                BindingFlags.Static | BindingFlags.NonPublic);
             MethodInfo method = typeof(PackageBuilder).GetMethod(
-                "IsPatchRuntimeHandledByPrecompiledInstaller",
+                "TryInjectPrecompiledInstallerRuntime",
                 BindingFlags.Static | BindingFlags.NonPublic);
 
-            Assert.That(field, Is.Not.Null);
             Assert.That(method, Is.Not.Null);
 
-            object patchImporterEntry = ((IEnumerable)field.GetValue(null))
-                .Cast<object>()
-                .FirstOrDefault(item =>
-                    string.Equals(
-                        item.GetType().GetField("targetPath")?.GetValue(item) as string,
-                        "Packages/com.yucp.temp/Editor/YUCPPatchImporter.cs",
-                        System.StringComparison.OrdinalIgnoreCase));
+            string tempExtractDir = Path.Combine(Path.GetTempPath(), "yucp-precompiled-installer-temp-editor-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempExtractDir);
 
-            Assert.That(patchImporterEntry, Is.Not.Null);
-            Assert.That((bool)method.Invoke(null, new[] { patchImporterEntry }), Is.True);
+            try
+            {
+                bool injected = (bool)method.Invoke(null, new object[]
+                {
+                    tempExtractDir,
+                    "Packages/com.yucp.temp/Editor",
+                });
+
+                Assert.That(injected, Is.True, "Expected the installer runtime binary to be emitted for temp patch imports.");
+
+                string[] pathnameFiles = Directory.GetFiles(tempExtractDir, "pathname", SearchOption.AllDirectories);
+                string matchedPathnameFile = pathnameFiles.FirstOrDefault(pathnameFile =>
+                {
+                    string pathname = File.ReadAllText(pathnameFile).Replace('\\', '/');
+                    return string.Equals(
+                        pathname,
+                        "Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Template.dll",
+                        System.StringComparison.Ordinal);
+                });
+
+                Assert.That(matchedPathnameFile, Is.Not.Null, "Expected an emitted installer runtime DLL pathname for the temp patch editor folder.");
+            }
+            finally
+            {
+                if (Directory.Exists(tempExtractDir))
+                {
+                    Directory.Delete(tempExtractDir, true);
+                }
+            }
         }
 
         [Test]

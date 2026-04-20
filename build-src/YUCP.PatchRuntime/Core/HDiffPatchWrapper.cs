@@ -7,7 +7,7 @@ using System.Text;
 using UnityEngine;
 using UnityEditor;
 
-namespace YUCP.DevTools.Editor.PackageExporter
+namespace YUCP.PatchRuntime
 {
 	internal static class HDiffPatchTrust
 	{
@@ -773,3 +773,4 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		HPATCH_FILEWRITE_NO_SPACE_ERROR,
 	}
 }
+

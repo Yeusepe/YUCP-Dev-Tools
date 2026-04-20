@@ -40,9 +40,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         [Test]
         public void ShouldSkipPath_DoesNotStripTempPatchRuntimeAssets()
         {
-            Assert.That(ShouldSkipPath("Packages/com.yucp.temp/Editor/YUCPPatchImporter.cs"), Is.False);
-            Assert.That(ShouldSkipPath("Packages/com.yucp.temp/Editor/DerivedFbxBuilder.cs"), Is.False);
-            Assert.That(ShouldSkipPath("Packages/com.yucp.temp/Editor/YUCP.PatchRuntime.asmdef"), Is.False);
+            Assert.That(ShouldSkipPath("Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Template.dll"), Is.False);
+            Assert.That(ShouldSkipPath("Packages/com.yucp.temp/Editor/YUCP.PatchRuntime.dll"), Is.False);
             Assert.That(ShouldSkipPath("Packages/com.yucp.temp/Plugins/hdiffz.dll"), Is.False);
             Assert.That(ShouldSkipPath("Packages/com.yucp.temp/package.json"), Is.False);
         }

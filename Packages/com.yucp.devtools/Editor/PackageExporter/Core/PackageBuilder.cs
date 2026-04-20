@@ -33,6 +33,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private const string TempPatchExportMarkerKey = "YUCP.PackageBuilder.ExportingTempPatchAssets";
         private const string PrecompiledInstallerRuntimePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/YUCP.DirectVpmInstaller.Template.dll";
         private const string PrecompiledInstallerRuntimeTargetFileName = "YUCP.DirectVpmInstaller.Template.dll";
+        private const string PrecompiledPatchRuntimePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/YUCP.PatchRuntime.dll";
+        private const string PrecompiledPatchRuntimeTargetFileName = "YUCP.PatchRuntime.dll";
+        private const string TempPatchEditorRoot = "Packages/com.yucp.temp/Editor";
         
         private static bool IsDefaultGridPlaceholder(Texture2D texture)
         {
@@ -154,72 +157,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public ProtectedPayloadDescriptor protectedPayload;
         }
 
-        private sealed class PatchRuntimeInjectedFile
-        {
-            public string sourcePath;
-            public string targetPath;
-            public bool rewritePatchRuntimeNamespace = true;
-        }
-
-        private static readonly PatchRuntimeInjectedFile[] s_patchRuntimeInjectedFiles = new[]
-        {
-            new PatchRuntimeInjectedFile
-            {
-                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Data/DerivedFbxAsset.cs",
-                targetPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs",
-            },
-            new PatchRuntimeInjectedFile
-            {
-                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/MetaFileManager.cs",
-                targetPath = "Packages/com.yucp.temp/Editor/MetaFileManager.cs",
-            },
-            new PatchRuntimeInjectedFile
-            {
-                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/DerivedFbxBuilder.cs",
-                targetPath = "Packages/com.yucp.temp/Editor/DerivedFbxBuilder.cs",
-            },
-            new PatchRuntimeInjectedFile
-            {
-                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/EmbeddedTextEncodingUtility.cs",
-                targetPath = "Packages/com.yucp.temp/Editor/EmbeddedTextEncodingUtility.cs",
-            },
-            new PatchRuntimeInjectedFile
-            {
-                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/ProtectedContentKeyUtility.cs",
-                targetPath = "Packages/com.yucp.temp/Editor/ProtectedContentKeyUtility.cs",
-            },
-            new PatchRuntimeInjectedFile
-            {
-                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/HDiffPatchWrapper.cs",
-                targetPath = "Packages/com.yucp.temp/Editor/HDiffPatchWrapper.cs",
-            },
-            new PatchRuntimeInjectedFile
-            {
-                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/ManifestBuilder.cs",
-                targetPath = "Packages/com.yucp.temp/Editor/ManifestBuilder.cs",
-            },
-            new PatchRuntimeInjectedFile
-            {
-                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Correspondence/MapBuilder.cs",
-                targetPath = "Packages/com.yucp.temp/Editor/MapBuilder.cs",
-            },
-            new PatchRuntimeInjectedFile
-            {
-                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Backup/BackupManager.cs",
-                targetPath = "Packages/com.yucp.temp/Editor/BackupManager.cs",
-            },
-            new PatchRuntimeInjectedFile
-            {
-                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Core/Validator.cs",
-                targetPath = "Packages/com.yucp.temp/Editor/Validator.cs",
-            },
-            new PatchRuntimeInjectedFile
-            {
-                sourcePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Templates/YUCPPatchImporter.cs",
-                targetPath = "Packages/com.yucp.temp/Editor/YUCPPatchImporter.cs",
-            },
-        };
-
         private static string CreateDeterministicInjectedGuid(string seed)
         {
             using (var md5 = System.Security.Cryptography.MD5.Create())
@@ -236,11 +173,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 return sb.ToString();
             }
-        }
-
-        private static string GetPatchRuntimeInjectedGuid(string targetPath)
-        {
-            return CreateDeterministicInjectedGuid($"yucp-patch-runtime:{targetPath}");
         }
 
         private static bool IsSigningPathname(string pathname)
@@ -322,21 +254,37 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private static bool TryInjectPrecompiledInstallerRuntime(string tempExtractDir, string installerRoot)
         {
-            if (!File.Exists(PrecompiledInstallerRuntimePath))
+            return TryInjectPrecompiledEditorBinary(
+                tempExtractDir,
+                PrecompiledInstallerRuntimePath,
+                $"{installerRoot}/{PrecompiledInstallerRuntimeTargetFileName}",
+                "yucp-precompiled-installer-runtime");
+        }
+
+        private static bool TryInjectPrecompiledPatchRuntime(string tempExtractDir)
+        {
+            return TryInjectPrecompiledEditorBinary(
+                tempExtractDir,
+                PrecompiledPatchRuntimePath,
+                $"{TempPatchEditorRoot}/{PrecompiledPatchRuntimeTargetFileName}",
+                "yucp-precompiled-patch-runtime");
+        }
+
+        private static bool TryInjectPrecompiledEditorBinary(string tempExtractDir, string sourcePath, string targetPath, string seed)
+        {
+            if (!File.Exists(sourcePath))
             {
                 return false;
             }
 
-            string dllGuid = CreateDeterministicInjectedGuid("yucp-precompiled-installer-runtime");
+            string dllGuid = CreateDeterministicInjectedGuid(seed);
             string dllFolder = Path.Combine(tempExtractDir, dllGuid);
             Directory.CreateDirectory(dllFolder);
 
-            File.Copy(PrecompiledInstallerRuntimePath, Path.Combine(dllFolder, "asset"), true);
-            File.WriteAllText(
-                Path.Combine(dllFolder, "pathname"),
-                $"{installerRoot}/{PrecompiledInstallerRuntimeTargetFileName}");
+            File.Copy(sourcePath, Path.Combine(dllFolder, "asset"), true);
+            File.WriteAllText(Path.Combine(dllFolder, "pathname"), targetPath);
 
-            string metaPath = PrecompiledInstallerRuntimePath + ".meta";
+            string metaPath = sourcePath + ".meta";
             string metaContent = File.Exists(metaPath)
                 ? File.ReadAllText(metaPath)
                 : GenerateEditorOnlyDllMeta(dllGuid);
@@ -344,13 +292,32 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return true;
         }
 
-        private static bool IsPatchRuntimeHandledByPrecompiledInstaller(PatchRuntimeInjectedFile patchScript)
+        private static bool TryGetPatchRuntimeScriptReference(out string guid, out long localFileId)
         {
-            return patchScript != null &&
-                   string.Equals(
-                       patchScript.targetPath,
-                       "Packages/com.yucp.temp/Editor/YUCPPatchImporter.cs",
-                       StringComparison.OrdinalIgnoreCase);
+            guid = null;
+            localFileId = 0;
+
+            Type derivedFbxAssetType = Type.GetType("YUCP.PatchRuntime.DerivedFbxAsset, YUCP.PatchRuntime");
+            if (derivedFbxAssetType == null || !typeof(ScriptableObject).IsAssignableFrom(derivedFbxAssetType))
+            {
+                return false;
+            }
+
+            ScriptableObject instance = null;
+            try
+            {
+                instance = ScriptableObject.CreateInstance(derivedFbxAssetType);
+                var script = MonoScript.FromScriptableObject(instance);
+                return script != null &&
+                       AssetDatabase.TryGetGUIDAndLocalFileIdentifier(script, out guid, out localFileId);
+            }
+            finally
+            {
+                if (instance != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(instance);
+                }
+            }
         }
 
         private static string GenerateEditorOnlyDllMeta(string guid)
@@ -1734,10 +1701,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     if (File.Exists(physicalAssetPath))
                     {
-                        string derivedFbxAssetScriptGuid =
-                            GetPatchRuntimeInjectedGuid("Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs");
-                        
-                        if (!string.IsNullOrEmpty(derivedFbxAssetScriptGuid))
+                        if (TryGetPatchRuntimeScriptReference(out string derivedFbxAssetScriptGuid, out long derivedFbxAssetScriptFileId))
                         {
                             // Read the .asset file and update the script GUID and namespace references
                             string assetContent = File.ReadAllText(physicalAssetPath);
@@ -1745,7 +1709,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             var guidPattern = new System.Text.RegularExpressions.Regex(@"m_Script:\s*\{fileID:\s*\d+,\s*guid:\s*([a-f0-9]{32}),\s*type:\s*\d+\}");
                             if (guidPattern.IsMatch(assetContent))
                             {
-                                assetContent = guidPattern.Replace(assetContent, $"m_Script: {{fileID: 11500000, guid: {derivedFbxAssetScriptGuid}, type: 3}}");
+                                assetContent = guidPattern.Replace(assetContent, $"m_Script: {{fileID: {derivedFbxAssetScriptFileId}, guid: {derivedFbxAssetScriptGuid}, type: 3}}");
                             }
                             
                             // Replace namespace references for nested types (e.g., EmbeddedBlendshapeOp, EmbeddedMeshDeltaOp)
@@ -1798,7 +1762,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                         else
                         {
-                            Debug.LogWarning($"[PackageBuilder] Could not find DerivedFbxAsset.cs script GUID in temp package - asset may not load correctly");
+                            Debug.LogWarning("[PackageBuilder] Could not resolve the YUCP.PatchRuntime.DerivedFbxAsset script reference - patch assets may not load correctly");
                         }
                         
                         patchAssetsToAdd.Add(pkgPath);
@@ -3542,83 +3506,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // 2c. Inject patch runtime scripts if patch assets are present
                 if (hasPatchAssets)
                 {
-                    progressCallback?.Invoke(0.70f, "Injecting derived FBX runtime scripts...");
-                    
-                    int injectedPatchScripts = 0;
-                    foreach (var patchScript in s_patchRuntimeInjectedFiles)
-                    {
-                        if (usingPrecompiledInstallerRuntime && IsPatchRuntimeHandledByPrecompiledInstaller(patchScript))
-                        {
-                            continue;
-                        }
+                    progressCallback?.Invoke(0.70f, "Injecting derived FBX runtime binaries...");
 
-                        string sourceScriptPath = null;
-                        
-                        // First, try direct path (most reliable)
-                        if (File.Exists(patchScript.sourcePath))
-                        {
-                            sourceScriptPath = patchScript.sourcePath;
-                        }
-                        else
-                        {
-                            // Fallback: Try to find by filename using AssetDatabase
-                            string fileName = Path.GetFileNameWithoutExtension(patchScript.sourcePath);
-                            string[] patchFoundScripts = AssetDatabase.FindAssets($"{fileName} t:Script");
-                            string normalizedRelativeSourcePath = patchScript.sourcePath
-                                .Replace("Packages/com.yucp.devtools/", string.Empty)
-                                .Replace("\\", "/");
-                            
-                            // Filter results to find the exact match
-                            foreach (var guid in patchFoundScripts)
-                            {
-                                string foundPath = AssetDatabase.GUIDToAssetPath(guid).Replace("\\", "/");
-                                if (string.Equals(foundPath, patchScript.sourcePath, StringComparison.OrdinalIgnoreCase) ||
-                                    foundPath.EndsWith(normalizedRelativeSourcePath, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    sourceScriptPath = foundPath;
-                                    break;
-                                }
-                            }
-                            
-                            // If still not found, use first result (best effort)
-                            if (string.IsNullOrEmpty(sourceScriptPath) && patchFoundScripts.Length > 0)
-                            {
-                                sourceScriptPath = AssetDatabase.GUIDToAssetPath(patchFoundScripts[0]);
-                            }
-                        }
-                        
-                        if (!string.IsNullOrEmpty(sourceScriptPath) && File.Exists(sourceScriptPath))
-                        {
-                            string scriptGuid = GetPatchRuntimeInjectedGuid(patchScript.targetPath);
-                            string targetPath = patchScript.targetPath;
-                            string scriptFolder = Path.Combine(tempExtractDir, scriptGuid);
-                            Directory.CreateDirectory(scriptFolder);
-                            
-                            string scriptContent = File.ReadAllText(sourceScriptPath);
-                            if (patchScript.rewritePatchRuntimeNamespace)
-                            {
-                                scriptContent = scriptContent.Replace(
-                                    "namespace YUCP.DevTools.Editor.PackageExporter",
-                                    "namespace YUCP.PatchRuntime"
-                                );
-                                scriptContent = scriptContent.Replace(
-                                    "using YUCP.DevTools.Editor.PackageExporter",
-                                    "using YUCP.PatchRuntime"
-                                );
-                            }
-                            
-                            File.WriteAllText(Path.Combine(scriptFolder, "asset"), scriptContent);
-                            File.WriteAllText(Path.Combine(scriptFolder, "pathname"), targetPath);
-                            
-                            string scriptMeta = "fileFormatVersion: 2\nguid: " + scriptGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
-                            File.WriteAllText(Path.Combine(scriptFolder, "asset.meta"), scriptMeta);
-                            
-                            injectedPatchScripts++;
-                        }
-                        else
-                        {
-                            Debug.LogError($"[PackageBuilder] Could not find patch script: {patchScript.sourcePath}. Tried direct path and AssetDatabase search.");
-                        }
+                    if (!TryInjectPrecompiledPatchRuntime(tempExtractDir))
+                    {
+                        throw new FileNotFoundException($"Required patch runtime binary not found at {PrecompiledPatchRuntimePath}.");
+                    }
+
+                    if (!usingPrecompiledInstallerRuntime &&
+                        !TryInjectPrecompiledInstallerRuntime(tempExtractDir, TempPatchEditorRoot))
+                    {
+                        throw new FileNotFoundException($"Required patch importer binary not found at {PrecompiledInstallerRuntimePath}.");
                     }
                     
                     // Also inject package.json for com.yucp.temp (required for Unity to recognize it as a package)
@@ -3650,41 +3548,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     string tempPackageJsonMeta = "fileFormatVersion: 2\nguid: " + tempPackageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(Path.Combine(tempPackageJsonFolder, "asset.meta"), tempPackageJsonMeta);
-                    
-                    // Create an assembly definition (.asmdef) file for the Editor scripts
-                    string asmdefGuid = Guid.NewGuid().ToString("N");
-                    string asmdefFolder = Path.Combine(tempExtractDir, asmdefGuid);
-                    Directory.CreateDirectory(asmdefFolder);
-                    
-                    string asmdefContent = @"{
-  ""name"": ""YUCP.PatchRuntime"",
-  ""rootNamespace"": """",
-  ""references"": [
-    ""Unity.Formats.Fbx.Editor""
-  ],
-  ""includePlatforms"": [
-    ""Editor""
-  ],
-  ""excludePlatforms"": [],
-  ""allowUnsafeCode"": false,
-  ""overrideReferences"": true,
-  ""precompiledReferences"": [],
-  ""autoReferenced"": true,
-  ""defineConstraints"": [],
-  ""versionDefines"": [
-    {
-      ""name"": ""com.unity.formats.fbx"",
-      ""expression"": ""4.0.0"",
-      ""define"": ""UNITY_FORMATS_FBX""
-    }
-  ],
-  ""noEngineReferences"": false
-}";
-                    File.WriteAllText(Path.Combine(asmdefFolder, "asset"), asmdefContent);
-                    File.WriteAllText(Path.Combine(asmdefFolder, "pathname"), "Packages/com.yucp.temp/Editor/YUCP.PatchRuntime.asmdef");
-                    
-                    string asmdefMeta = "fileFormatVersion: 2\nguid: " + asmdefGuid + "\nAssemblyDefinitionImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
-                    File.WriteAllText(Path.Combine(asmdefFolder, "asset.meta"), asmdefMeta);
                     
                     
                     string[] hdiffDlls = new string[]
@@ -3730,13 +3593,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                     }
                     
-                    if (injectedPatchScripts > 0)
-                    {
-                    }
-                    else
-                    {
-                        Debug.LogWarning("[PackageBuilder] Could not find patch runtime scripts - patch functionality will not work!");
-                    }
                 }
                 
                 // 3. Inject bundled packages (ALL files including those without .meta)

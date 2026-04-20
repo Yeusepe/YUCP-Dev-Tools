@@ -151,15 +151,18 @@ namespace YUCP.PatchCleanup
 
                     string normalizedPath = importedPath.Replace('\\', '/');
                     if (normalizedPath.StartsWith("Packages/com.yucp.temp/Editor/", StringComparison.OrdinalIgnoreCase) &&
-                        (normalizedPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
-                         normalizedPath.EndsWith(".asmdef", StringComparison.OrdinalIgnoreCase)))
+                        (normalizedPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
+                         normalizedPath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ||
+                          normalizedPath.EndsWith(".asmdef", StringComparison.OrdinalIgnoreCase)))
                     {
                         return true;
                     }
                 }
             }
 
-            return TempRuntimeAssetExists("Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs") ||
+            return TempRuntimeAssetExists("Packages/com.yucp.temp/Editor/YUCP.PatchRuntime.dll") ||
+                   TempRuntimeAssetExists("Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Template.dll") ||
+                   TempRuntimeAssetExists("Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs") ||
                    TempRuntimeAssetExists("Packages/com.yucp.temp/Editor/YUCP.PatchRuntime.asmdef");
         }
 
@@ -172,6 +175,34 @@ namespace YUCP.PatchCleanup
 
             string physicalPath = Path.Combine(Application.dataPath, "..", assetPath.Replace('/', Path.DirectorySeparatorChar));
             return File.Exists(physicalPath);
+        }
+
+        private static bool TryGetPatchRuntimeScriptReference(out string guid, out long localFileId)
+        {
+            guid = null;
+            localFileId = 0;
+
+            Type derivedFbxAssetType = Type.GetType("YUCP.PatchRuntime.DerivedFbxAsset, YUCP.PatchRuntime");
+            if (derivedFbxAssetType == null || !typeof(ScriptableObject).IsAssignableFrom(derivedFbxAssetType))
+            {
+                return false;
+            }
+
+            ScriptableObject instance = null;
+            try
+            {
+                instance = ScriptableObject.CreateInstance(derivedFbxAssetType);
+                MonoScript monoScript = MonoScript.FromScriptableObject(instance);
+                return monoScript != null &&
+                       AssetDatabase.TryGetGUIDAndLocalFileIdentifier(monoScript, out guid, out localFileId);
+            }
+            finally
+            {
+                if (instance != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(instance);
+                }
+            }
         }
 
         private static bool ShouldSkipPatchProcessing(string context, string[] importedAssets = null)
@@ -771,7 +802,7 @@ namespace YUCP.PatchCleanup
                     foreach (var importedPath in importedAssets ?? new string[0])
                     {
                         if (importedPath.Contains("com.yucp.temp/Editor") &&
-                            (importedPath.EndsWith(".cs") || importedPath.EndsWith(".asmdef")))
+                            (importedPath.EndsWith(".dll") || importedPath.EndsWith(".cs") || importedPath.EndsWith(".asmdef")))
                         {
                             scriptsJustImported = true;
                             WriteLog($"  Scripts were just imported, waiting for compilation before applying patch...");
@@ -877,10 +908,7 @@ namespace YUCP.PatchCleanup
                 processedPatches.Add(patchPath);
 
                 // First, fix script GUID and namespace references if needed (must happen before type lookup)
-                string derivedFbxAssetScriptPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs";
-                string derivedFbxAssetScriptGuid = AssetDatabase.AssetPathToGUID(derivedFbxAssetScriptPath);
-
-                if (!string.IsNullOrEmpty(derivedFbxAssetScriptGuid))
+                if (TryGetPatchRuntimeScriptReference(out string derivedFbxAssetScriptGuid, out long derivedFbxAssetScriptFileId))
                 {
                     string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                     string physicalAssetPath = Path.Combine(projectPath, patchPath.Replace('/', Path.DirectorySeparatorChar));
@@ -900,7 +928,7 @@ namespace YUCP.PatchCleanup
                             if (currentGuid != derivedFbxAssetScriptGuid)
                             {
                                 WriteLog($"  Fixing script GUID reference: {currentGuid} -> {derivedFbxAssetScriptGuid}");
-                                assetContent = guidPattern.Replace(assetContent, $"m_Script: {{fileID: 11500000, guid: {derivedFbxAssetScriptGuid}, type: 3}}");
+                                assetContent = guidPattern.Replace(assetContent, $"m_Script: {{fileID: {derivedFbxAssetScriptFileId}, guid: {derivedFbxAssetScriptGuid}, type: 3}}");
                                 needsUpdate = true;
                             }
                         }
@@ -1065,22 +1093,18 @@ namespace YUCP.PatchCleanup
                 {
                     WriteLog("  WARNING: DerivedFbxAsset type not found - assembly may not be compiled yet, will retry");
 
-                    // Check if the script file exists but assembly hasn't compiled yet
-                    string derivedFbxAssetScriptPath = "Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs";
-                    if (File.Exists(Path.Combine(Application.dataPath, "..", derivedFbxAssetScriptPath.Replace('/', Path.DirectorySeparatorChar))))
+                    if (HasTempRuntimeFiles())
                     {
-                        // Script exists but type not found - assembly needs to compile
-                        // Retry after a delay to allow compilation
-                        WriteLog("  Script file exists, waiting for assembly compilation...");
+                        WriteLog("  Runtime binaries/files exist, waiting for assembly compilation...");
                         ReleasePatchForRetry(patchPath, "DerivedFbxAsset type not compiled yet");
                         return false;
                     }
                     else
                     {
                         LogTempRuntimeState(patchPath);
-                        WriteLog("  ERROR: DerivedFbxAsset script file not found");
-                        Debug.LogWarning($"[YUCP PatchImporter] DerivedFbxAsset runtime files are missing while processing patch {patchPath}. Retrying in case Unity is still importing the temp runtime.");
-                        ReleasePatchForRetry(patchPath, "DerivedFbxAsset.cs missing from Packages/com.yucp.temp/Editor");
+                        WriteLog("  ERROR: Derived FBX runtime files not found");
+                        Debug.LogWarning($"[YUCP PatchImporter] Derived FBX runtime files are missing while processing patch {patchPath}. Retrying in case Unity is still importing the temp runtime.");
+                        ReleasePatchForRetry(patchPath, "Derived FBX runtime files missing from Packages/com.yucp.temp/Editor");
                         return false;
                     }
                 }

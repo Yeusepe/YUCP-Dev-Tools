@@ -1,0 +1,93 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace YUCP.PatchRuntime
+{
+	/// <summary>
+	/// Asset containing information needed to recreate a derived FBX using binary patching.
+	/// Uses HDiffPatch binary diff files instead of semantic operations.
+	/// </summary>
+	[UnityEngine.Scripting.Preserve]
+	public class DerivedFbxAsset : ScriptableObject
+	{
+		[SerializeField] public string derivedFbxGuid; // GUID of the original derived FBX (preserved for prefab compatibility)
+		[SerializeField] public string targetFbxName; // Name for the derived FBX that will be created
+		[SerializeField] public string originalDerivedFbxPath; // Original path of the derived FBX (for reconstruction)
+		[SerializeField] public string canonicalBaseGuid; // Base FBX used for patch application (all bases required to decrypt)
+		[SerializeField] public bool overrideOriginalReferences = false; // If true, replace all references to original FBX with new FBX
+		[SerializeField] public string embeddedMetaFileContent; // Embedded meta file content from original derived FBX, encoded when exported to keep the patch asset YAML-safe.
+		
+		[SerializeField] public List<PatchEntry> entries = new List<PatchEntry>();
+		
+		[SerializeField] public Policy policy = new Policy();
+		[SerializeField] public UIHints uiHints = new UIHints();
+		[SerializeField] public SeedMaps seedMaps = new SeedMaps();
+
+		/// <summary>
+		/// When true, the consumer must hold a verified license for <see cref="licensePackageId"/>
+		/// before DerivedFbxBuilder will decrypt and apply this asset.
+		/// Set automatically by PackageBuilder when the export profile has requiresLicenseVerification.
+		/// </summary>
+		[SerializeField] public bool requiresLicense = false;
+
+		/// <summary>
+		/// YUCP package ID (e.g. "yeusepe/MyAvatar") whose license must be verified.
+		/// Checked against the "yucp.license.{licensePackageId}" SessionState key.
+		/// </summary>
+		[SerializeField] public string licensePackageId = "";
+
+		/// <summary>
+		/// When true, reconstructing this protected asset requires a server-issued unlock token
+		/// containing the wrapped content key for this machine/project.
+		/// </summary>
+		[SerializeField] public bool requiresServerUnlock = false;
+
+		/// <summary>
+		/// Stable identifier for the protected payload registration on the YUCP server.
+		/// Empty for legacy packages that still embed enough material to recover the content key locally.
+		/// </summary>
+		[SerializeField] public string protectedAssetId = "";
+		
+		[Serializable]
+		public struct Policy
+		{
+			public float autoApplyThreshold;
+			public float reviewThreshold;
+			public bool strictTopology;
+		}
+		
+		[Serializable]
+		public struct UIHints
+		{
+			public string friendlyName;
+			public Texture2D thumbnail;
+			public string category;
+		}
+		
+		[Serializable]
+		public class SeedMaps
+		{
+			public List<StringPair> boneAliases = new List<StringPair>();
+			public List<StringPair> materialAliases = new List<StringPair>();
+			public List<StringPair> blendshapeAliases = new List<StringPair>();
+		}
+		
+		[Serializable]
+		public struct StringPair
+		{
+			public string from;
+			public string to;
+		}
+		
+		[Serializable]
+		public class PatchEntry
+		{
+			public string baseGuid;
+			public string baseHash; // SHA256 of base FBX bytes (hex)
+			public string shareEnc; // base64: share XOR mask(base FBX bytes)
+			public string hdiffFilePath; // encrypted diff payload
+		}
+	}
+}
+
