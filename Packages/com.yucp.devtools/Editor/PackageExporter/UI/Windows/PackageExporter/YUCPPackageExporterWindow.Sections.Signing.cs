@@ -18,8 +18,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
     {
         private VisualElement CreatePackageSigningSection(ExportProfile profile)
         {
-            var signingTab = new YUCP.DevTools.Editor.PackageSigning.UI.PackageSigningTab(profile, UpdateProfileDetails);
-            _signingSectionElement = signingTab.CreateUI();
+            if (_packageSigningTab == null || _packageSigningProfile != profile)
+            {
+                _packageSigningProfile = profile;
+                _packageSigningTab = new YUCP.DevTools.Editor.PackageSigning.UI.PackageSigningTab(profile, UpdateProfileDetails);
+                _signingSectionElement = _packageSigningTab.CreateUI();
+            }
+            else
+            {
+                _packageSigningTab.RefreshUI();
+            }
+
             return _signingSectionElement;
         }
 
@@ -28,20 +37,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // If a profile is selected, refresh the entire details view to ensure signing section updates
             if (selectedProfile != null)
             {
-                UpdateProfileDetails();
+                if (_packageSigningProfile == selectedProfile && _packageSigningTab != null)
+                {
+                    _packageSigningTab.RefreshUI();
+                }
+                else
+                {
+                    UpdateProfileDetails();
+                }
             }
             // If no profile selected but signing section exists, just refresh it
-            else if (_signingSectionElement != null)
+            else if (_signingSectionElement != null && _packageSigningTab != null)
             {
-                var parent = _signingSectionElement.parent;
-                if (parent != null)
-                {
-                    var index = parent.IndexOf(_signingSectionElement);
-                    _signingSectionElement.RemoveFromHierarchy();
-                    
-                    var newSigningSection = CreatePackageSigningSection(selectedProfile);
-                    parent.Insert(index, newSigningSection);
-                }
+                _packageSigningTab.RefreshUI();
             }
         }
 

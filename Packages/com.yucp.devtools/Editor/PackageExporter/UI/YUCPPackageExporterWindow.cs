@@ -220,6 +220,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private double lastGapUpdateTime = 0;
         private List<FaviconRequestData> faviconRequests = new List<FaviconRequestData>();
         private VisualElement _signingSectionElement;
+        private YUCP.DevTools.Editor.PackageSigning.UI.PackageSigningTab _packageSigningTab;
+        private ExportProfile _packageSigningProfile;
         private float lastGifUpdateTime = 0f;
         private Dictionary<string, bool> _updateStepValidationFoldouts = new Dictionary<string, bool>();
         /// <summary>Main Package Exporter wiki (Help / Documentation).</summary>

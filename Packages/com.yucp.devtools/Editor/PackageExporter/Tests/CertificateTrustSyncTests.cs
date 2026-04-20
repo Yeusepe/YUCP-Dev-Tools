@@ -56,6 +56,40 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
+        public void ParseTrustedRootKeys_NormalizesBase64UrlJwkKeysToBase64()
+        {
+            const string jwksJson = "{"
+                + "\"keys\":["
+                + "{"
+                + "\"kty\":\"OKP\","
+                + "\"crv\":\"Ed25519\","
+                + "\"kid\":\"yucp-root\","
+                + "\"x\":\"__79\""
+                + "}"
+                + "]"
+                + "}";
+
+            var parseMethod = typeof(PackageSigningService).GetMethod(
+                "ParseTrustedRootKeys",
+                BindingFlags.Static | BindingFlags.NonPublic
+            );
+
+            Assert.That(parseMethod, Is.Not.Null, "Expected PackageSigningService.ParseTrustedRootKeys to exist.");
+
+            var parsed = parseMethod.Invoke(null, new object[] { jwksJson }) as IEnumerable;
+            Assert.That(parsed, Is.Not.Null);
+
+            var entries = new List<object>();
+            foreach (var entry in parsed)
+            {
+                entries.Add(entry);
+            }
+
+            Assert.That(entries.Count, Is.EqualTo(1));
+            Assert.That(GetStringMember(entries[0], "publicKeyBase64"), Is.EqualTo("//79"));
+        }
+
+        [Test]
         public void TryGetTrustedRootPublicKey_UsesPinnedRootForKnownKeyIds()
         {
             var settings = ScriptableObject.CreateInstance<SigningSettings>();

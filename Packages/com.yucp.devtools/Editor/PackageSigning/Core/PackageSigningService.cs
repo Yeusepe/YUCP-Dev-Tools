@@ -782,7 +782,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 {
                     keyId = key.kid?.Trim() ?? "",
                     algorithm = string.IsNullOrWhiteSpace(key.crv) ? "Ed25519" : key.crv.Trim(),
-                    publicKeyBase64 = key.x.Trim(),
+                    publicKeyBase64 = Convert.ToBase64String(Base64UrlDecode(key.x.Trim())),
                 });
             }
 

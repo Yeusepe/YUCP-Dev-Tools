@@ -70,6 +70,30 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             }
         }
 
+        [Test]
+        public void CreatePackageSigningSection_ReusesSigningTab_ForSameProfile()
+        {
+            var window = ScriptableObject.CreateInstance<YUCPPackageExporterWindow>();
+            var profile = ScriptableObject.CreateInstance<ExportProfile>();
+
+            try
+            {
+                var createMethod = typeof(YUCPPackageExporterWindow)
+                    .GetMethod("CreatePackageSigningSection", BindingFlags.Instance | BindingFlags.NonPublic);
+
+                var first = createMethod?.Invoke(window, new object[] { profile }) as VisualElement;
+                var second = createMethod?.Invoke(window, new object[] { profile }) as VisualElement;
+
+                Assert.That(first, Is.Not.Null);
+                Assert.That(second, Is.SameAs(first));
+            }
+            finally
+            {
+                Object.DestroyImmediate(profile);
+                Object.DestroyImmediate(window);
+            }
+        }
+
         private static bool ContainsLabel(VisualElement root, string text)
         {
             if (root == null)
