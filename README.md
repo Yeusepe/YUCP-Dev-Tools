@@ -1,5 +1,5 @@
-<img width="12738" height="2505" alt="Banner_1@10x" src="https://github.com/user-attachments/assets/6dea7162-678b-45a7-ac66-9e393fd63d3d" />
-<a href="https://patreon.com/Yeusepe"><img width="12738" height="2506" alt="Patreon_1@10x" src="https://github.com/user-attachments/assets/ad397ded-7876-4c55-a120-0b6a05915255" /></a>
+![Devtools](https://github.com/user-attachments/assets/6dea7162-678b-45a7-ac66-9e393fd63d3d)
+![Patreon](https://github.com/user-attachments/assets/ad397ded-7876-4c55-a120-0b6a05915255)
 
 # YUCP DevTools
 Development tools for YUCP package creators and avatar variant management.
