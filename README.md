@@ -1,5 +1,4 @@
-![Devtools](https://github.com/user-attachments/assets/6dea7162-678b-45a7-ac66-9e393fd63d3d)
-![Patreon](https://github.com/user-attachments/assets/ad397ded-7876-4c55-a120-0b6a05915255)
+![Devtools](https://github.com/user-attachments/assets/8df2ac98-4d2e-47d8-ba60-2db922f087ec)
 
 # YUCP DevTools
 Development tools for YUCP package creators and avatar variant management.
