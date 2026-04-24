@@ -4292,6 +4292,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             string message = signingFailureMessage.Trim();
 
+            if (message.IndexOf("service not configured", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
             if (message.IndexOf("network error while requesting a package signature", StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;
 
