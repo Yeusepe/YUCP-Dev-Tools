@@ -16,6 +16,24 @@ namespace YUCP.DirectVpmInstaller
     public static class DirectVpmInstaller
     {
         private const string PendingProtectedImportStateKey = "YUCP.PendingProtectedImportBootstrap";
+        private const int FriendlyWindowsPathLimit = 240;
+        private static readonly HashSet<string> TrustedCommunityRepoHostsWithoutHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "vcc.vrcfury.com"
+        };
+
+        [Serializable]
+        private sealed class ResolvedPackageDownload
+        {
+            public string repositoryName;
+            public string repositoryUrl;
+            public string packageName;
+            public string displayName;
+            public string downloadUrl;
+            public string resolvedVersion;
+            public string expectedArchiveHash;
+            public string friendlyWarningMessage;
+        }
 
         [Serializable]
         private sealed class PendingProtectedImportState
@@ -320,7 +338,101 @@ namespace YUCP.DirectVpmInstaller
 
         private static string GetInstallerWorkspaceRoot()
         {
-            return Path.Combine(Path.GetFullPath(Path.Combine(Application.dataPath, "..")), "Library", "YUCP", "DirectVpmInstaller");
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            return Path.Combine(projectRoot, ".yucp-dvi");
+        }
+
+        private static string GetFriendlyRepositoryLabel(string repositoryName, string repositoryUrl)
+        {
+            if (!string.IsNullOrWhiteSpace(repositoryName))
+                return repositoryName.Trim();
+
+            if (Uri.TryCreate(repositoryUrl, UriKind.Absolute, out Uri uri) && !string.IsNullOrWhiteSpace(uri.Host))
+                return uri.Host;
+
+            return "This source";
+        }
+
+        private static string GetFriendlyPackageLabel(string displayName, string packageName)
+        {
+            if (!string.IsNullOrWhiteSpace(displayName))
+                return displayName.Trim();
+
+            if (string.IsNullOrWhiteSpace(packageName))
+                return "this package";
+
+            string[] segments = packageName.Split('.');
+            string leaf = segments.Length > 0 ? segments[segments.Length - 1] : packageName;
+            if (string.IsNullOrWhiteSpace(leaf))
+                leaf = packageName;
+
+            return char.ToUpperInvariant(leaf[0]) + leaf.Substring(1);
+        }
+
+        private static bool AllowsMissingArchiveHash(string repositoryUrl)
+        {
+            if (!Uri.TryCreate(repositoryUrl, UriKind.Absolute, out Uri uri))
+                return false;
+
+            return TrustedCommunityRepoHostsWithoutHashes.Contains(uri.Host);
+        }
+
+        private static string BuildMissingHashWarning(string repositoryName, string repositoryUrl, string displayName, string packageName, string version)
+        {
+            string repoLabel = GetFriendlyRepositoryLabel(repositoryName, repositoryUrl);
+            string packageLabel = GetFriendlyPackageLabel(displayName, packageName);
+            return $"{repoLabel} is a trusted community source, but it doesn't publish a security fingerprint for {packageLabel} {version}. We can still install it, but Unity can't double-check that download automatically.";
+        }
+
+        private static void AddUniqueMessage(List<string> messages, string message)
+        {
+            if (messages == null || string.IsNullOrWhiteSpace(message))
+                return;
+
+            if (!messages.Contains(message))
+                messages.Add(message);
+        }
+
+        private static void ShowInstallFailureDialog(List<string> failureMessages)
+        {
+            if (failureMessages == null || failureMessages.Count == 0)
+                return;
+
+            EditorUtility.DisplayDialog(
+                "Package setup couldn't finish",
+                "We couldn't finish installing everything this package needs.\n\n"
+                + string.Join("\n\n", failureMessages.Distinct(StringComparer.Ordinal))
+                + "\n\nNothing from the bundled package was turned on yet, so your project was left unchanged.",
+                "OK");
+        }
+
+        private static void EnsureCreatorFriendlyPathLength(string path, string packageLabel)
+        {
+            if (Application.platform != RuntimePlatform.WindowsEditor || string.IsNullOrWhiteSpace(path))
+                return;
+
+            if (path.Length < FriendlyWindowsPathLimit)
+                return;
+
+            throw new IOException(
+                $"Windows couldn't unpack {packageLabel} because this project is stored in a very long folder path. Move the project to a shorter folder, such as C:\\Unity\\MyAvatar, and try again.");
+        }
+
+        private static string BuildFriendlyInstallFailureMessage(string packageLabel, Exception ex)
+        {
+            if (ex is WebException)
+                return $"We couldn't download {packageLabel}. Please check your internet connection and try the import again.";
+
+            if (ex is PathTooLongException ||
+                ex.Message.IndexOf("very long folder path", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return $"{packageLabel} couldn't be unpacked because Windows is hitting its long file path limit for this project folder. Move the project to a shorter path and try again.";
+            }
+
+            if (ex is InvalidDataException)
+                return $"We downloaded {packageLabel}, but the package contents didn't look valid. The install was stopped to protect your project.";
+
+            return $"We couldn't install {packageLabel}. Please try the import again. If it still fails, send the YUCP installer messages from the Console to support.";
         }
 
         private static string NormalizeSha256(string hash)
@@ -355,8 +467,9 @@ namespace YUCP.DirectVpmInstaller
             return candidate;
         }
 
-        private static void ExtractZipToDirectorySafely(string zipPath, string destinationDirectory)
+        private static void ExtractZipToDirectorySafely(string zipPath, string destinationDirectory, string packageLabel)
         {
+            EnsureCreatorFriendlyPathLength(destinationDirectory, packageLabel);
             Directory.CreateDirectory(destinationDirectory);
             using var archive = ZipFile.OpenRead(zipPath);
             foreach (ZipArchiveEntry entry in archive.Entries)
@@ -365,6 +478,7 @@ namespace YUCP.DirectVpmInstaller
                     continue;
 
                 string destinationPath = GetValidatedExtractionPath(destinationDirectory, entry.FullName, zipPath);
+                EnsureCreatorFriendlyPathLength(destinationPath, packageLabel);
                 bool isDirectory = string.IsNullOrEmpty(entry.Name) &&
                                    (entry.FullName.EndsWith("/", StringComparison.Ordinal) ||
                                     entry.FullName.EndsWith("\\", StringComparison.Ordinal));
@@ -377,6 +491,7 @@ namespace YUCP.DirectVpmInstaller
                 string parentDirectory = Path.GetDirectoryName(destinationPath);
                 if (!string.IsNullOrEmpty(parentDirectory))
                 {
+                    EnsureCreatorFriendlyPathLength(parentDirectory, packageLabel);
                     Directory.CreateDirectory(parentDirectory);
                 }
 
@@ -397,13 +512,9 @@ namespace YUCP.DirectVpmInstaller
             string packageName,
             string versionRequirement,
             Dictionary<string, string> repositories,
-            out string downloadUrl,
-            out string resolvedVersion,
-            out string expectedArchiveHash)
+            out ResolvedPackageDownload resolution)
         {
-            downloadUrl = null;
-            resolvedVersion = null;
-            expectedArchiveHash = null;
+            resolution = null;
 
             foreach (var repo in repositories)
             {
@@ -425,10 +536,6 @@ namespace YUCP.DirectVpmInstaller
                     if (versions == null)
                         continue;
 
-                    string bestVersion = null;
-                    string bestUrl = null;
-                    string bestHash = null;
-
                     foreach (var versionEntry in versions.Properties())
                     {
                         try
@@ -449,30 +556,41 @@ namespace YUCP.DirectVpmInstaller
 
                             if (!IsTrustedWebUrl(candidateUrl))
                                 continue;
-                            if (!TryGetExpectedArchiveHash(versionMetadata, out string candidateHash))
+
+                            bool hasHash = TryGetExpectedArchiveHash(versionMetadata, out string candidateHash);
+                            if (!hasHash && !AllowsMissingArchiveHash(repo.Value))
                             {
                                 Debug.LogWarning($"[DirectVpmInstaller] Repository {repo.Key} did not provide a valid SHA-256 for {packageName}@{version}.");
                                 continue;
                             }
 
-                            if (bestVersion == null || CompareVersions(version, bestVersion) > 0)
+                            string displayName = versionMetadata?["displayName"]?.ToString();
+                            var candidate = new ResolvedPackageDownload
                             {
-                                bestVersion = version;
-                                bestUrl = candidateUrl;
-                                bestHash = candidateHash;
+                                repositoryName = repo.Key,
+                                repositoryUrl = repo.Value,
+                                packageName = packageName,
+                                displayName = displayName,
+                                downloadUrl = candidateUrl,
+                                resolvedVersion = version,
+                                expectedArchiveHash = hasHash ? candidateHash : null,
+                                friendlyWarningMessage = hasHash
+                                    ? null
+                                    : BuildMissingHashWarning(repo.Key, repo.Value, displayName, packageName, version)
+                            };
+
+                            if (resolution == null ||
+                                CompareVersions(candidate.resolvedVersion, resolution.resolvedVersion) > 0 ||
+                                (CompareVersions(candidate.resolvedVersion, resolution.resolvedVersion) == 0 &&
+                                 string.IsNullOrEmpty(resolution.expectedArchiveHash) &&
+                                 !string.IsNullOrEmpty(candidate.expectedArchiveHash)))
+                            {
+                                resolution = candidate;
                             }
                         }
                         catch
                         {
                         }
-                    }
-
-                    if (bestVersion != null && bestUrl != null && bestHash != null)
-                    {
-                        downloadUrl = bestUrl;
-                        resolvedVersion = bestVersion;
-                        expectedArchiveHash = bestHash;
-                        return true;
                     }
                 }
                 catch (Exception ex)
@@ -481,7 +599,7 @@ namespace YUCP.DirectVpmInstaller
                 }
             }
 
-            return false;
+            return resolution != null;
         }
 
         private static void MoveDirectoryIntoPlace(string sourceDirectory, string destinationDirectory)
@@ -705,6 +823,8 @@ namespace YUCP.DirectVpmInstaller
                 // Direct (top-level) dependencies for the UI prompt
                 var packagesToInstall = new List<Tuple<string, string>>();
                 var installWarnings = new List<string>();
+                var installFailures = new List<string>();
+                var packageDisplayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
                 // Work queue + set to install dependencies recursively (transitive closure)
                 var installQueue = new Queue<Tuple<string, string>>();
@@ -719,6 +839,14 @@ namespace YUCP.DirectVpmInstaller
                     {
                         var tuple = new Tuple<string, string>(packageName, versionRequirement);
                         packagesToInstall.Add(tuple);
+                        if (TryResolvePackageDownload(packageName, versionRequirement, repositories, out ResolvedPackageDownload previewResolution) &&
+                            !string.IsNullOrEmpty(previewResolution.friendlyWarningMessage))
+                        {
+                            AddUniqueMessage(installWarnings, previewResolution.friendlyWarningMessage);
+                        }
+                        packageDisplayNames[packageName] = previewResolution != null
+                            ? GetFriendlyPackageLabel(previewResolution.displayName, packageName)
+                            : GetFriendlyPackageLabel(null, packageName);
                         if (plannedPackages.Add(packageName))
                         {
                             installQueue.Enqueue(tuple);
@@ -736,7 +864,7 @@ namespace YUCP.DirectVpmInstaller
                     if (installWarnings.Count > 0)
                     {
                         EditorUtility.DisplayDialog(
-                            "Dependency Version Warning",
+                            "Package setup note",
                             string.Join("\n\n", installWarnings),
                             "Continue"
                         );
@@ -746,20 +874,29 @@ namespace YUCP.DirectVpmInstaller
                     return;
                 }
                 
-                string packageList = string.Join("\n", packagesToInstall.Select(p => $"  - {p.Item1}@{FormatVersionRequirementForDisplay(p.Item2)}"));
+                string packageList = string.Join("\n", packagesToInstall.Select(p =>
+                {
+                    string label = packageDisplayNames.TryGetValue(p.Item1, out string knownLabel)
+                        ? knownLabel
+                        : GetFriendlyPackageLabel(null, p.Item1);
+                    string displayName = string.Equals(label, p.Item1, StringComparison.OrdinalIgnoreCase)
+                        ? label
+                        : $"{label} ({p.Item1})";
+                    return $"  - {displayName}@{FormatVersionRequirementForDisplay(p.Item2)}";
+                }));
                 bool installsImporter = packagesToInstall.Any(p => string.Equals(p.Item1, "com.yucp.importer", StringComparison.OrdinalIgnoreCase));
                 string dialogMessage = isProtectedBootstrapImport && installsImporter
-                    ? $"This protected package needs the YUCP Importer to finish setup.\n\nThe following VPM dependencies will be installed:\n\n{packageList}\n\nWould you like to install them now?\n\n(Required to continue protected package setup)"
-                    : $"This package requires the following VPM dependencies:\n\n{packageList}\n\nWould you like to install them now?\n\n(Required for compilation)";
+                    ? $"This protected package needs the YUCP Importer to finish setup.\n\nWe'll install these required creator tools:\n\n{packageList}\n\nContinue now?\n\n(Required to finish protected package setup)"
+                    : $"This package needs a few creator tools before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}\n\nContinue now?";
                 if (installWarnings.Count > 0)
                 {
-                    dialogMessage += "\n\nWarnings:\n\n" + string.Join("\n\n", installWarnings);
+                    dialogMessage += "\n\nBefore you continue:\n\n" + string.Join("\n\n", installWarnings);
                 }
                 bool install = EditorUtility.DisplayDialog(
-                    "Install VPM Dependencies",
+                    "Install required creator tools",
                     dialogMessage,
                     "Install",
-                    "Cancel"
+                    "Not now"
                 );
                 
                 if (!install)
@@ -792,9 +929,10 @@ namespace YUCP.DirectVpmInstaller
                             continue;
                         }
                         
-                        if (!InstallPackage(package.Item1, package.Item2, repositories))
+                        if (!InstallPackage(package.Item1, package.Item2, repositories, out string friendlyFailureMessage))
                         {
                             allSucceeded = false;
+                            AddUniqueMessage(installFailures, friendlyFailureMessage);
                             continue;
                         }
                         
@@ -934,6 +1072,7 @@ namespace YUCP.DirectVpmInstaller
                 }
                     else
                     {
+                        ShowInstallFailureDialog(installFailures);
                         CleanupTemporaryFiles(packageJsonPath);
                     }
                 }
@@ -1439,50 +1578,67 @@ namespace YUCP.DirectVpmInstaller
             }
         }
         
-        private static bool InstallPackage(string packageName, string versionRequirement, Dictionary<string, string> repositories)
+        private static bool InstallPackage(string packageName, string versionRequirement, Dictionary<string, string> repositories, out string friendlyFailureMessage)
         {
+            friendlyFailureMessage = null;
             string tempZipPath = null;
             string stagingDirectory = null;
+            string packageLabel = GetFriendlyPackageLabel(null, packageName);
 
             try
             {
                 if (!IsSafePackageName(packageName))
                 {
                     Debug.LogError($"[DirectVpmInstaller] Refusing to install invalid package name '{packageName}'.");
+                    friendlyFailureMessage = $"One of the required package names was invalid ({packageName}).";
                     return false;
                 }
 
-                if (!TryResolvePackageDownload(packageName, versionRequirement, repositories, out string downloadUrl, out string resolvedVersion, out string expectedArchiveHash))
+                if (!TryResolvePackageDownload(packageName, versionRequirement, repositories, out ResolvedPackageDownload resolution))
                 {
                     Debug.LogError($"[DirectVpmInstaller] Package {packageName} not found in any repository");
+                    friendlyFailureMessage = $"We couldn't find a compatible download for {packageLabel} in the package sources included with this package.";
                     return false;
+                }
+
+                packageLabel = GetFriendlyPackageLabel(resolution.displayName, packageName);
+                if (!string.IsNullOrEmpty(resolution.friendlyWarningMessage))
+                {
+                    Debug.LogWarning($"[DirectVpmInstaller] {resolution.friendlyWarningMessage}");
                 }
 
                 string workspaceRoot = GetInstallerWorkspaceRoot();
                 string downloadsRoot = Path.Combine(workspaceRoot, "Downloads");
                 Directory.CreateDirectory(downloadsRoot);
-                tempZipPath = Path.Combine(downloadsRoot, $"{MakeSafeFolderName(packageName)}-{resolvedVersion}.zip");
+                tempZipPath = Path.Combine(downloadsRoot, $"{MakeSafeFolderName(packageName)}-{resolution.resolvedVersion}.zip");
                 stagingDirectory = Path.Combine(workspaceRoot, "Staging", Guid.NewGuid().ToString("N"));
+                EnsureCreatorFriendlyPathLength(tempZipPath, packageLabel);
+                EnsureCreatorFriendlyPathLength(stagingDirectory, packageLabel);
 
                 using (var downloadClient = new WebClient())
                 {
                     downloadClient.Headers.Add(HttpRequestHeader.UserAgent, "VCC/2.3.0");
-                    downloadClient.DownloadFile(downloadUrl, tempZipPath);
+                    downloadClient.DownloadFile(resolution.downloadUrl, tempZipPath);
                 }
 
-                string actualArchiveHash = NormalizeSha256(ComputeFileSha256(tempZipPath));
-                if (!string.Equals(actualArchiveHash, expectedArchiveHash, StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrEmpty(resolution.expectedArchiveHash))
                 {
-                    Debug.LogError($"[DirectVpmInstaller] SHA-256 mismatch for {packageName}@{resolvedVersion}. Expected {expectedArchiveHash}, got {actualArchiveHash}.");
-                    return false;
+                    string actualArchiveHash = NormalizeSha256(ComputeFileSha256(tempZipPath));
+                    if (!string.Equals(actualArchiveHash, resolution.expectedArchiveHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Debug.LogError($"[DirectVpmInstaller] SHA-256 mismatch for {packageName}@{resolution.resolvedVersion}. Expected {resolution.expectedArchiveHash}, got {actualArchiveHash}.");
+                        friendlyFailureMessage = $"We downloaded {packageLabel}, but its security fingerprint didn't match what the source promised. The install was stopped to protect your project.";
+                        return false;
+                    }
                 }
 
-                ExtractZipToDirectorySafely(tempZipPath, stagingDirectory);
+                ExtractZipToDirectorySafely(tempZipPath, stagingDirectory, packageLabel);
 
                 string stagedPackageJsonPath = Path.Combine(stagingDirectory, "package.json");
                 if (!File.Exists(stagedPackageJsonPath))
                 {
-                    Debug.LogError($"[DirectVpmInstaller] Downloaded archive for {packageName}@{resolvedVersion} did not contain package.json.");
+                    Debug.LogError($"[DirectVpmInstaller] Downloaded archive for {packageName}@{resolution.resolvedVersion} did not contain package.json.");
+                    friendlyFailureMessage = $"We downloaded {packageLabel}, but the package was incomplete. The install was stopped to protect your project.";
                     return false;
                 }
 
@@ -1492,11 +1648,13 @@ namespace YUCP.DirectVpmInstaller
                 if (!string.Equals(stagedPackageName, packageName, StringComparison.OrdinalIgnoreCase))
                 {
                     Debug.LogError($"[DirectVpmInstaller] Downloaded archive name mismatch. Expected {packageName}, got {stagedPackageName ?? "<missing>"}.");
+                    friendlyFailureMessage = $"We downloaded {packageLabel}, but the package contents didn't match the package source. The install was stopped to protect your project.";
                     return false;
                 }
-                if (!string.Equals(stagedPackageVersion, resolvedVersion, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(stagedPackageVersion, resolution.resolvedVersion, StringComparison.OrdinalIgnoreCase))
                 {
-                    Debug.LogError($"[DirectVpmInstaller] Downloaded archive version mismatch. Expected {resolvedVersion}, got {stagedPackageVersion ?? "<missing>"}.");
+                    Debug.LogError($"[DirectVpmInstaller] Downloaded archive version mismatch. Expected {resolution.resolvedVersion}, got {stagedPackageVersion ?? "<missing>"}.");
+                    friendlyFailureMessage = $"We downloaded {packageLabel}, but the version inside the package didn't match the package source. The install was stopped to protect your project.";
                     return false;
                 }
 
@@ -1509,14 +1667,15 @@ namespace YUCP.DirectVpmInstaller
                 
                 // Add to VPM manifest so VCC recognizes it as installed
                 // VPM packages from repositories should be in both dependencies and locked
-                AddToVpmManifest(packageName, resolvedVersion, addToDependencies: true);
+                AddToVpmManifest(packageName, resolution.resolvedVersion, addToDependencies: true);
                 
-                Debug.Log($"[DirectVpmInstaller] Installed {packageName}@{resolvedVersion}");
+                Debug.Log($"[DirectVpmInstaller] Installed {packageName}@{resolution.resolvedVersion}");
                 return true;
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[DirectVpmInstaller] Failed to install {packageName}: {ex.Message}");
+                friendlyFailureMessage = BuildFriendlyInstallFailureMessage(packageLabel, ex);
                 return false;
             }
             finally
