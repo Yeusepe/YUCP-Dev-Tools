@@ -212,6 +212,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
             int obfuscAssemblies = profile.assembliesToObfuscate != null ? profile.assembliesToObfuscate.Count(a => a != null && a.enabled) : 0;
             lines.Add($"Obfuscation: {(profile.enableObfuscation ? $"Enabled ({profile.obfuscationPreset}, {obfuscAssemblies} assemblies)" : "Disabled")}");
             lines.Add("");
+            if (profile.publishReleaseAfterExport)
+            {
+                lines.Add("Backstage Publish:");
+                lines.Add($"  Channel: {profile.GetResolvedPublishChannel()}");
+                lines.Add($"  Repository Visibility: {profile.GetResolvedPublishRepositoryVisibility()}");
+                lines.Add($"  Access Products: {string.Join(", ", profile.GetResolvedLicenseProductIds())}");
+                lines.Add("");
+            }
             lines.Add($"Output: {profile.GetOutputFilePath()}");
             return string.Join("\n", lines);
         }
@@ -247,6 +255,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     {
                         UpdateProgress(progress, status);
                     });
+                    BackstageReleasePublishService.PublishResult publishResult = null;
+                    if (result.success && profile.publishReleaseAfterExport)
+                    {
+                        publishResult = BackstageReleasePublishService.PublishExportedPackage(
+                            profile,
+                            result.outputPath,
+                            (publishProgress, publishStatus) =>
+                            {
+                                UpdateProgress(0.92f + (publishProgress * 0.08f), publishStatus);
+                            }
+                        );
+                        if (!publishResult.success)
+                        {
+                            result.success = false;
+                            result.errorMessage =
+                                $"{publishResult.errorMessage}\n\nThe local export remains at:\n{result.outputPath}";
+                        }
+                    }
 
                     EndExportProgressUi();
 
@@ -255,6 +281,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         string warningSuffix = string.IsNullOrEmpty(result.warningMessage)
                             ? string.Empty
                             : $"\n\nWarning:\n{result.warningMessage}";
+                        string publishSuffix =
+                            publishResult != null && publishResult.wasPublished
+                                ? $"\nPublished Channel: {publishResult.channel}\nRelease ID: {publishResult.deliveryPackageReleaseId}"
+                                : string.Empty;
 
                         bool openFolder = EditorUtility.DisplayDialog(
                             "Export Successful",
@@ -264,6 +294,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             $"Files: {result.filesExported}\n" +
                             $"Assemblies Obfuscated: {result.assembliesObfuscated}\n" +
                             $"Build Time: {result.buildTimeSeconds:F2}s" +
+                            publishSuffix +
                             warningSuffix,
                             "Open Folder",
                             "OK"

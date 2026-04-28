@@ -17,6 +17,17 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
 {
     public class PrecompiledInstallerRuntimeTests
     {
+        private static Type GetDirectInstallerType()
+        {
+            Assembly assembly = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(candidate => string.Equals(candidate.GetName().Name, "YUCP.DirectVpmInstaller.Template", StringComparison.Ordinal));
+            Assert.That(assembly, Is.Not.Null, "Expected YUCP.DirectVpmInstaller.Template assembly to be loaded.");
+
+            Type type = assembly.GetType("YUCP.DirectVpmInstaller.DirectVpmInstaller", throwOnError: false);
+            Assert.That(type, Is.Not.Null, "Expected DirectVpmInstaller type to be available.");
+            return type;
+        }
+
         [Test]
         public void PrecompiledInstallerRuntime_BinaryAndMetaExist()
         {
@@ -134,6 +145,162 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
+        public void DirectVpmInstaller_CleanupTemporaryFiles_PrunesEmptyInstalledPackageResidue()
+        {
+            Type directInstallerType = GetDirectInstallerType();
+            MethodInfo method = directInstallerType.GetMethod(
+                "CleanupTemporaryFiles",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string installedRoot = Path.Combine(projectRoot, "Packages", "yucp.installed-packages");
+            string packageRoot = Path.Combine(installedRoot, "com.test.cleanup");
+            string tempRoot = Path.Combine(packageRoot, "_temp");
+            string tempJsonPath = Path.Combine(tempRoot, $"YUCP_TempInstall_{Guid.NewGuid():N}.json");
+            string staleEmptyRoot = Path.Combine(installedRoot, $"stale-empty-{Guid.NewGuid():N}");
+            string staleEmptyMetaPath = staleEmptyRoot + ".meta";
+            string metadataPath = Path.Combine(packageRoot, "YUCP_PackageInfo.json");
+
+            Directory.CreateDirectory(tempRoot);
+            Directory.CreateDirectory(staleEmptyRoot);
+            File.WriteAllText(tempJsonPath, "{\n  \"name\": \"com.test.cleanup\",\n  \"version\": \"1.0.0\"\n}");
+            File.WriteAllText(tempJsonPath + ".meta", "fileFormatVersion: 2\nguid: 11111111111111111111111111111111\nTextScriptImporter:\n");
+            File.WriteAllText(metadataPath, "{\"packageName\":\"com.test.cleanup\"}");
+            File.WriteAllText(metadataPath + ".meta", "fileFormatVersion: 2\nguid: 22222222222222222222222222222222\nTextScriptImporter:\n");
+            File.WriteAllText(staleEmptyMetaPath, "fileFormatVersion: 2\nguid: 33333333333333333333333333333333\nfolderAsset: yes\nDefaultImporter:\n");
+
+            try
+            {
+                method.Invoke(null, new object[] { tempJsonPath });
+
+                Assert.That(File.Exists(tempJsonPath), Is.False, "Expected the temp install descriptor to be deleted.");
+                Assert.That(File.Exists(tempJsonPath + ".meta"), Is.False, "Expected the temp install descriptor meta file to be deleted.");
+                Assert.That(Directory.Exists(staleEmptyRoot), Is.False, "Expected cleanup to prune empty stale package residue.");
+                Assert.That(File.Exists(staleEmptyMetaPath), Is.False, "Expected cleanup to delete the stale residue meta file.");
+                Assert.That(File.Exists(metadataPath), Is.True, "Expected cleanup to preserve actual package metadata.");
+            }
+            finally
+            {
+                if (Directory.Exists(packageRoot))
+                {
+                    Directory.Delete(packageRoot, true);
+                }
+
+                if (Directory.Exists(staleEmptyRoot))
+                {
+                    Directory.Delete(staleEmptyRoot, true);
+                }
+
+                if (File.Exists(staleEmptyMetaPath))
+                {
+                    File.Delete(staleEmptyMetaPath);
+                }
+
+                if (File.Exists(tempJsonPath))
+                {
+                    File.Delete(tempJsonPath);
+                }
+
+                if (File.Exists(tempJsonPath + ".meta"))
+                {
+                    File.Delete(tempJsonPath + ".meta");
+                }
+
+                if (File.Exists(metadataPath))
+                {
+                    File.Delete(metadataPath);
+                }
+
+                if (File.Exists(metadataPath + ".meta"))
+                {
+                    File.Delete(metadataPath + ".meta");
+                }
+            }
+        }
+
+        [Test]
+        public void DirectVpmInstaller_OrganizeYucpArtifacts_DoesNotCreateEmptyPackageFolderWhenNothingNeedsMoving()
+        {
+            Type directInstallerType = GetDirectInstallerType();
+            MethodInfo method = directInstallerType.GetMethod(
+                "OrganizeYucpArtifacts",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string installedRoot = Path.Combine(projectRoot, "Packages", "yucp.installed-packages");
+            string metadataPath = Path.Combine(Application.dataPath, "YUCP_PackageInfo.json");
+            string exportProfilesPath = Path.Combine(Application.dataPath, "YUCP", "ExportProfiles");
+            string exportProfilesBackupPath = exportProfilesPath + ".precompiled-installer-test-backup";
+            string[] packageFoldersBefore = Directory.Exists(installedRoot)
+                ? Directory.GetDirectories(installedRoot, "package-*", SearchOption.TopDirectoryOnly)
+                : Array.Empty<string>();
+
+            Assert.That(File.Exists(metadataPath), Is.False, "Expected the test project to start without a root metadata file.");
+
+            bool movedExportProfiles = false;
+
+            try
+            {
+                if (Directory.Exists(exportProfilesPath))
+                {
+                    if (Directory.Exists(exportProfilesBackupPath))
+                    {
+                        Directory.Delete(exportProfilesBackupPath, true);
+                    }
+
+                    Directory.Move(exportProfilesPath, exportProfilesBackupPath);
+                    movedExportProfiles = true;
+                }
+
+                method.Invoke(null, Array.Empty<object>());
+
+                string[] packageFoldersAfter = Directory.Exists(installedRoot)
+                    ? Directory.GetDirectories(installedRoot, "package-*", SearchOption.TopDirectoryOnly)
+                    : Array.Empty<string>();
+
+                Assert.That(packageFoldersAfter, Is.EquivalentTo(packageFoldersBefore), "Expected organize to avoid creating an empty package folder when there is no metadata or export profile content to move.");
+            }
+            finally
+            {
+                string[] packageFoldersAfter = Directory.Exists(installedRoot)
+                    ? Directory.GetDirectories(installedRoot, "package-*", SearchOption.TopDirectoryOnly)
+                    : Array.Empty<string>();
+
+                foreach (string directory in packageFoldersAfter.Except(packageFoldersBefore, StringComparer.OrdinalIgnoreCase))
+                {
+                    if (Directory.Exists(directory))
+                    {
+                        Directory.Delete(directory, true);
+                    }
+
+                    string metaFile = directory + ".meta";
+                    if (File.Exists(metaFile))
+                    {
+                        File.Delete(metaFile);
+                    }
+                }
+
+                if (movedExportProfiles)
+                {
+                    if (Directory.Exists(exportProfilesPath))
+                    {
+                        Directory.Delete(exportProfilesPath, true);
+                    }
+
+                    Directory.Move(exportProfilesBackupPath, exportProfilesPath);
+                }
+                else if (Directory.Exists(exportProfilesBackupPath))
+                {
+                    Directory.Delete(exportProfilesBackupPath, true);
+                }
+            }
+        }
+
+        [Test]
         public void PrecompiledInstallerRuntime_ResolvesSigningRootFromProtectedShellMetadata()
         {
             string tempExtractDir = Path.Combine(Path.GetTempPath(), "yucp-signing-root-" + System.Guid.NewGuid().ToString("N"));
@@ -218,60 +385,10 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
-        public void PrecompiledInstallerRuntime_RebindsProtectedPayloadDescriptorAfterEmbeddingBlob()
+        public void PrecompiledInstallerRuntime_ServerFirstKeepsInstallerAndPatchRuntime()
         {
             string packagePath = null;
-            string blobFilePath = null;
-
-            try
-            {
-                packagePath = CreateUnityPackage(new Dictionary<string, byte[]>
-                {
-                    ["payload/pathname"] = Encoding.UTF8.GetBytes("Assets/Protected/Test.prefab"),
-                    ["payload/asset"] = new byte[] { 1, 2, 3, 4 },
-                    ["payload/asset.meta"] = Encoding.UTF8.GetBytes(
-                        "fileFormatVersion: 2\nguid: 11111111111111111111111111111111\n"),
-                });
-
-                MethodInfo buildMethod = typeof(ProtectedPayloadBlobBuilder).GetMethod(
-                    "BuildFromUnityPackage",
-                    BindingFlags.Static | BindingFlags.NonPublic);
-                Assert.That(buildMethod, Is.Not.Null);
-
-                object buildResult = buildMethod.Invoke(null, new object[] { packagePath, "pkg-test", "Wasbeer" });
-                Assert.That(buildResult, Is.Not.Null);
-
-                Type buildResultType = buildResult.GetType();
-                blobFilePath = buildResultType.GetField("blobFilePath")?.GetValue(buildResult) as string;
-                var descriptor = buildResultType.GetField("descriptor")?.GetValue(buildResult) as ProtectedPayloadDescriptor;
-
-                Assert.That(blobFilePath, Is.Not.Null.And.Not.Empty);
-                Assert.That(descriptor, Is.Not.Null);
-
-                MethodInfo finalizeMethod = typeof(PackageBuilder).GetMethod(
-                    "FinalizeProtectedPayloadDescriptorForEmbeddedBlob",
-                    BindingFlags.Static | BindingFlags.NonPublic);
-                Assert.That(finalizeMethod, Is.Not.Null);
-
-                string blobAssetPath = "Packages/yucp.installed-packages/Wasbeer/Embedded/Protected/Wasbeer_payload.yucpblob";
-                finalizeMethod.Invoke(null, new object[] { descriptor, blobAssetPath });
-
-                Assert.That(descriptor.blobAssetPath, Is.EqualTo(blobAssetPath));
-                Assert.That(
-                    descriptor.manifestBindingSha256,
-                    Is.EqualTo(ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor)));
-            }
-            finally
-            {
-                DeleteIfPresent(blobFilePath);
-                DeleteIfPresent(packagePath);
-            }
-        }
-
-        [Test]
-        public void PrecompiledInstallerRuntime_InjectsProtectedImportIntentIntoProtectedShellRoot()
-        {
-            string packagePath = null;
+            ExportProfile profile = null;
 
             try
             {
@@ -281,9 +398,9 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                     ["shell/asset"] = Encoding.UTF8.GetBytes("dummy"),
                 });
 
-                var profile = ScriptableObject.CreateInstance<ExportProfile>();
+                profile = ScriptableObject.CreateInstance<ExportProfile>();
                 profile.packageName = "Wasbeer";
-                profile.packageId = "pkg-test-123";
+                profile.requiresLicenseVerification = true;
 
                 Type embedContextType = typeof(PackageBuilder).GetNestedType("PackageEmbedContext", BindingFlags.NonPublic);
                 Assert.That(embedContextType, Is.Not.Null);
@@ -301,46 +418,39 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                     BindingFlags.Static | BindingFlags.NonPublic);
                 Assert.That(method, Is.Not.Null);
 
-                var descriptor = new ProtectedPayloadDescriptor
-                {
-                    formatVersion = "1",
-                    protectedAssetId = "protected-asset-123",
-                    blobAssetPath = "Packages/yucp.installed-packages/Wasbeer/Protected/payload.blob",
-                    cipher = "aes-256-cbc+hmac-sha256",
-                    archiveFormat = "zip",
-                    ciphertextSha256 = "ciphertext-sha",
-                    plaintextSha256 = "plaintext-sha",
-                    payloadAssetPaths = new[] { "Assets/Protected/source.prefab" },
-                    requiresOnlineUnlock = true,
-                    requiresBrokeredMaterialization = true,
-                    brokerProtocolVersion = 1,
-                };
-                descriptor.manifestBindingSha256 =
-                    ProtectedPayloadIntegrityUtility.ComputeManifestBindingSha256(descriptor);
-
                 method.Invoke(null, new object[]
                 {
                     packagePath,
-                    "{ \"name\": \"com.example.protected-shell\" }",
+                    "{ \"name\": \"com.example.server-first\" }",
                     new Dictionary<string, string>(),
                     new List<AssemblyObfuscationSettings>(),
                     profile,
-                    false,
+                    true,
                     "{\"packageName\":\"Wasbeer\"}",
-                    descriptor,
-                    profile.packageId,
                     embedContext,
                     null,
                 });
 
                 string[] pathnames = ReadPackagePathnames(packagePath);
-                Assert.That(pathnames, Has.Some.EqualTo("Packages/yucp.installed-packages/Wasbeer/YUCP_ProtectedImportIntent.json"));
+                Assert.That(pathnames, Has.Some.Matches<string>(path => path.StartsWith("Packages/yucp.installed-packages/", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.Some.Matches<string>(path => path.Contains("/YUCP_TempInstall_", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.Some.EqualTo("Packages/yucp.installed-packages/Editor/YUCP.DirectVpmInstaller.Template.dll"));
+                Assert.That(pathnames, Has.Some.Matches<string>(path => path.StartsWith("Packages/com.yucp.temp/", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.None.EqualTo("Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Template.dll"));
+                Assert.That(pathnames, Has.None.Matches<string>(path => path.EndsWith("YUCP_ProtectedPayload.json", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.None.Matches<string>(path => path.EndsWith("YUCP_ProtectedImportIntent.json", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.Some.Matches<string>(path => path.EndsWith("YUCP_PackageInfo.json", StringComparison.Ordinal)));
             }
             finally
             {
                 if (packagePath != null)
                 {
                     DeleteIfPresent(packagePath);
+                }
+
+                if (profile != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(profile);
                 }
             }
         }

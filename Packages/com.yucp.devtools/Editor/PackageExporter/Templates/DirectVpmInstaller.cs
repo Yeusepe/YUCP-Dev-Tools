@@ -9,14 +9,18 @@ using System.Net;
 using Newtonsoft.Json.Linq;
 using System.Security.Cryptography;
 using System.Reflection;
+using System.Text;
 
 namespace YUCP.DirectVpmInstaller
 {
     [InitializeOnLoad]
     public static class DirectVpmInstaller
     {
-        private const string PendingProtectedImportStateKey = "YUCP.PendingProtectedImportBootstrap";
-        private const int FriendlyWindowsPathLimit = 240;
+            private const int FriendlyWindowsPathLimit = 240;
+            private const string RepoTokenVpmDeliveryMode = "repo-token-vpm-v1";
+            private const string ZipPackageSourceKind = "zip";
+            private const string UnityPackageSourceKind = "unitypackage";
+            private const string RepoTokenHeaderName = "X-YUCP-Repo-Token";
         private static readonly HashSet<string> TrustedCommunityRepoHostsWithoutHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "vcc.vrcfury.com"
@@ -33,17 +37,9 @@ namespace YUCP.DirectVpmInstaller
             public string resolvedVersion;
             public string expectedArchiveHash;
             public string friendlyWarningMessage;
-        }
-
-        [Serializable]
-        private sealed class PendingProtectedImportState
-        {
-            public string packageName;
-            public string shellRootAssetPath;
-            public string tempInstallAssetPath;
-            public string metadataAssetPath;
-            public string protectedPayloadAssetPath;
-            public string originalPackagePath;
+            public string deliveryMode;
+            public string deliverySourceKind;
+            public Dictionary<string, string> requestHeaders;
         }
 
         internal static readonly string[] GeneratedInstallerArtifactPatterns = new[]
@@ -101,119 +97,6 @@ namespace YUCP.DirectVpmInstaller
                 Path.Combine(Application.dataPath, "Editor"),
                 Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor")
             };
-        }
-
-        private static void PersistProtectedImportStateIfNeeded(string packageJsonPath, JObject packageInfo)
-        {
-            try
-            {
-                if (IsImporterPackageInstalled())
-                    return;
-
-                if (!TryGetProtectedShellPaths(packageJsonPath, out string shellRootDiskPath, out string metadataDiskPath, out string protectedPayloadDiskPath))
-                    return;
-
-                string stateJson = JsonUtility.ToJson(new PendingProtectedImportState
-                {
-                    packageName = packageInfo?["name"]?.Value<string>() ?? string.Empty,
-                    shellRootAssetPath = DiskPathToAssetPath(shellRootDiskPath),
-                    tempInstallAssetPath = DiskPathToAssetPath(packageJsonPath),
-                    metadataAssetPath = DiskPathToAssetPath(metadataDiskPath),
-                    protectedPayloadAssetPath = DiskPathToAssetPath(protectedPayloadDiskPath),
-                    originalPackagePath = TryGetCurrentImportPackagePath() ?? string.Empty,
-                });
-
-                EditorPrefs.SetString(PendingProtectedImportStateKey, stateJson);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[DirectVpmInstaller] Failed to persist protected import bootstrap state: {ex.Message}");
-            }
-        }
-
-        private static bool TryGetProtectedShellPaths(
-            string packageJsonPath,
-            out string shellRootDiskPath,
-            out string metadataDiskPath,
-            out string protectedPayloadDiskPath)
-        {
-            shellRootDiskPath = null;
-            metadataDiskPath = null;
-            protectedPayloadDiskPath = null;
-
-            if (string.IsNullOrWhiteSpace(packageJsonPath))
-                return false;
-
-            string normalized = Path.GetFullPath(packageJsonPath);
-            string fileName = Path.GetFileName(normalized);
-            if (!fileName.StartsWith("YUCP_TempInstall_", StringComparison.OrdinalIgnoreCase))
-                return false;
-
-            string parentDir = Path.GetDirectoryName(normalized);
-            if (string.IsNullOrWhiteSpace(parentDir))
-                return false;
-
-            if (string.Equals(Path.GetFileName(parentDir), "_temp", StringComparison.OrdinalIgnoreCase))
-            {
-                shellRootDiskPath = Path.GetDirectoryName(parentDir);
-            }
-            else
-            {
-                shellRootDiskPath = parentDir;
-            }
-
-            if (string.IsNullOrWhiteSpace(shellRootDiskPath))
-                return false;
-
-            metadataDiskPath = Path.Combine(shellRootDiskPath, "YUCP_PackageInfo.json");
-            protectedPayloadDiskPath = Path.Combine(shellRootDiskPath, "YUCP_ProtectedPayload.json");
-            return File.Exists(metadataDiskPath) && File.Exists(protectedPayloadDiskPath);
-        }
-
-        private static string TryGetCurrentImportPackagePath()
-        {
-            try
-            {
-                var unityEditorAssembly = typeof(Editor).Assembly;
-                Type wizardType = unityEditorAssembly.GetType("UnityEditor.PackageImportWizard");
-                if (wizardType == null)
-                    return null;
-
-                FieldInfo packagePathField = wizardType.GetField("m_PackagePath", BindingFlags.NonPublic | BindingFlags.Instance);
-                if (packagePathField == null)
-                    return null;
-
-                Type scriptableSingletonType = unityEditorAssembly.GetType("UnityEditor.ScriptableSingleton`1");
-                if (scriptableSingletonType == null)
-                    return null;
-
-                Type genericType = scriptableSingletonType.MakeGenericType(wizardType);
-                PropertyInfo instanceProperty = genericType.GetProperty("instance", BindingFlags.Public | BindingFlags.Static);
-                object instance = instanceProperty?.GetValue(null);
-                if (instance == null)
-                    return null;
-
-                string packagePath = packagePathField.GetValue(instance) as string;
-                return !string.IsNullOrWhiteSpace(packagePath) && File.Exists(packagePath) ? packagePath : null;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static bool IsImporterPackageInstalled()
-        {
-            try
-            {
-                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                string packagePath = Path.Combine(projectRoot, "Packages", "com.yucp.importer");
-                return Directory.Exists(packagePath);
-            }
-            catch
-            {
-                return false;
-            }
         }
 
         private static string DiskPathToAssetPath(string diskPath)
@@ -501,11 +384,245 @@ namespace YUCP.DirectVpmInstaller
             }
         }
 
+        private static void ExtractDownloadedPackageToDirectorySafely(
+            string downloadPath,
+            string sourceKind,
+            string destinationDirectory,
+            string packageLabel)
+        {
+            if (string.Equals(sourceKind, UnityPackageSourceKind, StringComparison.Ordinal))
+            {
+                ExtractUnityPackageToDirectorySafely(downloadPath, destinationDirectory, packageLabel);
+                return;
+            }
+
+            ExtractZipToDirectorySafely(downloadPath, destinationDirectory, packageLabel);
+        }
+
+        private static void ExtractUnityPackageToDirectorySafely(
+            string unityPackagePath,
+            string destinationDirectory,
+            string packageLabel)
+        {
+            EnsureCreatorFriendlyPathLength(destinationDirectory, packageLabel);
+            Directory.CreateDirectory(destinationDirectory);
+            using var fileStream = File.OpenRead(unityPackagePath);
+            using var gzipStream = new System.IO.Compression.GZipStream(
+                fileStream,
+                System.IO.Compression.CompressionMode.Decompress);
+            byte[] header = new byte[512];
+            while (TryReadTarHeader(gzipStream, header))
+            {
+                string entryName = ReadTarString(header, 0, 100);
+                if (string.IsNullOrEmpty(entryName))
+                {
+                    continue;
+                }
+
+                long entrySize = ReadTarOctal(header, 124, 12);
+                char entryType = (char)header[156];
+                string destinationPath = GetValidatedExtractionPath(
+                    destinationDirectory,
+                    entryName,
+                    unityPackagePath);
+                bool isDirectory = entryType == '5' || entryName.EndsWith("/", StringComparison.Ordinal);
+                if (isDirectory)
+                {
+                    EnsureCreatorFriendlyPathLength(destinationPath, packageLabel);
+                    Directory.CreateDirectory(destinationPath);
+                    continue;
+                }
+
+                EnsureCreatorFriendlyPathLength(destinationPath, packageLabel);
+                string parentDirectory = Path.GetDirectoryName(destinationPath);
+                if (!string.IsNullOrEmpty(parentDirectory))
+                {
+                    EnsureCreatorFriendlyPathLength(parentDirectory, packageLabel);
+                    Directory.CreateDirectory(parentDirectory);
+                }
+
+                using Stream output = File.Create(destinationPath);
+                CopyTarEntryContents(gzipStream, output, entrySize);
+                SkipTarPadding(gzipStream, entrySize);
+            }
+        }
+
+        private static bool TryReadTarHeader(Stream stream, byte[] header)
+        {
+            int totalRead = 0;
+            while (totalRead < header.Length)
+            {
+                int bytesRead = stream.Read(header, totalRead, header.Length - totalRead);
+                if (bytesRead == 0)
+                {
+                    if (totalRead == 0)
+                    {
+                        return false;
+                    }
+
+                    throw new InvalidDataException("Authorized unitypackage archive ended before the next TAR header was complete.");
+                }
+
+                totalRead += bytesRead;
+            }
+
+            return header.Any((value) => value != 0);
+        }
+
+        private static string ReadTarString(byte[] header, int offset, int length)
+        {
+            return Encoding.ASCII.GetString(header, offset, length).Trim('\0', ' ');
+        }
+
+        private static long ReadTarOctal(byte[] header, int offset, int length)
+        {
+            string rawValue = ReadTarString(header, offset, length);
+            if (string.IsNullOrEmpty(rawValue))
+            {
+                return 0;
+            }
+
+            try
+            {
+                return Convert.ToInt64(rawValue, 8);
+            }
+            catch (FormatException ex)
+            {
+                throw new InvalidDataException(
+                    $"Authorized unitypackage TAR header contained an invalid size field '{rawValue}'.",
+                    ex);
+            }
+        }
+
+        private static void CopyTarEntryContents(Stream input, Stream output, long bytesToCopy)
+        {
+            byte[] buffer = new byte[81920];
+            long remaining = bytesToCopy;
+            while (remaining > 0)
+            {
+                int read = input.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
+                if (read == 0)
+                {
+                    throw new InvalidDataException("Authorized unitypackage archive ended before a TAR entry was fully read.");
+                }
+
+                output.Write(buffer, 0, read);
+                remaining -= read;
+            }
+        }
+
+        private static void SkipTarPadding(Stream input, long entrySize)
+        {
+            long remainder = entrySize % 512;
+            if (remainder == 0)
+            {
+                return;
+            }
+
+            long padding = 512 - remainder;
+            byte[] buffer = new byte[512];
+            while (padding > 0)
+            {
+                int read = input.Read(buffer, 0, (int)Math.Min(buffer.Length, padding));
+                if (read == 0)
+                {
+                    throw new InvalidDataException("Authorized unitypackage archive ended before TAR padding was fully skipped.");
+                }
+                padding -= read;
+            }
+        }
+
         private static bool TryGetExpectedArchiveHash(JObject versionMetadata, out string expectedHash)
         {
             expectedHash = NormalizeSha256(versionMetadata?["zipSHA256"]?.ToString())
                 ?? NormalizeSha256(versionMetadata?["sha256"]?.ToString());
             return !string.IsNullOrEmpty(expectedHash);
+        }
+
+        private static bool IsRepoTokenVpmDelivery(JObject versionMetadata)
+        {
+            return string.Equals(
+                versionMetadata?["yucpDeliveryMode"]?.ToString(),
+                RepoTokenVpmDeliveryMode,
+                StringComparison.Ordinal);
+        }
+
+        private static Dictionary<string, string> ReadManifestRequestHeaders(JObject versionMetadata)
+        {
+            if (!(versionMetadata?["headers"] is JObject headersObject))
+                return null;
+
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var property in headersObject.Properties())
+            {
+                string headerName = property.Name?.Trim();
+                string headerValue = property.Value?.ToString()?.Trim();
+                if (string.IsNullOrWhiteSpace(headerName) || string.IsNullOrWhiteSpace(headerValue))
+                    continue;
+
+                headers[headerName] = headerValue;
+            }
+
+            return headers.Count > 0 ? headers : null;
+        }
+
+        private static bool TryCreateRepoTokenVpmResolution(
+            string repositoryName,
+            string repositoryUrl,
+            string packageName,
+            string version,
+            JObject versionMetadata,
+            out ResolvedPackageDownload resolution)
+        {
+            resolution = null;
+
+            string sourceKind = versionMetadata?["yucpDeliverySourceKind"]?.ToString();
+            string candidateUrl = versionMetadata?["url"]?.ToString();
+            Dictionary<string, string> requestHeaders = ReadManifestRequestHeaders(versionMetadata);
+            bool hasExpectedArchiveHash = TryGetExpectedArchiveHash(versionMetadata, out string expectedArchiveHash);
+
+            if (!string.Equals(sourceKind, ZipPackageSourceKind, StringComparison.Ordinal) &&
+                !string.Equals(sourceKind, UnityPackageSourceKind, StringComparison.Ordinal))
+            {
+                Debug.LogWarning($"[DirectVpmInstaller] Repository {repositoryName} declared {RepoTokenVpmDeliveryMode} for {packageName}@{version}, but yucpDeliverySourceKind was invalid.");
+                return false;
+            }
+
+            if (!IsTrustedWebUrl(candidateUrl))
+            {
+                Debug.LogWarning($"[DirectVpmInstaller] Repository {repositoryName} declared an untrusted manifest package URL for {packageName}@{version}.");
+                return false;
+            }
+
+            if (!hasExpectedArchiveHash)
+            {
+                Debug.LogWarning($"[DirectVpmInstaller] Repository {repositoryName} declared {RepoTokenVpmDeliveryMode} for {packageName}@{version}, but no archive hash was provided.");
+                return false;
+            }
+
+            if (requestHeaders == null ||
+                !requestHeaders.TryGetValue(RepoTokenHeaderName, out string repoToken) ||
+                string.IsNullOrWhiteSpace(repoToken))
+            {
+                Debug.LogWarning($"[DirectVpmInstaller] Repository {repositoryName} declared {RepoTokenVpmDeliveryMode} for {packageName}@{version}, but the repo token header was missing.");
+                return false;
+            }
+
+            resolution = new ResolvedPackageDownload
+            {
+                repositoryName = repositoryName,
+                repositoryUrl = repositoryUrl,
+                packageName = packageName,
+                displayName = versionMetadata?["displayName"]?.ToString(),
+                downloadUrl = candidateUrl,
+                resolvedVersion = version,
+                expectedArchiveHash = expectedArchiveHash,
+                friendlyWarningMessage = null,
+                deliveryMode = RepoTokenVpmDeliveryMode,
+                deliverySourceKind = sourceKind,
+                requestHeaders = requestHeaders,
+            };
+            return true;
         }
 
         private static bool TryResolvePackageDownload(
@@ -515,6 +632,9 @@ namespace YUCP.DirectVpmInstaller
             out ResolvedPackageDownload resolution)
         {
             resolution = null;
+            string blockingInvalidServerRepository = null;
+            string blockingInvalidServerVersion = null;
+            string blockingInvalidServerMode = null;
 
             foreach (var repo in repositories)
             {
@@ -545,6 +665,35 @@ namespace YUCP.DirectVpmInstaller
                                 continue;
 
                             JObject versionMetadata = versionEntry.Value as JObject;
+                            if (IsRepoTokenVpmDelivery(versionMetadata))
+                            {
+                                if (TryCreateRepoTokenVpmResolution(
+                                        repo.Key,
+                                        repo.Value,
+                                        packageName,
+                                        version,
+                                        versionMetadata,
+                                        out ResolvedPackageDownload repoTokenResolution))
+                                {
+                                    if (resolution == null ||
+                                        CompareVersions(repoTokenResolution.resolvedVersion, resolution.resolvedVersion) > 0 ||
+                                        (CompareVersions(repoTokenResolution.resolvedVersion, resolution.resolvedVersion) == 0 &&
+                                         string.IsNullOrEmpty(resolution.deliveryMode)))
+                                    {
+                                        resolution = repoTokenResolution;
+                                    }
+                                }
+                                else if (blockingInvalidServerVersion == null ||
+                                         CompareVersions(version, blockingInvalidServerVersion) > 0)
+                                {
+                                    blockingInvalidServerRepository = repo.Key;
+                                    blockingInvalidServerVersion = version;
+                                    blockingInvalidServerMode = RepoTokenVpmDeliveryMode;
+                                }
+
+                                continue;
+                            }
+
                             string candidateUrl = versionMetadata?["url"]?.ToString();
                             string declaredPackageName = versionMetadata?["name"]?.ToString();
                             if (!string.IsNullOrWhiteSpace(declaredPackageName) &&
@@ -574,6 +723,7 @@ namespace YUCP.DirectVpmInstaller
                                 downloadUrl = candidateUrl,
                                 resolvedVersion = version,
                                 expectedArchiveHash = hasHash ? candidateHash : null,
+                                requestHeaders = ReadManifestRequestHeaders(versionMetadata),
                                 friendlyWarningMessage = hasHash
                                     ? null
                                     : BuildMissingHashWarning(repo.Key, repo.Value, displayName, packageName, version)
@@ -596,6 +746,21 @@ namespace YUCP.DirectVpmInstaller
                 catch (Exception ex)
                 {
                     Debug.LogWarning($"[DirectVpmInstaller] Failed to check repository {repo.Key}: {ex.Message}");
+                }
+            }
+
+            if (!string.IsNullOrEmpty(blockingInvalidServerVersion))
+            {
+                int comparison = resolution == null
+                    ? 1
+                    : CompareVersions(blockingInvalidServerVersion, resolution.resolvedVersion);
+                if (comparison > 0 ||
+                    (comparison == 0 && string.IsNullOrEmpty(resolution.deliveryMode)))
+                {
+                    Debug.LogWarning(
+                        $"[DirectVpmInstaller] Repository {blockingInvalidServerRepository} declared {blockingInvalidServerMode ?? RepoTokenVpmDeliveryMode} for {packageName}@{blockingInvalidServerVersion}, but the companion metadata was invalid. Refusing to fall back to an older or legacy release.");
+                    resolution = null;
+                    return false;
                 }
             }
 
@@ -735,16 +900,6 @@ namespace YUCP.DirectVpmInstaller
                 var packageInfo = JObject.Parse(File.ReadAllText(packageJsonPath));
                 string bundledPackageName = packageInfo["name"]?.Value<string>();
                 string bundledPackageVersion = packageInfo["version"]?.Value<string>();
-                bool isProtectedBootstrapImport = false;
-                try
-                {
-                    PersistProtectedImportStateIfNeeded(packageJsonPath, packageInfo);
-                    isProtectedBootstrapImport = TryGetProtectedShellPaths(packageJsonPath, out _, out _, out _);
-                }
-                catch
-                {
-                }
-                
                 // Check if this bundled package is already installed
                 if (!string.IsNullOrEmpty(bundledPackageName))
                 {
@@ -885,8 +1040,8 @@ namespace YUCP.DirectVpmInstaller
                     return $"  - {displayName}@{FormatVersionRequirementForDisplay(p.Item2)}";
                 }));
                 bool installsImporter = packagesToInstall.Any(p => string.Equals(p.Item1, "com.yucp.importer", StringComparison.OrdinalIgnoreCase));
-                string dialogMessage = isProtectedBootstrapImport && installsImporter
-                    ? $"This protected package needs the YUCP Importer to finish setup.\n\nWe'll install these required creator tools:\n\n{packageList}\n\nContinue now?\n\n(Required to finish protected package setup)"
+                string dialogMessage = installsImporter
+                    ? $"This package needs the YUCP Importer and a few creator tools before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}\n\nContinue now?"
                     : $"This package needs a few creator tools before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}\n\nContinue now?";
                 if (installWarnings.Count > 0)
                 {
@@ -1096,6 +1251,21 @@ namespace YUCP.DirectVpmInstaller
             {
                 Debug.LogError($"[DirectVpmInstaller] Error: {ex.Message}");
                 try { InstallerTxn.SetMarker("error"); } catch { }
+                try
+                {
+                    if (!string.IsNullOrEmpty(packageJsonPath))
+                    {
+                        CleanupTemporaryFiles(packageJsonPath);
+                    }
+                    else
+                    {
+                        PruneEmptyInstalledPackageResidue();
+                    }
+                }
+                catch (Exception cleanupEx)
+                {
+                    Debug.LogWarning($"[DirectVpmInstaller] Failed to cleanup after installer error: {cleanupEx.Message}");
+                }
             }
             finally
             {
@@ -1308,6 +1478,7 @@ namespace YUCP.DirectVpmInstaller
                 
                 // Organize YUCP-generated artifacts (e.g. YUCP_PackageInfo.json) into a local package
                 OrganizeYucpArtifacts();
+                PruneEmptyInstalledPackageResidue();
                 
                 // Clean up signing folder if it exists (from signed package imports)
                 string signingFolder = Path.Combine(Application.dataPath, "_Signing");
@@ -1365,6 +1536,7 @@ namespace YUCP.DirectVpmInstaller
                 string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                 string packagesRoot = Path.Combine(projectRoot, "Packages");
                 string installedRoot = Path.Combine(packagesRoot, "yucp.installed-packages");
+                string exportProfilesDiskPath = Path.Combine(Application.dataPath, "YUCP", "ExportProfiles");
 
                 if (!Directory.Exists(packagesRoot))
                     Directory.CreateDirectory(packagesRoot);
@@ -1383,10 +1555,23 @@ namespace YUCP.DirectVpmInstaller
                     }
                 }
                 catch { }
-                string packageFolderName = null;
+                bool metadataExists = File.Exists(metadataDiskPath);
+                bool metadataAlreadyInInstalled = metadataExists &&
+                    metadataDiskPath.StartsWith(installedRoot, StringComparison.OrdinalIgnoreCase);
+                bool hasExportProfiles = Directory.Exists(exportProfilesDiskPath);
 
-                if (File.Exists(metadataDiskPath))
+                if (!metadataExists && !hasExportProfiles)
                 {
+                    return;
+                }
+
+                string packageFolderDiskPath = metadataAlreadyInInstalled
+                    ? Path.GetDirectoryName(metadataDiskPath)
+                    : null;
+
+                if (metadataExists && string.IsNullOrEmpty(packageFolderDiskPath))
+                {
+                    string packageFolderName = null;
                     try
                     {
                         string json = File.ReadAllText(metadataDiskPath);
@@ -1400,24 +1585,26 @@ namespace YUCP.DirectVpmInstaller
                     {
                         Debug.LogWarning($"[DirectVpmInstaller] Failed to read YUCP_PackageInfo.json metadata: {ex.Message}");
                     }
+                    if (string.IsNullOrEmpty(packageFolderName))
+                    {
+                        packageFolderName = "package-" + Guid.NewGuid().ToString("N");
+                    }
+
+                    packageFolderDiskPath = Path.Combine(installedRoot, packageFolderName);
                 }
 
-                if (string.IsNullOrEmpty(packageFolderName))
+                if (string.IsNullOrEmpty(packageFolderDiskPath))
                 {
-                    packageFolderName = "package-" + Guid.NewGuid().ToString("N");
+                    packageFolderDiskPath = Path.Combine(installedRoot, "package-" + Guid.NewGuid().ToString("N"));
                 }
 
-                string packageFolderDiskPath = Path.Combine(installedRoot, packageFolderName);
                 if (!Directory.Exists(packageFolderDiskPath))
                 {
                     Directory.CreateDirectory(packageFolderDiskPath);
                 }
 
                 // Move YUCP_PackageInfo.json into the installed-packages container if it exists (disk-level move)
-                bool metadataAlreadyInInstalled = !string.IsNullOrEmpty(metadataDiskPath) &&
-                    metadataDiskPath.StartsWith(installedRoot, StringComparison.OrdinalIgnoreCase);
-
-                if (File.Exists(metadataDiskPath) && !metadataAlreadyInInstalled)
+                if (metadataExists && !metadataAlreadyInInstalled)
                 {
                     string targetMetadataDiskPath = Path.Combine(packageFolderDiskPath, "YUCP_PackageInfo.json");
                     try
@@ -1455,8 +1642,7 @@ namespace YUCP.DirectVpmInstaller
 
                 // Optionally move YUCP/ExportProfiles into the same container if present (disk-level move).
                 // This keeps exporter profiles from cluttering the Assets root.
-                string exportProfilesDiskPath = Path.Combine(Application.dataPath, "YUCP", "ExportProfiles");
-                if (Directory.Exists(exportProfilesDiskPath))
+                if (hasExportProfiles)
                 {
                     string targetProfilesDiskParent = Path.Combine(packageFolderDiskPath, "YUCP");
                     string targetProfilesDiskPath = Path.Combine(targetProfilesDiskParent, "ExportProfiles");
@@ -1489,6 +1675,38 @@ namespace YUCP.DirectVpmInstaller
             catch (Exception ex)
             {
                 Debug.LogWarning($"[DirectVpmInstaller] OrganizeYucpArtifacts failed: {ex.Message}");
+            }
+        }
+
+        private static void PruneEmptyInstalledPackageResidue()
+        {
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string installedRoot = Path.Combine(projectRoot, "Packages", "yucp.installed-packages");
+                if (!Directory.Exists(installedRoot))
+                    return;
+
+                string[] directories = Directory.GetDirectories(installedRoot, "*", SearchOption.AllDirectories)
+                    .OrderByDescending(path => path.Length)
+                    .ToArray();
+
+                foreach (string directory in directories)
+                {
+                    if (Directory.EnumerateFileSystemEntries(directory).Any())
+                        continue;
+
+                    Directory.Delete(directory);
+                    string metaFile = directory + ".meta";
+                    if (File.Exists(metaFile))
+                        File.Delete(metaFile);
+                }
+
+                TryDeleteEmptyInstalledPackagesEditorFolder(projectRoot);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[DirectVpmInstaller] Failed to prune empty installed package residue: {ex.Message}");
             }
         }
 
@@ -1581,7 +1799,7 @@ namespace YUCP.DirectVpmInstaller
         private static bool InstallPackage(string packageName, string versionRequirement, Dictionary<string, string> repositories, out string friendlyFailureMessage)
         {
             friendlyFailureMessage = null;
-            string tempZipPath = null;
+            string tempDownloadPath = null;
             string stagingDirectory = null;
             string packageLabel = GetFriendlyPackageLabel(null, packageName);
 
@@ -1610,20 +1828,35 @@ namespace YUCP.DirectVpmInstaller
                 string workspaceRoot = GetInstallerWorkspaceRoot();
                 string downloadsRoot = Path.Combine(workspaceRoot, "Downloads");
                 Directory.CreateDirectory(downloadsRoot);
-                tempZipPath = Path.Combine(downloadsRoot, $"{MakeSafeFolderName(packageName)}-{resolution.resolvedVersion}.zip");
+                string downloadExtension = string.Equals(
+                    resolution.deliverySourceKind,
+                    UnityPackageSourceKind,
+                    StringComparison.Ordinal)
+                    ? ".unitypackage"
+                    : ".zip";
+                tempDownloadPath = Path.Combine(
+                    downloadsRoot,
+                    $"{MakeSafeFolderName(packageName)}-{resolution.resolvedVersion}{downloadExtension}");
                 stagingDirectory = Path.Combine(workspaceRoot, "Staging", Guid.NewGuid().ToString("N"));
-                EnsureCreatorFriendlyPathLength(tempZipPath, packageLabel);
+                EnsureCreatorFriendlyPathLength(tempDownloadPath, packageLabel);
                 EnsureCreatorFriendlyPathLength(stagingDirectory, packageLabel);
 
                 using (var downloadClient = new WebClient())
                 {
                     downloadClient.Headers.Add(HttpRequestHeader.UserAgent, "VCC/2.3.0");
-                    downloadClient.DownloadFile(resolution.downloadUrl, tempZipPath);
+                    if (resolution.requestHeaders != null)
+                    {
+                        foreach (var header in resolution.requestHeaders)
+                        {
+                            downloadClient.Headers[header.Key] = header.Value;
+                        }
+                    }
+                    downloadClient.DownloadFile(resolution.downloadUrl, tempDownloadPath);
                 }
 
                 if (!string.IsNullOrEmpty(resolution.expectedArchiveHash))
                 {
-                    string actualArchiveHash = NormalizeSha256(ComputeFileSha256(tempZipPath));
+                    string actualArchiveHash = NormalizeSha256(ComputeFileSha256(tempDownloadPath));
                     if (!string.Equals(actualArchiveHash, resolution.expectedArchiveHash, StringComparison.OrdinalIgnoreCase))
                     {
                         Debug.LogError($"[DirectVpmInstaller] SHA-256 mismatch for {packageName}@{resolution.resolvedVersion}. Expected {resolution.expectedArchiveHash}, got {actualArchiveHash}.");
@@ -1632,7 +1865,11 @@ namespace YUCP.DirectVpmInstaller
                     }
                 }
 
-                ExtractZipToDirectorySafely(tempZipPath, stagingDirectory, packageLabel);
+                ExtractDownloadedPackageToDirectorySafely(
+                    tempDownloadPath,
+                    resolution.deliverySourceKind,
+                    stagingDirectory,
+                    packageLabel);
 
                 string stagedPackageJsonPath = Path.Combine(stagingDirectory, "package.json");
                 if (!File.Exists(stagedPackageJsonPath))
@@ -1682,10 +1919,10 @@ namespace YUCP.DirectVpmInstaller
             {
                 try
                 {
-                    if (!string.IsNullOrEmpty(tempZipPath) && File.Exists(tempZipPath))
-                    {
-                        File.Delete(tempZipPath);
-                    }
+                if (!string.IsNullOrEmpty(tempDownloadPath) && File.Exists(tempDownloadPath))
+                {
+                    File.Delete(tempDownloadPath);
+                }
                 }
                 catch
                 {

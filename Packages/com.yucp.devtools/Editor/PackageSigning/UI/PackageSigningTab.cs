@@ -2008,7 +2008,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             // Info note
             var note = MakeLabel(
-                "When enabled, derived FBX assets require a verified purchase before they are applied. Licensed profiles automatically export through the embedded container/bootstrap path. Enabling this requires sign-in, an active certificate on this machine, and a plan with Protected Exports enabled.",
+                "When enabled, derived FBX assets require a verified purchase before they are applied. Licensed profiles automatically export through the server-first install flow so Unity can install dependencies and apply the gated assets during import. Enabling this requires sign-in, an active certificate on this machine, and a plan with Protected Exports enabled.",
                 9, TextMute, wrap: true);
             note.style.marginTop = 10;
             body.Add(note);

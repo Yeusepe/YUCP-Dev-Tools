@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
- 
+
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -26,6 +26,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
     private bool showDependencies = true;
     private bool showObfuscation = true;
     private bool showExportSettings = false;
+    private bool showBackstagePublishing = false;
     private bool showStatistics = false;
         
     private Vector2 folderScrollPos;
@@ -496,7 +497,50 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 });
             }
             EditorGUILayout.EndFoldoutHeaderGroup();
-            
+
+            EditorGUILayout.Space(5);
+            showBackstagePublishing = EditorGUILayout.BeginFoldoutHeaderGroup(
+                showBackstagePublishing,
+                "Backstage Publishing"
+            );
+            if (showBackstagePublishing)
+            {
+                DrawSection(() =>
+                {
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("publishReleaseAfterExport"),
+                        new GUIContent("Publish After Export")
+                    );
+
+                    if (profile.publishReleaseAfterExport)
+                    {
+                        EditorGUILayout.HelpBox(
+                            "When enabled, a successful export is immediately uploaded to YUCP and published as the buyer-entitled release for this package.",
+                            MessageType.Info
+                        );
+                        EditorGUILayout.PropertyField(
+                            serializedObject.FindProperty("publishChannel"),
+                            new GUIContent("Release Channel")
+                        );
+                        EditorGUILayout.PropertyField(
+                            serializedObject.FindProperty("publishRepositoryVisibility"),
+                            new GUIContent("Repository Visibility")
+                        );
+                        EditorGUILayout.PropertyField(
+                            serializedObject.FindProperty("publishDeliveryName"),
+                            new GUIContent("Delivery Name")
+                        );
+                        EditorGUILayout.LabelField(
+                            "Access Products",
+                            profile.GetResolvedLicenseProductIds().Count > 0
+                                ? string.Join(", ", profile.GetResolvedLicenseProductIds())
+                                : "(none configured)"
+                        );
+                    }
+                });
+            }
+            EditorGUILayout.EndFoldoutHeaderGroup();
+
             // Statistics
             EditorGUILayout.Space(5);
             showStatistics = EditorGUILayout.BeginFoldoutHeaderGroup(showStatistics, "Statistics");
@@ -851,14 +895,40 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     EditorUtility.DisplayProgressBar("Exporting Package", status, progress);
                 });
-                
+                BackstageReleasePublishService.PublishResult publishResult = null;
+                if (result.success && profile.publishReleaseAfterExport)
+                {
+                    publishResult = BackstageReleasePublishService.PublishExportedPackage(
+                        profile,
+                        result.outputPath,
+                        (progress, status) =>
+                        {
+                            EditorUtility.DisplayProgressBar(
+                                "Exporting Package",
+                                status,
+                                0.92f + (progress * 0.08f)
+                            );
+                        }
+                    );
+                    if (!publishResult.success)
+                    {
+                        result.success = false;
+                        result.errorMessage =
+                            $"{publishResult.errorMessage}\n\nThe local export remains at:\n{result.outputPath}";
+                    }
+                }
+
                 EditorUtility.ClearProgressBar();
-                
+
                 if (result.success)
                 {
                     string warningSuffix = string.IsNullOrEmpty(result.warningMessage)
                         ? string.Empty
                         : $"\n\nWarning:\n{result.warningMessage}";
+                    string publishSuffix =
+                        publishResult != null && publishResult.wasPublished
+                            ? $"\nPublished Channel: {publishResult.channel}\nRelease ID: {publishResult.deliveryPackageReleaseId}"
+                            : string.Empty;
 
                     bool openFolder = EditorUtility.DisplayDialog(
                         "Export Successful",
@@ -867,6 +937,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         $"Files: {result.filesExported}\n" +
                         $"Assemblies Obfuscated: {result.assembliesObfuscated}\n" +
                         $"Build Time: {result.buildTimeSeconds:F2}s" +
+                        publishSuffix +
                         warningSuffix,
                         "Open Folder",
                         "OK"

@@ -39,9 +39,36 @@ namespace YUCP.DevTools.Editor.PackageExporter.Bridge
 
             if (result.success)
             {
+                BackstageReleasePublishService.PublishResult publishResult = null;
+                if (profile.publishReleaseAfterExport)
+                {
+                    publishResult = BackstageReleasePublishService.PublishExportedPackage(
+                        profile,
+                        result.outputPath,
+                        (progress, status) =>
+                        {
+                            Console.WriteLine($"[YUCP-Publish] {progress:P0} - {status}");
+                        }
+                    );
+                    if (!publishResult.success)
+                    {
+                        Console.WriteLine($"[YUCP-Publish] Error: {publishResult.errorMessage}");
+                        Console.WriteLine($"[YUCP-Publish] Local export remains at: {result.outputPath}");
+                        EditorApplication.Exit(1);
+                        return;
+                    }
+                }
+
                 if (!string.IsNullOrWhiteSpace(result.warningMessage))
                 {
                     Console.WriteLine($"[YUCP-Export] Warning: {result.warningMessage}");
+                }
+
+                if (publishResult != null && publishResult.wasPublished)
+                {
+                    Console.WriteLine(
+                        $"[YUCP-Publish] Published release {publishResult.deliveryPackageReleaseId} channel={publishResult.channel}"
+                    );
                 }
 
                 string outputFile = Environment.GetEnvironmentVariable("YUCP_EXPORT_OUTPUT_FILE");

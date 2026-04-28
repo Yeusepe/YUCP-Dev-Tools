@@ -6,6 +6,12 @@ using UnityEngine;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
+    public enum BackstageRepositoryVisibility
+    {
+        Hidden,
+        Listed
+    }
+
     /// <summary>
     /// Configuration profile for Unity package exports with optional obfuscation.
     /// Stores all settings needed to reproducibly export a package.
@@ -254,13 +260,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                  "Enables the YUCP Importer license gate; adds com.yucp.importer as a VPM dependency.")]
         public bool requiresLicenseVerification = false;
 
-        [NonSerialized] internal bool skipProtectedPayloadBuild = false;
-
-        public bool UsesProtectedPayload()
-        {
-            return requiresLicenseVerification && !skipProtectedPayloadBuild;
-        }
-
         public string GetPrimaryLicenseProductId()
         {
             if (licenseProductIds != null)
@@ -273,6 +272,32 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
 
             return licenseProductId ?? "";
+        }
+
+        public List<string> GetResolvedLicenseProductIds()
+        {
+            var resolved = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (licenseProductIds != null)
+            {
+                foreach (string productId in licenseProductIds)
+                {
+                    string normalized = productId?.Trim();
+                    if (!string.IsNullOrEmpty(normalized) && seen.Add(normalized))
+                    {
+                        resolved.Add(normalized);
+                    }
+                }
+            }
+
+            string primary = licenseProductId?.Trim();
+            if (!string.IsNullOrEmpty(primary) && seen.Add(primary))
+            {
+                resolved.Add(primary);
+            }
+
+            return resolved;
         }
         
         [Header("Assembly Obfuscation")]
@@ -294,6 +319,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Header("Export Settings")]
         [Tooltip("Default export path (leave empty for Desktop)")]
         public string exportPath = "";
+
+        [Header("Backstage Publishing")]
+        [Tooltip("Upload the exported artifact to the YUCP server and publish a buyer-entitled release after each successful export.")]
+        public bool publishReleaseAfterExport = false;
+
+        [Tooltip("Release channel to publish when Backstage publishing is enabled.")]
+        public string publishChannel = "stable";
+
+        [Tooltip("Hide published repos by default. Buyer access should flow through the YUCP access page, not shared repo links.")]
+        public BackstageRepositoryVisibility publishRepositoryVisibility = BackstageRepositoryVisibility.Hidden;
+
+        [Tooltip("Optional filename override for the published deliverable. Leave empty to keep the exported file name.")]
+        public string publishDeliveryName = "";
         
         [Tooltip("Custom location to save this export profile (leave empty for default Profiles folder)")]
         public string profileSaveLocation = "";
@@ -494,6 +532,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             return System.IO.Path.Combine(exportPath, fileName);
         }
+
+        public string GetResolvedPublishChannel()
+        {
+            return string.IsNullOrWhiteSpace(publishChannel) ? "stable" : publishChannel.Trim();
+        }
+
+        public string GetResolvedPublishDeliveryName()
+        {
+            return string.IsNullOrWhiteSpace(publishDeliveryName) ? null : publishDeliveryName.Trim();
+        }
+
+        public string GetResolvedPublishRepositoryVisibility()
+        {
+            return publishRepositoryVisibility == BackstageRepositoryVisibility.Listed ? "listed" : "hidden";
+        }
         
         /// <summary>
         /// Validate the profile settings
@@ -517,6 +570,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (!VersionUtility.IsValidVersion(version))
             {
                 errorMessage = $"Invalid version format: '{version}'. Expected format: X.Y.Z (e.g., 1.0.0)";
+                return false;
+            }
+
+            if (publishReleaseAfterExport && GetResolvedLicenseProductIds().Count == 0)
+            {
+                errorMessage =
+                    "Backstage publishing requires at least one canonical YUCP product ID in License Product ID(s).";
                 return false;
             }
             
