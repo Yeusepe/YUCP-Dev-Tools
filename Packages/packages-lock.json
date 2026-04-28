@@ -262,12 +262,6 @@
       "source": "embedded",
       "dependencies": {}
     },
-    "com.yucp.temp": {
-      "version": "file:com.yucp.temp",
-      "depth": 0,
-      "source": "embedded",
-      "dependencies": {}
-    },
     "d4rkpl4y3r.d4rkavataroptimizer": {
       "version": "file:d4rkpl4y3r.d4rkavataroptimizer",
       "depth": 0,

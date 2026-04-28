@@ -207,6 +207,12 @@ namespace YUCP.PatchCleanup
 
         private static bool ShouldSkipPatchProcessing(string context, string[] importedAssets = null)
         {
+            if (IsAutomaticPatchProcessingContext(context) && IsDevToolsAuthoringWorkspace())
+            {
+                WriteLog($"Skipping patch processing {context} because this is the devtools authoring workspace.");
+                return true;
+            }
+
             if (HasTempRuntimeFiles(importedAssets))
             {
                 return false;
@@ -214,6 +220,20 @@ namespace YUCP.PatchCleanup
 
             WriteLog($"Skipping patch processing {context} because temp runtime files are not present. This project likely only has authoring patch assets in Packages/com.yucp.temp.");
             return true;
+        }
+
+        private static bool IsAutomaticPatchProcessingContext(string context)
+        {
+            return string.Equals(context, "on load", StringComparison.Ordinal) ||
+                   string.Equals(context, "for imported patch assets", StringComparison.Ordinal);
+        }
+
+        private static bool IsDevToolsAuthoringWorkspace()
+        {
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string devToolsPackagePath = Path.Combine(projectRoot, "Packages", "com.yucp.devtools");
+            string patchRuntimeSourcePath = Path.Combine(projectRoot, "build-src", "YUCP.PatchRuntime");
+            return Directory.Exists(devToolsPackagePath) && Directory.Exists(patchRuntimeSourcePath);
         }
 
         private static List<PatchEntryInfo> ReadPatchEntries(UnityEngine.Object patchObj)

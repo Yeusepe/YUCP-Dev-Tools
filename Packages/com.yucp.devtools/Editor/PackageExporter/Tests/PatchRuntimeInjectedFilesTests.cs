@@ -95,5 +95,19 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             Assert.That(wrapperSource, Does.Not.Contain("using YUCP.DevTools.Editor.Security;"));
             Assert.That(wrapperSource, Does.Not.Contain("TrustedFileUtility."));
         }
+
+        [Test]
+        public void PatchRuntimeInjectedFiles_OnLoadProcessingSkipsInAuthoringWorkspace()
+        {
+            MethodInfo method = typeof(YUCP.PatchCleanup.YUCPPatchImporter).GetMethod(
+                "ShouldSkipPatchProcessing",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+
+            bool shouldSkip = (bool)method.Invoke(null, new object[] { "on load", null });
+
+            Assert.That(shouldSkip, Is.True);
+        }
     }
 }
