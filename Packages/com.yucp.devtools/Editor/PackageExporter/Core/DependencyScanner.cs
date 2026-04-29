@@ -496,6 +496,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
 
+            JObject yucpContract = AliasPackageContractBuilder.Build(profile, dependencies);
+            if (yucpContract != null)
+            {
+                packageJson["yucp"] = yucpContract;
+            }
+            else if (packageJson.TryGetValue("yucp", out JToken existingYucp) &&
+                     existingYucp is JObject existingYucpObject &&
+                     string.Equals((string)existingYucpObject["kind"], AliasPackageContractBuilder.ContractKind, StringComparison.Ordinal))
+            {
+                packageJson.Remove("yucp");
+            }
+
             // Return formatted JSON
             return packageJson.ToString(Newtonsoft.Json.Formatting.Indented);
         }

@@ -8,6 +8,7 @@ using System.Text;
 using ICSharpCode.SharpZipLib.GZip;
 using ICSharpCode.SharpZipLib.Tar;
 #endif
+using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
 using YUCP.Importer.Editor.PackageManager;
@@ -64,6 +65,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private sealed class PackageEmbedContext
         {
             public readonly string SafePackageName;
+            public readonly string PackageShellRoot;
+            public readonly bool UsesAliasPackageShell;
             public readonly string EmbeddedRoot;
             public readonly string TempInstallRoot;
             public readonly List<EmbeddedAsset> Assets = new List<EmbeddedAsset>();
@@ -76,11 +79,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public readonly List<string> GalleryImagePaths = new List<string>();
 
             public PackageEmbedContext(ExportProfile profile)
+                : this(profile, null)
+            {
+            }
+
+            public PackageEmbedContext(ExportProfile profile, string packageShellRoot)
             {
                 string baseName = profile != null ? (profile.packageName ?? profile.profileName ?? profile.name) : "package";
                 SafePackageName = MakeSafeFolderName(baseName);
-                EmbeddedRoot = $"{InstalledPackagesRoot}/{SafePackageName}/{EmbeddedArtifactsFolderName}";
-                TempInstallRoot = $"{InstalledPackagesRoot}/{SafePackageName}/{TempInstallFolderName}";
+                PackageShellRoot = packageShellRoot;
+                UsesAliasPackageShell = !string.IsNullOrWhiteSpace(packageShellRoot);
+                EmbeddedRoot = UsesAliasPackageShell
+                    ? $"{PackageShellRoot}/{EmbeddedArtifactsFolderName}"
+                    : $"{InstalledPackagesRoot}/{SafePackageName}/{EmbeddedArtifactsFolderName}";
+                TempInstallRoot = UsesAliasPackageShell
+                    ? null
+                    : $"{InstalledPackagesRoot}/{SafePackageName}/{TempInstallFolderName}";
             }
 
             public string RegisterTextureForExport(Texture2D texture, string baseName, string subfolder, out string exportAssetPath)
@@ -196,9 +210,120 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     return Path.GetDirectoryName(pathname)?.Replace('\\', '/') ?? "Assets";
                 }
+
+                if (pathname.EndsWith("/package.json", StringComparison.OrdinalIgnoreCase))
+                {
+                    string assetFile = Path.Combine(folder, "asset");
+                    if (File.Exists(assetFile) && PackageJsonUsesAliasContract(File.ReadAllText(assetFile), out _))
+                    {
+                        return Path.GetDirectoryName(pathname)?.Replace('\\', '/') ?? "Assets";
+                    }
+                }
             }
 
             return "Assets";
+        }
+
+        private static string ResolveAliasPackageShellRoot(string packageJsonContent, bool hasPatchAssets)
+        {
+            if (hasPatchAssets || !PackageJsonUsesAliasContract(packageJsonContent, out JObject packageJson))
+            {
+                return null;
+            }
+
+            string packageName = packageJson["name"]?.ToString()?.Trim();
+            if (!IsSafePackageName(packageName))
+            {
+                Debug.LogWarning($"[PackageBuilder] Alias package shell requires a safe package name. Falling back to legacy export shell for '{packageName ?? "<missing>"}'.");
+                return null;
+            }
+
+            return $"Packages/{packageName}";
+        }
+
+        private static bool PackageJsonUsesAliasContract(string packageJsonContent, out JObject packageJson)
+        {
+            packageJson = null;
+            if (string.IsNullOrWhiteSpace(packageJsonContent))
+            {
+                return false;
+            }
+
+            try
+            {
+                packageJson = JObject.Parse(packageJsonContent);
+                return string.Equals(
+                    packageJson["yucp"]?["kind"]?.ToString(),
+                    AliasPackageContractBuilder.ContractKind,
+                    StringComparison.Ordinal);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[PackageBuilder] Failed to inspect package.json for alias export shell selection: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static string MergeAliasPackageMetadataIntoPackageJson(string packageJsonContent, string packageMetadataJson)
+        {
+            if (string.IsNullOrWhiteSpace(packageJsonContent) || string.IsNullOrWhiteSpace(packageMetadataJson))
+            {
+                return packageJsonContent;
+            }
+
+            try
+            {
+                JObject packageJson = JObject.Parse(packageJsonContent);
+                JObject yucp = packageJson["yucp"] as JObject;
+                if (yucp == null)
+                {
+                    yucp = new JObject();
+                    packageJson["yucp"] = yucp;
+                }
+
+                yucp["packageMetadata"] = JObject.Parse(packageMetadataJson);
+                return packageJson.ToString(Newtonsoft.Json.Formatting.Indented);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[PackageBuilder] Failed to merge alias package metadata into package.json: {ex.Message}");
+                return packageJsonContent;
+            }
+        }
+
+        private static bool IsSafePackageName(string packageName)
+        {
+            if (string.IsNullOrWhiteSpace(packageName) ||
+                packageName.Contains("/") ||
+                packageName.Contains("\\") ||
+                packageName.Contains(":"))
+            {
+                return false;
+            }
+
+            string[] segments = packageName.Split('.');
+            if (segments.Length < 2)
+            {
+                return false;
+            }
+
+            foreach (string segment in segments)
+            {
+                if (string.IsNullOrWhiteSpace(segment) || segment == "." || segment == "..")
+                {
+                    return false;
+                }
+
+                foreach (char c in segment)
+                {
+                    if (!(char.IsLetterOrDigit(c) || c == '-' || c == '_'))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         }
 
         private static bool TryInjectInstallerPreflightBootstrap(string tempExtractDir, string installerRoot, string installerScriptPath)
@@ -616,103 +741,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Debug.Log($"[PackageBuilder] Force-excluded {excludedCount} assets that were in excluded folders");
                 }
                 
-                var embedContext = new PackageEmbedContext(profile);
-                if (profile.icon != null && !IsDefaultGridPlaceholder(profile.icon))
-                {
-                    string exportAssetPath;
-                    string iconPath = embedContext.RegisterTextureForExport(profile.icon, profile.packageName ?? "PackageIcon", "Icons", out exportAssetPath);
-                    embedContext.IconPath = iconPath;
-                    if (!string.IsNullOrEmpty(exportAssetPath) && !assetsToExport.Contains(exportAssetPath))
-                    {
-                        assetsToExport.Add(exportAssetPath);
-                        Debug.Log($"[PackageBuilder] Added icon texture to export: {exportAssetPath}");
-                    }
-                }
-
-                if ((profile.requiresLicenseVerification || profile.publishReleaseAfterExport) &&
-                    string.IsNullOrWhiteSpace(profile.packageId))
-                {
-                    PackageIdManager.AssignPackageId(profile);
-                }
-
-                if (profile.banner != null)
-                {
-                    string exportAssetPath;
-                    string bannerPath = embedContext.RegisterTextureForExport(profile.banner, profile.packageName ?? "PackageBanner", "Banners", out exportAssetPath);
-                    embedContext.BannerPath = bannerPath;
-                    if (!string.IsNullOrEmpty(exportAssetPath) && !assetsToExport.Contains(exportAssetPath))
-                    {
-                        assetsToExport.Add(exportAssetPath);
-                        Debug.Log($"[PackageBuilder] Added banner texture to export: {exportAssetPath}");
-                    }
-                }
-
-                // Add product link icons to export or embed (both customIcon and auto-fetched icon)
-                if (profile.productLinks != null)
-                {
-                    foreach (var link in profile.productLinks)
-                    {
-                        Texture2D iconToAdd = link.customIcon ?? link.icon;
-                        string exportAssetPath;
-                        string linkIconPath = null;
-
-                        if (iconToAdd != null)
-                        {
-                            linkIconPath = embedContext.RegisterTextureForExport(
-                                iconToAdd,
-                                link.label ?? "ProductLink",
-                                "ProductLinks",
-                                out exportAssetPath
-                            );
-                        }
-                        else if (!string.IsNullOrEmpty(link.cachedIconPath) && File.Exists(link.cachedIconPath))
-                        {
-                            exportAssetPath = null;
-                            linkIconPath = embedContext.RegisterEmbeddedFile(link.cachedIconPath, "ProductLinks", link.label ?? "ProductLink");
-                        }
-                        else
-                        {
-                            exportAssetPath = null;
-                        }
-
-                        if (!string.IsNullOrEmpty(exportAssetPath) && !assetsToExport.Contains(exportAssetPath))
-                        {
-                            assetsToExport.Add(exportAssetPath);
-                            Debug.Log($"[PackageBuilder] Added product link icon to export: {exportAssetPath} (source: {(link.customIcon != null ? "customIcon" : "icon")})");
-                        }
-
-                        if (!string.IsNullOrEmpty(linkIconPath))
-                        {
-                            embedContext.ProductLinkIconPaths[link] = linkIconPath;
-                        }
-                    }
-                }
-
-                // Embed gallery images for storefront display
-                if (profile.galleryImages != null)
-                {
-                    for (int i = 0; i < profile.galleryImages.Count && i < 8; i++)
-                    {
-                        var galleryImg = profile.galleryImages[i];
-                        if (galleryImg == null) continue;
-                        string exportAssetPath;
-                        string galleryPath = embedContext.RegisterTextureForExport(
-                            galleryImg,
-                            $"Gallery_{i}",
-                            "Gallery",
-                            out exportAssetPath
-                        );
-                        if (!string.IsNullOrEmpty(exportAssetPath) && !assetsToExport.Contains(exportAssetPath))
-                        {
-                            assetsToExport.Add(exportAssetPath);
-                        }
-                        if (!string.IsNullOrEmpty(galleryPath))
-                        {
-                            embedContext.GalleryImagePaths.Add(galleryPath);
-                        }
-                    }
-                }
-                
                 // Manually collect dependencies if enabled (respects ignore list)
                 CollectFilteredDependencies(assetsToExport, profile, progressCallback);
                 
@@ -723,6 +751,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 hasPatchAssets = ConvertDerivedFbxToPatchAssets(assetsToExport, progressCallback, progress: 0.535f, profile: profile);
                 
                 progressCallback?.Invoke(0.54f, $"Total assets after dependency collection: {assetsToExport.Count}");
+
+                if ((profile.requiresLicenseVerification || profile.publishReleaseAfterExport) &&
+                    string.IsNullOrWhiteSpace(profile.packageId))
+                {
+                    PackageIdManager.AssignPackageId(profile);
+                }
                 
                 // Track bundled dependencies to inject later (AssetDatabase.ExportPackage can't handle files without .meta)
                 var bundledPackagePaths = new Dictionary<string, string>(); // packageName -> packagePath
@@ -778,12 +812,102 @@ namespace YUCP.DevTools.Editor.PackageExporter
                          }
                      }
                      
-                     packageJsonContent = DependencyScanner.GeneratePackageJson(
-                         profile,
-                         effectiveDeps,
-                         null
-                     );
-                 }
+                      packageJsonContent = DependencyScanner.GeneratePackageJson(
+                          profile,
+                          effectiveDeps,
+                          null
+                      );
+                  }
+
+                string aliasPackageShellRoot = ResolveAliasPackageShellRoot(packageJsonContent, hasPatchAssets);
+                var embedContext = new PackageEmbedContext(profile, aliasPackageShellRoot);
+                if (profile.icon != null && !IsDefaultGridPlaceholder(profile.icon))
+                {
+                    string exportAssetPath;
+                    string iconPath = embedContext.RegisterTextureForExport(profile.icon, profile.packageName ?? "PackageIcon", "Icons", out exportAssetPath);
+                    embedContext.IconPath = iconPath;
+                    if (!string.IsNullOrEmpty(exportAssetPath) && !assetsToExport.Contains(exportAssetPath))
+                    {
+                        assetsToExport.Add(exportAssetPath);
+                        Debug.Log($"[PackageBuilder] Added icon texture to export: {exportAssetPath}");
+                    }
+                }
+
+                if (profile.banner != null)
+                {
+                    string exportAssetPath;
+                    string bannerPath = embedContext.RegisterTextureForExport(profile.banner, profile.packageName ?? "PackageBanner", "Banners", out exportAssetPath);
+                    embedContext.BannerPath = bannerPath;
+                    if (!string.IsNullOrEmpty(exportAssetPath) && !assetsToExport.Contains(exportAssetPath))
+                    {
+                        assetsToExport.Add(exportAssetPath);
+                        Debug.Log($"[PackageBuilder] Added banner texture to export: {exportAssetPath}");
+                    }
+                }
+
+                if (profile.productLinks != null)
+                {
+                    foreach (var link in profile.productLinks)
+                    {
+                        Texture2D iconToAdd = link.customIcon ?? link.icon;
+                        string exportAssetPath;
+                        string linkIconPath = null;
+
+                        if (iconToAdd != null)
+                        {
+                            linkIconPath = embedContext.RegisterTextureForExport(
+                                iconToAdd,
+                                link.label ?? "ProductLink",
+                                "ProductLinks",
+                                out exportAssetPath
+                            );
+                        }
+                        else if (!string.IsNullOrEmpty(link.cachedIconPath) && File.Exists(link.cachedIconPath))
+                        {
+                            exportAssetPath = null;
+                            linkIconPath = embedContext.RegisterEmbeddedFile(link.cachedIconPath, "ProductLinks", link.label ?? "ProductLink");
+                        }
+                        else
+                        {
+                            exportAssetPath = null;
+                        }
+
+                        if (!string.IsNullOrEmpty(exportAssetPath) && !assetsToExport.Contains(exportAssetPath))
+                        {
+                            assetsToExport.Add(exportAssetPath);
+                            Debug.Log($"[PackageBuilder] Added product link icon to export: {exportAssetPath} (source: {(link.customIcon != null ? "customIcon" : "icon")})");
+                        }
+
+                        if (!string.IsNullOrEmpty(linkIconPath))
+                        {
+                            embedContext.ProductLinkIconPaths[link] = linkIconPath;
+                        }
+                    }
+                }
+
+                if (profile.galleryImages != null)
+                {
+                    for (int i = 0; i < profile.galleryImages.Count && i < 8; i++)
+                    {
+                        var galleryImg = profile.galleryImages[i];
+                        if (galleryImg == null) continue;
+                        string exportAssetPath;
+                        string galleryPath = embedContext.RegisterTextureForExport(
+                            galleryImg,
+                            $"Gallery_{i}",
+                            "Gallery",
+                            out exportAssetPath
+                        );
+                        if (!string.IsNullOrEmpty(exportAssetPath) && !assetsToExport.Contains(exportAssetPath))
+                        {
+                            assetsToExport.Add(exportAssetPath);
+                        }
+                        if (!string.IsNullOrEmpty(galleryPath))
+                        {
+                            embedContext.GalleryImagePaths.Add(galleryPath);
+                        }
+                    }
+                }
                 
                 result.filesExported = assetsToExport.Count;                
                 // Create temp package path
@@ -980,6 +1104,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 // Generate package metadata JSON
                 string packageMetadataJson = GeneratePackageMetadataJson(profile, embedContext, validAssets);
+                if (embedContext.UsesAliasPackageShell)
+                {
+                    packageJsonContent = MergeAliasPackageMetadataIntoPackageJson(packageJsonContent, packageMetadataJson);
+                    packageMetadataJson = null;
+                }
                 
                 // Inject package.json, auto-installer, bundled packages, and metadata into the .unitypackage
                 if (!string.IsNullOrEmpty(packageJsonContent) || bundledPackagePaths.Count > 0 || !string.IsNullOrEmpty(packageMetadataJson))
@@ -2918,6 +3047,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 #endif
                 
                 bool shouldInjectInstallerSurface = !string.IsNullOrEmpty(packageJsonContent);
+                bool usesAliasPackageShell = embedContext != null && embedContext.UsesAliasPackageShell;
 
                 // 0. Disable main assets by default to avoid Unity overwriting existing files on import.
                 // This only affects already-exported assets (not injected items below).
@@ -2928,9 +3058,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     DisablePackageEntriesByDefault(tempExtractDir);
                 }
 
-                string tempInstallAssetPath = null;
-
-                // 1. Inject package.json (temporary, will be deleted by installer)
+                // 1. Inject package.json shell metadata.
                 progressCallback?.Invoke(0.754f, "Injecting package shell metadata...");
                 if (shouldInjectInstallerSurface)
                 {
@@ -2939,17 +3067,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Directory.CreateDirectory(packageJsonFolder);
                     
                     File.WriteAllText(Path.Combine(packageJsonFolder, "asset"), packageJsonContent);
-                    // Use a unique path
-                    string tempInstallRoot = embedContext != null ? embedContext.TempInstallRoot : "Assets";
-                    tempInstallAssetPath = $"{tempInstallRoot}/YUCP_TempInstall_{packageJsonGuid}.json";
-                    File.WriteAllText(Path.Combine(packageJsonFolder, "pathname"), tempInstallAssetPath);
+                    string packageJsonPath = usesAliasPackageShell
+                        ? $"{embedContext.PackageShellRoot}/package.json"
+                        : $"{(embedContext != null ? embedContext.TempInstallRoot : "Assets")}/YUCP_TempInstall_{packageJsonGuid}.json";
+                    File.WriteAllText(Path.Combine(packageJsonFolder, "pathname"), packageJsonPath);
                     
                     string packageJsonMeta = "fileFormatVersion: 2\nguid: " + packageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(Path.Combine(packageJsonFolder, "asset.meta"), packageJsonMeta);
                 }
 
                 // 1b. Inject YUCP_PackageInfo.json (permanent metadata)
-                if (!string.IsNullOrEmpty(packageMetadataJson))
+                if (!usesAliasPackageShell && !string.IsNullOrEmpty(packageMetadataJson))
                 {
                     string metadataGuid = Guid.NewGuid().ToString("N");
                     string metadataFolder = Path.Combine(tempExtractDir, metadataGuid);
@@ -2993,7 +3121,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
 
                 // 1d. Ensure installed-packages container is a valid local package
-                if (embedContext != null)
+                if (embedContext != null && !usesAliasPackageShell)
                 {
                     string installedPackageGuid = Guid.NewGuid().ToString("N");
                     string installedPackageFolder = Path.Combine(tempExtractDir, installedPackageGuid);
@@ -3087,7 +3215,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // 2b. Inject DirectVpmInstaller runtime
                 string installerRoot = embedContext != null ? $"{InstalledPackagesRoot}/Editor" : "Assets/Editor";
-                bool deferInstallerActivation = embedContext != null;
+                bool deferInstallerActivation = embedContext != null && !usesAliasPackageShell;
                 string installerScriptPath = null;
                 string[] foundScripts = AssetDatabase.FindAssets("DirectVpmInstaller t:Script");
                 
@@ -3118,7 +3246,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
 
-                if (shouldInjectInstallerSurface &&
+                if (!usesAliasPackageShell &&
+                    shouldInjectInstallerSurface &&
                     !usingPrecompiledInstallerRuntime &&
                     !string.IsNullOrEmpty(installerScriptPath) &&
                     File.Exists(installerScriptPath))
@@ -3218,7 +3347,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         File.WriteAllText(Path.Combine(healthToolsFolder, "asset.meta"), healthToolsMeta);
                     }
                 }
-                else if (shouldInjectInstallerSurface && !usingPrecompiledInstallerRuntime)
+                else if (!usesAliasPackageShell && shouldInjectInstallerSurface && !usingPrecompiledInstallerRuntime)
                 {
                     Debug.LogWarning("[PackageBuilder] Could not find DirectVpmInstaller.cs template");
                 }
@@ -3232,7 +3361,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     fullReloadScriptPath = AssetDatabase.GUIDToAssetPath(foundReloadScripts[0]);
                 }
                 
-                if (shouldInjectInstallerSurface &&
+                if (!usesAliasPackageShell &&
+                    shouldInjectInstallerSurface &&
                     !usingPrecompiledInstallerRuntime &&
                     !string.IsNullOrEmpty(fullReloadScriptPath) &&
                     File.Exists(fullReloadScriptPath))
@@ -3253,7 +3383,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     File.WriteAllText(Path.Combine(reloadFolder, "asset.meta"), reloadMeta);
                     
                 }
-                else if (shouldInjectInstallerSurface && !usingPrecompiledInstallerRuntime)
+                else if (!usesAliasPackageShell && shouldInjectInstallerSurface && !usingPrecompiledInstallerRuntime)
                 {
                     Debug.LogWarning("[PackageBuilder] Could not find FullDomainReload.cs template");
                 }

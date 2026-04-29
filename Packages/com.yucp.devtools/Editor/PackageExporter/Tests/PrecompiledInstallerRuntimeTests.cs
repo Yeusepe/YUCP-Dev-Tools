@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using YUCP.DevTools.Editor.PackageSigning.Core;
 using YUCP.DevTools.Editor.PackageSigning.Data;
@@ -333,6 +334,69 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
+        public void AliasPackageShellRoot_UsesPackageRootUntilPatchAssetsRequireLegacyFallback()
+        {
+            MethodInfo method = typeof(PackageBuilder).GetMethod(
+                "ResolveAliasPackageShellRoot",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(method, Is.Not.Null);
+
+            ExportProfile profile = ScriptableObject.CreateInstance<ExportProfile>();
+            try
+            {
+                profile.packageName = "Alias Shell";
+                profile.version = "1.0.0";
+                profile.packageId = "alias-shell";
+
+                string packageJson = DependencyScanner.GeneratePackageJson(profile, new List<PackageDependency>());
+
+                string aliasRoot = method.Invoke(null, new object[] { packageJson, false }) as string;
+                string legacyRoot = method.Invoke(null, new object[] { packageJson, true }) as string;
+
+                Assert.That(aliasRoot, Is.EqualTo("Packages/alias.shell"));
+                Assert.That(legacyRoot, Is.Null, "Patch-asset exports should stay on the legacy shell until alias-safe patch packaging exists.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(profile);
+            }
+        }
+
+        [Test]
+        public void PrecompiledInstallerRuntime_ResolvesSigningRootFromAliasPackageJson()
+        {
+            string tempExtractDir = Path.Combine(Path.GetTempPath(), "yucp-alias-signing-root-" + System.Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempExtractDir);
+
+            try
+            {
+                string entryFolder = Path.Combine(tempExtractDir, "alias-shell");
+                Directory.CreateDirectory(entryFolder);
+                File.WriteAllText(
+                    Path.Combine(entryFolder, "pathname"),
+                    "Packages/com.example.alias/package.json");
+                File.WriteAllText(
+                    Path.Combine(entryFolder, "asset"),
+                    "{\n  \"name\": \"com.example.alias\",\n  \"yucp\": {\n    \"kind\": \"alias-v1\"\n  }\n}");
+
+                MethodInfo method = typeof(PackageBuilder).GetMethod(
+                    "ResolveSigningRootPathname",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That(method, Is.Not.Null);
+
+                string signingRoot = method.Invoke(null, new object[] { tempExtractDir }) as string;
+                Assert.That(signingRoot, Is.EqualTo("Packages/com.example.alias"));
+            }
+            finally
+            {
+                if (Directory.Exists(tempExtractDir))
+                {
+                    Directory.Delete(tempExtractDir, true);
+                }
+            }
+        }
+
+        [Test]
         public void PrecompiledInstallerRuntime_InjectsSigningFilesIntoProtectedShellRoot()
         {
             string packagePath = null;
@@ -381,6 +445,80 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             {
                 SignatureEmbedder.RemoveSigningData();
                 DeleteIfPresent(packagePath);
+            }
+        }
+
+        [Test]
+        public void AliasPackageShell_InjectionAvoidsLegacyResidueAndEmbedsMetadataInPackageJson()
+        {
+            string packagePath = null;
+            ExportProfile profile = null;
+
+            try
+            {
+                packagePath = CreateUnityPackage(new Dictionary<string, byte[]>
+                {
+                    ["shell/pathname"] = Encoding.UTF8.GetBytes("Assets/Dummy.txt"),
+                    ["shell/asset"] = Encoding.UTF8.GetBytes("dummy"),
+                });
+
+                profile = ScriptableObject.CreateInstance<ExportProfile>();
+                profile.packageName = "Alias Shell";
+                profile.version = "1.0.0";
+                profile.packageId = "alias-shell";
+
+                string packageJson = DependencyScanner.GeneratePackageJson(profile, new List<PackageDependency>());
+
+                Type embedContextType = typeof(PackageBuilder).GetNestedType("PackageEmbedContext", BindingFlags.NonPublic);
+                Assert.That(embedContextType, Is.Not.Null);
+                ConstructorInfo embedContextCtor = embedContextType.GetConstructor(
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    binder: null,
+                    types: new[] { typeof(ExportProfile), typeof(string) },
+                    modifiers: null);
+                Assert.That(embedContextCtor, Is.Not.Null);
+                object embedContext = embedContextCtor.Invoke(new object[] { profile, "Packages/alias.shell" });
+
+                MethodInfo method = typeof(PackageBuilder).GetMethod(
+                    "InjectPackageJsonInstallerAndBundles",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That(method, Is.Not.Null);
+
+                method.Invoke(null, new object[]
+                {
+                    packagePath,
+                    packageJson,
+                    new Dictionary<string, string>(),
+                    new List<AssemblyObfuscationSettings>(),
+                    profile,
+                    false,
+                    "{\"packageName\":\"Alias Shell\",\"icon\":\"Packages/alias.shell/Embedded/Icons/icon.png\"}",
+                    embedContext,
+                    null,
+                });
+
+                string[] pathnames = ReadPackagePathnames(packagePath);
+                Assert.That(pathnames, Has.Some.EqualTo("Packages/alias.shell/package.json"));
+                Assert.That(pathnames, Has.None.Matches<string>(path => path.Contains("YUCP_TempInstall_", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.None.Matches<string>(path => path.EndsWith("YUCP_PackageInfo.json", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.None.EqualTo("Packages/yucp.installed-packages/package.json"));
+                Assert.That(pathnames, Has.None.Matches<string>(path => path.StartsWith("Packages/com.yucp.temp/", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.None.Matches<string>(path => path.EndsWith(".yucp_disabled", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.None.Matches<string>(path => path.Contains("YUCP.DirectVpmInstaller.Template.dll", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.None.Matches<string>(path => path.Contains("YUCP_Installer", StringComparison.Ordinal)));
+
+                JObject packageJsonObject = JObject.Parse(ReadPackagedAssetByPathname(packagePath, "Packages/alias.shell/package.json"));
+                Assert.That((string)packageJsonObject["yucp"]?["kind"], Is.EqualTo("alias-v1"));
+                Assert.That((string)packageJsonObject["yucp"]?["packageMetadata"]?["packageName"], Is.EqualTo("Alias Shell"));
+                Assert.That((string)packageJsonObject["yucp"]?["packageMetadata"]?["icon"], Is.EqualTo("Packages/alias.shell/Embedded/Icons/icon.png"));
+            }
+            finally
+            {
+                DeleteIfPresent(packagePath);
+                if (profile != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(profile);
+                }
             }
         }
 
@@ -484,6 +622,49 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             }
 
             return results.ToArray();
+        }
+
+        private static string ReadPackagedAssetByPathname(string packagePath, string targetPathname)
+        {
+            using var fileStream = File.OpenRead(packagePath);
+            using var gzipStream = new GZipStream(fileStream, CompressionMode.Decompress, leaveOpen: false);
+            var pendingPathnames = new Dictionary<string, string>(StringComparer.Ordinal);
+            var pendingAssets = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+
+            while (TryReadTarEntry(gzipStream, out string entryName, out byte[] data))
+            {
+                string folder = Path.GetDirectoryName(entryName)?.Replace('\\', '/') ?? string.Empty;
+                if (entryName.EndsWith("/pathname", StringComparison.OrdinalIgnoreCase))
+                {
+                    string pathname = Encoding.UTF8.GetString(data).Trim();
+                    if (string.Equals(pathname, targetPathname, StringComparison.Ordinal))
+                    {
+                        if (pendingAssets.TryGetValue(folder, out byte[] assetBytes))
+                        {
+                            return Encoding.UTF8.GetString(assetBytes);
+                        }
+
+                        pendingPathnames[folder] = pathname;
+                    }
+
+                    continue;
+                }
+
+                if (!entryName.EndsWith("/asset", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (pendingPathnames.ContainsKey(folder))
+                {
+                    return Encoding.UTF8.GetString(data);
+                }
+
+                pendingAssets[folder] = data;
+            }
+
+            Assert.Fail($"Could not find packaged asset for pathname '{targetPathname}'.");
+            return null;
         }
 
         private static bool TryReadTarEntry(Stream stream, out string entryName, out byte[] data)
