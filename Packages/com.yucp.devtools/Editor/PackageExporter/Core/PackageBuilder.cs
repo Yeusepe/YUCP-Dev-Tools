@@ -3443,6 +3443,49 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         {
                             throw new FileNotFoundException($"Required patch importer binary not found at {PrecompiledInstallerRuntimePath}.");
                         }
+
+                        string[] hdiffDlls = new string[]
+                        {
+                            "Packages/com.yucp.devtools/Plugins/hdiffz.dll",
+                            "Packages/com.yucp.devtools/Plugins/hpatchz.dll",
+                            "Packages/com.yucp.devtools/Plugins/hdiffinfo.dll"
+                        };
+
+                        foreach (var dllPath in hdiffDlls)
+                        {
+                            if (File.Exists(dllPath))
+                            {
+                                string dllGuid = Guid.NewGuid().ToString("N");
+                                string dllFolder = Path.Combine(tempExtractDir, dllGuid);
+                                Directory.CreateDirectory(dllFolder);
+
+                                string fileName = Path.GetFileName(dllPath);
+                                string targetPath = $"Packages/com.yucp.temp/Plugins/{fileName}";
+
+                                File.Copy(dllPath, Path.Combine(dllFolder, "asset"), true);
+                                File.WriteAllText(Path.Combine(dllFolder, "pathname"), targetPath);
+
+                                // Copy the .meta file if it exists
+                                string metaPath = dllPath + ".meta";
+                                if (File.Exists(metaPath))
+                                {
+                                    string metaContent = File.ReadAllText(metaPath);
+                                    File.WriteAllText(Path.Combine(dllFolder, "asset.meta"), metaContent);
+                                }
+                                else
+                                {
+                                    // Create a basic .meta file for the DLL
+                                    string dllMeta = "fileFormatVersion: 2\nguid: " + dllGuid + "\nPluginImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  iconMap: {}\n  executionOrder: {}\n  defineConstraints: []\n  isPreloaded: 0\n  isOverridable: 0\n  isExplicitlyReferenced: 0\n  validateReferences: 1\n  platformData:\n  - first:\n      : Any\n    second:\n      enabled: 0\n  - first:\n      Any: \n    second:\n      enabled: 1\n  - first:\n      Editor: Editor\n    second:\n      enabled: 1\n      settings:\n        CPU: AnyCPU\n        DefaultValueInitialized: true\n        OS: AnyOS\n  userData: \n  assetBundleName: \n  assetBundleVariant: \n";
+                                    File.WriteAllText(Path.Combine(dllFolder, "asset.meta"), dllMeta);
+                                }
+
+                                Debug.Log($"[PackageBuilder] Copied HDiffPatch DLL to temp package: {fileName}");
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"[PackageBuilder] HDiffPatch DLL not found: {dllPath}");
+                            }
+                        }
                     }
 
                     // Ensure the temporary package shell exists whenever temp patch/runtime assets are injected there.
@@ -3474,51 +3517,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     string tempPackageJsonMeta = "fileFormatVersion: 2\nguid: " + tempPackageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(Path.Combine(tempPackageJsonFolder, "asset.meta"), tempPackageJsonMeta);
-                    
-                    
-                    string[] hdiffDlls = new string[]
-                    {
-                        "Packages/com.yucp.devtools/Plugins/hdiffz.dll",
-                        "Packages/com.yucp.devtools/Plugins/hpatchz.dll",
-                        "Packages/com.yucp.devtools/Plugins/hdiffinfo.dll"
-                    };
-                    
-                    foreach (var dllPath in hdiffDlls)
-                    {
-                        if (File.Exists(dllPath))
-                        {
-                            string dllGuid = Guid.NewGuid().ToString("N");
-                            string dllFolder = Path.Combine(tempExtractDir, dllGuid);
-                            Directory.CreateDirectory(dllFolder);
-                            
-                            string fileName = Path.GetFileName(dllPath);
-                            string targetPath = $"Packages/com.yucp.temp/Plugins/{fileName}";
-                            
-                            File.Copy(dllPath, Path.Combine(dllFolder, "asset"), true);
-                            File.WriteAllText(Path.Combine(dllFolder, "pathname"), targetPath);
-                            
-                            // Copy the .meta file if it exists
-                            string metaPath = dllPath + ".meta";
-                            if (File.Exists(metaPath))
-                            {
-                                string metaContent = File.ReadAllText(metaPath);
-                                File.WriteAllText(Path.Combine(dllFolder, "asset.meta"), metaContent);
-                            }
-                            else
-                            {
-                                // Create a basic .meta file for the DLL
-                                string dllMeta = "fileFormatVersion: 2\nguid: " + dllGuid + "\nPluginImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  iconMap: {}\n  executionOrder: {}\n  defineConstraints: []\n  isPreloaded: 0\n  isOverridable: 0\n  isExplicitlyReferenced: 0\n  validateReferences: 1\n  platformData:\n  - first:\n      : Any\n    second:\n      enabled: 0\n  - first:\n      Any: \n    second:\n      enabled: 1\n  - first:\n      Editor: Editor\n    second:\n      enabled: 1\n      settings:\n        CPU: AnyCPU\n        DefaultValueInitialized: true\n        OS: AnyOS\n  userData: \n  assetBundleName: \n  assetBundleVariant: \n";
-                                File.WriteAllText(Path.Combine(dllFolder, "asset.meta"), dllMeta);
-                            }
-                            
-                            Debug.Log($"[PackageBuilder] Copied HDiffPatch DLL to temp package: {fileName}");
-                        }
-                        else
-                        {
-                            Debug.LogWarning($"[PackageBuilder] HDiffPatch DLL not found: {dllPath}");
-                        }
-                    }
-                    
                 }
                 
                 // 3. Inject bundled packages (ALL files including those without .meta)

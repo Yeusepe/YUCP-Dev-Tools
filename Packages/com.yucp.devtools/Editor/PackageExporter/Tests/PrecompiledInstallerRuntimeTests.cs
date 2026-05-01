@@ -656,6 +656,9 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 Assert.That(pathnames, Has.Some.Matches<string>(path => path.StartsWith("Packages/com.yucp.temp/Clean-Export/_temp/YUCP_TempInstall_", StringComparison.Ordinal)));
                 Assert.That(pathnames, Has.Some.EqualTo("Packages/com.yucp.temp/package.json"));
                 Assert.That(pathnames, Has.Some.EqualTo("Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Template.dll"));
+                Assert.That(pathnames, Has.None.EqualTo("Packages/com.yucp.temp/Plugins/hdiffz.dll"));
+                Assert.That(pathnames, Has.None.EqualTo("Packages/com.yucp.temp/Plugins/hpatchz.dll"));
+                Assert.That(pathnames, Has.None.EqualTo("Packages/com.yucp.temp/Plugins/hdiffinfo.dll"));
                 Assert.That(pathnames, Has.None.Matches<string>(path => path.EndsWith("YUCP_PackageInfo.json", StringComparison.Ordinal)));
                 Assert.That(pathnames, Has.None.Matches<string>(path => path.StartsWith("Packages/yucp.installed-packages/", StringComparison.Ordinal)));
             }
