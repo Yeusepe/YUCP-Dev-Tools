@@ -9,6 +9,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
     internal class DerivedFbxGuidRepairWizard : EditorWindow
     {
+        private static readonly Vector2 DefaultWindowSize = new Vector2(760f, 560f);
+        private static readonly Vector2 MinimumWindowSize = new Vector2(680f, 460f);
+
         private const int StepSelectPackage = 0;
         private const int StepSelectFbx = 1;
         private const int StepConfirm = 2;
@@ -23,6 +26,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private Array _importItems;
         private readonly List<PackageFbxItem> _fbxItems = new List<PackageFbxItem>();
         private int _selectedIndex = -1;
+        private Vector2 _fbxListScrollPosition;
 
         private bool _waitingForImport;
         private string _pendingPackageName;
@@ -46,6 +50,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
 
             var window = GetWindow<DerivedFbxGuidRepairWizard>(true, "Repair Derived FBX");
+            window.minSize = MinimumWindowSize;
+            if (window.position.width < DefaultWindowSize.x || window.position.height < DefaultWindowSize.y)
+            {
+                Rect rect = window.position;
+                rect.size = DefaultWindowSize;
+                window.position = rect;
+            }
             window.Initialize(importer.assetPath);
             window.ShowUtility();
         }
@@ -59,6 +70,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _statusMessage = null;
             _fbxItems.Clear();
             _selectedIndex = -1;
+            _fbxListScrollPosition = Vector2.zero;
             _importItems = null;
             _waitingForImport = false;
             _pendingPackageName = null;
@@ -145,8 +157,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
 
+            EditorGUILayout.LabelField($"{_fbxItems.Count} FBX file(s) found", EditorStyles.miniLabel);
+
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
+                float listHeight = Mathf.Max(220f, position.height - 215f);
+                _fbxListScrollPosition = EditorGUILayout.BeginScrollView(
+                    _fbxListScrollPosition,
+                    false,
+                    true,
+                    GUILayout.Height(listHeight));
+
                 for (int i = 0; i < _fbxItems.Count; i++)
                 {
                     var item = _fbxItems[i];
@@ -157,6 +178,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         _selectedIndex = i;
                     }
                 }
+
+                EditorGUILayout.EndScrollView();
             }
 
             if (TryGetSelectionIssue(out string issueMessage, out MessageType issueType))
