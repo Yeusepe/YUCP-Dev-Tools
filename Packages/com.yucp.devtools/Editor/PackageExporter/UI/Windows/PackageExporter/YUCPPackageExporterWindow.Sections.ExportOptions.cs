@@ -83,6 +83,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             });
             togglesContainer.Add(generateJsonToggle);
+
+            var embedMetadataToggle = new Toggle("Embed YUCP Metadata") { value = profile.embedYucpMetadata };
+            embedMetadataToggle.AddToClassList("yucp-toggle");
+            embedMetadataToggle.tooltip = "Include optional YUCP package metadata and storefront media in the export. Disable for a cleaner package surface; package signing is also skipped.";
+            embedMetadataToggle.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Embed YUCP Metadata");
+                    profile.embedYucpMetadata = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                    UpdateProfileDetails();
+                }
+            });
+            togglesContainer.Add(embedMetadataToggle);
             
             // Auto-Increment Version
             var autoIncrementToggle = new Toggle("Auto-Increment Version") { value = profile.autoIncrementVersion };
@@ -101,6 +116,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
             togglesContainer.Add(autoIncrementToggle);
             
             section.Add(togglesContainer);
+
+            if (!profile.embedYucpMetadata)
+            {
+                var metadataHelp = new Label("YUCP_PackageInfo.json, embedded storefront media, and package signing will be skipped for this export.");
+                metadataHelp.style.fontSize = 11;
+                metadataHelp.style.color = new UnityEngine.UIElements.StyleColor(new Color(0.6f, 0.8f, 1.0f));
+                metadataHelp.style.marginLeft = 4;
+                metadataHelp.style.marginTop = -2;
+                metadataHelp.style.marginBottom = 8;
+                metadataHelp.style.unityFontStyleAndWeight = FontStyle.Italic;
+                section.Add(metadataHelp);
+            }
             
             // Increment Strategy (only if auto-increment is enabled)
             if (profile.autoIncrementVersion)

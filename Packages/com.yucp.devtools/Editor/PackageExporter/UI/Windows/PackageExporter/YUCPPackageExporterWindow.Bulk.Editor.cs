@@ -395,6 +395,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             bool allIncludeDeps = selectedProfiles.All(p => p.includeDependencies);
             bool allRecurse = selectedProfiles.All(p => p.recurseFolders);
             bool allGenerateJson = selectedProfiles.All(p => p.generatePackageJson);
+            bool allEmbedMetadata = selectedProfiles.All(p => p.embedYucpMetadata);
             
             // Include Dependencies
             var includeDepsToggle = CreateBulkToggle("Include Dependencies", allIncludeDeps, 
@@ -413,6 +414,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 profile => profile.generatePackageJson,
                 (profile, value) => profile.generatePackageJson = value);
             section.Add(generateJsonToggle);
+
+            var embedMetadataToggle = CreateBulkToggle("Embed YUCP Metadata", allEmbedMetadata,
+                profile => profile.embedYucpMetadata,
+                (profile, value) => profile.embedYucpMetadata = value);
+            section.Add(embedMetadataToggle);
             
             // Version Management Section
             var versionMgmtTitle = new Label("Version Management");

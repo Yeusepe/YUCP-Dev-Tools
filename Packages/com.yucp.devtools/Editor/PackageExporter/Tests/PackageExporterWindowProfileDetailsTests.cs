@@ -52,6 +52,28 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
+        public void CreateExportOptionsSection_RendersEmbedYucpMetadataToggle()
+        {
+            var window = ScriptableObject.CreateInstance<YUCPPackageExporterWindow>();
+            var profile = ScriptableObject.CreateInstance<ExportProfile>();
+
+            try
+            {
+                var optionsSection = typeof(YUCPPackageExporterWindow)
+                    .GetMethod("CreateExportOptionsSection", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?.Invoke(window, new object[] { profile }) as VisualElement;
+
+                Assert.That(optionsSection, Is.Not.Null);
+                Assert.That(ContainsLabel(optionsSection, "Embed YUCP Metadata"), Is.True);
+            }
+            finally
+            {
+                Object.DestroyImmediate(profile);
+                Object.DestroyImmediate(window);
+            }
+        }
+
+        [Test]
         public void PackageSigningTab_RendersPackageRegistry_WhenProfileIsProvided()
         {
             var profile = ScriptableObject.CreateInstance<ExportProfile>();

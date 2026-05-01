@@ -523,6 +523,89 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
+        public void LegacyShell_InjectionCanSkipOptionalYucpMetadata()
+        {
+            string packagePath = null;
+            ExportProfile profile = null;
+
+            try
+            {
+                packagePath = CreateUnityPackage(new Dictionary<string, byte[]>
+                {
+                    ["shell/pathname"] = Encoding.UTF8.GetBytes("Assets/Dummy.txt"),
+                    ["shell/asset"] = Encoding.UTF8.GetBytes("dummy"),
+                });
+
+                profile = ScriptableObject.CreateInstance<ExportProfile>();
+                profile.packageName = "Clean Export";
+                profile.embedYucpMetadata = false;
+
+                Type embedContextType = typeof(PackageBuilder).GetNestedType("PackageEmbedContext", BindingFlags.NonPublic);
+                Assert.That(embedContextType, Is.Not.Null);
+                ConstructorInfo embedContextCtor = embedContextType.GetConstructor(
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    binder: null,
+                    types: new[] { typeof(ExportProfile) },
+                    modifiers: null);
+                Assert.That(embedContextCtor, Is.Not.Null);
+                object embedContext = embedContextCtor.Invoke(new object[] { profile });
+                Assert.That(embedContext, Is.Not.Null);
+
+                MethodInfo method = typeof(PackageBuilder).GetMethod(
+                    "InjectPackageJsonInstallerAndBundles",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That(method, Is.Not.Null);
+
+                method.Invoke(null, new object[]
+                {
+                    packagePath,
+                    "{ \"name\": \"com.example.clean-export\" }",
+                    new Dictionary<string, string>(),
+                    new List<AssemblyObfuscationSettings>(),
+                    profile,
+                    false,
+                    null,
+                    embedContext,
+                    null,
+                });
+
+                string[] pathnames = ReadPackagePathnames(packagePath);
+                Assert.That(pathnames, Has.Some.Matches<string>(path => path.Contains("/YUCP_TempInstall_", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.None.Matches<string>(path => path.EndsWith("YUCP_PackageInfo.json", StringComparison.Ordinal)));
+            }
+            finally
+            {
+                DeleteIfPresent(packagePath);
+                if (profile != null)
+                {
+                    UnityEngine.Object.DestroyImmediate(profile);
+                }
+            }
+        }
+
+        [Test]
+        public void MetadataToggle_DisablesPackageSigning()
+        {
+            MethodInfo method = typeof(PackageBuilder).GetMethod(
+                "ShouldAttemptPackageSigning",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(method, Is.Not.Null);
+
+            ExportProfile profile = ScriptableObject.CreateInstance<ExportProfile>();
+            try
+            {
+                profile.embedYucpMetadata = false;
+
+                bool shouldSign = (bool)method.Invoke(null, new object[] { profile });
+                Assert.That(shouldSign, Is.False);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(profile);
+            }
+        }
+
+        [Test]
         public void PrecompiledInstallerRuntime_ServerFirstKeepsInstallerAndPatchRuntime()
         {
             string packagePath = null;

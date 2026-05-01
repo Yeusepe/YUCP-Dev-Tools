@@ -255,6 +255,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Generate/update package.json with dependency information")]
         public bool generatePackageJson = true;
 
+        [Tooltip("Embed optional YUCP metadata and storefront media in the exported package. Disable for a cleaner package surface; package signing is also skipped.")]
+        public bool embedYucpMetadata = true;
+
         [Header("License Protection")]
         [Tooltip("Require consumers to verify a purchase license before derived FBX assets are applied.\n" +
                  "Enables the YUCP Importer license gate; adds com.yucp.importer as a VPM dependency.")]

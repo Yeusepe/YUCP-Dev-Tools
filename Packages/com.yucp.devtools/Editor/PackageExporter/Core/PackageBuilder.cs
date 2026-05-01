@@ -507,6 +507,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return profile != null && profile.requiresLicenseVerification;
         }
 
+        private static bool ShouldEmbedOptionalYucpMetadata(ExportProfile profile)
+        {
+            return profile == null || profile.embedYucpMetadata;
+        }
+
+        private static bool ShouldAttemptPackageSigning(ExportProfile profile)
+        {
+            return ShouldEmbedOptionalYucpMetadata(profile);
+        }
+
+        private static bool ShouldAssignPackageIdForExport(ExportProfile profile)
+        {
+            return profile != null &&
+                   (profile.requiresLicenseVerification ||
+                    profile.publishReleaseAfterExport ||
+                    ShouldEmbedOptionalYucpMetadata(profile));
+        }
+
         private static bool AnyProfileRequiresLicenseVerification(ExportProfile profile)
         {
             if (RequiresLicenseVerification(profile))
@@ -819,9 +837,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                       );
                   }
 
+                bool shouldEmbedYucpMetadata = ShouldEmbedOptionalYucpMetadata(profile);
                 string aliasPackageShellRoot = ResolveAliasPackageShellRoot(packageJsonContent, hasPatchAssets);
                 var embedContext = new PackageEmbedContext(profile, aliasPackageShellRoot);
-                if (profile.icon != null && !IsDefaultGridPlaceholder(profile.icon))
+                if (shouldEmbedYucpMetadata && profile.icon != null && !IsDefaultGridPlaceholder(profile.icon))
                 {
                     string exportAssetPath;
                     string iconPath = embedContext.RegisterTextureForExport(profile.icon, profile.packageName ?? "PackageIcon", "Icons", out exportAssetPath);
@@ -833,7 +852,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
 
-                if (profile.banner != null)
+                if (shouldEmbedYucpMetadata && profile.banner != null)
                 {
                     string exportAssetPath;
                     string bannerPath = embedContext.RegisterTextureForExport(profile.banner, profile.packageName ?? "PackageBanner", "Banners", out exportAssetPath);
@@ -845,7 +864,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
 
-                if (profile.productLinks != null)
+                if (shouldEmbedYucpMetadata && profile.productLinks != null)
                 {
                     foreach (var link in profile.productLinks)
                     {
@@ -885,7 +904,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
 
-                if (profile.galleryImages != null)
+                if (shouldEmbedYucpMetadata && profile.galleryImages != null)
                 {
                     for (int i = 0; i < profile.galleryImages.Count && i < 8; i++)
                     {
@@ -1097,13 +1116,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                      
                      throw new FileNotFoundException($"Package export failed - temp file not created after retries: {tempPackagePath}");
                  }
-                if (string.IsNullOrEmpty(profile.packageId))
+                if (ShouldAssignPackageIdForExport(profile) && string.IsNullOrEmpty(profile.packageId))
                 {
                     PackageIdManager.AssignPackageId(profile);
                 }
 
                 // Generate package metadata JSON
-                string packageMetadataJson = GeneratePackageMetadataJson(profile, embedContext, validAssets);
+                string packageMetadataJson = shouldEmbedYucpMetadata
+                    ? GeneratePackageMetadataJson(profile, embedContext, validAssets)
+                    : null;
                 if (embedContext.UsesAliasPackageShell)
                 {
                     packageJsonContent = MergeAliasPackageMetadataIntoPackageJson(packageJsonContent, packageMetadataJson);
@@ -1182,15 +1203,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 
                 // Assign packageId if not already assigned (before signing)
-                progressCallback?.Invoke(0.81f, "Assigning package ID...");
-                string packageId = PackageIdManager.AssignPackageId(profile);
-                if (string.IsNullOrEmpty(packageId))
+                string packageId = profile.packageId;
+                if (ShouldAssignPackageIdForExport(profile) && string.IsNullOrEmpty(packageId))
                 {
-                    Debug.LogWarning("[PackageBuilder] Failed to assign packageId, continuing without it");
-                }
-                else
-                {
-                    Debug.Log($"[PackageBuilder] Using packageId: {packageId}");
+                    progressCallback?.Invoke(0.81f, "Assigning package ID...");
+                    packageId = PackageIdManager.AssignPackageId(profile);
+                    if (string.IsNullOrEmpty(packageId))
+                    {
+                        Debug.LogWarning("[PackageBuilder] Failed to assign packageId, continuing without it");
+                    }
+                    else
+                    {
+                        Debug.Log($"[PackageBuilder] Using packageId: {packageId}");
+                    }
                 }
 
                 // Sign package if certificate is available, using the fully-prepared contentPackagePath
@@ -1202,7 +1227,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 try
                 {
                     var signingSettings = GetSigningSettings();
-                    if (signingSettings != null && signingSettings.HasValidCertificate())
+                    if (ShouldAttemptPackageSigning(profile) && signingSettings != null && signingSettings.HasValidCertificate())
                     {
                         signingWasRequired = true;
                         progressCallback?.Invoke(0.82f, "Signing package...");

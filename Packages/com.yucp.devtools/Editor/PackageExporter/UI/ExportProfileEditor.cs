@@ -183,6 +183,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("includeDependencies"), new GUIContent("Include Dependencies"));
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("recurseFolders"), new GUIContent("Recurse Folders"));
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("generatePackageJson"), new GUIContent("Generate package.json"));
+                    EditorGUILayout.PropertyField(serializedObject.FindProperty("embedYucpMetadata"), new GUIContent("Embed YUCP Metadata"));
                 });
             }
             EditorGUILayout.EndFoldoutHeaderGroup();
