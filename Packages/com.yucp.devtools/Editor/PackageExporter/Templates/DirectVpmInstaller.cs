@@ -227,8 +227,8 @@ namespace YUCP.DirectVpmInstaller
         private static DependencyInstallChoice PromptForDependencyInstallChoice(string packageList, bool installsImporter, IReadOnlyList<string> installWarnings, Dictionary<string, string> addableRepositories)
         {
             string dialogMessage = installsImporter
-                ? $"This package needs the YUCP Importer and a few creator tools before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}"
-                : $"This package needs a few creator tools before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}";
+                ? $"This package needs the YUCP Importer and a few supporting packages before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}"
+                : $"This package needs a few supporting packages before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}";
 
             if (installWarnings != null && installWarnings.Count > 0)
             {
@@ -240,13 +240,14 @@ namespace YUCP.DirectVpmInstaller
                 string repositoryList = string.Join("\n", addableRepositories.Keys
                     .Select(name => $"  - {GetFriendlyRepositoryLabel(name, addableRepositories[name])}"));
                 dialogMessage +=
-                    "\n\nHow would you like to set this up?\n\n" +
-                    "Install and Add also saves these package sources in your creator tools so future updates are easier:\n\n" +
+                    "\n\nChoose how you'd like to install them:\n\n" +
+                    "Install and Add installs them now and remembers where to download updates from later.\n\n" +
+                    "We'll remember these package sources:\n\n" +
                     repositoryList +
-                    "\n\nJust Install sets up this project now without adding those package sources.";
+                    "\n\nJust Install only sets up this project right now.";
 
                 int choice = EditorUtility.DisplayDialogComplex(
-                    "Install required creator tools",
+                    "Install package requirements",
                     dialogMessage,
                     "Install and Add",
                     "Just Install",
@@ -264,7 +265,7 @@ namespace YUCP.DirectVpmInstaller
             }
 
             bool install = EditorUtility.DisplayDialog(
-                "Install required creator tools",
+                "Install package requirements",
                 dialogMessage + "\n\nContinue now?",
                 "Install",
                 "Not now");
@@ -282,7 +283,7 @@ namespace YUCP.DirectVpmInstaller
             string creatorCompanionRoot = GetCreatorCompanionRoot();
             if (string.IsNullOrWhiteSpace(creatorCompanionRoot))
             {
-                warnings.Add("We installed everything for this project, but couldn't find your creator-tools settings folder to save the package sources for later.");
+                warnings.Add("We installed everything for this project, but couldn't find the settings Unity uses to remember package sources for later.");
                 return false;
             }
 
@@ -358,7 +359,7 @@ namespace YUCP.DirectVpmInstaller
                 }
                 catch (Exception ex)
                 {
-                    warnings.Add($"We installed everything for this project, but couldn't read your creator-tools settings: {ex.Message}");
+                    warnings.Add($"We installed everything for this project, but couldn't read the saved package-source settings: {ex.Message}");
                     return null;
                 }
             }
@@ -530,13 +531,37 @@ namespace YUCP.DirectVpmInstaller
 
         private static string GetFriendlyRepositoryLabel(string repositoryName, string repositoryUrl)
         {
-            if (!string.IsNullOrWhiteSpace(repositoryName))
-                return repositoryName.Trim();
+            string trimmedName = string.IsNullOrWhiteSpace(repositoryName) ? null : repositoryName.Trim();
+            if (!string.IsNullOrWhiteSpace(trimmedName))
+            {
+                string cleanedName = trimmedName.EndsWith(" (Custom)", StringComparison.OrdinalIgnoreCase)
+                    ? trimmedName.Substring(0, trimmedName.Length - " (Custom)".Length).Trim()
+                    : trimmedName;
+
+                if (!IsGenericRepositoryLabel(cleanedName) && !LooksLikePackageIdentifier(cleanedName))
+                    return cleanedName;
+            }
 
             if (Uri.TryCreate(repositoryUrl, UriKind.Absolute, out Uri uri) && !string.IsNullOrWhiteSpace(uri.Host))
                 return uri.Host;
 
             return "This source";
+        }
+
+        private static bool IsGenericRepositoryLabel(string label)
+        {
+            return string.IsNullOrWhiteSpace(label) ||
+                   string.Equals(label, "Custom", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(label, "VPM Repo", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool LooksLikePackageIdentifier(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            string[] parts = value.Split('.');
+            return parts.Length >= 3 && parts.All(part => !string.IsNullOrWhiteSpace(part));
         }
 
         private static string GetFriendlyPackageLabel(string displayName, string packageName)
@@ -1524,7 +1549,7 @@ namespace YUCP.DirectVpmInstaller
                         if (!TryAddRepositoriesForFutureUse(addableRepositories, out List<string> addRepoWarnings))
                         {
                             foreach (string warning in addRepoWarnings)
-                                Debug.LogWarning($"[DirectVpmInstaller] {warning}");
+                    Debug.LogWarning($"[DirectVpmInstaller] {warning}");
                             if (addRepoWarnings.Count > 0)
                             {
                                 EditorUtility.DisplayDialog(

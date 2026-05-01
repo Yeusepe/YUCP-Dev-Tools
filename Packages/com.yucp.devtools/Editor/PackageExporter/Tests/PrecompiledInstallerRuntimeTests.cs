@@ -305,6 +305,32 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
+        public void DirectVpmInstaller_FriendlyRepositoryLabel_FallsBackToHostForGenericCustomNames()
+        {
+            Type directInstallerType = GetDirectInstallerType();
+            MethodInfo method = directInstallerType.GetMethod(
+                "GetFriendlyRepositoryLabel",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+
+            string genericCustomLabel = method.Invoke(null, new object[]
+            {
+                "com.aiczk.asset-previewer (Custom)",
+                "https://packages.aiczk.com/vpm.json",
+            }) as string;
+
+            string emptyCustomLabel = method.Invoke(null, new object[]
+            {
+                "Custom",
+                "https://repo.example.com/index.json",
+            }) as string;
+
+            Assert.That(genericCustomLabel, Is.EqualTo("packages.aiczk.com"));
+            Assert.That(emptyCustomLabel, Is.EqualTo("repo.example.com"));
+        }
+
+        [Test]
         public void DirectVpmInstaller_OrganizeYucpArtifacts_DoesNotCreateEmptyPackageFolderWhenNothingNeedsMoving()
         {
             Type directInstallerType = GetDirectInstallerType();
