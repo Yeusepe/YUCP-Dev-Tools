@@ -42,6 +42,13 @@ namespace YUCP.DirectVpmInstaller
             public Dictionary<string, string> requestHeaders;
         }
 
+        private enum DependencyInstallChoice
+        {
+            NotNow = 0,
+            InstallOnly = 1,
+            InstallAndAdd = 2,
+        }
+
         internal static readonly string[] GeneratedInstallerArtifactPatterns = new[]
         {
             "YUCP_InstallerPreflight_*.cs",
@@ -163,6 +170,290 @@ namespace YUCP.DirectVpmInstaller
                 repositories[vrchatOfficialName] = vrchatOfficialUrl;
             if (!repositories.ContainsKey(vrchatCuratedName))
                 repositories[vrchatCuratedName] = vrchatCuratedUrl;
+        }
+
+        private static string GetCreatorCompanionRoot()
+        {
+            return GetCreatorCompanionRootForPlatform(
+                Application.platform,
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                Environment.GetFolderPath(Environment.SpecialFolder.Personal),
+                Environment.GetEnvironmentVariable("XDG_DATA_HOME"));
+        }
+
+        private static string GetCreatorCompanionRootForPlatform(RuntimePlatform platform, string localApplicationData, string homeDirectory, string xdgDataHome)
+        {
+            switch (platform)
+            {
+                case RuntimePlatform.WindowsEditor:
+                    if (string.IsNullOrWhiteSpace(localApplicationData))
+                        return null;
+                    return Path.Combine(localApplicationData, "VRChatCreatorCompanion");
+
+                case RuntimePlatform.LinuxEditor:
+                    string linuxDataRoot = !string.IsNullOrWhiteSpace(xdgDataHome)
+                        ? xdgDataHome
+                        : (!string.IsNullOrWhiteSpace(homeDirectory)
+                            ? Path.Combine(homeDirectory, ".local", "share")
+                            : null);
+                    return string.IsNullOrWhiteSpace(linuxDataRoot)
+                        ? null
+                        : Path.Combine(linuxDataRoot, "VRChatCreatorCompanion");
+
+                case RuntimePlatform.OSXEditor:
+                    return string.IsNullOrWhiteSpace(homeDirectory)
+                        ? null
+                        : Path.Combine(homeDirectory, "Library", "Application Support", "VRChatCreatorCompanion");
+
+                default:
+                    return null;
+            }
+        }
+
+        private static string GetCreatorCompanionSettingsPath(string creatorCompanionRoot)
+        {
+            return string.IsNullOrWhiteSpace(creatorCompanionRoot)
+                ? null
+                : Path.Combine(creatorCompanionRoot, "settings.json");
+        }
+
+        private static string GetCreatorCompanionReposPath(string creatorCompanionRoot)
+        {
+            return string.IsNullOrWhiteSpace(creatorCompanionRoot)
+                ? null
+                : Path.Combine(creatorCompanionRoot, "Repos");
+        }
+
+        private static DependencyInstallChoice PromptForDependencyInstallChoice(string packageList, bool installsImporter, IReadOnlyList<string> installWarnings, Dictionary<string, string> addableRepositories)
+        {
+            string dialogMessage = installsImporter
+                ? $"This package needs the YUCP Importer and a few creator tools before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}"
+                : $"This package needs a few creator tools before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}";
+
+            if (installWarnings != null && installWarnings.Count > 0)
+            {
+                dialogMessage += "\n\nGood to know:\n\n" + string.Join("\n\n", installWarnings);
+            }
+
+            if (addableRepositories != null && addableRepositories.Count > 0)
+            {
+                string repositoryList = string.Join("\n", addableRepositories.Keys
+                    .Select(name => $"  - {GetFriendlyRepositoryLabel(name, addableRepositories[name])}"));
+                dialogMessage +=
+                    "\n\nHow would you like to set this up?\n\n" +
+                    "Install and Add also saves these package sources in your creator tools so future updates are easier:\n\n" +
+                    repositoryList +
+                    "\n\nJust Install sets up this project now without adding those package sources.";
+
+                int choice = EditorUtility.DisplayDialogComplex(
+                    "Install required creator tools",
+                    dialogMessage,
+                    "Install and Add",
+                    "Just Install",
+                    "Not now");
+
+                switch (choice)
+                {
+                    case 0:
+                        return DependencyInstallChoice.InstallAndAdd;
+                    case 1:
+                        return DependencyInstallChoice.InstallOnly;
+                    default:
+                        return DependencyInstallChoice.NotNow;
+                }
+            }
+
+            bool install = EditorUtility.DisplayDialog(
+                "Install required creator tools",
+                dialogMessage + "\n\nContinue now?",
+                "Install",
+                "Not now");
+
+            return install ? DependencyInstallChoice.InstallOnly : DependencyInstallChoice.NotNow;
+        }
+
+        private static bool TryAddRepositoriesForFutureUse(Dictionary<string, string> repositories, out List<string> warnings)
+        {
+            warnings = new List<string>();
+
+            if (repositories == null || repositories.Count == 0)
+                return true;
+
+            string creatorCompanionRoot = GetCreatorCompanionRoot();
+            if (string.IsNullOrWhiteSpace(creatorCompanionRoot))
+            {
+                warnings.Add("We installed everything for this project, but couldn't find your creator-tools settings folder to save the package sources for later.");
+                return false;
+            }
+
+            string settingsPath = GetCreatorCompanionSettingsPath(creatorCompanionRoot);
+            string reposPath = GetCreatorCompanionReposPath(creatorCompanionRoot);
+
+            try
+            {
+                Directory.CreateDirectory(creatorCompanionRoot);
+                Directory.CreateDirectory(reposPath);
+
+                JObject settings = LoadCreatorCompanionSettings(settingsPath, warnings);
+                if (settings == null)
+                    return false;
+
+                foreach (var repository in repositories)
+                {
+                    string repositoryUrl = repository.Value?.Trim();
+                    if (!IsTrustedWebUrl(repositoryUrl))
+                    {
+                        warnings.Add($"Skipped an untrusted package source: {repositoryUrl}");
+                        continue;
+                    }
+
+                    string repositoryName = GetFriendlyRepositoryLabel(repository.Key, repositoryUrl);
+                    string cachedRepositoryJson = null;
+                    string repoId = null;
+
+                    try
+                    {
+                        cachedRepositoryJson = DownloadRepositoryJson(repositoryUrl);
+                        if (!string.IsNullOrWhiteSpace(cachedRepositoryJson))
+                        {
+                            JObject repoJson = JObject.Parse(cachedRepositoryJson);
+                            repoId = repoJson["id"]?.ToString();
+                            string declaredName = repoJson["name"]?.ToString();
+                            if (!string.IsNullOrWhiteSpace(declaredName))
+                                repositoryName = declaredName.Trim();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[DirectVpmInstaller] Failed to prefetch repository {repositoryUrl}: {ex.Message}");
+                    }
+
+                    string localPath = ResolveRepositoryCachePath(settings, reposPath, repositoryName, repositoryUrl, repoId);
+                    UpsertUserRepoSetting(settings, repositoryName, repositoryUrl, localPath, repoId);
+
+                    if (!string.IsNullOrWhiteSpace(cachedRepositoryJson))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(localPath));
+                        File.WriteAllText(localPath, cachedRepositoryJson);
+                    }
+                }
+
+                File.WriteAllText(settingsPath, settings.ToString(Newtonsoft.Json.Formatting.Indented));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                warnings.Add($"We installed everything for this project, but couldn't save the package sources for later: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static JObject LoadCreatorCompanionSettings(string settingsPath, List<string> warnings)
+        {
+            if (File.Exists(settingsPath))
+            {
+                try
+                {
+                    return JObject.Parse(File.ReadAllText(settingsPath));
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add($"We installed everything for this project, but couldn't read your creator-tools settings: {ex.Message}");
+                    return null;
+                }
+            }
+
+            return new JObject();
+        }
+
+        private static string DownloadRepositoryJson(string repositoryUrl)
+        {
+            using (var client = new WebClient())
+            {
+                client.Headers.Add(HttpRequestHeader.UserAgent, "VCC/2.3.0");
+                return client.DownloadString(repositoryUrl);
+            }
+        }
+
+        private static string ResolveRepositoryCachePath(JObject settings, string reposPath, string repositoryName, string repositoryUrl, string repoId)
+        {
+            JObject existingEntry = FindUserRepoSetting(settings, repositoryUrl, repoId);
+            string existingLocalPath = existingEntry?["localPath"]?.ToString();
+            if (!string.IsNullOrWhiteSpace(existingLocalPath))
+                return existingLocalPath;
+
+            return Path.Combine(reposPath, BuildRepositoryCacheFileName(repositoryName, repoId, repositoryUrl));
+        }
+
+        private static JObject FindUserRepoSetting(JObject settings, string repositoryUrl, string repoId)
+        {
+            JArray userRepos = GetOrCreateUserRepos(settings);
+            foreach (JToken token in userRepos)
+            {
+                JObject entry = token as JObject;
+                if (entry == null)
+                    continue;
+
+                string existingUrl = entry["url"]?.ToString();
+                if (!string.IsNullOrWhiteSpace(existingUrl) &&
+                    string.Equals(existingUrl.Trim(), repositoryUrl?.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    return entry;
+                }
+
+                if (!string.IsNullOrWhiteSpace(repoId) &&
+                    string.Equals(entry["id"]?.ToString(), repoId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return entry;
+                }
+            }
+
+            return null;
+        }
+
+        private static void UpsertUserRepoSetting(JObject settings, string repositoryName, string repositoryUrl, string localPath, string repoId)
+        {
+            JArray userRepos = GetOrCreateUserRepos(settings);
+            JObject existingEntry = FindUserRepoSetting(settings, repositoryUrl, repoId);
+            if (existingEntry == null)
+            {
+                existingEntry = new JObject();
+                userRepos.Add(existingEntry);
+            }
+
+            existingEntry["name"] = repositoryName;
+            existingEntry["url"] = repositoryUrl;
+            existingEntry["localPath"] = localPath;
+
+            if (!string.IsNullOrWhiteSpace(repoId))
+                existingEntry["id"] = repoId;
+        }
+
+        private static JArray GetOrCreateUserRepos(JObject settings)
+        {
+            if (!(settings["userRepos"] is JArray userRepos))
+            {
+                userRepos = new JArray();
+                settings["userRepos"] = userRepos;
+            }
+
+            return userRepos;
+        }
+
+        private static string BuildRepositoryCacheFileName(string repositoryName, string repoId, string repositoryUrl)
+        {
+            string preferredName = !string.IsNullOrWhiteSpace(repoId) ? repoId : repositoryName;
+            string safeName = MakeSafeFolderName(preferredName);
+            if (string.IsNullOrWhiteSpace(safeName))
+                safeName = "repo";
+
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                string source = string.IsNullOrWhiteSpace(repositoryUrl) ? safeName : repositoryUrl.Trim();
+                byte[] hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(source));
+                string shortHash = BitConverter.ToString(hashBytes).Replace("-", string.Empty).Substring(0, 12).ToLowerInvariant();
+                return $"{safeName}-{shortHash}.json";
+            }
         }
 
         private static bool IsTrustedWebUrl(string url)
@@ -988,7 +1279,8 @@ namespace YUCP.DirectVpmInstaller
                 }
                 
                 // Seed repository list from the bundled package (if any)
-                var repositories = LoadTrustedRepositories(vpmRepositories);
+                var addableRepositories = LoadTrustedRepositories(vpmRepositories);
+                var repositories = new Dictionary<string, string>(addableRepositories, StringComparer.OrdinalIgnoreCase);
                 AddBuiltInRepositories(repositories);
 
                 // Direct (top-level) dependencies for the UI prompt
@@ -1056,26 +1348,16 @@ namespace YUCP.DirectVpmInstaller
                     return $"  - {displayName}@{FormatVersionRequirementForDisplay(p.Item2)}";
                 }));
                 bool installsImporter = packagesToInstall.Any(p => string.Equals(p.Item1, "com.yucp.importer", StringComparison.OrdinalIgnoreCase));
-                string dialogMessage = installsImporter
-                    ? $"This package needs the YUCP Importer and a few creator tools before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}\n\nContinue now?"
-                    : $"This package needs a few creator tools before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}\n\nContinue now?";
-                if (installWarnings.Count > 0)
-                {
-                    dialogMessage += "\n\nBefore you continue:\n\n" + string.Join("\n\n", installWarnings);
-                }
-                bool install = EditorUtility.DisplayDialog(
-                    "Install required creator tools",
-                    dialogMessage,
-                    "Install",
-                    "Not now"
-                );
+                DependencyInstallChoice installChoice = PromptForDependencyInstallChoice(packageList, installsImporter, installWarnings, addableRepositories);
                 
-                if (!install)
+                if (installChoice == DependencyInstallChoice.NotNow)
                 {
                     Debug.LogWarning("[DirectVpmInstaller] Dependencies not installed. Compilation errors may occur.");
                     CleanupTemporaryFiles(packageJsonPath);
                     return;
                 }
+
+                bool addRepositoriesForFutureUse = installChoice == DependencyInstallChoice.InstallAndAdd;
                 
                 // Lock assemblies and disable auto-refresh
                 EditorApplication.LockReloadAssemblies();
@@ -1237,6 +1519,22 @@ namespace YUCP.DirectVpmInstaller
                         }
                     }
                     
+                    if (addRepositoriesForFutureUse)
+                    {
+                        if (!TryAddRepositoriesForFutureUse(addableRepositories, out List<string> addRepoWarnings))
+                        {
+                            foreach (string warning in addRepoWarnings)
+                                Debug.LogWarning($"[DirectVpmInstaller] {warning}");
+                            if (addRepoWarnings.Count > 0)
+                            {
+                                EditorUtility.DisplayDialog(
+                                    "Project setup finished",
+                                    string.Join("\n\n", addRepoWarnings),
+                                    "OK");
+                            }
+                        }
+                    }
+
                     // Clean up temporary files
                     InstallerTxn.SetMarker("complete");
                     CleanupTemporaryFiles(packageJsonPath);

@@ -671,38 +671,33 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private static List<VpmRepositorySource> GetVpmRepositorySources()
         {
             var repos = new List<VpmRepositorySource>();
-
-            string basePath = Path.Combine(
-                System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
-                "VRChatCreatorCompanion",
-                "Repos"
-            );
+            string creatorCompanionRoot = GetCreatorCompanionRoot();
+            string reposRoot = string.IsNullOrEmpty(creatorCompanionRoot)
+                ? null
+                : Path.Combine(creatorCompanionRoot, "Repos");
+            string settingsPath = string.IsNullOrEmpty(creatorCompanionRoot)
+                ? null
+                : Path.Combine(creatorCompanionRoot, "settings.json");
 
             repos.Add(new VpmRepositorySource
             {
                 name = "VRChat Official",
                 url = "https://packages.vrchat.com/official?download",
-                localPath = Path.Combine(basePath, "vrc-official.json")
+                localPath = string.IsNullOrEmpty(reposRoot) ? null : Path.Combine(reposRoot, "vrc-official.json")
             });
 
             repos.Add(new VpmRepositorySource
             {
                 name = "VRChat Curated",
                 url = "https://packages.vrchat.com/curated?download",
-                localPath = Path.Combine(basePath, "vrc-curated.json")
+                localPath = string.IsNullOrEmpty(reposRoot) ? null : Path.Combine(reposRoot, "vrc-curated.json")
             });
 
             try
             {
-                string vccSettingsPath = Path.Combine(
-                    System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
-                    "VRChatCreatorCompanion",
-                    "settings.json"
-                );
-
-                if (File.Exists(vccSettingsPath))
+                if (!string.IsNullOrEmpty(settingsPath) && File.Exists(settingsPath))
                 {
-                    var settings = JObject.Parse(File.ReadAllText(vccSettingsPath));
+                    var settings = JObject.Parse(File.ReadAllText(settingsPath));
                     var userRepos = settings["userRepos"] as JArray;
 
                     if (userRepos != null)
@@ -734,6 +729,39 @@ namespace YUCP.DevTools.Editor.PackageExporter
             catch { }
 
             return repos;
+        }
+
+        private static string GetCreatorCompanionRoot()
+        {
+            switch (Application.platform)
+            {
+                case RuntimePlatform.WindowsEditor:
+                    string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                    return string.IsNullOrWhiteSpace(localAppData)
+                        ? null
+                        : Path.Combine(localAppData, "VRChatCreatorCompanion");
+
+                case RuntimePlatform.LinuxEditor:
+                    string xdgDataHome = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+                    string homeDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+                    string linuxDataRoot = !string.IsNullOrWhiteSpace(xdgDataHome)
+                        ? xdgDataHome
+                        : (!string.IsNullOrWhiteSpace(homeDirectory)
+                            ? Path.Combine(homeDirectory, ".local", "share")
+                            : null);
+                    return string.IsNullOrWhiteSpace(linuxDataRoot)
+                        ? null
+                        : Path.Combine(linuxDataRoot, "VRChatCreatorCompanion");
+
+                case RuntimePlatform.OSXEditor:
+                    string macHome = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+                    return string.IsNullOrWhiteSpace(macHome)
+                        ? null
+                        : Path.Combine(macHome, "Library", "Application Support", "VRChatCreatorCompanion");
+
+                default:
+                    return null;
+            }
         }
 
         private static bool TryLoadRepoJson(VpmRepositorySource repo, out JObject repoJson)

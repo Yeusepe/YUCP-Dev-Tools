@@ -222,6 +222,89 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
+        public void DirectVpmInstaller_CreatorCompanionRoot_UsesLinuxXdgDataHome()
+        {
+            Type directInstallerType = GetDirectInstallerType();
+            MethodInfo method = directInstallerType.GetMethod(
+                "GetCreatorCompanionRootForPlatform",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+
+            string resolvedRoot = method.Invoke(null, new object[]
+            {
+                RuntimePlatform.LinuxEditor,
+                @"C:\Users\Test\AppData\Local",
+                "/home/tester",
+                "/var/test-xdg",
+            }) as string;
+
+            Assert.That(resolvedRoot, Is.Not.Null);
+            Assert.That(resolvedRoot.Replace('\\', '/'), Is.EqualTo("/var/test-xdg/VRChatCreatorCompanion"));
+        }
+
+        [Test]
+        public void DirectVpmInstaller_CreatorCompanionRoot_FallsBackToLinuxLocalShare()
+        {
+            Type directInstallerType = GetDirectInstallerType();
+            MethodInfo method = directInstallerType.GetMethod(
+                "GetCreatorCompanionRootForPlatform",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+
+            string resolvedRoot = method.Invoke(null, new object[]
+            {
+                RuntimePlatform.LinuxEditor,
+                @"C:\Users\Test\AppData\Local",
+                "/home/tester",
+                null,
+            }) as string;
+
+            Assert.That(resolvedRoot, Is.Not.Null);
+            Assert.That(resolvedRoot.Replace('\\', '/'), Is.EqualTo("/home/tester/.local/share/VRChatCreatorCompanion"));
+        }
+
+        [Test]
+        public void DirectVpmInstaller_UpsertUserRepoSetting_UpdatesExistingEntryByUrl()
+        {
+            Type directInstallerType = GetDirectInstallerType();
+            MethodInfo method = directInstallerType.GetMethod(
+                "UpsertUserRepoSetting",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+
+            JObject settings = new JObject();
+
+            method.Invoke(null, new object[]
+            {
+                settings,
+                "First Repo Name",
+                "https://packages.example.com/index.json",
+                @"C:\Cache\repo-a.json",
+                null,
+            });
+
+            method.Invoke(null, new object[]
+            {
+                settings,
+                "Updated Repo Name",
+                "https://packages.example.com/index.json",
+                @"C:\Cache\repo-b.json",
+                "com.example.repo",
+            });
+
+            JArray userRepos = settings["userRepos"] as JArray;
+            Assert.That(userRepos, Is.Not.Null);
+            Assert.That(userRepos.Count, Is.EqualTo(1));
+            Assert.That(userRepos[0]["name"]?.ToString(), Is.EqualTo("Updated Repo Name"));
+            Assert.That(userRepos[0]["url"]?.ToString(), Is.EqualTo("https://packages.example.com/index.json"));
+            Assert.That(userRepos[0]["localPath"]?.ToString(), Is.EqualTo(@"C:\Cache\repo-b.json"));
+            Assert.That(userRepos[0]["id"]?.ToString(), Is.EqualTo("com.example.repo"));
+        }
+
+        [Test]
         public void DirectVpmInstaller_OrganizeYucpArtifacts_DoesNotCreateEmptyPackageFolderWhenNothingNeedsMoving()
         {
             Type directInstallerType = GetDirectInstallerType();
