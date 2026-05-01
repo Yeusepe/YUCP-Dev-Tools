@@ -29,6 +29,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         
         private const string DefaultGridPlaceholderPath = "Packages/com.yucp.devtools/Resources/DefaultGrid.png";
         private const string InstalledPackagesRoot = "Packages/yucp.installed-packages";
+        private const string TempPackageRoot = "Packages/com.yucp.temp";
         private const string EmbeddedArtifactsFolderName = "Embedded";
         private const string TempInstallFolderName = "_temp";
         private const string TempPatchExportMarkerKey = "YUCP.PackageBuilder.ExportingTempPatchAssets";
@@ -36,7 +37,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private const string PrecompiledInstallerRuntimeTargetFileName = "YUCP.DirectVpmInstaller.Template.dll";
         private const string PrecompiledPatchRuntimePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/YUCP.PatchRuntime.dll";
         private const string PrecompiledPatchRuntimeTargetFileName = "YUCP.PatchRuntime.dll";
-        private const string TempPatchEditorRoot = "Packages/com.yucp.temp/Editor";
+        private const string TempPatchEditorRoot = TempPackageRoot + "/Editor";
         
         private static bool IsDefaultGridPlaceholder(Texture2D texture)
         {
@@ -67,8 +68,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public readonly string SafePackageName;
             public readonly string PackageShellRoot;
             public readonly bool UsesAliasPackageShell;
+            public readonly bool UsesInstalledPackageWorkspace;
             public readonly string EmbeddedRoot;
             public readonly string TempInstallRoot;
+            public readonly string InstallerRoot;
             public readonly List<EmbeddedAsset> Assets = new List<EmbeddedAsset>();
             public readonly HashSet<string> MetadataFallbackAssetPaths =
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -89,12 +92,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 SafePackageName = MakeSafeFolderName(baseName);
                 PackageShellRoot = packageShellRoot;
                 UsesAliasPackageShell = !string.IsNullOrWhiteSpace(packageShellRoot);
+                UsesInstalledPackageWorkspace = ShouldEmbedOptionalYucpMetadata(profile);
                 EmbeddedRoot = UsesAliasPackageShell
                     ? $"{PackageShellRoot}/{EmbeddedArtifactsFolderName}"
                     : $"{InstalledPackagesRoot}/{SafePackageName}/{EmbeddedArtifactsFolderName}";
                 TempInstallRoot = UsesAliasPackageShell
                     ? null
-                    : $"{InstalledPackagesRoot}/{SafePackageName}/{TempInstallFolderName}";
+                    : $"{(UsesInstalledPackageWorkspace ? InstalledPackagesRoot : TempPackageRoot)}/{SafePackageName}/{TempInstallFolderName}";
+                InstallerRoot = UsesAliasPackageShell
+                    ? null
+                    : UsesInstalledPackageWorkspace ? $"{InstalledPackagesRoot}/Editor" : TempPatchEditorRoot;
             }
 
             public string RegisterTextureForExport(Texture2D texture, string baseName, string subfolder, out string exportAssetPath)
@@ -3146,7 +3153,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
 
                 // 1d. Ensure installed-packages container is a valid local package
-                if (embedContext != null && !usesAliasPackageShell)
+                if (embedContext != null && !usesAliasPackageShell && embedContext.UsesInstalledPackageWorkspace)
                 {
                     string installedPackageGuid = Guid.NewGuid().ToString("N");
                     string installedPackageFolder = Path.Combine(tempExtractDir, installedPackageGuid);
@@ -3239,7 +3246,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 
                 // 2b. Inject DirectVpmInstaller runtime
-                string installerRoot = embedContext != null ? $"{InstalledPackagesRoot}/Editor" : "Assets/Editor";
+                string installerRoot = embedContext != null ? embedContext.InstallerRoot : "Assets/Editor";
                 bool deferInstallerActivation = embedContext != null && !usesAliasPackageShell;
                 string installerScriptPath = null;
                 string[] foundScripts = AssetDatabase.FindAssets("DirectVpmInstaller t:Script");
@@ -3414,22 +3421,31 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 
                 // 2c. Inject patch runtime scripts if patch assets are present
-                if (hasPatchAssets)
+                bool shouldInjectTempPackageShell =
+                    hasPatchAssets ||
+                    (deferInstallerActivation &&
+                     embedContext != null &&
+                     !embedContext.UsesInstalledPackageWorkspace);
+
+                if (shouldInjectTempPackageShell)
                 {
-                    progressCallback?.Invoke(0.70f, "Injecting derived FBX runtime binaries...");
-
-                    if (!TryInjectPrecompiledPatchRuntime(tempExtractDir))
+                    if (hasPatchAssets)
                     {
-                        throw new FileNotFoundException($"Required patch runtime binary not found at {PrecompiledPatchRuntimePath}.");
+                        progressCallback?.Invoke(0.70f, "Injecting derived FBX runtime binaries...");
+
+                        if (!TryInjectPrecompiledPatchRuntime(tempExtractDir))
+                        {
+                            throw new FileNotFoundException($"Required patch runtime binary not found at {PrecompiledPatchRuntimePath}.");
+                        }
+
+                        if (!usingPrecompiledInstallerRuntime &&
+                            !TryInjectPrecompiledInstallerRuntime(tempExtractDir, TempPatchEditorRoot))
+                        {
+                            throw new FileNotFoundException($"Required patch importer binary not found at {PrecompiledInstallerRuntimePath}.");
+                        }
                     }
 
-                    if (!usingPrecompiledInstallerRuntime &&
-                        !TryInjectPrecompiledInstallerRuntime(tempExtractDir, TempPatchEditorRoot))
-                    {
-                        throw new FileNotFoundException($"Required patch importer binary not found at {PrecompiledInstallerRuntimePath}.");
-                    }
-                    
-                    // Also inject package.json for com.yucp.temp (required for Unity to recognize it as a package)
+                    // Ensure the temporary package shell exists whenever temp patch/runtime assets are injected there.
                     string tempPackageJsonPath = Path.Combine(Application.dataPath, "..", "Packages", "com.yucp.temp", "package.json");
                     string tempPackageJsonGuid = Guid.NewGuid().ToString("N");
                     string tempPackageJsonFolder = Path.Combine(tempExtractDir, tempPackageJsonGuid);

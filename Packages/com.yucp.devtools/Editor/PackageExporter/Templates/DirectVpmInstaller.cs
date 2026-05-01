@@ -74,11 +74,13 @@ namespace YUCP.DirectVpmInstaller
             try
             {
                 string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                string installedRoot = Path.Combine(projectRoot, "Packages", "yucp.installed-packages");
-                if (Directory.Exists(installedRoot) &&
-                    Directory.GetFiles(installedRoot, "YUCP_TempInstall_*.json", SearchOption.AllDirectories).Length > 0)
+                foreach (string searchRoot in GetTempInstallRoots(projectRoot))
                 {
-                    return true;
+                    if (Directory.Exists(searchRoot) &&
+                        Directory.GetFiles(searchRoot, "YUCP_TempInstall_*.json", SearchOption.AllDirectories).Length > 0)
+                    {
+                        return true;
+                    }
                 }
 
                 return Directory.GetFiles(Application.dataPath, "YUCP_TempInstall_*.json", SearchOption.TopDirectoryOnly).Length > 0;
@@ -95,7 +97,17 @@ namespace YUCP.DirectVpmInstaller
             return new[]
             {
                 Path.Combine(Application.dataPath, "Editor"),
-                Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor")
+                Path.Combine(projectRoot, "Packages", "yucp.installed-packages", "Editor"),
+                Path.Combine(projectRoot, "Packages", "com.yucp.temp", "Editor")
+            };
+        }
+
+        private static string[] GetTempInstallRoots(string projectRoot)
+        {
+            return new[]
+            {
+                Path.Combine(projectRoot, "Packages", "yucp.installed-packages"),
+                Path.Combine(projectRoot, "Packages", "com.yucp.temp")
             };
         }
 
@@ -858,10 +870,14 @@ namespace YUCP.DirectVpmInstaller
             try
             {
                 string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                string installedRoot = Path.Combine(projectRoot, "Packages", "yucp.installed-packages");
-                if (Directory.Exists(installedRoot))
+                foreach (string searchRoot in GetTempInstallRoots(projectRoot))
                 {
-                    tempJsonFiles = Directory.GetFiles(installedRoot, "YUCP_TempInstall_*.json", SearchOption.AllDirectories);
+                    if (!Directory.Exists(searchRoot))
+                        continue;
+
+                    tempJsonFiles = Directory.GetFiles(searchRoot, "YUCP_TempInstall_*.json", SearchOption.AllDirectories);
+                    if (tempJsonFiles.Length > 0)
+                        break;
                 }
             }
             catch { }

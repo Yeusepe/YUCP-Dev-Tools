@@ -570,8 +570,11 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 });
 
                 string[] pathnames = ReadPackagePathnames(packagePath);
-                Assert.That(pathnames, Has.Some.Matches<string>(path => path.Contains("/YUCP_TempInstall_", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.Some.Matches<string>(path => path.StartsWith("Packages/com.yucp.temp/Clean-Export/_temp/YUCP_TempInstall_", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.Some.EqualTo("Packages/com.yucp.temp/package.json"));
+                Assert.That(pathnames, Has.Some.EqualTo("Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Template.dll"));
                 Assert.That(pathnames, Has.None.Matches<string>(path => path.EndsWith("YUCP_PackageInfo.json", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.None.Matches<string>(path => path.StartsWith("Packages/yucp.installed-packages/", StringComparison.Ordinal)));
             }
             finally
             {
@@ -603,6 +606,23 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             {
                 UnityEngine.Object.DestroyImmediate(profile);
             }
+        }
+
+        [Test]
+        public void DirectInstallerRuntime_SearchesTempPackageWorkspace()
+        {
+            Type directInstallerType = GetDirectInstallerType();
+            MethodInfo method = directInstallerType.GetMethod(
+                "GetInstallerEditorPaths",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string[] paths = method.Invoke(null, new object[] { projectRoot }) as string[];
+
+            Assert.That(paths, Is.Not.Null);
+            Assert.That(paths, Has.Some.EqualTo(Path.Combine(projectRoot, "Packages", "com.yucp.temp", "Editor")));
         }
 
         [Test]
