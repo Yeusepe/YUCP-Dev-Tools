@@ -1,5 +1,5 @@
 {
-  "name": "YUCP.DirectVpmInstaller.Template",
+  "name": "YUCP.DirectVpmInstaller.Template.Source",
   "rootNamespace": "YUCP.DirectVpmInstaller",
   "references": [],
   "includePlatforms": [
@@ -16,7 +16,6 @@
   "versionDefines": [],
   "noEngineReferences": false
 }
-
 
 
 

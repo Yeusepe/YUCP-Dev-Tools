@@ -3,9 +3,6 @@
     "com.vrcfury.vrcfury": {
       "version": "1.1265.0"
     },
-    "com.vrchat.core.vpm-resolver": {
-      "version": "0.1.29"
-    },
     "com.vrchat.base": {
       "version": "3.9.0"
     },
@@ -41,10 +38,6 @@
       "version": "1.1280.0",
       "dependencies": {}
     },
-    "com.vrchat.core.vpm-resolver": {
-      "version": "0.1.29",
-      "dependencies": {}
-    },
     "com.vrchat.base": {
       "version": "3.10.1",
       "dependencies": {}
@@ -69,8 +62,7 @@
     "com.yucp.components": {
       "version": "0.3.33",
       "dependencies": {
-        "com.vrcfury.vrcfury": ">=1.1258.0",
-        "com.vrchat.core.vpm-resolver": ">=0.1.27"
+        "com.vrcfury.vrcfury": ">=1.1258.0"
       }
     },
     "vrchat.blackstartx.gesture-manager": {

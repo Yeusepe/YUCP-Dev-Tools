@@ -47,6 +47,28 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
+        public void DirectVpmInstallerTemplateAsmdef_DoesNotReusePrecompiledRuntimeAssemblyName()
+        {
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string asmdefPath = Path.Combine(
+                projectRoot,
+                "Packages",
+                "com.yucp.devtools",
+                "Editor",
+                "PackageExporter",
+                "Templates",
+                "DirectVpmInstaller.asmdef");
+
+            Assert.That(File.Exists(asmdefPath), Is.True, "Expected the DirectVpmInstaller template asmdef to exist.");
+
+            JObject asmdef = JObject.Parse(File.ReadAllText(asmdefPath));
+            string assemblyName = asmdef.Value<string>("name");
+
+            Assert.That(assemblyName, Is.EqualTo("YUCP.DirectVpmInstaller.Template.Source"));
+            Assert.That(assemblyName, Is.Not.EqualTo("YUCP.DirectVpmInstaller.Template"));
+        }
+
+        [Test]
         public void PrecompiledInstallerRuntime_CanInjectIntoTempPatchEditorFolder()
         {
             MethodInfo method = typeof(PackageBuilder).GetMethod(
