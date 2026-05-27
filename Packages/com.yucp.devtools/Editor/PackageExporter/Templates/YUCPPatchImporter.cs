@@ -457,6 +457,22 @@ namespace YUCP.PatchCleanup
             }
         }
 
+        private static readonly HashSet<string> PatchNativeLibraryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "hdiffz.dll",
+            "hpatchz.dll",
+            "hdiffinfo.dll",
+            "libhdiffz.so",
+            "libhpatchz.so",
+            "libhdiffinfo.so",
+        };
+
+        private static bool IsYucpPatchNativeLibrary(string path)
+        {
+            return !string.IsNullOrEmpty(path) &&
+                   PatchNativeLibraryNames.Contains(Path.GetFileName(path));
+        }
+
         private static void CleanupDllsOnLoad()
         {
             if (s_hasCleanedOnLoad) return;
@@ -464,7 +480,7 @@ namespace YUCP.PatchCleanup
 
             try
             {
-                WriteLog("Checking for DLLs to clean up on editor load...");
+                WriteLog("Checking for native patch libraries to clean up on editor load...");
 
                 string pluginsPath = "Packages/com.yucp.temp/Plugins";
                 if (!AssetDatabase.IsValidFolder(pluginsPath))
@@ -478,25 +494,24 @@ namespace YUCP.PatchCleanup
                 foreach (var guid in dllGuids)
                 {
                     string path = AssetDatabase.GUIDToAssetPath(guid);
-                    if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                    if (IsYucpPatchNativeLibrary(path))
                     {
                         try
                         {
-                            // Unload the DLL first if possible
+                            // Unload the native library first if possible
                             var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
                             if (asset != null)
                             {
                                 Resources.UnloadAsset(asset);
                             }
 
-                            // Delete the DLL
                             AssetDatabase.DeleteAsset(path);
                             deletedCount++;
-                            WriteLog($"  Cleaned up DLL on load: {path}");
+                            WriteLog($"  Cleaned up native patch library on load: {path}");
                         }
                         catch (Exception ex)
                         {
-                            WriteLog($"  Warning: Could not delete DLL {path}: {ex.Message}");
+                            WriteLog($"  Warning: Could not delete native patch library {path}: {ex.Message}");
                         }
                     }
                 }
@@ -504,7 +519,7 @@ namespace YUCP.PatchCleanup
                 if (deletedCount > 0)
                 {
                     AssetDatabase.Refresh();
-                    WriteLog($"Cleaned up {deletedCount} DLL(s) on editor load");
+                    WriteLog($"Cleaned up {deletedCount} native patch librar(y/ies) on editor load");
                 }
             }
             catch (Exception ex)
@@ -517,7 +532,7 @@ namespace YUCP.PatchCleanup
         {
             try
             {
-                WriteLog("Deleting DLLs from Plugins folder before patching to ensure Library/YUCP/ DLLs are used...");
+                WriteLog("Deleting native patch libraries from Plugins folder before patching to ensure Library/YUCP/ copies are used...");
 
                 string pluginsPath = "Packages/com.yucp.temp/Plugins";
                 if (!AssetDatabase.IsValidFolder(pluginsPath))
@@ -531,11 +546,11 @@ namespace YUCP.PatchCleanup
                 foreach (var guid in dllGuids)
                 {
                     string path = AssetDatabase.GUIDToAssetPath(guid);
-                    if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                    if (IsYucpPatchNativeLibrary(path))
                     {
                         try
                         {
-                            // Force unload the DLL first
+                            // Force unload the native library first
                             var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
                             if (asset != null)
                             {
@@ -564,12 +579,12 @@ namespace YUCP.PatchCleanup
                                 }
 
                                 deletedCount++;
-                                WriteLog($"  Deleted DLL before patching: {path}");
+                                WriteLog($"  Deleted native patch library before patching: {path}");
                             }
                         }
                         catch (Exception ex)
                         {
-                            WriteLog($"  Warning: Could not delete DLL {path} before patching: {ex.Message}");
+                            WriteLog($"  Warning: Could not delete native patch library {path} before patching: {ex.Message}");
                         }
                     }
                 }
@@ -577,7 +592,7 @@ namespace YUCP.PatchCleanup
                 if (deletedCount > 0)
                 {
                     AssetDatabase.Refresh();
-                    WriteLog($"Deleted {deletedCount} DLL(s) from Plugins before patching");
+                    WriteLog($"Deleted {deletedCount} native patch librar(y/ies) from Plugins before patching");
                 }
             }
             catch (Exception ex)
@@ -590,7 +605,7 @@ namespace YUCP.PatchCleanup
         {
             try
             {
-                WriteLog("Cleaning up DLLs after patch application...");
+                WriteLog("Cleaning up native patch libraries after patch application...");
 
                 ReleaseLoadedDlls();
 
@@ -629,13 +644,13 @@ namespace YUCP.PatchCleanup
                     }
 
                     freeDllsMethod.Invoke(null, null);
-                    WriteLog("  Freed loaded DLL libraries");
+                    WriteLog("  Freed loaded native patch libraries");
                     break;
                 }
             }
             catch (Exception ex)
             {
-                WriteLog($"  Warning: Could not free DLL libraries: {ex.Message}");
+                WriteLog($"  Warning: Could not free native patch libraries: {ex.Message}");
             }
         }
 
@@ -675,11 +690,11 @@ namespace YUCP.PatchCleanup
                 foreach (var guid in dllGuids)
                 {
                     string path = AssetDatabase.GUIDToAssetPath(guid);
-                    if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                    if (IsYucpPatchNativeLibrary(path))
                     {
                         try
                         {
-                            // Force unload the DLL first
+                            // Force unload the native library first
                             var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
                             if (asset != null)
                             {
@@ -708,12 +723,12 @@ namespace YUCP.PatchCleanup
                                 }
 
                                 deletedCount++;
-                                WriteLog($"  Deleted DLL after patch application: {path}");
+                                WriteLog($"  Deleted native patch library after patch application: {path}");
                             }
                         }
                         catch (Exception ex)
                         {
-                            WriteLog($"  Warning: Could not delete DLL {path}: {ex.Message}");
+                            WriteLog($"  Warning: Could not delete native patch library {path}: {ex.Message}");
                         }
                     }
                 }
@@ -721,7 +736,7 @@ namespace YUCP.PatchCleanup
                 if (deletedCount > 0)
                 {
                     AssetDatabase.Refresh();
-                    WriteLog($"Cleaned up {deletedCount} DLL(s) from Plugins folder");
+                    WriteLog($"Cleaned up {deletedCount} native patch librar(y/ies) from Plugins folder");
                 }
             }
             catch (Exception ex)
@@ -1712,13 +1727,13 @@ namespace YUCP.PatchCleanup
 
                     try
                     {
-                        // For DLLs, use direct file deletion to bypass Unity's locks
+                        // For patch native libraries, use direct file deletion to bypass Unity's locks
                         // For other files, use AssetDatabase.DeleteAsset
-                        bool isDll = path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+                        bool isPatchNativeLibrary = IsYucpPatchNativeLibrary(path);
 
-                        if (isDll)
+                        if (isPatchNativeLibrary)
                         {
-                            // Force unload the DLL first
+                            // Force unload the native library first
                             var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
                             if (asset != null)
                             {
@@ -1726,7 +1741,7 @@ namespace YUCP.PatchCleanup
                                 asset = null;
                             }
 
-                            // Use direct file deletion for DLLs
+                            // Use direct file deletion for native libraries
                             string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                             string physicalPath = Path.Combine(projectPath, path.Replace('/', Path.DirectorySeparatorChar));
 
@@ -1744,12 +1759,12 @@ namespace YUCP.PatchCleanup
                                 }
 
                                 deletedCount++;
-                                WriteLog($"  Deleted DLL (direct): {path}");
+                                WriteLog($"  Deleted native patch library (direct): {path}");
                             }
                         }
                         else
                         {
-                            // Use AssetDatabase.DeleteAsset for non-DLL files
+                            // Use AssetDatabase.DeleteAsset for non-native-library files
                             if (AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path) != null || File.Exists(Path.Combine(Application.dataPath, "..", path.Replace('/', Path.DirectorySeparatorChar))))
                             {
                                 AssetDatabase.DeleteAsset(path);

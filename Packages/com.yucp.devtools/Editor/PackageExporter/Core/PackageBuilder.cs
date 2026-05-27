@@ -3444,46 +3444,53 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             throw new FileNotFoundException($"Required patch importer binary not found at {PrecompiledInstallerRuntimePath}.");
                         }
 
-                        string[] hdiffDlls = new string[]
+                        string[][] hdiffNativeLibraries = new string[][]
                         {
-                            "Packages/com.yucp.devtools/Plugins/hdiffz.dll",
-                            "Packages/com.yucp.devtools/Plugins/hpatchz.dll",
-                            "Packages/com.yucp.devtools/Plugins/hdiffinfo.dll"
+                            new[] { "Packages/com.yucp.devtools/Plugins/hdiffz.dll", "Packages/com.yucp.temp/Plugins/hdiffz.dll" },
+                            new[] { "Packages/com.yucp.devtools/Plugins/hpatchz.dll", "Packages/com.yucp.temp/Plugins/hpatchz.dll" },
+                            new[] { "Packages/com.yucp.devtools/Plugins/hdiffinfo.dll", "Packages/com.yucp.temp/Plugins/hdiffinfo.dll" },
+                            new[] { "Packages/com.yucp.devtools/Plugins/Linux/x86_64/libhdiffz.so", "Packages/com.yucp.temp/Plugins/Linux/x86_64/libhdiffz.so" },
+                            new[] { "Packages/com.yucp.devtools/Plugins/Linux/x86_64/libhpatchz.so", "Packages/com.yucp.temp/Plugins/Linux/x86_64/libhpatchz.so" },
+                            new[] { "Packages/com.yucp.devtools/Plugins/Linux/x86_64/libhdiffinfo.so", "Packages/com.yucp.temp/Plugins/Linux/x86_64/libhdiffinfo.so" }
                         };
 
-                        foreach (var dllPath in hdiffDlls)
+                        foreach (var nativeLibrary in hdiffNativeLibraries)
                         {
-                            if (File.Exists(dllPath))
+                            string sourcePath = nativeLibrary[0];
+                            string targetPath = nativeLibrary[1];
+
+                            if (File.Exists(sourcePath))
                             {
-                                string dllGuid = Guid.NewGuid().ToString("N");
-                                string dllFolder = Path.Combine(tempExtractDir, dllGuid);
-                                Directory.CreateDirectory(dllFolder);
+                                string nativeGuid = Guid.NewGuid().ToString("N");
+                                string nativeFolder = Path.Combine(tempExtractDir, nativeGuid);
+                                Directory.CreateDirectory(nativeFolder);
 
-                                string fileName = Path.GetFileName(dllPath);
-                                string targetPath = $"Packages/com.yucp.temp/Plugins/{fileName}";
+                                string fileName = Path.GetFileName(sourcePath);
 
-                                File.Copy(dllPath, Path.Combine(dllFolder, "asset"), true);
-                                File.WriteAllText(Path.Combine(dllFolder, "pathname"), targetPath);
+                                File.Copy(sourcePath, Path.Combine(nativeFolder, "asset"), true);
+                                File.WriteAllText(Path.Combine(nativeFolder, "pathname"), targetPath);
 
                                 // Copy the .meta file if it exists
-                                string metaPath = dllPath + ".meta";
+                                string metaPath = sourcePath + ".meta";
                                 if (File.Exists(metaPath))
                                 {
                                     string metaContent = File.ReadAllText(metaPath);
-                                    File.WriteAllText(Path.Combine(dllFolder, "asset.meta"), metaContent);
+                                    File.WriteAllText(Path.Combine(nativeFolder, "asset.meta"), metaContent);
                                 }
                                 else
                                 {
-                                    // Create a basic .meta file for the DLL
-                                    string dllMeta = "fileFormatVersion: 2\nguid: " + dllGuid + "\nPluginImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  iconMap: {}\n  executionOrder: {}\n  defineConstraints: []\n  isPreloaded: 0\n  isOverridable: 0\n  isExplicitlyReferenced: 0\n  validateReferences: 1\n  platformData:\n  - first:\n      : Any\n    second:\n      enabled: 0\n  - first:\n      Any: \n    second:\n      enabled: 1\n  - first:\n      Editor: Editor\n    second:\n      enabled: 1\n      settings:\n        CPU: AnyCPU\n        DefaultValueInitialized: true\n        OS: AnyOS\n  userData: \n  assetBundleName: \n  assetBundleVariant: \n";
-                                    File.WriteAllText(Path.Combine(dllFolder, "asset.meta"), dllMeta);
+                                    // Create a basic .meta file for the native library.
+                                    string fallbackOs = fileName.EndsWith(".so", StringComparison.OrdinalIgnoreCase) ? "Linux" : "AnyOS";
+                                    string fallbackCpu = fileName.EndsWith(".so", StringComparison.OrdinalIgnoreCase) ? "x86_64" : "AnyCPU";
+                                    string nativeMeta = "fileFormatVersion: 2\nguid: " + nativeGuid + "\nPluginImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  iconMap: {}\n  executionOrder: {}\n  defineConstraints: []\n  isPreloaded: 0\n  isOverridable: 0\n  isExplicitlyReferenced: 0\n  validateReferences: 1\n  platformData:\n  - first:\n      : Any\n    second:\n      enabled: 0\n  - first:\n      Any: \n    second:\n      enabled: 0\n  - first:\n      Editor: Editor\n    second:\n      enabled: 1\n      settings:\n        CPU: " + fallbackCpu + "\n        DefaultValueInitialized: true\n        OS: " + fallbackOs + "\n  userData: \n  assetBundleName: \n  assetBundleVariant: \n";
+                                    File.WriteAllText(Path.Combine(nativeFolder, "asset.meta"), nativeMeta);
                                 }
 
-                                Debug.Log($"[PackageBuilder] Copied HDiffPatch DLL to temp package: {fileName}");
+                                Debug.Log($"[PackageBuilder] Copied HDiffPatch native library to temp package: {targetPath}");
                             }
                             else
                             {
-                                Debug.LogWarning($"[PackageBuilder] HDiffPatch DLL not found: {dllPath}");
+                                Debug.LogWarning($"[PackageBuilder] HDiffPatch native library not found: {sourcePath}");
                             }
                         }
                     }

@@ -11,23 +11,40 @@ namespace YUCP.PatchRuntime
 {
 	internal static class HDiffPatchTrust
 	{
-#if UNITY_EDITOR_WIN
 		private const string HdiffzSha256 = "11493E1D8947E6DA3CCA4A6C4D03AD55DC973D8766CEB25ECCDCA4811B8C0235";
 		private const string HpatchzSha256 = "DBCD3320D0889CA894F1C404097A0B73918E13771A3902BC7F7CB99EAD47400E";
 		private const string HdiffinfoSha256 = "28A2785870938EE45F98D5BBE6CFD0F0689980BCF3FFCE703E777FCBD5F51294";
+		private const string LinuxHdiffzSha256 = "C0EEA910CE6BCC5F3CBFEC05AE67B7AB20ABD028DD852F73F619D2010719CA47";
+		private const string LinuxHpatchzSha256 = "06D5D6BDD98502E54CA99FFB9A40BA83C9061881EE4AA944A29F51AF405A194B";
+		private const string LinuxHdiffinfoSha256 = "1D98EE01062E6E300015EE2308027B55164F95BDC442B134BD7C6403BC4BAB4B";
+
+		private static readonly string[] WindowsNativeLibraries =
+		{
+			"hdiffz.dll",
+			"hpatchz.dll",
+			"hdiffinfo.dll",
+		};
+
+		private static readonly string[] LinuxNativeLibraries =
+		{
+			"libhdiffz.so",
+			"libhpatchz.so",
+			"libhdiffinfo.so",
+		};
 
 		internal static bool IsTrustedNativeLibrary(string fileName, string path)
 		{
 			if (string.IsNullOrWhiteSpace(fileName) || string.IsNullOrWhiteSpace(path))
 				return false;
 
-			string expectedHash = GetExpectedHash(fileName);
+			string platformFileName = GetNativeLibraryFileName(fileName) ?? fileName;
+			string expectedHash = GetExpectedHash(platformFileName);
 			if (string.IsNullOrEmpty(expectedHash))
 				return false;
 
 			string normalizedPath = Path.GetFullPath(path);
 			string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-			bool isTrustedPath = GetCandidatePaths(projectPath, fileName)
+			bool isTrustedPath = GetCandidatePaths(projectPath, platformFileName)
 				.Any(candidate => PathsEqual(candidate, normalizedPath));
 
 			return isTrustedPath &&
@@ -36,6 +53,7 @@ namespace YUCP.PatchRuntime
 
 		internal static string EnsureTrustedCopy(string projectPath, string libraryDir, string fileName, string logPrefix)
 		{
+			fileName = GetNativeLibraryFileName(fileName) ?? fileName;
 			string expectedHash = GetExpectedHash(fileName);
 			if (string.IsNullOrEmpty(expectedHash))
 				throw new InvalidOperationException($"No pinned hash is configured for {fileName}.");
@@ -76,9 +94,56 @@ namespace YUCP.PatchRuntime
 
 		internal static void PrepareLibraries(string projectPath, string libraryDir, string logPrefix)
 		{
-			EnsureTrustedCopy(projectPath, libraryDir, "hdiffz.dll", logPrefix);
-			EnsureTrustedCopy(projectPath, libraryDir, "hpatchz.dll", logPrefix);
-			EnsureTrustedCopy(projectPath, libraryDir, "hdiffinfo.dll", logPrefix);
+			foreach (string fileName in GetCurrentNativeLibraryFileNames())
+			{
+				EnsureTrustedCopy(projectPath, libraryDir, fileName, logPrefix);
+			}
+		}
+
+		internal static string[] GetCurrentNativeLibraryFileNames()
+		{
+			return GetNativeLibraryFileNamesForPlatform(Application.platform);
+		}
+
+		internal static string[] GetNativeLibraryFileNamesForPlatform(RuntimePlatform platform)
+		{
+			if (platform == RuntimePlatform.WindowsEditor)
+				return WindowsNativeLibraries.ToArray();
+			if (platform == RuntimePlatform.LinuxEditor)
+				return LinuxNativeLibraries.ToArray();
+
+			throw new PlatformNotSupportedException($"HDiffPatch native libraries are only supported in the Unity Editor on Windows and Linux x86_64. Current platform: {platform}");
+		}
+
+		internal static string GetNativeLibraryFileName(string logicalName)
+		{
+			return GetNativeLibraryFileNameForPlatform(logicalName, Application.platform);
+		}
+
+		internal static string GetNativeLibraryFileNameForPlatform(string logicalName, RuntimePlatform platform)
+		{
+			if (string.IsNullOrWhiteSpace(logicalName))
+				return null;
+
+			if (platform != RuntimePlatform.WindowsEditor && platform != RuntimePlatform.LinuxEditor)
+				throw new PlatformNotSupportedException($"HDiffPatch native libraries are only supported in the Unity Editor on Windows and Linux x86_64. Current platform: {platform}");
+
+			string normalized = logicalName.Trim().ToLowerInvariant();
+			if (normalized == "hdiffz.dll" || normalized == "libhdiffz.so")
+				return normalized;
+			if (normalized == "hpatchz.dll" || normalized == "libhpatchz.so")
+				return normalized;
+			if (normalized == "hdiffinfo.dll" || normalized == "libhdiffinfo.so")
+				return normalized;
+
+			if (normalized == "hdiffz")
+				return platform == RuntimePlatform.LinuxEditor ? "libhdiffz.so" : "hdiffz.dll";
+			if (normalized == "hpatchz")
+				return platform == RuntimePlatform.LinuxEditor ? "libhpatchz.so" : "hpatchz.dll";
+			if (normalized == "hdiffinfo")
+				return platform == RuntimePlatform.LinuxEditor ? "libhdiffinfo.so" : "hdiffinfo.dll";
+
+			return null;
 		}
 
 		private static string GetTrustedSource(string projectPath, string fileName, string logPrefix)
@@ -98,11 +163,20 @@ namespace YUCP.PatchRuntime
 
 		private static string[] GetCandidatePaths(string projectPath, string fileName)
 		{
+			string relativePluginPath = GetPluginRelativePath(fileName);
 			return new[]
 			{
-				Path.Combine(projectPath, "Packages", "com.yucp.temp", "Plugins", fileName),
-				Path.Combine(projectPath, "Packages", "com.yucp.devtools", "Plugins", fileName),
+				Path.Combine(projectPath, "Packages", "com.yucp.temp", relativePluginPath),
+				Path.Combine(projectPath, "Packages", "com.yucp.devtools", relativePluginPath),
 			};
+		}
+
+		internal static string GetPluginRelativePath(string fileName)
+		{
+			if (fileName != null && fileName.EndsWith(".so", StringComparison.OrdinalIgnoreCase))
+				return Path.Combine("Plugins", "Linux", "x86_64", fileName);
+
+			return Path.Combine("Plugins", fileName ?? string.Empty);
 		}
 
 		private static string GetExpectedHash(string fileName)
@@ -115,6 +189,12 @@ namespace YUCP.PatchRuntime
 					return HpatchzSha256;
 				case "hdiffinfo.dll":
 					return HdiffinfoSha256;
+				case "libhdiffz.so":
+					return LinuxHdiffzSha256;
+				case "libhpatchz.so":
+					return LinuxHpatchzSha256;
+				case "libhdiffinfo.so":
+					return LinuxHdiffinfoSha256;
 				default:
 					return null;
 			}
@@ -173,7 +253,6 @@ namespace YUCP.PatchRuntime
 			byte[] hash = sha256.ComputeHash(stream);
 			return BitConverter.ToString(hash).Replace("-", string.Empty);
 		}
-#endif
 	}
 
 	/// <summary>
@@ -183,29 +262,32 @@ namespace YUCP.PatchRuntime
 	[InitializeOnLoad]
 	internal static class HDiffPatchDllInitializer
 	{
-#if UNITY_EDITOR_WIN
 		[DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
 		private static extern bool SetDllDirectory(string lpPathName);
-#endif
 
 		static HDiffPatchDllInitializer()
 		{
-#if UNITY_EDITOR_WIN
 			try
 			{
 				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 				string libraryDir = Path.Combine(projectPath, "Library", "YUCP");
 				HDiffPatchTrust.PrepareLibraries(projectPath, libraryDir, "[HDiffPatchDllInitializer]");
 				
-				// Set DLL directory BEFORE any DllImport attributes try to resolve
-				SetDllDirectory(libraryDir);
-				Debug.Log($"[HDiffPatchDllInitializer] Set DLL directory to {libraryDir}");
+				if (Application.platform == RuntimePlatform.WindowsEditor)
+				{
+					// Set DLL directory BEFORE any DllImport attributes try to resolve.
+					SetDllDirectory(libraryDir);
+					Debug.Log($"[HDiffPatchDllInitializer] Set DLL directory to {libraryDir}");
+				}
+			}
+			catch (PlatformNotSupportedException ex)
+			{
+				Debug.LogWarning($"[HDiffPatchDllInitializer] {ex.Message}");
 			}
 			catch (Exception ex)
 			{
 				Debug.LogWarning($"[HDiffPatchDllInitializer] Error initializing: {ex.Message}");
 			}
-#endif
 		}
 	}
 	
@@ -216,7 +298,6 @@ namespace YUCP.PatchRuntime
 	/// </summary>
 	public static class HDiffPatchWrapper
 	{
-#if UNITY_EDITOR_WIN
 		// Windows API for loading DLLs
 		[DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
 		private static extern IntPtr LoadLibrary(string lpFileName);
@@ -229,12 +310,28 @@ namespace YUCP.PatchRuntime
 
 		[DllImport("kernel32", SetLastError = true, CharSet = CharSet.Ansi)]
 		private static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
-#endif
+
+		private const int RtldNow = 2;
+
+		[DllImport("libdl.so.2", CharSet = CharSet.Ansi)]
+		private static extern IntPtr dlopen(string fileName, int flags);
+
+		[DllImport("libdl.so.2", CharSet = CharSet.Ansi)]
+		private static extern IntPtr dlsym(IntPtr handle, string symbol);
+
+		[DllImport("libdl.so.2")]
+		private static extern int dlclose(IntPtr handle);
+
+		[DllImport("libdl.so.2")]
+		private static extern IntPtr dlerror();
 
 		private static bool s_dllsLoaded = false;
 		private static IntPtr s_hdiffzHandle = IntPtr.Zero;
 		private static IntPtr s_hpatchzHandle = IntPtr.Zero;
 		private static IntPtr s_hdiffinfoHandle = IntPtr.Zero;
+		private static RegisterDelegateHdiffzNative s_registerDelegateHdiffz;
+		private static RegisterErrorDelegateHdiffzNative s_registerErrorDelegateHdiffz;
+		private static HDiffUnityNative s_hdiffUnity;
 		private static RegisterDelegateHpatchzNative s_registerDelegateHpatchz;
 		private static RegisterErrorDelegateHpatchzNative s_registerErrorDelegateHpatchz;
 		private static HPatchUnityNative s_hpatchUnity;
@@ -246,31 +343,42 @@ namespace YUCP.PatchRuntime
 		/// </summary>
 		static HDiffPatchWrapper()
 		{
-#if UNITY_EDITOR_WIN
 			try
 			{
 				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 				string libraryDir = Path.Combine(projectPath, "Library", "YUCP");
 				HDiffPatchTrust.PrepareLibraries(projectPath, libraryDir, "[HDiffPatchWrapper]");
 				
-				// Set DLL directory BEFORE any DllImport attributes try to resolve
-				SetDllDirectory(libraryDir);
-				Debug.Log($"[HDiffPatchWrapper] Set DLL directory to {libraryDir} (static constructor)");
+				if (Application.platform == RuntimePlatform.WindowsEditor)
+				{
+					// Set DLL directory BEFORE any DllImport attributes try to resolve.
+					SetDllDirectory(libraryDir);
+					Debug.Log($"[HDiffPatchWrapper] Set DLL directory to {libraryDir} (static constructor)");
+				}
+			}
+			catch (PlatformNotSupportedException ex)
+			{
+				Debug.LogWarning($"[HDiffPatchWrapper] {ex.Message}");
 			}
 			catch (Exception ex)
 			{
 				Debug.LogWarning($"[HDiffPatchWrapper] Error in static constructor: {ex.Message}");
 			}
-#endif
 		}
 
 		internal static bool IsTrustedNativeLibrary(string fileName, string path)
 		{
-#if UNITY_EDITOR_WIN
 			return HDiffPatchTrust.IsTrustedNativeLibrary(fileName, path);
-#else
-			return false;
-#endif
+		}
+
+		internal static string[] GetNativeLibraryFileNamesForPlatform(RuntimePlatform platform)
+		{
+			return HDiffPatchTrust.GetNativeLibraryFileNamesForPlatform(platform);
+		}
+
+		internal static string GetNativeLibraryFileNameForPlatform(string logicalName, RuntimePlatform platform)
+		{
+			return HDiffPatchTrust.GetNativeLibraryFileNameForPlatform(logicalName, platform);
 		}
 		
 		/// <summary>
@@ -278,37 +386,41 @@ namespace YUCP.PatchRuntime
 		/// </summary>
 		public static void FreeDlls()
 		{
-#if UNITY_EDITOR_WIN
 			try
 			{
 				if (s_hdiffzHandle != IntPtr.Zero)
 				{
-					FreeLibrary(s_hdiffzHandle);
+					UnloadNativeLibrary(s_hdiffzHandle);
 					s_hdiffzHandle = IntPtr.Zero;
-					Debug.Log("[HDiffPatchWrapper] Freed hdiffz.dll");
+					Debug.Log("[HDiffPatchWrapper] Freed hdiffz native library");
 				}
 				
 				if (s_hpatchzHandle != IntPtr.Zero)
 				{
-					FreeLibrary(s_hpatchzHandle);
+					UnloadNativeLibrary(s_hpatchzHandle);
 					s_hpatchzHandle = IntPtr.Zero;
-					Debug.Log("[HDiffPatchWrapper] Freed hpatchz.dll");
+					Debug.Log("[HDiffPatchWrapper] Freed hpatchz native library");
 				}
 
 				if (s_hdiffinfoHandle != IntPtr.Zero)
 				{
-					FreeLibrary(s_hdiffinfoHandle);
+					UnloadNativeLibrary(s_hdiffinfoHandle);
 					s_hdiffinfoHandle = IntPtr.Zero;
-					Debug.Log("[HDiffPatchWrapper] Freed hdiffinfo.dll");
+					Debug.Log("[HDiffPatchWrapper] Freed hdiffinfo native library");
 				}
 
+				s_registerDelegateHdiffz = null;
+				s_registerErrorDelegateHdiffz = null;
+				s_hdiffUnity = null;
 				s_registerDelegateHpatchz = null;
 				s_registerErrorDelegateHpatchz = null;
 				s_hpatchUnity = null;
 				s_hdiffGetInfo = null;
 				
-				// Reset DLL directory to default
-				SetDllDirectory(null);
+				if (Application.platform == RuntimePlatform.WindowsEditor)
+				{
+					SetDllDirectory(null);
+				}
 				
 				s_dllsLoaded = false;
 			}
@@ -316,7 +428,6 @@ namespace YUCP.PatchRuntime
 			{
 				Debug.LogWarning($"[HDiffPatchWrapper] Error freeing DLLs: {ex.Message}");
 			}
-#endif
 		}
 
 		/// <summary>
@@ -330,89 +441,27 @@ namespace YUCP.PatchRuntime
 			if (s_dllsLoaded && s_hdiffzHandle != IntPtr.Zero && s_hpatchzHandle != IntPtr.Zero && s_hdiffinfoHandle != IntPtr.Zero)
 				return;
 
-#if UNITY_EDITOR_WIN
 			try
 			{
 				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-				
-				// Destination: Library/YUCP/ (outside project, won't be locked by Unity)
 				string libraryDir = Path.Combine(projectPath, "Library", "YUCP");
-				string hdiffzDest = Path.Combine(libraryDir, "hdiffz.dll");
-				string hpatchzDest = Path.Combine(libraryDir, "hpatchz.dll");
-				string hdiffinfoDest = Path.Combine(libraryDir, "hdiffinfo.dll");
-				
-				// Ensure Library/YUCP directory exists
 				Directory.CreateDirectory(libraryDir);
-				hdiffzDest = HDiffPatchTrust.EnsureTrustedCopy(projectPath, libraryDir, "hdiffz.dll", "[HDiffPatchWrapper]");
-				hpatchzDest = HDiffPatchTrust.EnsureTrustedCopy(projectPath, libraryDir, "hpatchz.dll", "[HDiffPatchWrapper]");
-				hdiffinfoDest = HDiffPatchTrust.EnsureTrustedCopy(projectPath, libraryDir, "hdiffinfo.dll", "[HDiffPatchWrapper]");
-				
-				// Get the Library/YUCP directory for SetDllDirectory
-				string dllDir = Path.GetDirectoryName(hdiffzDest);
-				
-				// Set DLL directory FIRST before copying/loading
-				SetDllDirectory(dllDir);
-				
-				// Explicitly load DLLs from Library/YUCP/ using full paths
-				// Only load if not already loaded
-				if (s_hdiffzHandle == IntPtr.Zero && File.Exists(hdiffzDest))
+
+				if (Application.platform == RuntimePlatform.WindowsEditor)
 				{
-					// Use full absolute path
-					string fullHdiffzPath = Path.GetFullPath(hdiffzDest);
-					s_hdiffzHandle = LoadLibrary(fullHdiffzPath);
-					if (s_hdiffzHandle == IntPtr.Zero)
-					{
-						int error = Marshal.GetLastWin32Error();
-						Debug.LogError($"[HDiffPatchWrapper] Failed to load hdiffz.dll from {fullHdiffzPath}. Error: {error}");
-					}
-					else
-					{
-						Debug.Log($"[HDiffPatchWrapper] Successfully loaded hdiffz.dll from {fullHdiffzPath}");
-					}
-				}
-				else if (!File.Exists(hdiffzDest))
-				{
-					Debug.LogError($"[HDiffPatchWrapper] hdiffz.dll not found at: {hdiffzDest}");
+					SetDllDirectory(libraryDir);
 				}
 
-				if (s_hpatchzHandle == IntPtr.Zero && File.Exists(hpatchzDest))
-				{
-					// Use full absolute path
-					string fullHpatchzPath = Path.GetFullPath(hpatchzDest);
-					s_hpatchzHandle = LoadLibrary(fullHpatchzPath);
-					if (s_hpatchzHandle == IntPtr.Zero)
-					{
-						int error = Marshal.GetLastWin32Error();
-						Debug.LogError($"[HDiffPatchWrapper] Failed to load hpatchz.dll from {fullHpatchzPath}. Error: {error}");
-					}
-					else
-					{
-						Debug.Log($"[HDiffPatchWrapper] Successfully loaded hpatchz.dll from {fullHpatchzPath}");
-					}
-				}
-				else if (!File.Exists(hpatchzDest))
-				{
-					Debug.LogError($"[HDiffPatchWrapper] hpatchz.dll not found at: {hpatchzDest}");
-				}
+				string hdiffzDest = HDiffPatchTrust.EnsureTrustedCopy(projectPath, libraryDir, "hdiffz", "[HDiffPatchWrapper]");
+				string hpatchzDest = HDiffPatchTrust.EnsureTrustedCopy(projectPath, libraryDir, "hpatchz", "[HDiffPatchWrapper]");
+				string hdiffinfoDest = HDiffPatchTrust.EnsureTrustedCopy(projectPath, libraryDir, "hdiffinfo", "[HDiffPatchWrapper]");
 
-				if (s_hdiffinfoHandle == IntPtr.Zero && File.Exists(hdiffinfoDest))
-				{
-					string fullHdiffinfoPath = Path.GetFullPath(hdiffinfoDest);
-					s_hdiffinfoHandle = LoadLibrary(fullHdiffinfoPath);
-					if (s_hdiffinfoHandle == IntPtr.Zero)
-					{
-						int error = Marshal.GetLastWin32Error();
-						Debug.LogError($"[HDiffPatchWrapper] Failed to load hdiffinfo.dll from {fullHdiffinfoPath}. Error: {error}");
-					}
-					else
-					{
-						Debug.Log($"[HDiffPatchWrapper] Successfully loaded hdiffinfo.dll from {fullHdiffinfoPath}");
-					}
-				}
-				else if (!File.Exists(hdiffinfoDest))
-				{
-					Debug.LogError($"[HDiffPatchWrapper] hdiffinfo.dll not found at: {hdiffinfoDest}");
-				}
+				if (s_hdiffzHandle == IntPtr.Zero)
+					s_hdiffzHandle = LoadNativeLibrary(hdiffzDest);
+				if (s_hpatchzHandle == IntPtr.Zero)
+					s_hpatchzHandle = LoadNativeLibrary(hpatchzDest);
+				if (s_hdiffinfoHandle == IntPtr.Zero)
+					s_hdiffinfoHandle = LoadNativeLibrary(hdiffinfoDest);
 
 				BindRuntimeExports();
 				s_dllsLoaded = true;
@@ -420,16 +469,22 @@ namespace YUCP.PatchRuntime
 			catch (Exception ex)
 			{
 				Debug.LogError($"[HDiffPatchWrapper] Error loading DLLs: {ex.Message}\n{ex.StackTrace}");
+				throw;
 			}
-#else
-			// On non-Windows platforms, Unity should handle DLL loading automatically
-			s_dllsLoaded = true;
-#endif
 		}
 
 		private static void BindRuntimeExports()
 		{
-#if UNITY_EDITOR_WIN
+			if (s_hdiffzHandle != IntPtr.Zero)
+			{
+				if (s_registerDelegateHdiffz == null)
+					s_registerDelegateHdiffz = GetRequiredExport<RegisterDelegateHdiffzNative>(s_hdiffzHandle, "RegisterDelegate");
+				if (s_registerErrorDelegateHdiffz == null)
+					s_registerErrorDelegateHdiffz = GetRequiredExport<RegisterErrorDelegateHdiffzNative>(s_hdiffzHandle, "RegisterErrorDelegate");
+				if (s_hdiffUnity == null)
+					s_hdiffUnity = GetRequiredExport<HDiffUnityNative>(s_hdiffzHandle, "hdiff_unity");
+			}
+
 			if (s_hpatchzHandle != IntPtr.Zero)
 			{
 				if (s_registerDelegateHpatchz == null)
@@ -442,26 +497,89 @@ namespace YUCP.PatchRuntime
 
 			if (s_hdiffinfoHandle != IntPtr.Zero && s_hdiffGetInfo == null)
 				s_hdiffGetInfo = GetRequiredExport<HDiffGetInfoNative>(s_hdiffinfoHandle, "hdiff_get_info");
-#endif
+		}
+
+		private static IntPtr LoadNativeLibrary(string path)
+		{
+			string fullPath = Path.GetFullPath(path);
+			if (!File.Exists(fullPath))
+				throw new FileNotFoundException($"Native library was not found: {fullPath}");
+
+			IntPtr handle;
+			if (Application.platform == RuntimePlatform.WindowsEditor)
+			{
+				handle = LoadLibrary(fullPath);
+				if (handle == IntPtr.Zero)
+				{
+					int error = Marshal.GetLastWin32Error();
+					throw new DllNotFoundException($"Failed to load native library from {fullPath}. Win32 error: {error}");
+				}
+			}
+			else if (Application.platform == RuntimePlatform.LinuxEditor)
+			{
+				handle = dlopen(fullPath, RtldNow);
+				if (handle == IntPtr.Zero)
+				{
+					throw new DllNotFoundException($"Failed to load native library from {fullPath}. dlerror: {GetDlErrorMessage()}");
+				}
+			}
+			else
+			{
+				throw new PlatformNotSupportedException($"HDiffPatch native loading is not supported on {Application.platform}. This change supports Windows Editor and Linux x86_64 Editor only.");
+			}
+
+			Debug.Log($"[HDiffPatchWrapper] Successfully loaded native library from {fullPath}");
+			return handle;
+		}
+
+		private static void UnloadNativeLibrary(IntPtr handle)
+		{
+			if (handle == IntPtr.Zero)
+				return;
+
+			if (Application.platform == RuntimePlatform.WindowsEditor)
+			{
+				FreeLibrary(handle);
+			}
+			else if (Application.platform == RuntimePlatform.LinuxEditor)
+			{
+				dlclose(handle);
+			}
 		}
 
 		private static T GetRequiredExport<T>(IntPtr moduleHandle, string exportName) where T : class
 		{
-#if UNITY_EDITOR_WIN
 			if (moduleHandle == IntPtr.Zero)
 				throw new InvalidOperationException($"Cannot resolve export '{exportName}' because the module handle is not loaded.");
 
-			IntPtr exportHandle = GetProcAddress(moduleHandle, exportName);
+			IntPtr exportHandle;
+			if (Application.platform == RuntimePlatform.WindowsEditor)
+			{
+				exportHandle = GetProcAddress(moduleHandle, exportName);
+			}
+			else if (Application.platform == RuntimePlatform.LinuxEditor)
+			{
+				exportHandle = dlsym(moduleHandle, exportName);
+			}
+			else
+			{
+				throw new PlatformNotSupportedException($"Native export binding is not supported for '{exportName}' on {Application.platform}.");
+			}
+
 			if (exportHandle == IntPtr.Zero)
 			{
 				int error = Marshal.GetLastWin32Error();
-				throw new InvalidOperationException($"Failed to resolve export '{exportName}'. Error: {error}");
+				string detail = Application.platform == RuntimePlatform.LinuxEditor ? GetDlErrorMessage() : error.ToString();
+				throw new InvalidOperationException($"Failed to resolve export '{exportName}'. Error: {detail}");
 			}
 
 			return (T)(object)Marshal.GetDelegateForFunctionPointer(exportHandle, typeof(T));
-#else
-			throw new PlatformNotSupportedException($"Native export binding is not supported for '{exportName}' on this platform.");
-#endif
+		}
+
+		private static string GetDlErrorMessage()
+		{
+			IntPtr error = dlerror();
+			return error == IntPtr.Zero ? "<none>" : Marshal.PtrToStringAnsi(error);
 		}
 
 		private static void EnsurePatchExportsLoaded()
@@ -470,6 +588,14 @@ namespace YUCP.PatchRuntime
 
 			if (s_registerDelegateHpatchz == null || s_registerErrorDelegateHpatchz == null || s_hpatchUnity == null)
 				throw new InvalidOperationException("hpatchz exports are not available.");
+		}
+
+		private static void EnsureDiffExportsLoaded()
+		{
+			EnsureDllsLoaded();
+
+			if (s_registerDelegateHdiffz == null || s_registerErrorDelegateHdiffz == null || s_hdiffUnity == null)
+				throw new InvalidOperationException("hdiffz exports are not available.");
 		}
 
 		private static void EnsureDiffInfoExportLoaded()
@@ -492,15 +618,21 @@ namespace YUCP.PatchRuntime
 		/// Register delegate for HDiff log output.
 		/// Adapted from CocoTools CocoDiff.cs
 		/// </summary>
-		[DllImport("hdiffz", EntryPoint = "RegisterDelegate")]
-		public static extern void RegisterDelegateHdiffz(HDiffzStringOutput del);
+		public static void RegisterDelegateHdiffz(HDiffzStringOutput del)
+		{
+			EnsureDiffExportsLoaded();
+			s_registerDelegateHdiffz(del);
+		}
 
 		/// <summary>
 		/// Register delegate for HDiff error output.
 		/// Adapted from CocoTools CocoDiff.cs
 		/// </summary>
-		[DllImport("hdiffz", EntryPoint = "RegisterErrorDelegate")]
-		public static extern void RegisterErrorDelegateHdiffz(HDiffzStringOutput del);
+		public static void RegisterErrorDelegateHdiffz(HDiffzStringOutput del)
+		{
+			EnsureDiffExportsLoaded();
+			s_registerErrorDelegateHdiffz(del);
+		}
 
 		/// <summary>
 		/// Create a binary diff file from old and new FBX files.
@@ -512,9 +644,12 @@ namespace YUCP.PatchRuntime
 		/// <param name="diffOptions">Array of diff options (e.g., ["-m-6", "-SD", "-c-zstd-21-24", "-d"])</param>
 		/// <param name="diffOptionSize">Number of options in the array</param>
 		/// <returns>THDiffResult indicating success or error type</returns>
-		[DllImport("hdiffz")]
-		public static extern int hdiff_unity(string oldFileName, string newFileName, string outDiffFileName,
-			string[] diffOptions, int diffOptionSize);
+		public static int hdiff_unity(string oldFileName, string newFileName, string outDiffFileName,
+			string[] diffOptions, int diffOptionSize)
+		{
+			EnsureDiffExportsLoaded();
+			return s_hdiffUnity(oldFileName, newFileName, outDiffFileName, diffOptions, diffOptionSize);
+		}
 
 		#endregion
 
@@ -531,15 +666,21 @@ namespace YUCP.PatchRuntime
 		/// Register delegate for HPatch log output.
 		/// Adapted from CocoTools CocoPatch.cs
 		/// </summary>
-		[DllImport("hpatchz", EntryPoint = "RegisterDelegate")]
-		private static extern void RegisterDelegateHpatchz(HPatchzStringOutput del);
+		private static void RegisterDelegateHpatchz(HPatchzStringOutput del)
+		{
+			EnsurePatchExportsLoaded();
+			s_registerDelegateHpatchz(del);
+		}
 
 		/// <summary>
 		/// Register delegate for HPatch error output.
 		/// Adapted from CocoTools CocoPatch.cs
 		/// </summary>
-		[DllImport("hpatchz", EntryPoint = "RegisterErrorDelegate")]
-		private static extern void RegisterErrorDelegateHpatchz(HPatchzStringOutput del);
+		private static void RegisterErrorDelegateHpatchz(HPatchzStringOutput del)
+		{
+			EnsurePatchExportsLoaded();
+			s_registerErrorDelegateHpatchz(del);
+		}
 
 		/// <summary>
 		/// Apply a binary patch to an FBX file.
@@ -551,9 +692,12 @@ namespace YUCP.PatchRuntime
 		/// <param name="diffFileName">Path to the .hdiff file</param>
 		/// <param name="outNewPath">Output path for the patched FBX file</param>
 		/// <returns>THPatchResult indicating success or error type</returns>
-		[DllImport("hpatchz")]
-		private static extern int hpatch_unity(int optionCount, string[] options, string oldPath,
-			string diffFileName, string outNewPath);
+		private static int hpatch_unity(int optionCount, string[] options, string oldPath,
+			string diffFileName, string outNewPath)
+		{
+			EnsurePatchExportsLoaded();
+			return s_hpatchUnity(optionCount, options, oldPath, diffFileName, outNewPath);
+		}
 
 		#endregion
 
@@ -563,13 +707,27 @@ namespace YUCP.PatchRuntime
 		/// Reads compressed diff info (old/new sizes, compression type) from a .hdiff file.
 		/// Implemented by hdiffinfo.dll wrapper built from HDiffPatch sources.
 		/// </summary>
-		[UnmanagedFunctionPointer(CallingConvention.Winapi)]
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+		private delegate void RegisterDelegateHdiffzNative(HDiffzStringOutput del);
+
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+		private delegate void RegisterErrorDelegateHdiffzNative(HDiffzStringOutput del);
+
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+		private delegate int HDiffUnityNative(
+			string oldFileName,
+			string newFileName,
+			string outDiffFileName,
+			[MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPStr)] string[] diffOptions,
+			int diffOptionSize);
+
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 		private delegate void RegisterDelegateHpatchzNative(HPatchzStringOutput del);
 
-		[UnmanagedFunctionPointer(CallingConvention.Winapi)]
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 		private delegate void RegisterErrorDelegateHpatchzNative(HPatchzStringOutput del);
 
-		[UnmanagedFunctionPointer(CallingConvention.Winapi, CharSet = CharSet.Ansi)]
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
 		private delegate int HPatchUnityNative(
 			int optionCount,
 			[MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPStr)] string[] options,
@@ -577,7 +735,7 @@ namespace YUCP.PatchRuntime
 			string diffFileName,
 			string outNewPath);
 
-		[UnmanagedFunctionPointer(CallingConvention.Winapi, CharSet = CharSet.Ansi)]
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
 		private delegate int HDiffGetInfoNative(
 			string diffFileName,
 			out ulong oldSize,
@@ -773,4 +931,3 @@ namespace YUCP.PatchRuntime
 		HPATCH_FILEWRITE_NO_SPACE_ERROR,
 	}
 }
-
