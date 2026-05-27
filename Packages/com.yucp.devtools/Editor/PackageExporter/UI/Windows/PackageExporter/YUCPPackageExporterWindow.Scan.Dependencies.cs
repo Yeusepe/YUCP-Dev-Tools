@@ -158,6 +158,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             var ignoreFolders = profile.PermanentIgnoreFolders;
             bool alreadyIgnored = false;
+            bool updatedExisting = false;
 
             for (int i = 0; i < ignoreFolders.Count; i++)
             {
@@ -172,17 +173,26 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     !string.IsNullOrEmpty(folderGuid) &&
                     profile.PermanentIgnoreFolderGuids[i].Equals(folderGuid, StringComparison.OrdinalIgnoreCase))
                 {
+                    Undo.RecordObject(profile, "Update Ignored Folder Path");
                     ignoreFolders[i] = storedPath;
                     alreadyIgnored = true;
+                    updatedExisting = true;
                     break;
                 }
             }
 
-            if (!alreadyIgnored)
+            if (!alreadyIgnored || updatedExisting)
             {
-                ignoreFolders.Add(storedPath);
-                profile.PermanentIgnoreFolderGuids.Add(folderGuid ?? "");
+                if (!alreadyIgnored)
+                {
+                    Undo.RecordObject(profile, "Add Folder to Ignore List");
+                    ignoreFolders.Add(storedPath);
+                    profile.PermanentIgnoreFolderGuids.Add(folderGuid ?? "");
+                }
+
+                SyncPermanentIgnoreFolderGuids(profile);
                 EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
 
                 // Automatically rescan without popup
                 ScanAssetsForInspector(profile, silent: true);
@@ -275,13 +285,106 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void RemoveFromIgnoreList(ExportProfile profile, string folderPath)
         {
-            var ignoreFolders = profile.PermanentIgnoreFolders;
-            if (ignoreFolders != null && ignoreFolders.Contains(folderPath))
+            if (profile == null || string.IsNullOrWhiteSpace(folderPath))
             {
-                ignoreFolders.Remove(folderPath);
+                return;
+            }
+
+            var ignoreFolders = profile.PermanentIgnoreFolders;
+            int index = FindPermanentIgnoreFolderIndex(profile, folderPath);
+            if (ignoreFolders != null && index >= 0)
+            {
+                Undo.RecordObject(profile, "Remove Folder from Ignore List");
+                ignoreFolders.RemoveAt(index);
+                if (index < profile.PermanentIgnoreFolderGuids.Count)
+                {
+                    profile.PermanentIgnoreFolderGuids.RemoveAt(index);
+                }
+
+                SyncPermanentIgnoreFolderGuids(profile);
                 EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
                                 
                 ScanAssetsForInspector(profile, silent: true);
+            }
+        }
+
+        private static int FindPermanentIgnoreFolderIndex(ExportProfile profile, string folderPath)
+        {
+            var ignoreFolders = profile?.PermanentIgnoreFolders;
+            if (ignoreFolders == null || string.IsNullOrWhiteSpace(folderPath))
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < ignoreFolders.Count; i++)
+            {
+                if (string.Equals(ignoreFolders[i], folderPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            string normalizedTarget = NormalizePermanentIgnorePathKey(folderPath);
+            if (string.IsNullOrEmpty(normalizedTarget))
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < ignoreFolders.Count; i++)
+            {
+                string normalizedCandidate = NormalizePermanentIgnorePathKey(ignoreFolders[i]);
+                if (string.Equals(normalizedCandidate, normalizedTarget, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static string NormalizePermanentIgnorePathKey(string path)
+        {
+            string unityPath = NormalizeUnityPathForIgnore(path);
+            if (!string.IsNullOrEmpty(unityPath))
+            {
+                return unityPath.TrimEnd('/');
+            }
+
+            try
+            {
+                return Path.GetFullPath(path).Replace('\\', '/').TrimEnd('/');
+            }
+            catch
+            {
+                return path?.Replace('\\', '/').TrimEnd('/');
+            }
+        }
+
+        private static void SyncPermanentIgnoreFolderGuids(ExportProfile profile)
+        {
+            if (profile == null)
+            {
+                return;
+            }
+
+            var ignoreFolders = profile.PermanentIgnoreFolders;
+            var ignoreGuids = profile.PermanentIgnoreFolderGuids;
+
+            while (ignoreGuids.Count < ignoreFolders.Count)
+            {
+                ignoreGuids.Add("");
+            }
+
+            for (int i = 0; i < ignoreFolders.Count; i++)
+            {
+                string unityPath = NormalizeUnityPathForIgnore(ignoreFolders[i]);
+                ignoreGuids[i] = !string.IsNullOrEmpty(unityPath) ? AssetDatabase.AssetPathToGUID(unityPath) : "";
+            }
+
+            while (ignoreGuids.Count > ignoreFolders.Count)
+            {
+                ignoreGuids.RemoveAt(ignoreGuids.Count - 1);
             }
         }
 

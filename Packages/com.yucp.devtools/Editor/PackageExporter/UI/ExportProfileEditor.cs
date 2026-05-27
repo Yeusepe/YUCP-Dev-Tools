@@ -1167,11 +1167,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     if (GUILayout.Button("Remove", GUILayout.Width(60)))
                     {
-                        Undo.RecordObject(profile, "Remove Ignored Folder");
-                        profile.PermanentIgnoreFolders.RemoveAt(i);
-                        if (i < profile.PermanentIgnoreFolderGuids.Count)
-                            profile.PermanentIgnoreFolderGuids.RemoveAt(i);
-                        EditorUtility.SetDirty(profile);
+                        RemoveFolderFromIgnoreList(profile, i);
+                        ScanAssetsForInspector(profile, silent: true);
+                        Repaint();
+                        GUIUtility.ExitGUI();
                     }
                     
                     EditorGUILayout.EndHorizontal();
@@ -1502,8 +1501,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     // Update path if GUID matches but path changed (folder was renamed)
                     Undo.RecordObject(profile, "Update Ignored Folder Path");
                     profile.PermanentIgnoreFolders[i] = folderPath;
+                    SyncPermanentIgnoreFolderGuids(profile);
                     alreadyIgnored = true;
                     EditorUtility.SetDirty(profile);
+                    AssetDatabase.SaveAssets();
                     break;
                 }
             }
@@ -1513,16 +1514,65 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 Undo.RecordObject(profile, "Add Folder to Ignore List");
                 profile.PermanentIgnoreFolders.Add(folderPath);
                 profile.PermanentIgnoreFolderGuids.Add(folderGuid ?? "");
+                SyncPermanentIgnoreFolderGuids(profile);
                 EditorUtility.SetDirty(profile);
+                AssetDatabase.SaveAssets();
                 
                 // Automatically rescan after adding to ignore list
                 EditorApplication.delayCall += () => {
                     ScanAssetsForInspector(profile, silent: true);
+                    Repaint();
                 };
             }
             else
             {
                 EditorUtility.DisplayDialog("Already Ignored", $"'{folderPath}' is already in the ignore list.", "OK");
+            }
+        }
+
+        private void RemoveFolderFromIgnoreList(ExportProfile profile, int index)
+        {
+            if (profile == null || index < 0 || index >= profile.PermanentIgnoreFolders.Count)
+            {
+                return;
+            }
+
+            Undo.RecordObject(profile, "Remove Ignored Folder");
+            profile.PermanentIgnoreFolders.RemoveAt(index);
+            if (index < profile.PermanentIgnoreFolderGuids.Count)
+            {
+                profile.PermanentIgnoreFolderGuids.RemoveAt(index);
+            }
+
+            SyncPermanentIgnoreFolderGuids(profile);
+            EditorUtility.SetDirty(profile);
+            AssetDatabase.SaveAssets();
+        }
+
+        private void SyncPermanentIgnoreFolderGuids(ExportProfile profile)
+        {
+            if (profile == null)
+            {
+                return;
+            }
+
+            var ignoreFolders = profile.PermanentIgnoreFolders;
+            var ignoreGuids = profile.PermanentIgnoreFolderGuids;
+
+            while (ignoreGuids.Count < ignoreFolders.Count)
+            {
+                ignoreGuids.Add("");
+            }
+
+            for (int i = 0; i < ignoreFolders.Count; i++)
+            {
+                string unityPath = GetUnityRelativePath(ignoreFolders[i]);
+                ignoreGuids[i] = !string.IsNullOrEmpty(unityPath) ? AssetDatabase.AssetPathToGUID(unityPath) : "";
+            }
+
+            while (ignoreGuids.Count > ignoreFolders.Count)
+            {
+                ignoreGuids.RemoveAt(ignoreGuids.Count - 1);
             }
         }
         
