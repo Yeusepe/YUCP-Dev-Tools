@@ -51,13 +51,20 @@ namespace YUCP.PackageGuardian.Mini
                 Debug.Log("[Mini Guardian] Import detected - protecting...");
                 _currentTransaction = new GuardianTransaction();
 
-                HandleDisabledFiles();
+                int unresolvedCount = HandleDisabledFiles();
                 CleanupOrphanedDisabledMetas();
 
                 _currentTransaction.Commit();
                 _currentTransaction = null;
 
-                Debug.Log("[Mini Guardian] Protection complete");
+                if (unresolvedCount > 0)
+                {
+                    Debug.LogWarning($"[Mini Guardian] Protection completed with {unresolvedCount} unresolved .yucp_disabled conflict(s). Existing enabled files were preserved; inspect the warning paths above.");
+                }
+                else
+                {
+                    Debug.Log("[Mini Guardian] Protection complete");
+                }
             }
             catch (Exception ex)
             {
@@ -78,7 +85,7 @@ namespace YUCP.PackageGuardian.Mini
         /// <summary>
         /// Core import protection: enable *.yucp_disabled files and ensure their .meta is moved/restored.
         /// </summary>
-        private static void HandleDisabledFiles()
+        private static int HandleDisabledFiles()
         {
             string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             string packagesPath = Path.Combine(projectRoot, "Packages");
@@ -86,17 +93,28 @@ namespace YUCP.PackageGuardian.Mini
 
             var roots = new[] { packagesPath, assetsPath }.Where(Directory.Exists).ToArray();
             if (roots.Length == 0)
-                return;
+            {
+                Debug.LogWarning($"[Mini Guardian] Could not find Assets or Packages roots under project root: {projectRoot}");
+                return 0;
+            }
 
             var disabledFiles = roots
                 .SelectMany(r => Directory.GetFiles(r, "*.yucp_disabled", SearchOption.AllDirectories))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             if (disabledFiles.Length == 0)
-                return;
+            {
+                Debug.Log("[Mini Guardian] Import looked relevant, but no .yucp_disabled files were found to enable.");
+                return 0;
+            }
 
-            Debug.Log($"[Mini Guardian] Found {disabledFiles.Length} .yucp_disabled file(s)");
+            Debug.Log($"[Mini Guardian] Found {disabledFiles.Length} .yucp_disabled file(s) under roots: {string.Join(", ", roots)}");
+            foreach (var sample in disabledFiles.Take(10))
+                Debug.Log($"[Mini Guardian] Pending disabled file: {sample}");
+            if (disabledFiles.Length > 10)
+                Debug.Log($"[Mini Guardian] ...and {disabledFiles.Length - 10} more .yucp_disabled file(s).");
 
+            int unresolvedCount = 0;
             foreach (var disabledFile in disabledFiles)
             {
                 string enabledFile = disabledFile.Substring(0, disabledFile.Length - ".yucp_disabled".Length);
@@ -114,14 +132,17 @@ namespace YUCP.PackageGuardian.Mini
                 if (!File.Exists(enabledFile))
                 {
                     EnableWithMeta(disabledFile, enabledFile, disabledMeta, enabledMeta);
-                    Debug.Log($"[Mini Guardian] Enabled: {Path.GetFileName(enabledFile)}");
+                    Debug.Log($"[Mini Guardian] Enabled: {disabledFile} -> {enabledFile}");
                     continue;
                 }
 
                 // Conflict: always keep the enabled file to avoid overwriting user content.
-                Debug.LogWarning($"[Mini Guardian] Conflict detected for '{Path.GetFileName(enabledFile)}'. Keeping existing file and leaving .yucp_disabled in place.");
+                unresolvedCount++;
+                Debug.LogWarning($"[Mini Guardian] Conflict detected. Keeping existing enabled file and leaving incoming disabled file for inspection. enabled='{enabledFile}', incoming='{disabledFile}'");
                 continue;
             }
+
+            return unresolvedCount;
         }
 
         private static void EnableWithMeta(string disabledFile, string enabledFile, string disabledMeta, string enabledMeta)
@@ -238,4 +259,3 @@ namespace YUCP.PackageGuardian.Mini
         }
     }
 }
-

@@ -97,9 +97,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			{
 				foreach (var asset in importedAssets)
 				{
-					if (asset.Replace('\\','/').Equals("Assets/YUCP_PackageInfo.json", StringComparison.OrdinalIgnoreCase))
+					if (asset.Replace('\\','/').EndsWith("/YUCP_PackageInfo.json", StringComparison.OrdinalIgnoreCase))
 					{
-						UpdateRunner.TryAdoptBaselineFromMetadataPath(Path.GetFullPath(asset));
+						string metadataPath = Path.GetFullPath(asset);
+						UpdateRunner.TryAdoptBaselineFromMetadataPath(metadataPath);
+						EditorApplication.delayCall += () => CompanionTutorialRunner.QueueRunFromMetadataPath(metadataPath);
 						break;
 					}
 				}

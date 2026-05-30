@@ -201,6 +201,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 TagOnboardingTarget(updateStepsSection, "update-steps-section");
                 updateStepsSection.name = "section-update-steps";
                 contentWrapper.Add(updateStepsSection);
+
+                var companionTutorialSection = CreateCompanionTutorialSection(selectedProfile);
+                companionTutorialSection.name = "section-companion-tutorial";
+                contentWrapper.Add(companionTutorialSection);
                 
                 // Obfuscation Section
                 var obfuscationSection = CreateObfuscationSection(selectedProfile);

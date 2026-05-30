@@ -263,6 +263,60 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
         }
+
+        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Run Demo")]
+        public static void RunCompanionTutorialDemo()
+        {
+            CompanionTutorialRunner.StartDemo();
+        }
+
+        [MenuItem("Tools/YUCP/Others/Companion Tutorial/Run Overlay Test")]
+        public static void RunCompanionTutorialOverlayTest()
+        {
+            CompanionTutorialRunner.StartDemo();
+        }
+
+        [MenuItem("Tools/YUCP/Others/Companion Tutorial/Force Close Overlay")]
+        public static void ForceCloseCompanionTutorialOverlay()
+        {
+            CompanionTutorialRunner.Stop();
+        }
+
+        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Next Step")]
+        public static void CompanionTutorialNextStep()
+        {
+            CompanionTutorialRunner.Next();
+        }
+
+        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Next Step", true)]
+        private static bool CompanionTutorialNextStepValidate()
+        {
+            return CompanionTutorialRunner.IsRunning;
+        }
+
+        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Previous Step")]
+        public static void CompanionTutorialPreviousStep()
+        {
+            CompanionTutorialRunner.Previous();
+        }
+
+        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Previous Step", true)]
+        private static bool CompanionTutorialPreviousStepValidate()
+        {
+            return CompanionTutorialRunner.IsRunning;
+        }
+
+        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Stop")]
+        public static void CompanionTutorialStop()
+        {
+            CompanionTutorialRunner.Stop();
+        }
+
+        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Stop", true)]
+        private static bool CompanionTutorialStopValidate()
+        {
+            return CompanionTutorialRunner.IsRunning;
+        }
         
         [MenuItem("Tools/YUCP/Others/Package Exporter/Smart Version Bump/Scan for @bump Directives")]
         public static void ScanProjectForVersionDirectives()

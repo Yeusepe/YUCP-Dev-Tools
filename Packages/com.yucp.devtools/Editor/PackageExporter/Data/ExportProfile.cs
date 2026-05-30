@@ -400,6 +400,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Header("Custom Update Steps")]
         [Tooltip("Custom steps to run when updating this package. Steps are only run if enabled.")]
         public UpdateStepList updateSteps = new UpdateStepList();
+
+        [Header("Companion Tutorial")]
+        [Tooltip("Optional whole-editor tutorial shown after this package is imported.")]
+        public CompanionTutorialDefinition companionTutorial = new CompanionTutorialDefinition();
         
         /// <summary>
         /// Available preset tag options

@@ -262,6 +262,14 @@
       "source": "embedded",
       "dependencies": {}
     },
+    "com.yucp.spirits": {
+      "version": "file:com.yucp.spirits",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.unity.nuget.newtonsoft-json": "3.2.1"
+      }
+    },
     "com.yucp.temp": {
       "version": "file:com.yucp.temp",
       "depth": 0,
@@ -273,6 +281,16 @@
       "depth": 0,
       "source": "embedded",
       "dependencies": {}
+    },
+    "io.github.hatayama.uloopmcp": {
+      "version": "https://github.com/hatayama/unity-cli-loop.git?path=/Packages/src",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {
+        "com.unity.ugui": "1.0.0",
+        "com.unity.nuget.newtonsoft-json": "3.2.1"
+      },
+      "hash": "eeb9ab92b4078375d1300cf210bdb77fbdb34b3a"
     },
     "nadena.dev.modular-avatar": {
       "version": "file:nadena.dev.modular-avatar",

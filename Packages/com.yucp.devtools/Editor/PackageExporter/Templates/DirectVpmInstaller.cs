@@ -1123,6 +1123,7 @@ namespace YUCP.DirectVpmInstaller
         private static void EnableBundledPackagesAndFinalize(string packageJsonPath, string completionReason)
         {
             Debug.Log($"[DirectVpmInstaller] {completionReason}");
+            InstallerTxn.LogDiagnostic(completionReason);
 
             EditorApplication.LockReloadAssemblies();
             AssetDatabase.DisallowAutoRefresh();
@@ -1131,6 +1132,7 @@ namespace YUCP.DirectVpmInstaller
             try
             {
                 string txnId = InstallerTxn.Begin();
+                Debug.Log($"[DirectVpmInstaller] Started enable transaction {txnId} for '{packageJsonPath}'.");
                 bool enableOk = false;
                 try
                 {
@@ -1205,6 +1207,7 @@ namespace YUCP.DirectVpmInstaller
             
             if (tempJsonFiles.Length == 0)
             {
+                Debug.Log("[DirectVpmInstaller] No YUCP temp install descriptor was found. Nothing to install on this pass.");
                 try { InstallerTxn.ClearMarker("scheduled"); } catch { }
 
                 // If a previous install completed, ensure cleanup convergence
@@ -1222,6 +1225,8 @@ namespace YUCP.DirectVpmInstaller
             }
             
             string packageJsonPath = tempJsonFiles[0]; // Use the first one found
+            Debug.Log($"[DirectVpmInstaller] Found {tempJsonFiles.Length} temp install descriptor(s). Using '{packageJsonPath}'.");
+            InstallerTxn.LogDiagnostic($"Using temp install descriptor: {packageJsonPath}");
             
             try
             {
@@ -1232,6 +1237,7 @@ namespace YUCP.DirectVpmInstaller
                 var packageInfo = JObject.Parse(File.ReadAllText(packageJsonPath));
                 string bundledPackageName = packageInfo["name"]?.Value<string>();
                 string bundledPackageVersion = packageInfo["version"]?.Value<string>();
+                Debug.Log($"[DirectVpmInstaller] Processing package descriptor name='{bundledPackageName ?? "<missing>"}' version='{bundledPackageVersion ?? "<missing>"}'.");
                 // Check if this bundled package is already installed
                 if (!string.IsNullOrEmpty(bundledPackageName))
                 {
@@ -1254,6 +1260,7 @@ namespace YUCP.DirectVpmInstaller
                                         
                                         // Still enable any .yucp_disabled files (might be from previous failed install)
                                         string txnIdEarly = InstallerTxn.Begin();
+                                        Debug.Log($"[DirectVpmInstaller] Started enable transaction {txnIdEarly} for already-installed package cleanup.");
                                         bool enableOkEarly = false;
                                         try
                                         {
@@ -1431,6 +1438,7 @@ namespace YUCP.DirectVpmInstaller
                     
                     // Enable bundled packages while still locked with transaction/rollback safety
                     string txnId = InstallerTxn.Begin();
+                    Debug.Log($"[DirectVpmInstaller] Started enable transaction {txnId} after dependency installation.");
                     bool enableOk = false;
                     try
                     {
@@ -1623,7 +1631,10 @@ namespace YUCP.DirectVpmInstaller
             {
                 string packagesPath = Path.Combine(Application.dataPath, "..", "Packages");
                 if (!Directory.Exists(packagesPath))
+                {
+                    Debug.LogWarning($"[DirectVpmInstaller] Packages folder does not exist: {packagesPath}");
                     return;
+                }
                 
                 // Preflight checks: free space, write permissions
                 if (!HasSufficientDiskSpace(packagesPath, 100 * 1024 * 1024L))
@@ -1632,14 +1643,28 @@ namespace YUCP.DirectVpmInstaller
 
                 // Find all .yucp_disabled files in Packages folder
                 string[] disabledFiles = Directory.GetFiles(packagesPath, "*.yucp_disabled", SearchOption.AllDirectories);
+                int discoveredCount = disabledFiles.Length;
                 // Apply ignore patterns if present
                 var ignored = LoadInstallerIgnore(packagesPath);
                 if (ignored.Count > 0)
                 {
                     disabledFiles = disabledFiles.Where(f => !ignored.Any(p => WildcardMatch(NormalizePath(f), p))).ToArray();
                 }
+                int ignoredCount = discoveredCount - disabledFiles.Length;
                 int enabledCount = 0;
-                int skippedCount = 0;
+                int failedCount = 0;
+                var failedFiles = new List<string>();
+
+                Debug.Log($"[DirectVpmInstaller] Found {discoveredCount} .yucp_disabled file(s) under '{packagesPath}' ({ignoredCount} ignored, {disabledFiles.Length} eligible).");
+                InstallerTxn.LogDiagnostic($"EnableBundledPackagesTransactional discovered={discoveredCount} ignored={ignoredCount} eligible={disabledFiles.Length} packagesPath={packagesPath}");
+                foreach (string sample in disabledFiles.Take(10))
+                {
+                    Debug.Log($"[DirectVpmInstaller] Pending disabled file: {sample}");
+                }
+                if (disabledFiles.Length > 10)
+                {
+                    Debug.Log($"[DirectVpmInstaller] ...and {disabledFiles.Length - 10} more .yucp_disabled file(s).");
+                }
                 
                 foreach (string disabledFile in disabledFiles)
                 {
@@ -1650,21 +1675,22 @@ namespace YUCP.DirectVpmInstaller
                     }
                     catch (Exception fileEx)
                     {
-                        Debug.LogWarning($"[DirectVpmInstaller] Failed to process '{Path.GetFileName(disabledFile)}': {fileEx.Message}");
-                        // Continue with other files
+                        failedCount++;
+                        failedFiles.Add(disabledFile);
+                        Debug.LogWarning($"[DirectVpmInstaller] Failed to enable '{disabledFile}': {fileEx.Message}\n{fileEx.StackTrace}");
+                        InstallerTxn.LogDiagnostic($"Failed to enable {disabledFile}: {fileEx}");
                     }
                 }
                 
                 if (enabledCount > 0)
                 {
-                    Debug.Log($"[DirectVpmInstaller] Enabled {enabledCount} bundled package files ({skippedCount} skipped as already up-to-date)");
+                    Debug.Log($"[DirectVpmInstaller] Enabled {enabledCount} bundled package file(s).");
                 }
-                else if (skippedCount > 0)
-                {
-                    Debug.Log($"[DirectVpmInstaller] All {skippedCount} bundled files were already up-to-date");
-                }
+
+                if (failedCount > 0)
+                    throw new Exception($"Failed to enable {failedCount} .yucp_disabled file(s): {string.Join(", ", failedFiles.Take(5))}{(failedFiles.Count > 5 ? " ..." : "")}");
                 
-                // Final cleanup pass: remove any remaining .yucp_disabled files
+                // Final cleanup pass: remove only orphaned .yucp_disabled.meta files and report any remaining disabled assets.
                 InstallerTxn.CleanupOrphanedDisabledFiles();
             }
             catch (Exception ex)
@@ -1792,26 +1818,16 @@ namespace YUCP.DirectVpmInstaller
                 // Leave generated installer scripts in place until the next domain comes up.
                 // They are responsible for performing the post-reload self-cleanup pass.
                 
-                // Delete all .yucp_disabled files from bundled packages (orphaned after enabling)
+                // Report remaining .yucp_disabled files instead of deleting them blindly. A remaining disabled file
+                // means the installer/resolver could not make a safe enable decision and needs diagnostics.
                 string packagesPath = Path.Combine(Application.dataPath, "..", "Packages");
                 if (Directory.Exists(packagesPath))
                 {
                     string[] disabledFiles = Directory.GetFiles(packagesPath, "*.yucp_disabled", SearchOption.AllDirectories);
-                    int deletedCount = 0;
-                    
-                    foreach (string disabledFile in disabledFiles)
+                    if (disabledFiles.Length > 0)
                     {
-                        File.Delete(disabledFile);
-                        string metaPath = disabledFile + ".meta";
-                        if (File.Exists(metaPath))
-                            File.Delete(metaPath);
-                        
-                        deletedCount++;
-                    }
-                    
-                    if (deletedCount > 0)
-                    {
-                        Debug.Log($"[DirectVpmInstaller] Deleted {deletedCount} orphaned .yucp_disabled files");
+                        Debug.LogWarning($"[DirectVpmInstaller] {disabledFiles.Length} .yucp_disabled file(s) remain after installer cleanup. They were preserved for diagnosis. First files: {string.Join(", ", disabledFiles.Take(10))}");
+                        InstallerTxn.LogDiagnostic($"Remaining .yucp_disabled files after cleanup: {disabledFiles.Length}; samples={string.Join(", ", disabledFiles.Take(10))}");
                     }
                 }
                 

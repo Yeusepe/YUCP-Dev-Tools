@@ -3,6 +3,7 @@ using UnityEditor;
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -85,6 +86,7 @@ namespace YUCP.DirectVpmInstaller
             _current = new TxnState { id = Guid.NewGuid().ToString("N"), status = "started" };
             _lastManifest = null;
             Persist();
+            Log("Transaction started: " + _current.id);
             return _current.id;
         }
 
@@ -95,6 +97,7 @@ namespace YUCP.DirectVpmInstaller
             Persist();
             // Keep a snapshot for verification after commit.
             _lastManifest = _current.manifest != null ? new List<ManifestEntry>(_current.manifest) : null;
+            Log($"Transaction committed: {_current.id}; ops={_current.ops.Count}; manifest={_current.manifest.Count}");
             TryDelete(TxnPath);
             _current = null;
         }
@@ -102,6 +105,7 @@ namespace YUCP.DirectVpmInstaller
         public static void Rollback()
         {
             if (_current == null) return;
+            Log($"Transaction rollback started: {_current.id}; ops={_current.ops.Count}");
             // reverse ops
             for (int i = _current.ops.Count - 1; i >= 0; i--)
             {
@@ -128,6 +132,7 @@ namespace YUCP.DirectVpmInstaller
                 }
             }
             TryDelete(TxnPath);
+            Log("Transaction rollback finished");
             _current = null;
         }
 
@@ -136,6 +141,7 @@ namespace YUCP.DirectVpmInstaller
             string enabledFile = disabledFile.Substring(0, disabledFile.Length - ".yucp_disabled".Length);
             string disabledMeta = disabledFile + ".meta";
             string enabledMeta = enabledFile + ".meta";
+            Log($"EnableDisabledFile start: disabled={disabledFile}; enabled={enabledFile}; disabledMetaExists={File.Exists(disabledMeta)}; enabledExists={File.Exists(enabledFile)}; enabledMetaExists={File.Exists(enabledMeta)}");
 
             // Capture expected content hash BEFORE we move/delete the disabled file.
             // (At the end of this method, disabledFile commonly no longer exists.)
@@ -161,6 +167,7 @@ namespace YUCP.DirectVpmInstaller
                     string qdir = Path.Combine(QuarantineRoot, _current.id);
                     Directory.CreateDirectory(qdir);
                     string backupPath = Path.Combine(qdir, Path.GetFileName(enabledFile));
+                    Log($"Enabled file differs from disabled file. Quarantining existing file: {enabledFile} -> {backupPath}");
                     SafeMove(enabledFile, backupPath, overwrite: true);
                     Record("backup", backupPath, enabledFile);
                     
@@ -169,6 +176,7 @@ namespace YUCP.DirectVpmInstaller
                     if (enabledMetaExisted)
                     {
                         string backupMetaPath = backupPath + ".meta";
+                        Log($"Quarantining existing meta: {enabledMeta} -> {backupMetaPath}");
                         SafeMove(enabledMeta, backupMetaPath, overwrite: true);
                         Record("backup", backupMetaPath, enabledMeta);
                     }
@@ -176,11 +184,13 @@ namespace YUCP.DirectVpmInstaller
 
                 if (!identical)
                 {
+                    Log($"Moving disabled file into place: {disabledFile} -> {enabledFile}");
                     SafeMove(disabledFile, enabledFile, overwrite: true);
                     Record("move", disabledFile, enabledFile);
                 }
                 else
                 {
+                    Log($"Disabled file is identical to enabled file. Deleting duplicate: {disabledFile}");
                     TryDelete(disabledFile);
                     Record("delete", disabledFile, null);
                     // If files are identical and enabled file existed, preserve its meta and delete disabled meta
@@ -194,6 +204,7 @@ namespace YUCP.DirectVpmInstaller
             }
             else
             {
+                Log($"No enabled file exists. Moving disabled file into place: {disabledFile} -> {enabledFile}");
                 SafeMove(disabledFile, enabledFile, overwrite: false);
                 Record("move", disabledFile, enabledFile);
             }
@@ -212,6 +223,7 @@ namespace YUCP.DirectVpmInstaller
                 
                 if (File.Exists(backupMetaPath))
                 {
+                    Log($"Restoring pre-existing enabled meta to preserve GUID: {backupMetaPath} -> {enabledMeta}");
                     SafeMove(backupMetaPath, enabledMeta, overwrite: true);
                     Record("move", backupMetaPath, enabledMeta);
                 }
@@ -230,6 +242,7 @@ namespace YUCP.DirectVpmInstaller
                 
                 if (!string.IsNullOrEmpty(originalGuid))
                 {
+                    Log($"Restoring original GUID {originalGuid} from disabled meta: {disabledMeta}");
                     // Read the disabled meta file
                     string metaContent = File.ReadAllText(disabledMeta);
                     // Replace the GUID with the original GUID (preserve the format: "guid: GUID_VALUE")
@@ -265,6 +278,7 @@ namespace YUCP.DirectVpmInstaller
                 else
                 {
                     // No original GUID stored, just move the disabled meta to enabled (fallback)
+                    Log($"No original GUID token found in disabled meta. Moving meta as-is: {disabledMeta} -> {enabledMeta}");
                     SafeMove(disabledMeta, enabledMeta, overwrite: true);
                     Record("move", disabledMeta, enabledMeta);
                 }
@@ -280,8 +294,12 @@ namespace YUCP.DirectVpmInstaller
                     sha256 = expectedHash
                 });
                 Persist();
+                Log($"EnableDisabledFile complete: enabled={enabledFile}; sha256={expectedHash}");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log($"Failed to write manifest entry for {enabledFile}: {ex.Message}");
+            }
         }
 
         public static void CleanupOrphanedDisabledFiles()
@@ -289,11 +307,21 @@ namespace YUCP.DirectVpmInstaller
             try
             {
                 string packagesPath = Path.Combine(Application.dataPath, "..", "Packages");
-                foreach (var file in Directory.GetFiles(packagesPath, "*.yucp_disabled", SearchOption.AllDirectories))
+                int orphanedMetaDeleted = 0;
+                foreach (var meta in Directory.GetFiles(packagesPath, "*.yucp_disabled.meta", SearchOption.AllDirectories))
                 {
-                    TryDelete(file);
-                    var meta = file + ".meta";
+                    var disabledFile = meta.Substring(0, meta.Length - ".meta".Length);
+                    if (File.Exists(disabledFile))
+                        continue;
+
                     TryDelete(meta);
+                    orphanedMetaDeleted++;
+                }
+
+                var remaining = Directory.GetFiles(packagesPath, "*.yucp_disabled", SearchOption.AllDirectories);
+                if (orphanedMetaDeleted > 0 || remaining.Length > 0)
+                {
+                    Log($"CleanupOrphanedDisabledFiles: orphanedMetaDeleted={orphanedMetaDeleted}; remainingDisabled={remaining.Length}; samples={string.Join(", ", remaining.Take(10))}");
                 }
             }
             catch (Exception ex)
@@ -395,6 +423,7 @@ namespace YUCP.DirectVpmInstaller
                 catch (Exception ex)
                 {
                     last = ex;
+                    Log($"{label} failed on attempt {i + 1}/{attempts}: {ex.Message}");
                     System.Threading.Thread.Sleep(delayMs);
                     delayMs *= 2;
                 }
@@ -427,9 +456,17 @@ namespace YUCP.DirectVpmInstaller
 
                 foreach (var m in manifest)
                 {
-                    if (!File.Exists(m.enabledPath)) return false;
+                    if (!File.Exists(m.enabledPath))
+                    {
+                        Log("VerifyManifest missing enabled file: " + m.enabledPath);
+                        return false;
+                    }
                     var h = HashOf(m.enabledPath);
-                    if (!string.Equals(h, m.sha256, StringComparison.OrdinalIgnoreCase)) return false;
+                    if (!string.Equals(h, m.sha256, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Log($"VerifyManifest hash mismatch: {m.enabledPath}; expected={m.sha256}; actual={h}");
+                        return false;
+                    }
                 }
                 return true;
             }
@@ -494,6 +531,11 @@ namespace YUCP.DirectVpmInstaller
             }
             catch { }
         }
+
+        public static void LogDiagnostic(string msg)
+        {
+            Log(msg);
+        }
         
         /// <summary>
         /// Extract the original GUID from a .meta file's userData field (stored when bundling .yucp_disabled files).
@@ -549,5 +591,3 @@ namespace YUCP.DirectVpmInstaller
         }
     }
 }
-
-

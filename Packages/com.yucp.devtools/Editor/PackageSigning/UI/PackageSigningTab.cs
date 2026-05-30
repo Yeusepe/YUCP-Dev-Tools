@@ -231,9 +231,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             // Headline — use camel case for trademarked phrase
             body.Add(MakeLabel("Sign packages with\nyour Creator Identity\u2122", 17, TextPri, bold: true, mb: 6, wrap: true));
 
-            // Subtext — short, no jargon
-            body.Add(MakeLabel("Verified packages build trust with your customers.", 12, TextSec, mb: 22, wrap: true));
-
             if (_isSigningIn)
                 body.Add(BuildSigningInState());
             else

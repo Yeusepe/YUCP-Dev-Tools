@@ -178,6 +178,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private bool showDependencies = true;
         private bool showQuickActions = true;
         private bool showUpdateSteps = true;
+        private bool showCompanionTutorial = true;
         
         private Texture2D logoTexture;
         private Texture2D bannerGradientTexture;

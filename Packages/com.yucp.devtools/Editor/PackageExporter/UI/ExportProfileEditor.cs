@@ -25,6 +25,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
     private bool showExclusionFilters = false;
     private bool showDependencies = true;
     private bool showObfuscation = true;
+    private bool showCompanionTutorial = false;
     private bool showExportSettings = false;
     private bool showBackstagePublishing = false;
     private bool showStatistics = false;
@@ -496,6 +497,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                     
                     EditorGUILayout.PropertyField(serializedObject.FindProperty("autoIncrementVersion"), new GUIContent("Auto-Increment Version"));
+                });
+            }
+            EditorGUILayout.EndFoldoutHeaderGroup();
+
+            EditorGUILayout.Space(5);
+            showCompanionTutorial = EditorGUILayout.BeginFoldoutHeaderGroup(showCompanionTutorial, "Companion Tutorial");
+            if (showCompanionTutorial)
+            {
+                DrawSection(() =>
+                {
+                    EditorGUILayout.HelpBox(
+                        "Optional Windows-only whole-Unity install tutorial. The overlay is click-through and advances from wait conditions.",
+                        MessageType.Info);
+                    EditorGUILayout.PropertyField(
+                        serializedObject.FindProperty("companionTutorial"),
+                        new GUIContent("Tutorial"),
+                        true);
                 });
             }
             EditorGUILayout.EndFoldoutHeaderGroup();

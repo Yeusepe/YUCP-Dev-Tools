@@ -319,11 +319,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             headerSpacer.style.flexGrow = 1;
             headerRow.Add(headerSpacer);
 
-            var headerHint = new Label("Essentials stay visible; optional parts toggle below");
-            headerHint.style.fontSize = 10;
-            headerHint.style.color = new Color(0.45f, 0.45f, 0.5f);
-            headerRow.Add(headerHint);
-
             container.Add(headerRow);
 
             var body = new VisualElement();

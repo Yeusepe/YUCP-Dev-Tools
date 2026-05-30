@@ -577,6 +577,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             try
             {
+                Debug.Log($"[PackageBuilder] Starting export for profile '{profile?.profileName ?? profile?.name ?? "<unnamed>"}' package='{profile?.packageName ?? "<missing>"}' version='{profile?.version ?? "<missing>"}'.");
+                var originalProgressCallback = progressCallback;
+                progressCallback = (progress, status) =>
+                {
+                    if (!string.IsNullOrEmpty(status))
+                        Debug.Log($"[PackageBuilder] Export progress {progress:P0}: {status}");
+                    originalProgressCallback?.Invoke(progress, status);
+                };
+
                 // Save all assets before export
                 progressCallback?.Invoke(0.01f, "Saving all project assets...");
                 AssetDatabase.SaveAssets();
@@ -745,6 +754,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     result.success = false;
                     result.errorMessage = "No assets found to export";
+                    Debug.LogWarning($"[PackageBuilder] Export stopped: {result.errorMessage}. Profile '{profile?.profileName ?? profile?.name ?? "<unnamed>"}' has {profile?.foldersToExport?.Count ?? 0} folder(s) configured.");
                     return result;
                 }
                 
@@ -1163,7 +1173,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogWarning($"[PackageBuilder] Failed to inject content: {ex.Message}");
+                        Debug.LogError($"[PackageBuilder] Failed to inject package metadata/installer/bundles into '{tempPackagePath}'. Export will stop to avoid producing a package that imports with unresolved .yucp_disabled files.\n{ex}");
+                        throw new InvalidOperationException(
+                            "Failed to inject YUCP installer/metadata into the package archive. See the Unity Console for the exact archive path and exception details.",
+                            ex);
                     }
                 }
                 
@@ -1413,6 +1426,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 result.outputPath = finalOutputPath;
                 result.buildTimeSeconds = (float)(DateTime.Now - startTime).TotalSeconds;
+                Debug.Log($"[PackageBuilder] Export succeeded: '{finalOutputPath}' in {result.buildTimeSeconds:0.###}s. files={validAssets.Count}, signed={packageSigned}, warning={(string.IsNullOrEmpty(signingWarningMessage) ? "none" : signingWarningMessage)}");
                 
                 // Register exported package in ExportedPackageRegistry
                 if (!string.IsNullOrEmpty(packageId))
@@ -1461,7 +1475,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[PackageBuilder] Export failed: {ex.Message}");
+                Debug.LogError($"[PackageBuilder] Export failed for profile '{profile?.profileName ?? profile?.name ?? "<unnamed>"}': {ex.Message}");
                 Debug.LogException(ex);
                 
                 // Restore original DLLs on error
@@ -2360,7 +2374,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     author = profile.author ?? "",
                     description = profile.description ?? "",
                     productLinks = new List<ProductLinkJson>(),
-                    updateSteps = profile.updateSteps
+                    updateSteps = profile.updateSteps,
+                    companionTutorial = profile.companionTutorial
                 };
 
                 // Convert product links
@@ -2606,6 +2621,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public string versionRule;
             public string versionRuleName;
             public UpdateStepList updateSteps;
+            public CompanionTutorialDefinition companionTutorial;
             public List<FileHashJson> fileHashes;
             /// <summary>Per-profile license requirements embedded at export time.</summary>
             public List<LicensePackageJson> licensePackages;
@@ -3791,6 +3807,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             try
             {
+                int disabledCount = 0;
+                var disabledSamples = new List<string>();
+
                 foreach (string folder in Directory.GetDirectories(extractDir))
                 {
                     string pathnameFile = Path.Combine(folder, "pathname");
@@ -3828,11 +3847,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                     // Disable
                     File.WriteAllText(pathnameFile, pathname + ".yucp_disabled");
+                    disabledCount++;
+                    if (disabledSamples.Count < 10)
+                        disabledSamples.Add(pathname);
+                }
+
+                if (disabledCount > 0)
+                {
+                    Debug.Log($"[PackageBuilder] Marked {disabledCount} exported asset(s) as .yucp_disabled for staged import protection. Samples: {string.Join(", ", disabledSamples)}");
+                }
+                else
+                {
+                    Debug.Log("[PackageBuilder] Staged import protection ran, but no package entries needed .yucp_disabled renaming.");
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[PackageBuilder] Failed to apply default disable pass: {ex.Message}");
+                Debug.LogWarning($"[PackageBuilder] Failed to apply default disable pass: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
