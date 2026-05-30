@@ -285,10 +285,16 @@ function Invoke-ProcessCapture {
     }
 
     if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-        try {
-            $process.Kill($true)
+        if ($PSVersionTable.PSVersion.Major -ge 7) {
+            try {
+                $process.Kill($true)
+            }
+            catch {
+                $process.Kill()
+            }
         }
-        catch {
+        else {
+            Stop-ProcessTree $process.Id
             $process.Kill()
         }
         $process.WaitForExit()
@@ -306,6 +312,28 @@ function Invoke-ProcessCapture {
         StdOut = $stdoutTask.GetAwaiter().GetResult()
         StdErr = $stderrTask.GetAwaiter().GetResult()
         TimedOut = $false
+    }
+}
+
+function Stop-ProcessTree {
+    param([int]$ProcessId)
+
+    $descendants = New-Object System.Collections.Generic.List[int]
+    $queue = New-Object System.Collections.Generic.Queue[int]
+    $queue.Enqueue($ProcessId)
+
+    while ($queue.Count -gt 0) {
+        $parentId = $queue.Dequeue()
+        Get-CimInstance Win32_Process -Filter "ParentProcessId=$parentId" -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                $childId = [int]$_.ProcessId
+                $descendants.Add($childId)
+                $queue.Enqueue($childId)
+            }
+    }
+
+    foreach ($childId in ($descendants | Select-Object -Unique | Sort-Object -Descending)) {
+        Stop-Process -Id $childId -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -503,8 +531,15 @@ function Invoke-GeminiChangelog {
         return $null
     }
 
-    $json = $jsonText | ConvertFrom-Json
-    $content = Normalize-ChangelogText $json.response
+        try {
+            $json = $jsonText | ConvertFrom-Json
+        }
+        catch {
+            Write-Host "Gemini returned malformed JSON:"
+            Write-Host (($raw + [Environment]::NewLine + $jsonText).Substring(0, [Math]::Min(1000, ($raw + [Environment]::NewLine + $jsonText).Length)))
+            return $null
+        }
+        $content = Normalize-ChangelogText $json.response
     if (Test-ValidChangelog $content) {
         return $content
     }

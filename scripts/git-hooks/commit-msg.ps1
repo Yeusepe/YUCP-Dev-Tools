@@ -162,12 +162,40 @@ function Invoke-ProcessCapture {
     }
 
     if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-        try { $process.Kill($true) } catch { $process.Kill() }
+        if ($PSVersionTable.PSVersion.Major -ge 7) {
+            try { $process.Kill($true) } catch { $process.Kill() }
+        }
+        else {
+            Stop-ProcessTree $process.Id
+            $process.Kill()
+        }
         $process.WaitForExit()
         return [pscustomobject]@{ ExitCode = 124; StdOut = $stdoutTask.GetAwaiter().GetResult(); StdErr = $stderrTask.GetAwaiter().GetResult(); TimedOut = $true }
     }
 
     return [pscustomobject]@{ ExitCode = $process.ExitCode; StdOut = $stdoutTask.GetAwaiter().GetResult(); StdErr = $stderrTask.GetAwaiter().GetResult(); TimedOut = $false }
+}
+
+function Stop-ProcessTree {
+    param([int]$ProcessId)
+
+    $descendants = New-Object System.Collections.Generic.List[int]
+    $queue = New-Object System.Collections.Generic.Queue[int]
+    $queue.Enqueue($ProcessId)
+
+    while ($queue.Count -gt 0) {
+        $parentId = $queue.Dequeue()
+        Get-CimInstance Win32_Process -Filter "ParentProcessId=$parentId" -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                $childId = [int]$_.ProcessId
+                $descendants.Add($childId)
+                $queue.Enqueue($childId)
+            }
+    }
+
+    foreach ($childId in ($descendants | Select-Object -Unique | Sort-Object -Descending)) {
+        Stop-Process -Id $childId -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Invoke-GitText {
@@ -223,7 +251,10 @@ $diffSection
 function Normalize-ModelText {
     param([string]$Text)
     if ($null -eq $Text) { return "" }
-    $normalized = $Text.Trim()
+    $normalized = ($Text -replace "`e\[[0-9;?]*[ -/]*[@-~]", "").Trim()
+    $normalized = (($normalized -split "`r?`n") |
+        Where-Object { -not $_.TrimStart().StartsWith(">") }) -join [Environment]::NewLine
+    $normalized = $normalized.Trim()
     $normalized = $normalized -replace '^\s*```(?:text|gitcommit|markdown|md)?\s*', ''
     $normalized = $normalized -replace '\s*```\s*$', ''
     return $normalized.Trim()
@@ -295,7 +326,12 @@ function Invoke-GeminiText {
     if ($result.TimedOut -or $result.ExitCode -ne 0) { return $null }
     $jsonText = Get-FirstJsonObject ($result.StdOut + [Environment]::NewLine + $result.StdErr)
     if (-not $jsonText) { return $null }
-    $json = $jsonText | ConvertFrom-Json
+    try {
+        $json = $jsonText | ConvertFrom-Json
+    }
+    catch {
+        return $null
+    }
     return Normalize-ModelText $json.response
 }
 
@@ -304,25 +340,10 @@ function Invoke-OpenCodeText {
     $opencode = Get-FirstCommand @("opencode", "opencode.cmd", "opencode.exe")
     if (-not $opencode) { return $null }
     $model = if ([string]::IsNullOrWhiteSpace($env:OPENCODE_MODEL)) { "opencode/deepseek-v4-flash-free" } else { $env:OPENCODE_MODEL }
-    Write-Step "Generating commit message with opencode ($model)..."
-    $result = Invoke-ProcessCapture $opencode @("run", "--model", $model, "--format", "json", "--prompt", $Prompt) 180
+    Write-Step "Running opencode ($model)..."
+    $result = Invoke-ProcessCapture $opencode @("run", "-m", $model, $Prompt) 180
     if ($result.TimedOut -or $result.ExitCode -ne 0) { return $null }
-    $lines = @()
-    foreach ($line in ($result.StdOut -split "`r?`n")) {
-        if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        try {
-            $event = $line | ConvertFrom-Json
-            foreach ($property in @("text", "message", "content", "response")) {
-                if ($event.PSObject.Properties.Name -contains $property -and -not [string]::IsNullOrWhiteSpace($event.$property)) {
-                    $lines += $event.$property
-                }
-            }
-        }
-        catch {
-            $lines += $line
-        }
-    }
-    return Normalize-ModelText ($lines -join [Environment]::NewLine)
+    return Normalize-ModelText $result.StdOut
 }
 
 function Invoke-CommitMessageGeneration {
@@ -353,12 +374,12 @@ function Invoke-CodeRabbitReview {
             Write-Step "CodeRabbit unavailable; using opencode fallback review."
             $model = if ([string]::IsNullOrWhiteSpace($env:OPENCODE_MODEL)) { "opencode/deepseek-v4-flash-free" } else { $env:OPENCODE_MODEL }
             $prompt = "Review the staged changes for blocking bugs. Return exactly PASS if there are no blocking issues. Otherwise return concise findings.`n`n$(Get-CommitContext)"
-            $result = Invoke-ProcessCapture $opencode @("run", "--model", $model, "--prompt", $prompt) 240
+            $result = Invoke-ProcessCapture $opencode @("run", "-m", $model, $prompt) 240
             if ($result.TimedOut -or $result.ExitCode -ne 0) {
                 Stop-Commit "opencode fallback review failed."
             }
             $review = Normalize-ModelText $result.StdOut
-            if ($review -notmatch '^\s*PASS\s*$') {
+            if ($review -notmatch '^\s*PASS\.?\s*$') {
                 Write-Host $review
                 Stop-Commit "opencode fallback review found issues."
             }
@@ -377,7 +398,7 @@ function Invoke-CodeRabbitReview {
         $message = if ([string]::IsNullOrWhiteSpace($result.StdErr)) { "CodeRabbit review failed." } else { $result.StdErr.Trim() }
         Write-Host $message
         $fallback = Invoke-OpenCodeText "Review the staged changes for blocking bugs. Return exactly PASS if no blocking issues. Otherwise return concise findings.`n`n$(Get-CommitContext)"
-        if ($fallback -match '^\s*PASS\s*$') { return }
+        if ($fallback -match '^\s*PASS\.?\s*$') { return }
         if (-not [string]::IsNullOrWhiteSpace($fallback)) { Write-Host $fallback }
         Stop-Commit "CodeRabbit failed and fallback review did not pass."
     }
@@ -390,7 +411,7 @@ function Invoke-CodeRabbitReview {
             if ($event.type -eq "finding") { $findings += $event }
         }
         catch {
-            Stop-Commit "CodeRabbit returned non-JSON output."
+            continue
         }
     }
     if ($findings.Count -gt 0) {
