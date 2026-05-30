@@ -21,8 +21,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         private static Type GetDirectInstallerType()
         {
             Assembly assembly = AppDomain.CurrentDomain.GetAssemblies()
-                .FirstOrDefault(candidate => string.Equals(candidate.GetName().Name, "YUCP.DirectVpmInstaller.Template", StringComparison.Ordinal));
-            Assert.That(assembly, Is.Not.Null, "Expected YUCP.DirectVpmInstaller.Template assembly to be loaded.");
+                .FirstOrDefault(candidate => string.Equals(candidate.GetName().Name, "YUCP.DirectVpmInstaller.Runtime", StringComparison.Ordinal));
+            Assert.That(assembly, Is.Not.Null, "Expected YUCP.DirectVpmInstaller.Runtime assembly to be loaded.");
 
             Type type = assembly.GetType("YUCP.DirectVpmInstaller.DirectVpmInstaller", throwOnError: false);
             Assert.That(type, Is.Not.Null, "Expected DirectVpmInstaller type to be available.");
@@ -40,7 +40,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 "Editor",
                 "PackageExporter",
                 "Binaries",
-                "YUCP.DirectVpmInstaller.Template.dll");
+                "YUCP.DirectVpmInstaller.Runtime.dll");
 
             Assert.That(File.Exists(dllPath), Is.True, "Expected the checked-in precompiled installer runtime binary to exist.");
             Assert.That(File.Exists(dllPath + ".meta"), Is.True, "Expected the checked-in precompiled installer runtime binary to have a Unity .meta file.");
@@ -63,9 +63,15 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
 
             JObject asmdef = JObject.Parse(File.ReadAllText(asmdefPath));
             string assemblyName = asmdef.Value<string>("name");
+            var defineConstraints = asmdef["defineConstraints"] as JArray;
 
-            Assert.That(assemblyName, Is.EqualTo("YUCP.DirectVpmInstaller.Template.Source"));
-            Assert.That(assemblyName, Is.Not.EqualTo("YUCP.DirectVpmInstaller.Template"));
+            Assert.That(assemblyName, Is.EqualTo("YUCP.DirectVpmInstaller.Source"));
+            Assert.That(assemblyName, Is.Not.EqualTo("YUCP.DirectVpmInstaller.Runtime"));
+            Assert.That(asmdef.Value<bool>("autoReferenced"), Is.False, "Template source should not be an active local editor runtime.");
+            Assert.That(
+                defineConstraints?.Values<string>(),
+                Does.Contain("YUCP_COMPILE_INSTALLER_TEMPLATE_SOURCE"),
+                "Template source should only compile when explicitly opted in; exported packages use the precompiled DLL.");
         }
 
         [Test]
@@ -96,7 +102,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                     string pathname = File.ReadAllText(pathnameFile).Replace('\\', '/');
                     return string.Equals(
                         pathname,
-                        "Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Template.dll",
+                        "Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Runtime.dll",
                         System.StringComparison.Ordinal);
                 });
 
@@ -635,7 +641,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 Assert.That(pathnames, Has.None.EqualTo("Packages/yucp.installed-packages/package.json"));
                 Assert.That(pathnames, Has.None.Matches<string>(path => path.StartsWith("Packages/com.yucp.temp/", StringComparison.Ordinal)));
                 Assert.That(pathnames, Has.None.Matches<string>(path => path.EndsWith(".yucp_disabled", StringComparison.Ordinal)));
-                Assert.That(pathnames, Has.None.Matches<string>(path => path.Contains("YUCP.DirectVpmInstaller.Template.dll", StringComparison.Ordinal)));
+                Assert.That(pathnames, Has.None.Matches<string>(path => path.Contains("YUCP.DirectVpmInstaller.Runtime.dll", StringComparison.Ordinal)));
                 Assert.That(pathnames, Has.None.Matches<string>(path => path.Contains("YUCP_Installer", StringComparison.Ordinal)));
 
                 JObject packageJsonObject = JObject.Parse(ReadPackagedAssetByPathname(packagePath, "Packages/alias.shell/package.json"));
@@ -703,7 +709,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 string[] pathnames = ReadPackagePathnames(packagePath);
                 Assert.That(pathnames, Has.Some.Matches<string>(path => path.StartsWith("Packages/com.yucp.temp/Clean-Export/_temp/YUCP_TempInstall_", StringComparison.Ordinal)));
                 Assert.That(pathnames, Has.Some.EqualTo("Packages/com.yucp.temp/package.json"));
-                Assert.That(pathnames, Has.Some.EqualTo("Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Template.dll"));
+                Assert.That(pathnames, Has.Some.EqualTo("Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Runtime.dll"));
                 Assert.That(pathnames, Has.None.EqualTo("Packages/com.yucp.temp/Plugins/hdiffz.dll"));
                 Assert.That(pathnames, Has.None.EqualTo("Packages/com.yucp.temp/Plugins/hpatchz.dll"));
                 Assert.That(pathnames, Has.None.EqualTo("Packages/com.yucp.temp/Plugins/hdiffinfo.dll"));
@@ -812,7 +818,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 string[] pathnames = ReadPackagePathnames(packagePath);
                 Assert.That(pathnames, Has.Some.Matches<string>(path => path.StartsWith("Packages/yucp.installed-packages/", StringComparison.Ordinal)));
                 Assert.That(pathnames, Has.Some.Matches<string>(path => path.Contains("/YUCP_TempInstall_", StringComparison.Ordinal)));
-                Assert.That(pathnames, Has.Some.EqualTo("Packages/yucp.installed-packages/Editor/YUCP.DirectVpmInstaller.Template.dll"));
+                Assert.That(pathnames, Has.Some.EqualTo("Packages/yucp.installed-packages/Editor/YUCP.DirectVpmInstaller.Runtime.dll"));
                 Assert.That(pathnames, Has.Some.Matches<string>(path => path.StartsWith("Packages/com.yucp.temp/", StringComparison.Ordinal)));
                 Assert.That(pathnames, Has.Some.EqualTo("Packages/com.yucp.temp/Plugins/hdiffz.dll"));
                 Assert.That(pathnames, Has.Some.EqualTo("Packages/com.yucp.temp/Plugins/hpatchz.dll"));
@@ -820,7 +826,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 Assert.That(pathnames, Has.Some.EqualTo("Packages/com.yucp.temp/Plugins/Linux/x86_64/libhdiffz.so"));
                 Assert.That(pathnames, Has.Some.EqualTo("Packages/com.yucp.temp/Plugins/Linux/x86_64/libhpatchz.so"));
                 Assert.That(pathnames, Has.Some.EqualTo("Packages/com.yucp.temp/Plugins/Linux/x86_64/libhdiffinfo.so"));
-                Assert.That(pathnames, Has.None.EqualTo("Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Template.dll"));
+                Assert.That(pathnames, Has.None.EqualTo("Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Runtime.dll"));
                 Assert.That(pathnames, Has.None.Matches<string>(path => path.EndsWith("YUCP_ProtectedPayload.json", StringComparison.Ordinal)));
                 Assert.That(pathnames, Has.None.Matches<string>(path => path.EndsWith("YUCP_ProtectedImportIntent.json", StringComparison.Ordinal)));
                 Assert.That(pathnames, Has.Some.Matches<string>(path => path.EndsWith("YUCP_PackageInfo.json", StringComparison.Ordinal)));

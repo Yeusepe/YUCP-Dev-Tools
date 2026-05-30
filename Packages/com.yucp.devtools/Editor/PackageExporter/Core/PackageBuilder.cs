@@ -33,8 +33,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private const string EmbeddedArtifactsFolderName = "Embedded";
         private const string TempInstallFolderName = "_temp";
         private const string TempPatchExportMarkerKey = "YUCP.PackageBuilder.ExportingTempPatchAssets";
-        private const string PrecompiledInstallerRuntimePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/YUCP.DirectVpmInstaller.Template.dll";
-        private const string PrecompiledInstallerRuntimeTargetFileName = "YUCP.DirectVpmInstaller.Template.dll";
+        private const string PrecompiledInstallerRuntimePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/YUCP.DirectVpmInstaller.Runtime.dll";
+        private const string PrecompiledInstallerRuntimeTargetFileName = "YUCP.DirectVpmInstaller.Runtime.dll";
         private const string PrecompiledPatchRuntimePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/YUCP.PatchRuntime.dll";
         private const string PrecompiledPatchRuntimeTargetFileName = "YUCP.PatchRuntime.dll";
         private const string TempPatchEditorRoot = TempPackageRoot + "/Editor";
@@ -97,10 +97,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     ? $"{PackageShellRoot}/{EmbeddedArtifactsFolderName}"
                     : $"{InstalledPackagesRoot}/{SafePackageName}/{EmbeddedArtifactsFolderName}";
                 TempInstallRoot = UsesAliasPackageShell
-                    ? null
+                    ? $"{InstalledPackagesRoot}/{SafePackageName}/{TempInstallFolderName}"
                     : $"{(UsesInstalledPackageWorkspace ? InstalledPackagesRoot : TempPackageRoot)}/{SafePackageName}/{TempInstallFolderName}";
                 InstallerRoot = UsesAliasPackageShell
-                    ? null
+                    ? $"{InstalledPackagesRoot}/Editor"
                     : UsesInstalledPackageWorkspace ? $"{InstalledPackagesRoot}/Editor" : TempPatchEditorRoot;
             }
 
@@ -267,6 +267,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
             catch (Exception ex)
             {
                 Debug.LogWarning($"[PackageBuilder] Failed to inspect package.json for alias export shell selection: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool PackageJsonDeclaresVpmDependencies(string packageJsonContent)
+        {
+            if (string.IsNullOrWhiteSpace(packageJsonContent))
+                return false;
+
+            try
+            {
+                var packageJson = JObject.Parse(packageJsonContent);
+                return packageJson["vpmDependencies"] is JObject deps && deps.Count > 0;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[PackageBuilder] Failed to inspect package.json for VPM dependencies: {ex.Message}");
                 return false;
             }
         }
@@ -3096,10 +3113,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 bool shouldInjectInstallerSurface = !string.IsNullOrEmpty(packageJsonContent);
                 bool usesAliasPackageShell = embedContext != null && embedContext.UsesAliasPackageShell;
+                bool enableCustomUpdateSteps = profile != null && profile.updateSteps != null && profile.updateSteps.enabled;
+                bool packageJsonDeclaresVpmDependencies = PackageJsonDeclaresVpmDependencies(packageJsonContent);
+                bool shouldInjectInstallerRuntime =
+                    shouldInjectInstallerSurface &&
+                    (embedContext == null || !usesAliasPackageShell || enableCustomUpdateSteps || packageJsonDeclaresVpmDependencies);
 
                 // 0. Disable main assets by default to avoid Unity overwriting existing files on import.
                 // This only affects already-exported assets (not injected items below).
-                bool enableCustomUpdateSteps = profile != null && profile.updateSteps != null && profile.updateSteps.enabled;
                 if (enableCustomUpdateSteps)
                 {
                     progressCallback?.Invoke(0.753f, "Preparing imported assets for staged update flow...");
@@ -3122,6 +3143,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     string packageJsonMeta = "fileFormatVersion: 2\nguid: " + packageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
                     File.WriteAllText(Path.Combine(packageJsonFolder, "asset.meta"), packageJsonMeta);
+
+                    if (usesAliasPackageShell && shouldInjectInstallerRuntime)
+                    {
+                        string tempPackageJsonGuid = Guid.NewGuid().ToString("N");
+                        string tempPackageJsonFolder = Path.Combine(tempExtractDir, tempPackageJsonGuid);
+                        Directory.CreateDirectory(tempPackageJsonFolder);
+
+                        File.WriteAllText(Path.Combine(tempPackageJsonFolder, "asset"), packageJsonContent);
+                        File.WriteAllText(Path.Combine(tempPackageJsonFolder, "pathname"), $"{embedContext.TempInstallRoot}/YUCP_TempInstall_{tempPackageJsonGuid}.json");
+                        string tempPackageJsonMeta = "fileFormatVersion: 2\nguid: " + tempPackageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+                        File.WriteAllText(Path.Combine(tempPackageJsonFolder, "asset.meta"), tempPackageJsonMeta);
+                    }
                 }
 
                 // 1b. Inject YUCP_PackageInfo.json (permanent metadata)
@@ -3169,7 +3202,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
 
                 // 1d. Ensure installed-packages container is a valid local package
-                if (embedContext != null && !usesAliasPackageShell && embedContext.UsesInstalledPackageWorkspace)
+                if (embedContext != null && (embedContext.UsesInstalledPackageWorkspace || (usesAliasPackageShell && shouldInjectInstallerRuntime)))
                 {
                     string installedPackageGuid = Guid.NewGuid().ToString("N");
                     string installedPackageFolder = Path.Combine(tempExtractDir, installedPackageGuid);
@@ -3263,7 +3296,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // 2b. Inject DirectVpmInstaller runtime
                 string installerRoot = embedContext != null ? embedContext.InstallerRoot : "Assets/Editor";
-                bool deferInstallerActivation = embedContext != null && !usesAliasPackageShell;
+                bool deferInstallerActivation = embedContext != null && shouldInjectInstallerRuntime;
                 string installerScriptPath = null;
                 string[] foundScripts = AssetDatabase.FindAssets("DirectVpmInstaller t:Script");
                 
@@ -3290,7 +3323,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                     else
                     {
-                        Debug.LogWarning("[PackageBuilder] Precompiled installer runtime was not available. Falling back to generated installer source injection.");
+                        throw new FileNotFoundException($"Required precompiled DirectVpmInstaller runtime not found at {PrecompiledInstallerRuntimePath}. Refusing to fall back to installer source templates.");
                     }
                 }
 

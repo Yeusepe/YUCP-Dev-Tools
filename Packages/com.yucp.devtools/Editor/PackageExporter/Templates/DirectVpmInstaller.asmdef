@@ -1,5 +1,5 @@
 {
-  "name": "YUCP.DirectVpmInstaller.Template.Source",
+  "name": "YUCP.DirectVpmInstaller.Source",
   "rootNamespace": "YUCP.DirectVpmInstaller",
   "references": [],
   "includePlatforms": [
@@ -11,11 +11,11 @@
   "precompiledReferences": [
     "Newtonsoft.Json.dll"
   ],
-  "autoReferenced": true,
-  "defineConstraints": [],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "YUCP_COMPILE_INSTALLER_TEMPLATE_SOURCE"
+  ],
   "versionDefines": [],
   "noEngineReferences": false
 }
-
-
 

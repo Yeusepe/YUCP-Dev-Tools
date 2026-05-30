@@ -76,9 +76,9 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         private static Type GetTemplateGuardianTransactionType()
         {
             Assembly assembly = AppDomain.CurrentDomain.GetAssemblies()
-                .FirstOrDefault(candidate => string.Equals(candidate.GetName().Name, "YUCP.DirectVpmInstaller.Template", StringComparison.Ordinal));
+                .FirstOrDefault(candidate => string.Equals(candidate.GetName().Name, "YUCP.DirectVpmInstaller.Runtime", StringComparison.Ordinal));
 
-            Assert.That(assembly, Is.Not.Null, "Expected YUCP.DirectVpmInstaller.Template assembly to be loaded.");
+            Assert.That(assembly, Is.Not.Null, "Expected YUCP.DirectVpmInstaller.Runtime assembly to be loaded.");
 
             Type type = assembly.GetType("PackageGuardian.Core.Transactions.GuardianTransaction", throwOnError: false);
             Assert.That(type, Is.Not.Null, "Expected template GuardianTransaction type to be available.");

@@ -4,6 +4,7 @@
   "version": "0.1.1",
   "unity": "2021.3",
   "description": "Allocation-free UI Toolkit infrastructure for Editor inspector UI, EditorWindow, and runtime UI. Core is Unity-free, single global tick drives all controllers.",
+  "changelogUrl": "https://dev.vpm.yucp.club/CHANGELOG.md",
   "author": {
     "name": "YUCP Club",
     "url": "http://vpm.yucp.club/"

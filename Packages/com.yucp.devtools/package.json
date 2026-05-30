@@ -4,6 +4,7 @@
   "version": "0.3.15",
   "unity": "2022.3",
   "description": "Development tools for YUCP packages including package exporter and model revision manager",
+  "changelogUrl": "https://dev.vpm.yucp.club/CHANGELOG.md",
   "author": {
     "name": "YUCP Club",
     "url": "http://vpm.yucp.club/"

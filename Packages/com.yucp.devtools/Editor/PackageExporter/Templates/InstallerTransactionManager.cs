@@ -306,9 +306,12 @@ namespace YUCP.DirectVpmInstaller
         {
             try
             {
-                string packagesPath = Path.Combine(Application.dataPath, "..", "Packages");
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string packagesPath = Path.Combine(projectRoot, "Packages");
+                string assetsPath = Path.Combine(projectRoot, "Assets");
+                var scanRoots = new[] { packagesPath, assetsPath }.Where(Directory.Exists).ToArray();
                 int orphanedMetaDeleted = 0;
-                foreach (var meta in Directory.GetFiles(packagesPath, "*.yucp_disabled.meta", SearchOption.AllDirectories))
+                foreach (var meta in scanRoots.SelectMany(root => Directory.GetFiles(root, "*.yucp_disabled.meta", SearchOption.AllDirectories)))
                 {
                     var disabledFile = meta.Substring(0, meta.Length - ".meta".Length);
                     if (File.Exists(disabledFile))
@@ -318,7 +321,10 @@ namespace YUCP.DirectVpmInstaller
                     orphanedMetaDeleted++;
                 }
 
-                var remaining = Directory.GetFiles(packagesPath, "*.yucp_disabled", SearchOption.AllDirectories);
+                var remaining = scanRoots
+                    .SelectMany(root => Directory.GetFiles(root, "*.yucp_disabled", SearchOption.AllDirectories))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
                 if (orphanedMetaDeleted > 0 || remaining.Length > 0)
                 {
                     Log($"CleanupOrphanedDisabledFiles: orphanedMetaDeleted={orphanedMetaDeleted}; remainingDisabled={remaining.Length}; samples={string.Join(", ", remaining.Take(10))}");

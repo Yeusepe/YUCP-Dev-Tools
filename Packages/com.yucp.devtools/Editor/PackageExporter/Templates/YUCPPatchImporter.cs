@@ -161,7 +161,7 @@ namespace YUCP.PatchCleanup
             }
 
             return TempRuntimeAssetExists("Packages/com.yucp.temp/Editor/YUCP.PatchRuntime.dll") ||
-                   TempRuntimeAssetExists("Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Template.dll") ||
+                   TempRuntimeAssetExists("Packages/com.yucp.temp/Editor/YUCP.DirectVpmInstaller.Runtime.dll") ||
                    TempRuntimeAssetExists("Packages/com.yucp.temp/Editor/DerivedFbxAsset.cs") ||
                    TempRuntimeAssetExists("Packages/com.yucp.temp/Editor/YUCP.PatchRuntime.asmdef");
         }

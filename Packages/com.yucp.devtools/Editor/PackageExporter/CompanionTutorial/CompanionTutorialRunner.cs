@@ -369,7 +369,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 target.StartsWith("inspector:", StringComparison.OrdinalIgnoreCase))
             {
                 string selector = target.Substring(target.IndexOf(':') + 1).Trim();
-                return TryResolveInspectorPropertyTarget(selector, main, out rect);
+                return TryResolveInspectorPropertyTarget(selector, main, out rect) ||
+                       TryResolveTransformInspectorFallback(selector, main, out rect);
             }
 
             if (target.StartsWith("hierarchy:", StringComparison.OrdinalIgnoreCase))
@@ -734,6 +735,38 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 windowRect.y + world.y - mainWindow.y,
                 world.width,
                 world.height);
+            return rect.width > 1 && rect.height > 1;
+        }
+
+        private static bool TryResolveTransformInspectorFallback(string selector, Rect mainWindow, out Rect rect)
+        {
+            rect = Rect.zero;
+            if (!IsTransformPropertySelector(selector) || Selection.activeTransform == null)
+                return false;
+
+            if (!TryResolveKnownEditorWindow("inspector", mainWindow, out Rect inspector))
+                return false;
+
+            string key = NormalizeInspectorSelector(selector);
+            float rowHeight = Mathf.Max(18f, EditorGUIUtility.singleLineHeight);
+            float spacing = Mathf.Max(2f, EditorGUIUtility.standardVerticalSpacing);
+            float transformHeaderY = inspector.y + 84f;
+            float firstRowY = transformHeaderY + rowHeight + spacing + 4f;
+
+            int rowIndex;
+            if (key == "position" || key == "localposition")
+                rowIndex = 0;
+            else if (key == "rotation" || key == "localrotation")
+                rowIndex = 1;
+            else if (key == "scale" || key == "localscale")
+                rowIndex = 2;
+            else
+                return false;
+
+            float x = inspector.x + 18f;
+            float y = firstRowY + rowIndex * (rowHeight + spacing);
+            float width = Mathf.Max(80f, inspector.width - 36f);
+            rect = new Rect(x, y, width, rowHeight + 2f);
             return rect.width > 1 && rect.height > 1;
         }
 
