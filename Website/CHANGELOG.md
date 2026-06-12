@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-12
+
+- `com.yucp.devtools`:
+  - Introduced a new Renderer Optimizer pipeline featuring static mesh merging, texture atlas building, and automated shader conversion.
+  - Added a dedicated Renderer Optimizer settings window and integrated optimization passes into the build process.
+  - Refactored the Companion Tutorial system into a dedicated runtime module with improved validation and UI components.
+  - Added comprehensive unit tests for tutorial injection, serialization, and validation.
+  - Updated the Package Exporter UI and building logic to support the enhanced tutorial system.
+
 ## 2026-05-30
 
 - Added a public changelog for the VPM listing so VRChat Creator Companion can expose release notes through each package's `changelogUrl`.

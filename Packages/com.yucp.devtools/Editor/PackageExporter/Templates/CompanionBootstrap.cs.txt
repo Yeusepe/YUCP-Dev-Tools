@@ -1,0 +1,121 @@
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// YUCP Companion Tutorial — injected bootstrap (end-user projects only).
+//
+// This file ships ONLY inside exported packages. It is stored in the dev repo as a .cs.txt so it is
+// never compiled in the creator's project. PackageBuilder.TryInjectCompanionTutorial injects it as a
+// .cs into an Assets/.../Editor folder (which always compiles), substitutes the __YUCP_*__ tokens
+// below, and swaps the namespace marker to a per-export-unique namespace so it shares the namespace
+// of the injected runtime in this same package (and never collides with another imported package).
+//
+// In the buyer's project: on the post-import domain reload, this [InitializeOnLoad] plays the bundled
+// tutorial exactly once (guarded by an EditorPrefs key), then deletes the whole injected Companion
+// folder so the project isn't polluted. The tutorial definition is carried inline (Base64 JSON) so
+// nothing depends on reading another imported asset.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+using System;
+using System.IO;
+using System.Text;
+using UnityEditor;
+using UnityEngine;
+
+namespace YUCP.CompanionTutorial.Generated.Source
+{
+    [InitializeOnLoad]
+    internal static class CompanionTutorialBootstrap
+    {
+        // Substituted by PackageBuilder at export time.
+        private const string TutorialBase64 = "__YUCP_TUTORIAL_B64__";
+        private const string OverlayBytesPath = "__YUCP_OVERLAY_PATH__";
+        private const string CompanionDir = "__YUCP_COMPANION_DIR__";
+        private const string RunOnceKey = "__YUCP_RUNONCE_KEY__";
+
+        private static bool s_handled;
+        private static bool s_cleanupScheduled;
+
+        static CompanionTutorialBootstrap()
+        {
+            EditorApplication.delayCall += Run;
+        }
+
+        private static void Run()
+        {
+            if (s_handled)
+                return;
+            s_handled = true;
+
+            // Run-once across domain reloads. EditorPrefs persists; SessionState alone would replay
+            // after a mid-tutorial reload.
+            if (EditorPrefs.GetBool(RunOnceKey, false))
+            {
+                ScheduleCleanup();
+                return;
+            }
+            EditorPrefs.SetBool(RunOnceKey, true);
+
+            try
+            {
+                string json = Encoding.UTF8.GetString(Convert.FromBase64String(TutorialBase64));
+                CompanionTutorialRunner.SetHelperPath(OverlayBytesPath);
+                bool started = CompanionTutorialRunner.QueueRunFromJson(json);
+                if (started)
+                    EditorApplication.update += WaitForCompletionThenCleanup;
+                else
+                    ScheduleCleanup(); // disabled / no steps / non-Windows: nothing will play.
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP Companion Tutorial] Bootstrap failed: {ex.Message}");
+                ScheduleCleanup();
+            }
+        }
+
+        private static void WaitForCompletionThenCleanup()
+        {
+            if (CompanionTutorialRunner.IsRunning)
+                return;
+
+            EditorApplication.update -= WaitForCompletionThenCleanup;
+            ScheduleCleanup();
+        }
+
+        private static void ScheduleCleanup()
+        {
+            if (s_cleanupScheduled)
+                return;
+            s_cleanupScheduled = true;
+            EditorApplication.delayCall += Cleanup;
+        }
+
+        private static void Cleanup()
+        {
+            // Each exported package ships its OWN unique-namespace runtime under its own Companion
+            // folder, so the whole folder can be removed safely once this package's tutorial is done.
+            try
+            {
+                if (string.IsNullOrEmpty(CompanionDir))
+                    return;
+
+                if (AssetDatabase.IsValidFolder(CompanionDir))
+                {
+                    AssetDatabase.DeleteAsset(CompanionDir);
+                }
+                else
+                {
+                    string full = Path.GetFullPath(CompanionDir);
+                    if (Directory.Exists(full))
+                    {
+                        Directory.Delete(full, true);
+                        string meta = full.TrimEnd('/', '\\') + ".meta";
+                        if (File.Exists(meta))
+                            File.Delete(meta);
+                    }
+                }
+                AssetDatabase.Refresh();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP Companion Tutorial] Bootstrap cleanup failed: {ex.Message}");
+            }
+        }
+    }
+}

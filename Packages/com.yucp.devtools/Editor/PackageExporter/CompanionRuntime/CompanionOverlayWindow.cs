@@ -9,7 +9,10 @@ using UnityEditor;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
-namespace YUCP.DevTools.Editor.PackageExporter
+// IMPORTANT: The namespace marker below (YUCP.CompanionTutorial.Generated.Source) is swapped to a
+// per-export-unique namespace by PackageBuilder when this runtime is injected into an exported
+// package. Do not rename it without updating the swap in PackageBuilder.
+namespace YUCP.CompanionTutorial.Generated.Source
 {
     internal struct CompanionOverlayFrame
     {
@@ -30,11 +33,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
     internal sealed class CompanionOverlayWindow
     {
+        // Optional project-relative path to the injected YUCPCompanionOverlay.bytes asset. Set by the
+        // runner (which the bootstrap configures via SetHelperPath) so the overlay can be located even
+        // though it lands at a package-specific path in the buyer's project. Declared platform-neutral
+        // so the runner can assign it unconditionally; only the Windows overlay actually consumes it.
+        public static string HelperBytesPathOverride;
+
 #if UNITY_EDITOR_WIN
         private const int WM_CLOSE = 0x0010;
         private const int SW_HIDE = 0;
         private const string OverlayClassName = "YUCPCompanionTutorialOverlay";
-        private const string HelperRelativePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/CompanionOverlay/YUCPCompanionOverlay.exe";
+
+        // Dev fallback only: when running an in-editor Preview inside the dev project, the real exe
+        // ships in com.yucp.devtools. In exported/end-user projects the overlay is delivered as a
+        // .bytes TextAsset (never a raw .exe) and extracted to Temp/ at launch — see ResolveExecutablePath.
+        private const string DevHelperExePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/CompanionOverlay/YUCPCompanionOverlay.exe";
+        private const string HelperBytesFileName = "YUCPCompanionOverlay.bytes";
+        private const string HelperExeFileName = "YUCPCompanionOverlay.exe";
 
         private Process m_process;
         private StreamWriter m_input;
@@ -145,13 +160,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (m_process != null && !m_process.HasExited)
                 return true;
 
-            string helperPath = Path.GetFullPath(HelperRelativePath);
-            if (!File.Exists(helperPath))
+            string helperPath = ResolveExecutablePath();
+            if (string.IsNullOrEmpty(helperPath) || !File.Exists(helperPath))
             {
                 if (!m_warnedMissingHelper)
                 {
                     m_warnedMissingHelper = true;
-                    Debug.LogWarning($"[YUCP Companion Tutorial] Overlay helper was not found: {helperPath}");
+                    Debug.LogWarning("[YUCP Companion Tutorial] Overlay helper could not be located or extracted.");
                 }
                 return false;
             }
@@ -191,6 +206,115 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 m_failed = true;
                 Debug.LogWarning($"[YUCP Companion Tutorial] Failed to start overlay helper: {ex.Message}");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Resolves a launchable .exe path. In exported/end-user projects the overlay ships as a
+        /// .bytes TextAsset (so no executable ever sits in the package or the visible project tree);
+        /// it is extracted to the project's auto-cleaned Temp/ folder before launch. In the dev
+        /// project a Preview falls back to the real checked-in .exe.
+        /// </summary>
+        private string ResolveExecutablePath()
+        {
+            string bytesPath = LocateHelperBytes();
+            if (!string.IsNullOrEmpty(bytesPath) && File.Exists(bytesPath))
+            {
+                string extracted = ExtractHelperToTemp(bytesPath);
+                if (!string.IsNullOrEmpty(extracted))
+                    return extracted;
+            }
+
+            // Dev/Preview fallback: launch the real exe shipped with com.yucp.devtools.
+            string devExe = Path.GetFullPath(DevHelperExePath);
+            if (File.Exists(devExe))
+                return devExe;
+
+            return null;
+        }
+
+        /// <summary>
+        /// Finds the injected YUCPCompanionOverlay.bytes on disk. Prefers the path the runner supplied
+        /// (HelperBytesPathOverride), then searches the installed-packages container and the asset tree.
+        /// </summary>
+        private static string LocateHelperBytes()
+        {
+            if (!string.IsNullOrEmpty(HelperBytesPathOverride))
+            {
+                string full = Path.GetFullPath(HelperBytesPathOverride);
+                if (File.Exists(full))
+                    return full;
+            }
+
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string[] searchRoots =
+                {
+                    Path.Combine(projectRoot, "Packages", "yucp.installed-packages"),
+                    Application.dataPath // Assets/
+                };
+
+                foreach (string root in searchRoots)
+                {
+                    if (!Directory.Exists(root))
+                        continue;
+                    string[] matches = Directory.GetFiles(root, HelperBytesFileName, SearchOption.AllDirectories);
+                    if (matches.Length > 0)
+                        return matches[0];
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP Companion Tutorial] Failed to locate overlay payload: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Writes the .bytes payload to Temp/YUCP/CompanionOverlay/YUCPCompanionOverlay.exe (outside
+        /// Assets/, auto-cleaned by Unity, never imported). Rewrites only when missing or size-mismatched
+        /// so a running prior instance isn't disturbed; if the file is locked by a live overlay the
+        /// existing copy is reused.
+        /// </summary>
+        private static string ExtractHelperToTemp(string bytesPath)
+        {
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string targetDir = Path.Combine(projectRoot, "Temp", "YUCP", "CompanionOverlay");
+                Directory.CreateDirectory(targetDir);
+                string targetExe = Path.Combine(targetDir, HelperExeFileName);
+
+                var source = new FileInfo(bytesPath);
+                bool needsWrite = true;
+                if (File.Exists(targetExe))
+                {
+                    try { needsWrite = new FileInfo(targetExe).Length != source.Length; }
+                    catch { needsWrite = false; }
+                }
+
+                if (needsWrite)
+                {
+                    try
+                    {
+                        File.Copy(bytesPath, targetExe, true);
+                    }
+                    catch (IOException)
+                    {
+                        // A previous overlay instance is still holding the exe. Reuse it if present.
+                        if (!File.Exists(targetExe))
+                            throw;
+                    }
+                }
+
+                return targetExe;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP Companion Tutorial] Failed to extract overlay helper: {ex.Message}");
+                return null;
             }
         }
 

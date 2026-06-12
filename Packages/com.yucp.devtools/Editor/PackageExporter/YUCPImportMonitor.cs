@@ -6,6 +6,7 @@ using System.Linq;
 using System.Collections.Generic;
 using YUCP.DevTools.Editor.PackageSigning.Core;
 using YUCP.DevTools.Editor.PackageSigning.Data;
+using YUCP.CompanionTutorial.Generated.Source;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {

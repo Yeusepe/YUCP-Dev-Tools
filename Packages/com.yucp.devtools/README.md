@@ -86,6 +86,7 @@ Development tools for YUCP package creators and avatar variant management.
 
 #### Templates & Utilities
 - **Export Profile Templates** - Pre-configured templates for quick setup
+- **Companion Tutorials** - Author a whole-Unity overlay walkthrough that auto-plays once after a buyer imports your package (Windows; self-contained, self-cleaning). See [CompanionTutorial/README](Editor/PackageExporter/CompanionTutorial/README.md)
 - **Direct VPM Installer** - Install VPM dependencies directly from packages
 - **AutoFinalize System** - Automatic editor refresh after compilation
 - **Backup System** - Automatic prefab backup before patch application

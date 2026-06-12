@@ -38,6 +38,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private const string PrecompiledPatchRuntimePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/YUCP.PatchRuntime.dll";
         private const string PrecompiledPatchRuntimeTargetFileName = "YUCP.PatchRuntime.dll";
         private const string TempPatchEditorRoot = TempPackageRoot + "/Editor";
+
+        // Companion tutorial runtime (injected as C# source + a .bytes overlay payload, never a raw .exe).
+        private const string CompanionRuntimeDir = "Packages/com.yucp.devtools/Editor/PackageExporter/CompanionRuntime";
+        private const string CompanionBootstrapTemplatePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Templates/CompanionBootstrap.cs.txt";
+        private const string CompanionOverlayBinaryPath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/CompanionOverlay/YUCPCompanionOverlay.exe";
+        private const string CompanionNamespaceMarker = "YUCP.CompanionTutorial.Generated.Source";
+        private const string CompanionOverlayBytesFileName = "YUCPCompanionOverlay.bytes";
         
         private static bool IsDefaultGridPlaceholder(Texture2D texture)
         {
@@ -428,6 +435,100 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 : GenerateEditorOnlyDllMeta(dllGuid);
             File.WriteAllText(Path.Combine(dllFolder, "asset.meta"), metaContent);
             return true;
+        }
+
+        /// <summary>
+        /// Injects a self-contained companion-tutorial runtime so the tutorial auto-plays once in a
+        /// buyer's clean project (no com.yucp.devtools required), then self-cleans. Delivery is C#
+        /// source (the runner/overlay/data files relocated under CompanionRuntime/) wrapped in a
+        /// per-export-unique namespace so two imported packages never collide, plus a self-deleting
+        /// bootstrap and the native overlay shipped as a benign .bytes TextAsset (never a raw .exe).
+        /// Files land under <paramref name="companionDir"/>/Editor (an Assets Editor folder, which
+        /// always compiles regardless of installer-workspace settings). The tutorial definition is
+        /// carried inline as Base64 JSON in the bootstrap, so nothing depends on a separately-imported
+        /// metadata asset.
+        /// </summary>
+        private static bool TryInjectCompanionTutorial(string tempExtractDir, string companionDir, string tutorialJsonBase64, string runOnceKey)
+        {
+            string runnerPath = $"{CompanionRuntimeDir}/CompanionTutorialRunner.cs";
+            string overlayPath = $"{CompanionRuntimeDir}/CompanionOverlayWindow.cs";
+            string dataPath = $"{CompanionRuntimeDir}/CompanionTutorialRuntimeData.cs";
+
+            if (!File.Exists(runnerPath) || !File.Exists(overlayPath) || !File.Exists(dataPath))
+            {
+                Debug.LogWarning("[PackageBuilder] Companion tutorial runtime source not found. Skipping companion injection.");
+                return false;
+            }
+            if (!File.Exists(CompanionBootstrapTemplatePath))
+            {
+                Debug.LogWarning("[PackageBuilder] CompanionBootstrap.cs.txt template not found. Skipping companion injection.");
+                return false;
+            }
+
+            // One namespace per export — shared across this package's runtime + bootstrap files.
+            string uniqueNamespace = "YUCP.CompanionTutorial.Generated_" + Guid.NewGuid().ToString("N");
+            string editorDir = $"{companionDir}/Editor";
+            string overlayBytesPath = $"{editorDir}/CompanionOverlay/{CompanionOverlayBytesFileName}";
+
+            // 1. Runtime source files (namespace marker swapped to the unique namespace).
+            InjectCompanionSourceFile(tempExtractDir, runnerPath, $"{editorDir}/YUCP_CompanionRuntime_Runner.cs", uniqueNamespace);
+            InjectCompanionSourceFile(tempExtractDir, overlayPath, $"{editorDir}/YUCP_CompanionRuntime_Overlay.cs", uniqueNamespace);
+            InjectCompanionSourceFile(tempExtractDir, dataPath, $"{editorDir}/YUCP_CompanionRuntime_Data.cs", uniqueNamespace);
+
+            // 2. Bootstrap (namespace swap + token substitution; tutorial JSON carried inline).
+            string bootstrapGuid = Guid.NewGuid().ToString("N");
+            string bootstrapContent = File.ReadAllText(CompanionBootstrapTemplatePath)
+                .Replace(CompanionNamespaceMarker, uniqueNamespace)
+                .Replace("__YUCP_TUTORIAL_B64__", tutorialJsonBase64 ?? string.Empty)
+                .Replace("__YUCP_OVERLAY_PATH__", overlayBytesPath)
+                .Replace("__YUCP_COMPANION_DIR__", companionDir)
+                .Replace("__YUCP_RUNONCE_KEY__", runOnceKey);
+            WriteInjectedFile(tempExtractDir, bootstrapContent, $"{editorDir}/YUCP_CompanionBootstrap_{bootstrapGuid}.cs", MonoImporterMeta());
+
+            // 3. Overlay helper as a .bytes TextAsset (NOT an executable). The runtime extracts it to
+            //    Temp/ at launch — no .exe ever sits in the package or the visible project tree.
+            if (File.Exists(CompanionOverlayBinaryPath))
+            {
+                string helperGuid = Guid.NewGuid().ToString("N");
+                string helperFolder = Path.Combine(tempExtractDir, helperGuid);
+                Directory.CreateDirectory(helperFolder);
+                File.Copy(CompanionOverlayBinaryPath, Path.Combine(helperFolder, "asset"), true);
+                File.WriteAllText(Path.Combine(helperFolder, "pathname"), overlayBytesPath);
+                File.WriteAllText(Path.Combine(helperFolder, "asset.meta"), DefaultImporterMeta(helperGuid));
+            }
+            else
+            {
+                Debug.LogWarning("[PackageBuilder] Companion overlay binary not found; tutorial will be inert on Windows for this export.");
+            }
+
+            return true;
+        }
+
+        private static void InjectCompanionSourceFile(string tempExtractDir, string sourcePath, string targetPath, string uniqueNamespace)
+        {
+            string content = File.ReadAllText(sourcePath).Replace(CompanionNamespaceMarker, uniqueNamespace);
+            WriteInjectedFile(tempExtractDir, content, targetPath, MonoImporterMeta());
+        }
+
+        /// <summary>Writes an injected text asset (asset/pathname/asset.meta triple) into the staging dir.</summary>
+        private static void WriteInjectedFile(string tempExtractDir, string content, string targetPath, string metaWithoutGuid)
+        {
+            string guid = Guid.NewGuid().ToString("N");
+            string folder = Path.Combine(tempExtractDir, guid);
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "asset"), content);
+            File.WriteAllText(Path.Combine(folder, "pathname"), targetPath);
+            File.WriteAllText(Path.Combine(folder, "asset.meta"), metaWithoutGuid.Replace("__GUID__", guid));
+        }
+
+        private static string MonoImporterMeta()
+        {
+            return "fileFormatVersion: 2\nguid: __GUID__\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
+        }
+
+        private static string DefaultImporterMeta(string guid)
+        {
+            return "fileFormatVersion: 2\nguid: " + guid + "\nDefaultImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
         }
 
         private static bool TryGetPatchRuntimeScriptReference(out string guid, out long localFileId)
@@ -1431,6 +1532,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Build result
                 result.success = true;
                 result.warningMessage = signingWarningMessage;
+
+                // Surface companion-tutorial issues as a non-blocking warning so creators don't ship a
+                // broken walkthrough. The tutorial never fails the export.
+                if (profile.companionTutorial != null && profile.companionTutorial.enabled)
+                {
+                    var companionFindings = CompanionTutorialValidator.Validate(profile.companionTutorial);
+                    string companionSummary = CompanionTutorialValidator.Summarize(companionFindings);
+                    if (!string.IsNullOrEmpty(companionSummary))
+                    {
+                        result.warningMessage = string.IsNullOrEmpty(result.warningMessage)
+                            ? companionSummary
+                            : result.warningMessage + "\n\n" + companionSummary;
+                    }
+                }
                 
                 // Track export for milestones
                 try
@@ -3178,6 +3293,34 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         ? $"{InstalledPackagesRoot}/{embedContext.SafePackageName}/YUCP_PackageInfo.json"
                         : "Assets/YUCP_PackageInfo.json";
                     File.WriteAllText(Path.Combine(metadataFolder, "pathname"), metadataPath);
+                }
+
+                // 1b-companion. Inject a self-contained companion-tutorial runtime so the tutorial
+                // auto-plays once in a clean buyer project (no devtools) and then self-cleans.
+                if (!usesAliasPackageShell &&
+                    !string.IsNullOrEmpty(packageMetadataJson) &&
+                    embedContext != null &&
+                    profile != null &&
+                    profile.companionTutorial != null &&
+                    profile.companionTutorial.enabled &&
+                    profile.companionTutorial.steps != null &&
+                    profile.companionTutorial.steps.Count > 0)
+                {
+                    progressCallback?.Invoke(0.755f, "Injecting companion tutorial runtime...");
+                    // Files go under an Assets Editor folder so they always compile in the buyer's
+                    // project (independent of whether the installed-packages workspace exists).
+                    string companionDir = $"Assets/YUCP_Companion/{embedContext.SafePackageName}";
+                    string runOnceKey = $"YUCP.CompanionTutorial.Ran.{embedContext.SafePackageName}.{profile.version}";
+                    string tutorialJsonBase64 = Convert.ToBase64String(
+                        Encoding.UTF8.GetBytes(JsonUtility.ToJson(profile.companionTutorial)));
+                    try
+                    {
+                        TryInjectCompanionTutorial(tempExtractDir, companionDir, tutorialJsonBase64, runOnceKey);
+                    }
+                    catch (Exception companionEx)
+                    {
+                        Debug.LogWarning($"[PackageBuilder] Companion tutorial injection failed (export continues without it): {companionEx.Message}");
+                    }
                 }
 
                 // 1c. Inject embedded assets (icons, banners, etc.)

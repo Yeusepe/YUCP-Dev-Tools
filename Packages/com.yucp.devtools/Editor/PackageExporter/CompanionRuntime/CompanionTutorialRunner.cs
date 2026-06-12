@@ -10,13 +10,18 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using Debug = UnityEngine.Debug;
 
-namespace YUCP.DevTools.Editor.PackageExporter
+// IMPORTANT: The namespace marker below (YUCP.CompanionTutorial.Generated.Source) is swapped to a
+// per-export-unique namespace (YUCP.CompanionTutorial.Generated_<guid>) by PackageBuilder when this
+// runtime is injected into an exported package, so two imported packages never collide. Do not rename
+// it without updating the swap in PackageBuilder.TryInjectCompanionRuntime.
+namespace YUCP.CompanionTutorial.Generated.Source
 {
     [InitializeOnLoad]
     public static class CompanionTutorialRunner
     {
         private static CompanionTutorialDefinition s_tutorial;
         private static int s_stepIndex = -1;
+        private static string s_helperBytesPath;
         private static CompanionOverlayWindow s_overlay;
         private static double s_stepStartedAt;
         private static Rect s_lastTarget;
@@ -53,6 +58,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         public static bool IsRunning => s_tutorial != null && s_stepIndex >= 0;
 
+        /// <summary>
+        /// Tells the overlay where the injected YUCPCompanionOverlay.bytes payload lives (a
+        /// project-relative path). The injected bootstrap calls this before starting so the overlay
+        /// can be found at its package-specific location in the buyer's project.
+        /// </summary>
+        public static void SetHelperPath(string overlayBytesPath)
+        {
+            s_helperBytesPath = overlayBytesPath;
+            CompanionOverlayWindow.HelperBytesPathOverride = overlayBytesPath;
+        }
+
         public static bool QueueRunFromMetadataPath(string metadataPath)
         {
             if (string.IsNullOrEmpty(metadataPath) || !File.Exists(metadataPath))
@@ -73,10 +89,39 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         public static bool Start(CompanionTutorialDefinition tutorial)
         {
-            return Start(tutorial, false);
+            return Start(tutorial, false, 0);
         }
 
-        private static bool Start(CompanionTutorialDefinition tutorial, bool demoMode)
+        /// <summary>Starts the tutorial at a specific step (used by the authoring "Test from here" button).</summary>
+        public static bool Start(CompanionTutorialDefinition tutorial, int startIndex)
+        {
+            return Start(tutorial, false, startIndex);
+        }
+
+        /// <summary>
+        /// Parses a serialized <see cref="CompanionTutorialDefinition"/> (as produced by
+        /// JsonUtility.ToJson on the authoring definition) and starts it. Lets the devtools authoring
+        /// UI preview tutorials without sharing this runtime's POCO type — the JSON field names are the
+        /// contract.
+        /// </summary>
+        public static bool QueueRunFromJson(string json, int startIndex = 0)
+        {
+            if (string.IsNullOrEmpty(json))
+                return false;
+
+            try
+            {
+                var definition = JsonUtility.FromJson<CompanionTutorialDefinition>(json);
+                return Start(definition, false, startIndex);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP Companion Tutorial] Failed to parse tutorial JSON: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool Start(CompanionTutorialDefinition tutorial, bool demoMode, int startIndex)
         {
             if (tutorial == null || !tutorial.enabled || tutorial.steps == null || tutorial.steps.Count == 0)
                 return false;
@@ -84,7 +129,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             Stop();
             s_tutorial = tutorial;
             s_demoMode = demoMode;
-            s_stepIndex = 0;
+            s_stepIndex = Mathf.Clamp(startIndex, 0, tutorial.steps.Count - 1);
+            CompanionOverlayWindow.HelperBytesPathOverride = s_helperBytesPath;
             s_overlay = new CompanionOverlayWindow();
             s_overlay.NextRequested = Next;
             s_overlay.PreviousRequested = Previous;
@@ -211,7 +257,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         spotlightPadding = new Vector4(10, 8, 10, 8)
                     }
                 }
-            }, true);
+            }, true, 0);
         }
 
         public static void Next()

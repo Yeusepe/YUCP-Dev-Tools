@@ -3,6 +3,7 @@ using UnityEngine;
 using System;
 using System.IO;
 using System.Linq;
+using YUCP.CompanionTutorial.Generated.Source;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {

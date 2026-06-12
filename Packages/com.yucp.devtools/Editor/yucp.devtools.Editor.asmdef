@@ -16,7 +16,8 @@
         "Autodesk.Fbx",
         "com.yucp.motion.Core",
         "com.yucp.motion.Unity",
-        "com.yucp.motion.Editor"
+        "com.yucp.motion.Editor",
+        "YUCP.CompanionTutorial.Source"
     ],
     "includePlatforms": [
         "Editor"
