@@ -8,6 +8,7 @@ using UnityEngine.UIElements;
 using YUCP.DevTools.Editor.PackageSigning.Core;
 using YUCP.DevTools.Editor.PackageSigning.Data;
 using YUCP.DevTools.Editor.PackageExporter;
+using YUCP.Motion;
 
 namespace YUCP.DevTools.Editor.PackageSigning.UI
 {
@@ -56,6 +57,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private bool  _productPickerExpanded;
         private VisualElement _productPickerSlot;
         private VisualElement _productListPanel;
+        private double _productsLastLoadAttemptAt;
         private string _productSearchQuery = "";
         private string _productProviderFilter = AllProvidersFilter;
         private string _productSourceFilter = AllSourcesFilter;
@@ -65,6 +67,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private const string ConfiguredSourcesFilter = "Configured";
         private const string StoreSourcesFilter = "Store";
         private const string SelectedSourcesFilter = "Selected";
+        private const double ProductLoadRetryCooldownSeconds = 10d;
 
         // ── Design tokens ──────────────────────────────────────────────────────────
         // Use the same lighter surface as the rest of the Package Exporter UI
@@ -83,6 +86,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private Action _onProfileChanged;
         private readonly PackageRegistrySection _packageRegistrySection;
+        private bool IsSignInPending => _isSigningIn || YucpOAuthService.IsSignInInProgress;
 
         public PackageSigningTab(ExportProfile profile = null, Action onProfileChanged = null)
         {
@@ -102,9 +106,28 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         {
             _root = new VisualElement();
             _root.name = "PackageSigningTab";
+            YucpOAuthService.SignInStateChanged -= OnSignInStateChanged;
+            YucpOAuthService.SignInStateChanged += OnSignInStateChanged;
+            _root.RegisterCallback<DetachFromPanelEvent>(OnRootDetached);
             LoadSettings();
             _root.Add(BuildCard());
             return _root;
+        }
+
+        private void OnRootDetached(DetachFromPanelEvent evt)
+        {
+            YucpOAuthService.SignInStateChanged -= OnSignInStateChanged;
+        }
+
+        private void OnSignInStateChanged()
+        {
+            _isSigningIn = YucpOAuthService.IsSignInInProgress;
+            if (!_isSigningIn)
+            {
+                LoadSettings();
+            }
+
+            RefreshUI();
         }
 
         public void RefreshUI()
@@ -130,63 +153,16 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         {
             if (!YucpOAuthService.IsSignedIn())
             {
-                var wrapper = new VisualElement();
-                wrapper.Add(BuildSignInHero());
-                if (_profile != null)
-                {
-                    wrapper.Add(BuildDetachedLicenseSection());
-                    wrapper.Add(BuildPackageRegistryCard());
-                }
-                return wrapper;
+                // First-run: one clear value statement and one action. Nothing else —
+                // identity, licensing and billing are meaningless before sign-in.
+                return BuildSignInHero();
             }
 
             YucpOAuthService.TryBeginBackgroundRefresh(GetServerUrl(), RefreshUI);
             EnsureAccountStateRefresh();
             bool hasCert = _settings != null && _settings.HasValidCertificate();
 
-            if (hasCert)
-                return BuildActiveCard(); // already includes license section
-
-            var noCertWrapper = new VisualElement();
-            noCertWrapper.Add(BuildNoCertCard());
-            if (_profile != null)
-            {
-                noCertWrapper.Add(BuildPackageRegistryCard());
-                noCertWrapper.Add(BuildDetachedLicenseSection());
-            }
-            return noCertWrapper;
-        }
-
-        private VisualElement BuildPackageRegistryCard()
-        {
-            if (_packageRegistrySection == null)
-            {
-                return null;
-            }
-
-            var card = _packageRegistrySection.CreateCard();
-            if (card != null)
-            {
-                card.style.marginTop = 4;
-            }
-
-            return card;
-        }
-
-        /// <summary>
-        /// A standalone license-protection card shown in states 1 &amp; 2 (not signed in / no cert),
-        /// so the toggle remains accessible regardless of auth state.
-        /// </summary>
-        private VisualElement BuildDetachedLicenseSection()
-        {
-            var card = MakeCard();
-            card.style.marginTop = 4;
-
-            _licenseSectionSlot = new VisualElement();
-            _licenseSectionSlot.Add(BuildLicenseProtectionSection());
-            card.Add(_licenseSectionSlot);
-
-            return card;
+            return hasCert ? BuildActiveCard() : BuildNoCertCard();
         }
 
         // ══════════════════════════════════════════════════════════════════════════
@@ -196,47 +172,55 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private VisualElement BuildSignInHero()
         {
             var card = MakeCard();
-
-            // Top banner (use image if available, fallback to teal glow)
-            const string bannerPath = "Packages/com.yucp.devtools/Editor/PackageSigning/Resources/Banner.png";
-            var bannerTex = AssetDatabase.LoadAssetAtPath<Texture2D>(bannerPath);
-            if (bannerTex != null)
-            {
-                // Use an Image with ScaleAndCrop so it fills horizontally without stretching
-                var bannerImg = new Image { image = bannerTex, scaleMode = ScaleMode.ScaleAndCrop };
-                bannerImg.style.width = Length.Percent(100);
-                bannerImg.style.height = 80;
-                bannerImg.style.borderTopLeftRadius  = 10;
-                bannerImg.style.borderTopRightRadius = 10;
-                bannerImg.style.overflow = Overflow.Hidden;
-                card.Add(bannerImg);
-            }
-            else
-            {
-                var glow = new VisualElement();
-                glow.style.height = 80;
-                glow.style.backgroundColor = TealGlow;
-                glow.style.borderTopLeftRadius  = 10;
-                glow.style.borderTopRightRadius = 10;
-                card.Add(glow);
-            }
-
-            var body = MakePad(24, 28, 24, 24);
-            body.style.marginTop = -4; // overlap into glow
+            var body = MakePad(24, 30, 24, 30);
+            body.style.alignItems = Align.Center;
             card.Add(body);
 
-            // Eyebrow
-            body.Add(MakeLabel("CREATOR SIGNING", 9, Teal, bold: true, letterSpacing: 2f, mb: 14));
+            // Icon badge — anchors the action and signals what this is about (security).
+            var badge = MakeRoundedBox(TealGlow, 22, 0, Color.clear);
+            badge.style.width = 44;
+            badge.style.height = 44;
+            badge.style.alignItems = Align.Center;
+            badge.style.justifyContent = Justify.Center;
+            badge.style.marginBottom = 14;
+            badge.Add(MakeIcon("d_AssemblyLock", "Locked", 22, Teal));
+            body.Add(badge);
 
-            // Headline — use camel case for trademarked phrase
-            body.Add(MakeLabel("Sign packages with\nyour Creator Identity\u2122", 17, TextPri, bold: true, mb: 6, wrap: true));
+            body.Add(MakeLabel("Sign your packages", 16, TextPri, bold: true,
+                align: TextAnchor.MiddleCenter, mb: 8));
 
-            if (_isSigningIn)
+            var blurb = MakeLabel(
+                "Signing proves an export really came from you, so buyers know it's genuine. It also lets you lock premium assets until someone buys them.",
+                12, TextSec, wrap: true, align: TextAnchor.MiddleCenter);
+            blurb.style.maxWidth = 380;
+            blurb.style.marginBottom = 18;
+            body.Add(blurb);
+
+            if (IsSignInPending)
                 body.Add(BuildSigningInState());
             else
                 body.Add(BuildSignInButton());
 
             return card;
+        }
+
+        // Loads a built-in editor icon (with a fallback name), tinted so it reads on
+        // the dark surface. Returns a square Image.
+        private static VisualElement MakeIcon(string iconName, string fallbackName, int size, Color tint)
+        {
+            Texture tex = null;
+            try { tex = EditorGUIUtility.IconContent(iconName)?.image; } catch { }
+            if (tex == null)
+            {
+                try { tex = EditorGUIUtility.IconContent(fallbackName)?.image; } catch { }
+            }
+
+            var img = new Image { image = tex, scaleMode = ScaleMode.ScaleToFit };
+            img.style.width = size;
+            img.style.height = size;
+            img.style.flexShrink = 0;
+            if (tex != null) img.tintColor = tint;
+            return img;
         }
 
         private VisualElement BuildSignInButton()
@@ -250,14 +234,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             // White pill — loads image from resources
             var btn = new Button(() =>
             {
-                if (_isSigningIn) return;
-                _isSigningIn = true;
-                RefreshUI();
-#pragma warning disable CS4014
-                YucpOAuthService.SignInAsync(GetServerUrl(),
-                    onSuccess: () => EditorApplication.delayCall += () => { _isSigningIn = false; LoadSettings(); RefreshUI(); },
-                    onError:   e  => EditorApplication.delayCall += () => { _isSigningIn = false; RefreshUI(); EditorUtility.DisplayDialog("Sign-in failed", e, "OK"); });
-#pragma warning restore CS4014
+                BeginSignIn();
             }) { focusable = true };
             btn.style.backgroundColor       = Color.white;
             // slightly smaller pill, tighter padding for a compact look
@@ -332,25 +309,22 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             pill.style.paddingTop     = 18;
             pill.style.paddingBottom  = 18;
 
-            // Pulsing dot
-            var dot = new VisualElement();
-            dot.style.width  = 6;
-            dot.style.height = 6;
-            dot.style.borderTopLeftRadius = dot.style.borderTopRightRadius =
-                dot.style.borderBottomLeftRadius = dot.style.borderBottomRightRadius = 3;
-            dot.style.backgroundColor = Teal;
-            dot.style.marginRight     = 10;
-            dot.schedule.Execute(() => dot.style.opacity = dot.style.opacity.value > 0.6f ? 0.3f : 1.0f).Every(600);
-            pill.Add(dot);
+            pill.Add(CreateSpinner(Teal, 16f, 2f, 10f));
 
-            pill.Add(MakeLabel("Waiting for browser\u2026", 12, TextSec));
+            var status = MakeLabel(GetSignInStatusText(), 12, TextSec, mb: 0, wrap: true, align: TextAnchor.MiddleCenter);
+            status.style.maxWidth = 260;
+            status.style.flexShrink = 1;
+            pill.Add(status);
             col.Add(pill);
-
-            var cancel = MakeGhostButton("Cancel", () => { _isSigningIn = false; RefreshUI(); });
-            cancel.style.marginTop = 8;
-            cancel.style.alignSelf = Align.Center;
-            col.Add(cancel);
             return col;
+        }
+
+        private static string GetSignInStatusText()
+        {
+            string status = YucpOAuthService.SignInStatusMessage;
+            return string.IsNullOrEmpty(status)
+                ? "Starting Creator Assistant sign-in..."
+                : status;
         }
 
         // ══════════════════════════════════════════════════════════════════════════
@@ -364,10 +338,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             card.Add(MakeDivider());
 
             var body = MakePad(24, 28, 24, 24);
-            string title = "No certificate yet";
-            string subtitle = "Get one to start signing your packages.";
+            string title = "Turn on signing for this computer";
+            string subtitle = "One quick step activates signing here, so everything you export is signed automatically.";
             string detail = null;
-            string primaryText = "Get Certificate";
+            string primaryText = "Activate signing";
             Action primaryAction = OnRequestCertClicked;
             string secondaryText = null;
             Action secondaryAction = null;
@@ -378,7 +352,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             if (_isLoadingAccountState && _accountState == null)
             {
-                subtitle = "Checking certificate and billing status for this account.";
+                subtitle = "Checking your account…";
                 primaryText = null;
             }
             else if (_accountState != null)
@@ -388,79 +362,54 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 switch (billingStatus)
                 {
                     case "inactive":
-                        title = "Certificate plan required";
-                        subtitle = "This account needs an active certificate subscription before this machine can enroll.";
-                        primaryText = "Open Certificates & Billing";
-                        primaryAction = OpenAccountCertificatesPage;
+                        title = "Choose a plan to start signing";
+                        subtitle = "Signing needs an active plan. Pick one below to continue.";
+                        primaryText = null;
                         break;
                     case "suspended":
-                        title = "Signing access suspended";
-                        subtitle = "Billing needs attention before this machine can enroll or restore a signing certificate.";
-                        primaryText = "Open Certificates & Billing";
+                        title = "Signing is blocked";
+                        subtitle = "Billing needs attention before you can sign on this computer.";
+                        primaryText = "Open account & billing";
                         primaryAction = OpenAccountCertificatesPage;
                         break;
                     case "grace":
                         if (currentDeviceKnown)
                         {
-                            title = "Restore this device";
-                            subtitle = "Billing grace is active. This machine can still sign once its existing certificate is restored.";
-                            primaryText = "Restore Certificate";
+                            title = "Reactivate this computer";
+                            subtitle = "Your plan is in its grace period — this computer can sign again once reactivated.";
+                            primaryText = "Reactivate signing";
                             primaryAction = OnRequestCertClicked;
-                            secondaryText = "Open Billing";
+                            secondaryText = "Open billing";
                             secondaryAction = OpenAccountCertificatesPage;
                         }
                         else
                         {
-                            title = "Grace period active";
-                            subtitle = "Existing enrolled devices can keep signing, but this machine cannot enroll until billing is fixed.";
-                            primaryText = "Open Certificates & Billing";
+                            title = "Renew to sign on this computer";
+                            subtitle = "Your other computers can keep signing, but this one needs billing sorted first.";
+                            primaryText = "Open account & billing";
                             primaryAction = OpenAccountCertificatesPage;
                         }
                         break;
                     case "active":
                         if (currentDeviceKnown)
                         {
-                            title = "Restore certificate";
-                            subtitle = "This machine already has an active signing device on your account.";
-                            primaryText = "Restore Certificate";
+                            title = "Reactivate this computer";
+                            subtitle = "Your account already signs from this computer — reactivate it to continue.";
+                            primaryText = "Reactivate signing";
                             primaryAction = OnRequestCertClicked;
-                            secondaryText = "Manage Devices";
+                            secondaryText = "Manage computers";
                             secondaryAction = OpenAccountCertificatesPage;
                         }
                         else if (deviceCapReached)
                         {
-                            title = "Device limit reached";
-                            subtitle = "Your current certificate plan has no free device slots for this machine.";
-                            primaryText = "Manage Devices";
+                            title = "You've reached your computer limit";
+                            subtitle = "Your plan has no free slots for this computer. Free one up or upgrade to add it.";
+                            primaryText = "Manage computers";
                             primaryAction = OpenAccountCertificatesPage;
                         }
                         break;
-                    case "unmanaged":
-                        subtitle = "Get one to start signing your packages on this unmanaged signing server.";
-                        break;
                 }
             }
-
-            var ring = MakeRoundedBox(Color.clear, 28, 1, new Color(0.212f, 0.749f, 0.694f, 0.25f));
-            ring.style.width = 56;
-            ring.style.height = 56;
-            ring.style.alignItems = Align.Center;
-            ring.style.justifyContent = Justify.Center;
-            ring.style.alignSelf = Align.Center;
-            ring.style.marginBottom = 16;
-
-            var ringInner = new VisualElement();
-            ringInner.style.width = 20;
-            ringInner.style.height = 20;
-            ringInner.style.borderTopLeftRadius = ringInner.style.borderTopRightRadius =
-                ringInner.style.borderBottomLeftRadius = ringInner.style.borderBottomRightRadius = 10;
-            ringInner.style.borderTopWidth = ringInner.style.borderBottomWidth =
-                ringInner.style.borderLeftWidth = ringInner.style.borderRightWidth = 2;
-            ringInner.style.borderTopColor = ringInner.style.borderBottomColor =
-                ringInner.style.borderLeftColor = ringInner.style.borderRightColor =
-                    new Color(0.212f, 0.749f, 0.694f, 0.45f);
-            ring.Add(ringInner);
-            body.Add(ring);
 
             body.Add(MakeLabel(title, 14, TextPri, bold: true, align: TextAnchor.MiddleCenter, mb: 6));
             body.Add(MakeLabel(subtitle, 11, TextSec, align: TextAnchor.MiddleCenter, mb: 12, wrap: true));
@@ -478,7 +427,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             if (!string.IsNullOrEmpty(primaryText))
             {
                 var getBtn = _isRequestingCert
-                    ? BuildLoadingButton("Getting certificate...")
+                    ? BuildLoadingButton("Activating…")
                     : BuildPrimaryButton(primaryText, primaryAction);
                 getBtn.style.marginBottom = 10;
                 body.Add(getBtn);
@@ -496,10 +445,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             importRow.style.flexDirection = FlexDirection.Row;
             importRow.style.alignItems = Align.Center;
             importRow.style.justifyContent = Justify.Center;
-            var importHint = MakeLabel("Have a .yucp_cert file?", 11, TextMute, mb: 0);
+            var importHint = MakeLabel("Already have a certificate file?", 11, TextMute, mb: 0);
             importHint.style.marginRight = 5;
             importRow.Add(importHint);
-            importRow.Add(MakeGhostButton("Import ->", () =>
+            importRow.Add(MakeGhostButton("Import", () =>
             {
                 string path = EditorUtility.OpenFilePanel("Import Certificate", "", "yucp_cert");
                 if (string.IsNullOrEmpty(path)) return;
@@ -525,123 +474,71 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private VisualElement BuildActiveCard()
         {
             var card = MakeCard();
-            card.Add(BuildAccountBar());
-            card.Add(MakeDivider());
-            string statusText = "Ready to sign";
-            Color statusColor = Teal;
-            string accountDetail = _accountState?.error;
-            string manageLabel = "Manage Billing & Devices";
-            string billingLabel = null;
-            string deviceLabel = null;
+
+            // Only functional elements: a blocker warning drives the plan picker; an
+            // expiry warning drives a renewal. No "you're set up" reassurance.
+            string manageLabel = "Account & billing";
+            string blocker = null;
+            Color blockerAccent = Amber;
+            bool needsAttention = false;
 
             if (_accountState?.billing != null)
             {
                 switch (_accountState.billing.status ?? "")
                 {
                     case "grace":
-                        statusText = "Grace period";
-                        statusColor = Amber;
+                        blocker = "Your plan is in its grace period. Renew to keep signing.";
+                        needsAttention = true;
                         break;
                     case "inactive":
-                        statusText = "Plan required";
-                        statusColor = Amber;
+                        blocker = "Signing is paused. Choose a plan to start signing again.";
+                        needsAttention = true;
                         break;
                     case "suspended":
-                        statusText = "Signing blocked";
-                        statusColor = Red;
-                        break;
-                    case "unmanaged":
-                        statusText = "Unmanaged server";
-                        statusColor = TextSec;
-                        manageLabel = "Open Certificates Workspace";
+                        blocker = "Signing is blocked. Billing needs attention before you can sign.";
+                        blockerAccent = Red;
+                        needsAttention = true;
                         break;
                 }
 
-                if (_accountState.billing.billingEnabled)
+                if (_accountState.billing.billingEnabled && string.IsNullOrEmpty(_accountState.billing.planKey))
                 {
-                    string planDisplayName = ResolvePlanDisplayName(_accountState.billing.planKey);
-                    billingLabel = string.IsNullOrEmpty(_accountState.billing.planKey)
-                        ? $"Billing: {_accountState.billing.status}"
-                        : $"Plan: {planDisplayName}";
+                    needsAttention = true;
+                    blocker ??= "Choose a plan to start signing.";
                 }
-
-                deviceLabel = _accountState.billing.deviceCap > 0
-                    ? $"Devices: {_accountState.billing.activeDeviceCount}/{_accountState.billing.deviceCap}"
-                    : $"Devices: {_accountState.billing.activeDeviceCount}";
             }
 
-            // ── Status row (inline, no filled band) ───────────────────────────────
-            var statusRow = new VisualElement();
-            statusRow.style.flexDirection  = FlexDirection.Row;
-            statusRow.style.alignItems     = Align.Center;
-            statusRow.style.paddingLeft    = 18;
-            statusRow.style.paddingRight   = 18;
-            statusRow.style.paddingTop     = 13;
-            statusRow.style.paddingBottom  = 11;
+            // ── Header: creator + sign out ─────────────────────────────────────────
+            card.Add(BuildHeaderBar());
 
-            // Pulsing live dot
-            var liveDot = new VisualElement();
-            liveDot.style.width  = 6;
-            liveDot.style.height = 6;
-            liveDot.style.borderTopLeftRadius = liveDot.style.borderTopRightRadius =
-                liveDot.style.borderBottomLeftRadius = liveDot.style.borderBottomRightRadius = 3;
-            liveDot.style.backgroundColor = statusColor;
-            liveDot.style.marginRight     = 8;
-            liveDot.style.flexShrink      = 0;
-            liveDot.schedule.Execute(() => liveDot.style.opacity = liveDot.style.opacity.value > 0.6f ? 0.3f : 1.0f).Every(900);
-            statusRow.Add(liveDot);
-
-            statusRow.Add(MakeLabel(statusText, 12, statusColor, bold: true));
-            card.Add(statusRow);
-
-            // ── Certificate health ─────────────────────────────────────────────────
-            var certBody = MakePad(16, 18, 16, 16);
-
-            // Publisher row
-            string pubName = _settings?.publisherName ?? YucpOAuthService.GetDisplayName() ?? "Creator";
-            certBody.Add(MakeLabel(pubName, 13, TextPri, bold: true, mb: 2));
-
-            // Expiry bar
-            if (!string.IsNullOrEmpty(_settings?.certificateExpiresAt) &&
-                DateTime.TryParse(_settings.certificateExpiresAt, out DateTime exp))
-            {
-                certBody.Add(BuildExpiryBar(exp));
-            }
-
-            if (!string.IsNullOrEmpty(accountDetail))
-            {
-                certBody.Add(MakeLabel(accountDetail, 11, TextSec, mb: 8, wrap: true));
-            }
-
-            if (!string.IsNullOrEmpty(billingLabel))
-            {
-                certBody.Add(MakeLabel(billingLabel, 11, TextSec, mb: 4, wrap: true));
-            }
-
-            if (!string.IsNullOrEmpty(deviceLabel))
-            {
-                certBody.Add(MakeLabel(deviceLabel, 11, TextSec, mb: 0, wrap: true));
-            }
-
-            card.Add(certBody);
-
-            if (_accountState?.billing?.billingEnabled == true)
+            // ── Certificate expiry warning — shown only when it needs a renewal ────
+            var certWarning = BuildCertWarningLine();
+            if (certWarning != null)
             {
                 card.Add(MakeDivider());
+                var certPad = MakePad(16, 12, 16, 12);
+                certPad.Add(certWarning);
+                card.Add(certPad);
+            }
+
+            // ── Inline plan picker — only when there's a real billing blocker ──────
+            if (_accountState?.billing?.billingEnabled == true && needsAttention)
+            {
+                card.Add(MakeDivider());
+                if (!string.IsNullOrEmpty(blocker))
+                {
+                    var blockerPad = MakePad(16, 0, 16, 14);
+                    blockerPad.Add(MakeLabel(blocker, 12, blockerAccent, wrap: true, mb: 0));
+                    card.Add(blockerPad);
+                }
                 card.Add(BuildBillingInsightsSection(showPlanActions: true));
             }
 
+            // ── Package (identity + registry + product, merged) ─────────────────────
             if (_profile != null)
             {
                 card.Add(MakeDivider());
-                card.Add(BuildPackageRegistryCard());
-            }
-
-            // ── Package info ───────────────────────────────────────────────────────
-            if (_profile != null)
-            {
-                card.Add(MakeDivider());
-                card.Add(BuildPackageInfo());
+                card.Add(BuildPackageSection());
             }
 
             // ── License Protection ─────────────────────────────────────────────────
@@ -663,7 +560,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             footer.style.paddingTop     = 10;
             footer.style.paddingBottom  = 10;
             footer.Add(MakeGhostButton(manageLabel, OpenAccountCertificatesPage));
-            var settingsBtn = MakeGhostButton("Editor Settings", () => SigningSettingsWindow.ShowWindow());
+            var settingsBtn = MakeGhostButton("Settings", () => SigningSettingsWindow.ShowWindow());
             settingsBtn.style.marginLeft = 8;
             footer.Add(settingsBtn);
             card.Add(footer);
@@ -671,111 +568,124 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             return card;
         }
 
-        private VisualElement BuildExpiryBar(DateTime exp)
+        /// <summary>
+        /// Header bar for the active card: avatar + creator name (which account is
+        /// signed in) on the left, the sign-out action on the right.
+        /// </summary>
+        private VisualElement BuildHeaderBar()
         {
-            var col = new VisualElement();
-            col.style.marginTop    = 10;
-            col.style.marginBottom = 4;
+            var bar = new VisualElement();
+            bar.style.flexDirection  = FlexDirection.Row;
+            bar.style.alignItems     = Align.Center;
+            bar.style.justifyContent = Justify.SpaceBetween;
+            bar.style.paddingLeft    = 16;
+            bar.style.paddingRight   = 12;
+            bar.style.paddingTop     = 12;
+            bar.style.paddingBottom  = 12;
 
-            var delta = exp - DateTime.UtcNow;
-            int daysLeft = (int)Math.Max(0, Math.Ceiling(delta.TotalDays));
-            float pct    = Mathf.Clamp01((float)(delta.TotalDays / 90.0));
+            string name = YucpOAuthService.GetDisplayName() ?? "Creator";
 
-            Color barColor = daysLeft < 0 ? Red : daysLeft < 14 ? Amber : Teal;
-            string expiryLabel = daysLeft < 0 ? "Expired"
-                : daysLeft == 0 ? "Expires today"
-                : daysLeft == 1 ? "1 day left"
-                : $"{daysLeft} days left";
+            var left = new VisualElement();
+            left.style.flexDirection = FlexDirection.Row;
+            left.style.alignItems    = Align.Center;
+            var avatar = SigningProfileAvatar.Create(
+                name, YucpOAuthService.GetProfileImageUrl(),
+                28f, 1f, TealSub, new Color(0.212f, 0.749f, 0.694f, 0.35f), Teal, 11);
+            avatar.style.marginRight = 9;
+            avatar.style.flexShrink  = 0;
+            left.Add(avatar);
+            left.Add(MakeLabel(name, 12, TextPri, bold: true, mb: 0));
+            bar.Add(left);
 
-            // Label row
-            var labelRow = new VisualElement();
-            labelRow.style.flexDirection  = FlexDirection.Row;
-            labelRow.style.justifyContent = Justify.SpaceBetween;
-            labelRow.style.marginBottom   = 5;
-            labelRow.Add(MakeLabel("Certificate", 10, TextMute));
-            var expLbl = MakeLabel(expiryLabel, 10, barColor, bold: true);
-            labelRow.Add(expLbl);
-            col.Add(labelRow);
-
-            // Track
-            var track = new VisualElement();
-            track.style.height          = 3;
-            track.style.backgroundColor = BorderFaint;
-            track.style.borderTopLeftRadius = track.style.borderTopRightRadius =
-                track.style.borderBottomLeftRadius = track.style.borderBottomRightRadius = 2;
-            track.style.overflow = Overflow.Hidden;
-
-            var fill = new VisualElement();
-            fill.style.height          = 3;
-            fill.style.width           = Length.Percent(pct * 100f);
-            fill.style.backgroundColor = barColor;
-            fill.style.borderTopLeftRadius = fill.style.borderTopRightRadius =
-                fill.style.borderBottomLeftRadius = fill.style.borderBottomRightRadius = 2;
-            track.Add(fill);
-            col.Add(track);
-
-            return col;
+            bar.Add(MakeGhostButton("Sign out", OnSignOutClicked, small: true));
+            return bar;
         }
 
+        /// <summary>
+        /// Certificate renewal warning — returns null unless the certificate is within
+        /// two weeks of expiry or already expired (i.e. unless there's something to act
+        /// on). A healthy certificate shows nothing.
+        /// </summary>
+        private VisualElement BuildCertWarningLine()
+        {
+            if (string.IsNullOrEmpty(_settings?.certificateExpiresAt) ||
+                !DateTime.TryParse(_settings.certificateExpiresAt, out DateTime exp))
+                return null;
+
+            int daysLeft = (int)Math.Ceiling((exp - DateTime.UtcNow).TotalDays);
+            if (daysLeft >= 14)
+                return null; // healthy — nothing to do, so nothing to show
+
+            Color color = daysLeft < 0 ? Red : Amber;
+            string text = daysLeft < 0
+                ? "Your signing certificate expired — renew to keep signing."
+                : daysLeft <= 1
+                    ? "Your signing certificate expires today — renew to keep signing."
+                    : $"Your signing certificate expires in {daysLeft} days — renew to keep signing.";
+
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.alignItems = Align.Center;
+            var icon = MakeIcon(daysLeft < 0 ? "console.erroricon" : "console.warnicon", "Warning", 14, color);
+            icon.style.marginRight = 6;
+            row.Add(icon);
+            row.Add(MakeLabel(text, 11, color, wrap: true, mb: 0));
+            return row;
+        }
+
+        /// <summary>
+        /// Merged "Package" section: name/version + status, identity &amp; registry,
+        /// and the linked-product picker, all under one header. Combines what used to
+        /// be a separate Package Identity card and Package Info block.
+        /// </summary>
+        private VisualElement BuildPackageSection()
+        {
+            var body = MakePad(16, 18, 16, 16);
+
+            // Section header: "Package" + server status badge (so a revoked package
+            // is impossible to miss). The package name itself lives in the identity row.
+            var headerRow = new VisualElement();
+            headerRow.style.flexDirection  = FlexDirection.Row;
+            headerRow.style.alignItems     = Align.Center;
+            headerRow.style.justifyContent = Justify.SpaceBetween;
+            headerRow.style.marginBottom   = 10;
+            headerRow.Add(MakeLabel("PACKAGE", 9, TextMute, bold: true, letterSpacing: 1f, mb: 0));
+            var badgeSlot = new VisualElement();
+            if (!string.IsNullOrEmpty(_profile.packageId))
+                LoadPackageStatusBadge(badgeSlot);
+            headerRow.Add(badgeSlot);
+            body.Add(headerRow);
+
+            // Identity & registry (shows the package name, id and a single "Change")
+            if (_packageRegistrySection != null)
+            {
+                var idContent = _packageRegistrySection.CreateContent();
+                if (idContent != null)
+                    body.Add(idContent);
+            }
+
+            // Linked product picker
+            _productPickerSlot = new VisualElement();
+            _productPickerSlot.style.marginTop = 16;
+            body.Add(_productPickerSlot);
+            RebuildProductPicker();
+
+            if (_canonicalProducts == null && !_productsLoading)
+                LoadCreatorProducts();
+
+            return body;
+        }
+
+        // Inline plan picker — shown only when there's a real billing blocker, so the
+        // creator can fix it without leaving Unity. No metric tiles or workspace keys;
+        // each plan card already states its own slots and quota.
         private VisualElement BuildBillingInsightsSection(bool showPlanActions)
         {
             var section = MakePad(16, 18, 16, 16);
-            section.Add(MakeLabel("Billing Workspace", 10, TextMute, bold: true, mb: 6));
-
-            string summary = _accountState?.billing?.reason;
-            if (string.IsNullOrEmpty(summary))
-            {
-                summary = _accountState?.error;
-            }
-            if (string.IsNullOrEmpty(summary))
-            {
-                summary = "Your subscription controls device enrollment, signing availability, and support capacity for this workspace.";
-            }
-
-            section.Add(MakeLabel(summary, 11, TextSec, mb: 12, wrap: true));
-
-            var metrics = new VisualElement();
-            metrics.style.flexDirection = FlexDirection.Row;
-            metrics.style.flexWrap = Wrap.Wrap;
-            metrics.style.marginBottom = 12;
-            metrics.Add(BuildBillingMetricTile(
-                "Current plan",
-                !string.IsNullOrEmpty(_accountState?.billing?.planKey) ? _accountState.billing.planKey : "No plan"));
-            metrics.Add(BuildBillingMetricTile(
-                "Devices",
-                _accountState?.billing != null && _accountState.billing.deviceCap > 0
-                    ? $"{_accountState.billing.activeDeviceCount}/{_accountState.billing.deviceCap}"
-                    : $"{_accountState?.billing?.activeDeviceCount ?? 0}"));
-            metrics.Add(BuildBillingMetricTile(
-                "Quota",
-                FormatQuota(_accountState?.billing?.signQuotaPerPeriod ?? 0)));
-            metrics.Add(BuildBillingMetricTile(
-                "Support",
-                FormatSupportTier(_accountState?.billing?.supportTier)));
-            section.Add(metrics);
-
-            if (!string.IsNullOrEmpty(_accountState?.workspaceKey))
-            {
-                var workspaceRow = new VisualElement();
-                workspaceRow.style.flexDirection = FlexDirection.Row;
-                workspaceRow.style.alignItems = Align.Center;
-                workspaceRow.style.marginBottom = 12;
-                workspaceRow.Add(MakeLabel("Workspace", 10, TextMute, bold: true, mb: 0));
-                var workspaceChip = MakeRoundedBox(SurfaceRaise, 6, 1, Border);
-                workspaceChip.style.marginLeft = 8;
-                workspaceChip.style.paddingLeft = 8;
-                workspaceChip.style.paddingRight = 8;
-                workspaceChip.style.paddingTop = 4;
-                workspaceChip.style.paddingBottom = 4;
-                workspaceChip.Add(MakeLabel(_accountState.workspaceKey, 10, TextSec, mb: 0));
-                workspaceRow.Add(workspaceChip);
-                section.Add(workspaceRow);
-            }
 
             if (_accountState?.availablePlans != null && _accountState.availablePlans.Length > 0)
             {
-                section.Add(MakeLabel("Plans", 10, TextMute, bold: true, mb: 8));
-
+                section.Add(MakeLabel("CHOOSE A PLAN", 9, TextMute, bold: true, letterSpacing: 1f, mb: 10));
                 foreach (var plan in _accountState.availablePlans.OrderByDescending(p => p.priority))
                 {
                     section.Add(BuildPlanCard(plan, showPlanActions));
@@ -784,29 +694,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             else
             {
                 section.Add(MakeLabel(
-                    "No certificate plans are configured on this signing server yet.",
-                    10,
-                    TextMute,
-                    mb: 0,
-                    wrap: true));
+                    "No plans are available on this signing server yet.",
+                    11, TextMute, mb: 0, wrap: true));
             }
 
             return section;
-        }
-
-        private VisualElement BuildBillingMetricTile(string label, string value)
-        {
-            var tile = MakeRoundedBox(SurfaceRaise, 8, 1, Border);
-            tile.style.minWidth = 120;
-            tile.style.marginRight = 8;
-            tile.style.marginBottom = 8;
-            tile.style.paddingLeft = 10;
-            tile.style.paddingRight = 10;
-            tile.style.paddingTop = 9;
-            tile.style.paddingBottom = 9;
-            tile.Add(MakeLabel(label, 9, TextMute, bold: true, mb: 4));
-            tile.Add(MakeLabel(value, 12, TextPri, bold: true, mb: 0, wrap: true));
-            return tile;
         }
 
         private VisualElement BuildPlanCard(PackageSigningService.CertificatePlanInfo plan, bool showPlanActions)
@@ -919,118 +811,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             return char.ToUpperInvariant(supportTier[0]) + supportTier.Substring(1);
         }
 
-        private string ResolvePlanDisplayName(string planKey)
-        {
-            if (string.IsNullOrEmpty(planKey) || _accountState?.availablePlans == null)
-                return planKey;
-
-            foreach (var plan in _accountState.availablePlans)
-            {
-                if (plan == null || !string.Equals(plan.planKey, planKey, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                return !string.IsNullOrEmpty(plan.displayName) ? plan.displayName : plan.planKey;
-            }
-
-            return planKey;
-        }
-
-        private VisualElement BuildPackageInfo()
-        {
-            var body = MakePad(16, 18, 16, 16);
-
-            // Package name + version row
-            var pkgRow = new VisualElement();
-            pkgRow.style.flexDirection  = FlexDirection.Row;
-            pkgRow.style.alignItems     = Align.Center;
-            pkgRow.style.justifyContent = Justify.SpaceBetween;
-            pkgRow.style.marginBottom   = 14;
-
-            var nameCol = new VisualElement();
-            if (!string.IsNullOrEmpty(_profile.packageName))
-                nameCol.Add(MakeLabel(_profile.packageName, 13, TextPri, bold: true, mb: 0));
-            if (!string.IsNullOrEmpty(_profile.version))
-                nameCol.Add(MakeLabel("v" + _profile.version, 10, TextMute, mb: 0));
-            pkgRow.Add(nameCol);
-
-            var badgeSlot = new VisualElement();
-            badgeSlot.style.alignSelf = Align.Center;
-            if (!string.IsNullOrEmpty(_profile.packageId))
-                LoadPackageStatusBadge(badgeSlot);
-            pkgRow.Add(badgeSlot);
-
-            body.Add(pkgRow);
-
-            // Canonical product picker
-            _productPickerSlot = new VisualElement();
-            body.Add(_productPickerSlot);
-            RebuildProductPicker();
-
-            if (_canonicalProducts == null && !_productsLoading)
-                LoadCreatorProducts();
-
-            // ── Certificate Provider override ──────────────────────────────────────
-            body.Add(BuildCertificateProviderRow());
-
-            return body;
-        }
-
-        private VisualElement BuildCertificateProviderRow()
-        {
-            var container = new VisualElement();
-            container.style.marginTop = 14;
-
-            container.Add(MakeLabel("Certificate Provider", 10, TextMute, bold: true, mb: 6));
-
-            string effectiveUrl = GetServerUrl();
-            bool hasIgnoredOverride = !string.IsNullOrEmpty(_profile?.signingServerUrl);
-
-            var urlField = new TextField();
-            urlField.style.flexGrow = 1;
-            urlField.AddToClassList("yucp-input");
-            urlField.value = effectiveUrl;
-            urlField.isReadOnly = true;
-            urlField.tooltip = "Trusted signing server URL pinned by YUCP trust policy.";
-            container.Add(urlField);
-
-            if (hasIgnoredOverride)
-            {
-                var warning = MakeLabel(
-                    "Per-profile signing server overrides are ignored until authenticated trust rotation is implemented.",
-                    9,
-                    TextMute,
-                    mb: 4);
-                warning.style.marginTop = 4;
-                warning.style.whiteSpace = WhiteSpace.Normal;
-                container.Add(warning);
-
-                var clearOverride = new Button(() =>
-                {
-                    if (_profile == null)
-                        return;
-
-                    _profile.signingServerUrl = "";
-                    EditorUtility.SetDirty(_profile);
-                    RefreshUI();
-                })
-                {
-                    text = "Clear Ignored Override"
-                };
-                clearOverride.AddToClassList("yucp-button-secondary");
-                clearOverride.style.alignSelf = Align.FlexStart;
-                container.Add(clearOverride);
-            }
-            else
-            {
-                var hint = MakeLabel($"Trusted URL: {effectiveUrl}", 9, TextMute, mb: 0);
-                hint.style.whiteSpace = WhiteSpace.Normal;
-                container.Add(hint);
-            }
-
-            return container;
-        }
-
-
         private void LoadPackageStatusBadge(VisualElement slot)
         {
             PackageInfoService.GetPublisherPackages(
@@ -1039,9 +819,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                     if (_root == null) return;
                     var pkg = packages?.FirstOrDefault(p => p.packageId == _profile?.packageId);
                     if (pkg == null) return;
+
+                    // Only surface the badge when it means something actionable. A plain
+                    // "active" pill is reassurance, not function — skip it.
+                    if (pkg.status == "active") return;
                     slot.Add(BuildStatusPill(pkg.status));
 
-                    if (pkg.status == "active") return;
                     if (pkg.status == "revoked" && !string.IsNullOrEmpty(pkg.reason))
                     {
                         var note = MakeLabel(pkg.reason, 10, new Color(0.89f, 0.50f, 0.29f), mb: 0, wrap: true);
@@ -1097,7 +880,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             {
                 _canonicalProducts = null; _productsLoading = false; _productPickerExpanded = false;
                 _productLoadErrorTitle = null; _productLoadErrorMessage = null;
-                LoadCreatorProducts();
+                LoadCreatorProducts(forceRefresh: true);
             });
             header.Add(refreshLbl);
             _productPickerSlot.Add(header);
@@ -1696,16 +1479,33 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         [Serializable]
         private class ProductsResponse { public CanonicalProductJson[] products; }
 
-        private async void LoadCreatorProducts()
+        private async void LoadCreatorProducts(bool forceRefresh = false)
         {
-            string serverUrl = GetServerUrl();
-            string accessToken = await YucpOAuthService.GetValidAccessTokenAsync(serverUrl);
-            if (string.IsNullOrEmpty(accessToken)) return;
+            if (_productsLoading)
+                return;
+
+            double now = EditorApplication.timeSinceStartup;
+            if (!forceRefresh &&
+                _productsLastLoadAttemptAt > 0 &&
+                now - _productsLastLoadAttemptAt < ProductLoadRetryCooldownSeconds)
+            {
+                return;
+            }
 
             _productsLoading = true;
+            _productsLastLoadAttemptAt = now;
             _productLoadErrorTitle = null;
             _productLoadErrorMessage = null;
             EditorApplication.delayCall += () => RebuildProductPicker();
+
+            string serverUrl = GetServerUrl();
+            string accessToken = await YucpOAuthService.GetValidAccessTokenAsync(serverUrl);
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                _productsLoading = false;
+                EditorApplication.delayCall += () => RebuildProductPicker();
+                return;
+            }
 
             try
             {
@@ -1985,8 +1785,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         {
             var body = MakePad(16, 18, 10, 16);
 
-            // Section header
-            body.Add(MakeLabel("License Protection", 10, TextMute, bold: true, letterSpacing: 0.5f, mb: 12));
+            // Plain-language lead instead of a jargon label.
+            body.Add(MakeLabel("Require a purchase to unlock premium assets", 13, TextPri, bold: true, mb: 3));
+            body.Add(MakeLabel(
+                "Buyers verify their license when they import the package. Free files stay open.",
+                11, TextSec, wrap: true, mb: 12));
 
             // Collect all profiles: main + bundled
             var allProfiles = new List<ExportProfile>();
@@ -2002,13 +1805,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 if (prof == null) continue;
                 body.Add(BuildLicenseRow(prof));
             }
-
-            // Info note
-            var note = MakeLabel(
-                "When enabled, derived FBX assets require a verified purchase before they are applied. Licensed profiles automatically export through the server-first install flow so Unity can install dependencies and apply the gated assets during import. Enabling this requires sign-in, an active certificate on this machine, and a plan with Protected Exports enabled.",
-                9, TextMute, wrap: true);
-            note.style.marginTop = 10;
-            body.Add(note);
 
             return body;
         }
@@ -2093,23 +1889,22 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             if (showSignInCta)
             {
-                rightCol.Add(BuildLicenseActionChip(
-                    "Sign in to enable",
-                    EditorGUIUtility.IconContent("LockIcon-On").image,
-                    new Color(0.212f, 0.749f, 0.694f, 0.10f),
-                    new Color(0.212f, 0.749f, 0.694f, 0.28f),
-                    Teal,
-                    () =>
-                    {
-                        if (_isSigningIn) return;
-                        _isSigningIn = true;
-                        RefreshUI();
-#pragma warning disable CS4014
-                        YucpOAuthService.SignInAsync(GetServerUrl(),
-                            onSuccess: () => EditorApplication.delayCall += () => { _isSigningIn = false; LoadSettings(); RefreshUI(); },
-                            onError:   e  => EditorApplication.delayCall += () => { _isSigningIn = false; RefreshUI(); EditorUtility.DisplayDialog("Sign-in failed", e, "OK"); });
-#pragma warning restore CS4014
-                    }));
+                rightCol.Add(IsSignInPending
+                    ? BuildLicenseActionChip(
+                        "Signing in...",
+                        null,
+                        new Color(0.212f, 0.749f, 0.694f, 0.10f),
+                        new Color(0.212f, 0.749f, 0.694f, 0.28f),
+                        Teal,
+                        null,
+                        CreateSpinner(Teal, 11f, 1.5f, 0f))
+                    : BuildLicenseActionChip(
+                        "Sign in to enable",
+                        EditorGUIUtility.IconContent("LockIcon-On").image,
+                        new Color(0.212f, 0.749f, 0.694f, 0.10f),
+                        new Color(0.212f, 0.749f, 0.694f, 0.28f),
+                        Teal,
+                        BeginSignIn));
             }
             else if (showCertificateCta)
             {
@@ -2253,7 +2048,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             Color backgroundColor,
             Color borderColor,
             Color textColor,
-            Action onClick)
+            Action onClick,
+            VisualElement leadingElement = null)
         {
             var chip = new VisualElement();
             chip.style.flexDirection = FlexDirection.Row;
@@ -2270,7 +2066,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             chip.style.borderTopColor = chip.style.borderBottomColor =
                 chip.style.borderLeftColor = chip.style.borderRightColor = borderColor;
 
-            if (iconTexture != null)
+            if (leadingElement != null)
+            {
+                leadingElement.style.marginRight = 6;
+                chip.Add(leadingElement);
+            }
+            else if (iconTexture != null)
             {
                 var icon = new Image { image = iconTexture };
                 icon.style.width = 11;
@@ -2282,18 +2083,25 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
             chip.Add(MakeLabel(label, 10, textColor, mb: 0));
 
-            chip.RegisterCallback<MouseEnterEvent>(_ =>
-                chip.style.backgroundColor = new Color(
-                    Mathf.Clamp01(backgroundColor.r + 0.05f),
-                    Mathf.Clamp01(backgroundColor.g + 0.05f),
-                    Mathf.Clamp01(backgroundColor.b + 0.05f),
-                    Mathf.Clamp01(backgroundColor.a + 0.08f)));
-            chip.RegisterCallback<MouseLeaveEvent>(_ => chip.style.backgroundColor = backgroundColor);
-            chip.RegisterCallback<ClickEvent>(evt =>
+            if (onClick != null)
             {
-                evt.StopPropagation();
-                onClick?.Invoke();
-            });
+                chip.RegisterCallback<MouseEnterEvent>(_ =>
+                    chip.style.backgroundColor = new Color(
+                        Mathf.Clamp01(backgroundColor.r + 0.05f),
+                        Mathf.Clamp01(backgroundColor.g + 0.05f),
+                        Mathf.Clamp01(backgroundColor.b + 0.05f),
+                        Mathf.Clamp01(backgroundColor.a + 0.08f)));
+                chip.RegisterCallback<MouseLeaveEvent>(_ => chip.style.backgroundColor = backgroundColor);
+                chip.RegisterCallback<ClickEvent>(evt =>
+                {
+                    evt.StopPropagation();
+                    onClick.Invoke();
+                });
+            }
+            else
+            {
+                chip.style.opacity = 0.82f;
+            }
 
             return chip;
         }
@@ -2347,6 +2155,34 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         }
 
         // ── Shared button builders ─────────────────────────────────────────────────
+
+        private static VisualElement CreateSpinner(Color color, float size = 14f, float thickness = 2f, float marginRight = 8f)
+        {
+            var spinner = new VisualElement();
+            spinner.style.width = size;
+            spinner.style.height = size;
+            spinner.style.flexShrink = 0;
+            spinner.style.marginRight = marginRight;
+            spinner.style.borderTopLeftRadius = spinner.style.borderTopRightRadius =
+                spinner.style.borderBottomLeftRadius = spinner.style.borderBottomRightRadius = size * 0.5f;
+            spinner.style.borderTopWidth = spinner.style.borderBottomWidth =
+                spinner.style.borderLeftWidth = spinner.style.borderRightWidth = thickness;
+
+            var faded = new Color(color.r, color.g, color.b, 0.22f);
+            spinner.style.borderTopColor = faded;
+            spinner.style.borderRightColor = color;
+            spinner.style.borderBottomColor = color;
+            spinner.style.borderLeftColor = faded;
+
+            float angle = 0f;
+            spinner.schedule.Execute(() =>
+            {
+                angle = (angle + 36f) % 360f;
+                spinner.style.rotate = UiToolkitCompat.DegRotate(angle);
+            }).Every(50);
+
+            return spinner;
+        }
 
         private VisualElement BuildPrimaryButton(string text, Action onClick)
         {
@@ -2434,6 +2270,29 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         }
 
         // ── Action handlers ────────────────────────────────────────────────────────
+
+        private void BeginSignIn()
+        {
+            if (IsSignInPending) return;
+
+            _isSigningIn = true;
+            RefreshUI();
+#pragma warning disable CS4014
+            YucpOAuthService.SignInAsync(GetServerUrl(),
+                onSuccess: () => EditorApplication.delayCall += () =>
+                {
+                    _isSigningIn = false;
+                    LoadSettings();
+                    RefreshUI();
+                },
+                onError: e => EditorApplication.delayCall += () =>
+                {
+                    _isSigningIn = false;
+                    RefreshUI();
+                    EditorUtility.DisplayDialog("Sign-in failed", e, "OK");
+                });
+#pragma warning restore CS4014
+        }
 
         private void OnSignOutClicked()
         {

@@ -7,6 +7,7 @@ using UnityEngine.UIElements;
 using UnityEditor.UIElements;
 using YUCP.DevTools.Editor.PackageSigning.Core;
 using YUCP.DevTools.Editor.PackageSigning.Data;
+using YUCP.Motion;
 using YUCP.UI.DesignSystem.Utilities;
 
 namespace YUCP.DevTools.Editor.PackageSigning.UI
@@ -27,6 +28,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private double          _accountStateRefreshedAt;
         private PackageSigningService.CertificateAccountState _accountState;
         private const double AccountStateRefreshIntervalSeconds = 15d;
+        private bool IsSignInPending => _isSigningIn || YucpOAuthService.IsSignInInProgress;
 
         [MenuItem("Tools/YUCP/Others/Development/Package Signing Settings", false, 100)]
         public static void ShowWindow()
@@ -58,10 +60,29 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private void OnEnable()
         {
+            YucpOAuthService.SignInStateChanged -= OnSignInStateChanged;
+            YucpOAuthService.SignInStateChanged += OnSignInStateChanged;
+
             // Guard against Unity calling OnEnable before CreateGUI
             if (_scrollView == null) return;
             LoadSettings();
             RefreshDevKey();
+            BuildUI();
+        }
+
+        private void OnDisable()
+        {
+            YucpOAuthService.SignInStateChanged -= OnSignInStateChanged;
+        }
+
+        private void OnSignInStateChanged()
+        {
+            _isSigningIn = YucpOAuthService.IsSignInInProgress;
+            if (!_isSigningIn)
+            {
+                LoadSettings();
+            }
+
             BuildUI();
         }
 
@@ -128,6 +149,34 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         // --- Not signed in: gorgeous hero inside card content ---
 
+        private static VisualElement CreateSpinner(Color color, float size = 14f, float thickness = 2f, float marginRight = 8f)
+        {
+            var spinner = new VisualElement();
+            spinner.style.width = size;
+            spinner.style.height = size;
+            spinner.style.flexShrink = 0;
+            spinner.style.marginRight = marginRight;
+            spinner.style.borderTopLeftRadius = spinner.style.borderTopRightRadius =
+                spinner.style.borderBottomLeftRadius = spinner.style.borderBottomRightRadius = size * 0.5f;
+            spinner.style.borderTopWidth = spinner.style.borderBottomWidth =
+                spinner.style.borderLeftWidth = spinner.style.borderRightWidth = thickness;
+
+            var faded = new Color(color.r, color.g, color.b, 0.22f);
+            spinner.style.borderTopColor = faded;
+            spinner.style.borderRightColor = color;
+            spinner.style.borderBottomColor = color;
+            spinner.style.borderLeftColor = faded;
+
+            float angle = 0f;
+            spinner.schedule.Execute(() =>
+            {
+                angle = (angle + 36f) % 360f;
+                spinner.style.rotate = UiToolkitCompat.DegRotate(angle);
+            }).Every(50);
+
+            return spinner;
+        }
+
         private void BuildSignInHero(VisualElement content)
         {
             // Teal accent strip
@@ -174,7 +223,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             body.style.marginBottom = 24;
             inner.Add(body);
 
-            if (_isSigningIn)
+            if (IsSignInPending)
             {
                 // Loading state
                 var loadingRow = new VisualElement();
@@ -188,26 +237,17 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 loadingRow.style.borderBottomLeftRadius= 16;
                 loadingRow.style.borderBottomRightRadius=16;
 
-                var dots = new Label("●  ●  ●");
-                dots.style.fontSize    = 13;
-                dots.style.color       = new Color(0.21f, 0.75f, 0.69f);
-                dots.style.marginRight = 14;
-                loadingRow.Add(dots);
+                loadingRow.Add(CreateSpinner(new Color(0.21f, 0.75f, 0.69f), 18f, 2f, 14f));
 
-                var signingLbl = new Label("Signing in…");
+                var signingLbl = new Label(GetSignInStatusText());
                 signingLbl.style.fontSize = 14;
                 signingLbl.style.color    = new Color(0.502f, 0.502f, 0.502f);
+                signingLbl.style.whiteSpace = WhiteSpace.Normal;
+                signingLbl.style.unityTextAlign = TextAnchor.MiddleCenter;
+                signingLbl.style.flexShrink = 1;
                 loadingRow.Add(signingLbl);
 
                 inner.Add(loadingRow);
-                YUCPUIToolkitHelper.AddSpacing(inner, 12);
-
-                var cancelBtn = YUCPUIToolkitHelper.CreateButton(
-                    "Cancel",
-                    () => { _isSigningIn = false; BuildUI(); },
-                    YUCPUIToolkitHelper.ButtonVariant.Ghost);
-                cancelBtn.style.alignSelf = Align.Center;
-                inner.Add(cancelBtn);
             }
             else
             {
@@ -848,13 +888,21 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             }
         }
 
+        private static string GetSignInStatusText()
+        {
+            string status = YucpOAuthService.SignInStatusMessage;
+            return string.IsNullOrEmpty(status)
+                ? "Starting Creator Assistant sign-in..."
+                : status;
+        }
+
         // ──────────────────────────────────────────────────────────────
         //  Event handlers
         // ──────────────────────────────────────────────────────────────
 
         private void OnSignInClicked()
         {
-            if (_isSigningIn) return;
+            if (IsSignInPending) return;
             _isSigningIn = true;
             BuildUI();
 

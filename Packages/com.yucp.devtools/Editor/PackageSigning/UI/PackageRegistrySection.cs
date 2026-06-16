@@ -12,6 +12,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
     internal sealed class PackageRegistrySection
     {
         private const double CreatorPackageCacheLifetimeSeconds = 60d;
+        private const double CreatorPackageErrorRetryCooldownSeconds = 10d;
 
         private static readonly Color Surface = new Color(0.118f, 0.118f, 0.118f);
         private static readonly Color SurfaceRaise = new Color(0.138f, 0.138f, 0.138f);
@@ -31,6 +32,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         private bool _creatorPackageCacheLoading;
         private string _creatorPackageCacheError;
         private double _creatorPackageCacheLoadedAt;
+        private double _creatorPackageCacheLastFailureAt;
 
         public PackageRegistrySection(
             ExportProfile profile,
@@ -44,6 +46,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             _onProfileChanged = onProfileChanged;
         }
 
+        /// <summary>
+        /// Standalone bordered card — used when the registry stands on its own
+        /// (signed out / no certificate states).
+        /// </summary>
         public VisualElement CreateCard()
         {
             if (_profile == null)
@@ -51,47 +57,79 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 return null;
             }
 
-            if (!_creatorPackageCacheLoading && !HasFreshCreatorPackageCache())
+            var card = MakeRoundedBox(Surface, 12, 1, Border);
+            var body = MakePad(20, 20, 20, 20);
+            body.Add(MakeLabel("Package Identity", 14, TextPri, bold: true, mb: 4));
+            body.Add(MakeLabel(
+                "A stable identity keeps your package history and license validation intact across updates.",
+                11,
+                TextSec,
+                mb: 14,
+                wrap: true));
+            body.Add(CreateContent());
+            card.Add(body);
+            return card;
+        }
+
+        /// <summary>
+        /// Just the identity status + actions, with no card chrome or header — so it
+        /// can be embedded directly under the merged "Package" section of the active card.
+        /// </summary>
+        public VisualElement CreateContent()
+        {
+            if (_profile == null)
+            {
+                return null;
+            }
+
+            if (!_creatorPackageCacheLoading && !HasFreshCreatorPackageCache() && CanRetryCreatorPackageLoad())
             {
                 EnsureCreatorPackagesLoaded();
             }
 
-            var card = MakeRoundedBox(Surface, 12, 1, Border);
-            var body = MakePad(20, 20, 20, 20);
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.style.alignItems = Align.FlexStart;
+            row.style.justifyContent = Justify.SpaceBetween;
 
-            var headerRow = new VisualElement();
-            headerRow.style.flexDirection = FlexDirection.Row;
-            headerRow.style.justifyContent = Justify.SpaceBetween;
-            headerRow.style.alignItems = Align.Center;
-            headerRow.style.marginBottom = 12;
+            var info = new VisualElement();
+            info.style.flexGrow = 1;
+            info.style.flexShrink = 1;
+            info.style.marginRight = 10;
 
-            headerRow.Add(MakeLabel("Package Identity & Registry", 14, TextPri, bold: true));
-            body.Add(headerRow);
-            
-            body.Add(MakeLabel(
-                "Your package identity maintains continuity across projects and updates. Keeping the same identity ensures your package history and license validation stay intact.",
-                12,
-                TextSec,
-                mb: 20,
-                wrap: true));
+            var currentPackage = FindKnownPackage(_profile.packageId);
+            bool isAssigned = !string.IsNullOrWhiteSpace(_profile.packageId);
 
-            var statusBox = MakeRoundedBox(SurfaceRaise, 8, 1, Border);
-            statusBox.style.marginBottom = 16;
-            
-            statusBox.Add(BuildStatusPanel());
-            statusBox.Add(BuildActionRow());
+            if (!isAssigned)
+            {
+                info.Add(MakeLabel("No identity yet", 13, TextPri, bold: true, mb: 3));
+                info.Add(MakeLabel(
+                    "One is created automatically the first time you export.",
+                    11, TextMute, wrap: true));
+            }
+            else
+            {
+                string pkgName = currentPackage != null && !string.IsNullOrWhiteSpace(currentPackage.packageName)
+                    ? currentPackage.packageName
+                    : (!string.IsNullOrWhiteSpace(_profile.packageName) ? _profile.packageName : "This package");
+                info.Add(MakeLabel(pkgName, 13, TextPri, bold: true, mb: 3));
+                info.Add(MakeLabel(
+                    $"id · {ShortId(_profile.packageId)} · keeps updates linked to the same product",
+                    11, TextMute, wrap: true));
+            }
 
-            body.Add(statusBox);
+            if (!string.IsNullOrWhiteSpace(_creatorPackageCacheError))
+            {
+                info.Add(MakeLabel(_creatorPackageCacheError, 11, Error, mt: 6, wrap: true));
+            }
+            else if (_creatorPackageCacheLoading)
+            {
+                info.Add(MakeLabel("Syncing with registry…", 11, TextMute, mt: 6));
+            }
 
-            body.Add(MakeLabel(
-                "You can manage all registered packages and their certificates directly from the YUCP Dashboard.",
-                11,
-                TextMute,
-                mt: 4,
-                wrap: true));
-
-            card.Add(body);
-            return card;
+            row.Add(info);
+            row.Add(MakeChangeButton(isAssigned ? "Change" : "Set up", ShowChangeMenu));
+            return row;
         }
 
         private string GetPackageRegistryServerUrl()
@@ -106,12 +144,28 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 EditorApplication.timeSinceStartup - _creatorPackageCacheLoadedAt < CreatorPackageCacheLifetimeSeconds;
         }
 
+        private bool CanRetryCreatorPackageLoad()
+        {
+            return string.IsNullOrEmpty(_creatorPackageCacheError) ||
+                _creatorPackageCacheLastFailureAt <= 0 ||
+                EditorApplication.timeSinceStartup - _creatorPackageCacheLastFailureAt >= CreatorPackageErrorRetryCooldownSeconds;
+        }
+
         private void EnsureCreatorPackagesLoaded(bool forceRefresh = false, Action onComplete = null)
         {
             string serverUrl = GetPackageRegistryServerUrl();
             if (string.IsNullOrEmpty(serverUrl))
             {
                 _creatorPackageCacheError = "Configure the signing server URL before loading packages.";
+                _creatorPackageCacheLastFailureAt = EditorApplication.timeSinceStartup;
+                onComplete?.Invoke();
+                return;
+            }
+
+            if (!YucpOAuthService.IsSignedIn())
+            {
+                _creatorPackageCacheError = "Sign in with your creator account before loading packages.";
+                _creatorPackageCacheLastFailureAt = 0;
                 onComplete?.Invoke();
                 return;
             }
@@ -127,6 +181,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 return;
             }
 
+            if (!forceRefresh && !CanRetryCreatorPackageLoad())
+            {
+                onComplete?.Invoke();
+                return;
+            }
+
             _creatorPackageCacheLoading = true;
             _creatorPackageCacheError = null;
 
@@ -136,6 +196,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 {
                     _creatorPackageCacheLoading = false;
                     _creatorPackageCacheError = null;
+                    _creatorPackageCacheLastFailureAt = 0;
                     _creatorPackageCacheLoadedAt = EditorApplication.timeSinceStartup;
                     _creatorPackageCache.Clear();
                     if (packages != null)
@@ -150,6 +211,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                 {
                     _creatorPackageCacheLoading = false;
                     _creatorPackageCacheError = error;
+                    _creatorPackageCacheLastFailureAt = EditorApplication.timeSinceStartup;
                     _refreshUi?.Invoke();
                     onComplete?.Invoke();
                 });
@@ -190,170 +252,53 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             _refreshUi?.Invoke();
         }
 
-        private void ShowExistingPackageMenu()
+        private static string ShortId(string id)
         {
-            if (_creatorPackageCache.Count == 0)
-            {
-                EditorUtility.DisplayDialog(
-                    "No Packages Found",
-                    "No creator packages are available yet. Export and sign a package first, or refresh after signing in.",
-                    "OK");
-                return;
-            }
-
-            var menu = new GenericMenu();
-            foreach (var package in _creatorPackageCache)
-            {
-                string displayName = string.IsNullOrWhiteSpace(package.packageName)
-                    ? package.packageId
-                    : $"{package.packageName} [{package.packageId}]";
-                bool isCurrent = string.Equals(
-                    _profile.packageId,
-                    package.packageId,
-                    StringComparison.OrdinalIgnoreCase);
-                menu.AddItem(new GUIContent(displayName), isCurrent, () => AssignExistingPackageId(package));
-            }
-
-            menu.ShowAsContext();
+            if (string.IsNullOrWhiteSpace(id)) return id;
+            return id.Length <= 10 ? id : id.Substring(0, 8);
         }
 
-        private VisualElement BuildStatusPanel()
+        // One "Change" affordance that opens a menu, replacing the old
+        // Link / Generate / Unlink / Sync button cluster.
+        private void ShowChangeMenu()
         {
-            var panel = new VisualElement();
-            panel.style.paddingLeft = 16;
-            panel.style.paddingRight = 16;
-            panel.style.paddingTop = 16;
-            panel.style.paddingBottom = 16;
-
-            var currentPackage = FindKnownPackage(_profile.packageId);
-            bool isAssigned = !string.IsNullOrWhiteSpace(_profile.packageId);
-            
-            var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.alignItems = Align.FlexStart;
-
-            var dot = new VisualElement();
-            dot.style.width = 10;
-            dot.style.height = 10;
-            dot.style.borderTopLeftRadius = 5;
-            dot.style.borderTopRightRadius = 5;
-            dot.style.borderBottomLeftRadius = 5;
-            dot.style.borderBottomRightRadius = 5;
-            dot.style.marginTop = 4;
-            dot.style.marginRight = 12;
-            
-            var infoCol = new VisualElement();
-            infoCol.style.flexGrow = 1;
-
-            string titleText;
-            string descText;
-
-            if (!isAssigned)
+            void Build()
             {
-                dot.style.backgroundColor = new Color(0.9f, 0.7f, 0.2f);
-                titleText = "Identity Unassigned";
-                descText = "This package does not have an identity yet. Exporting without an identity will assign one automatically.";
-            }
-            else if (currentPackage != null)
-            {
-                dot.style.backgroundColor = new Color(0.2f, 0.8f, 0.4f);
-                string pkgName = string.IsNullOrWhiteSpace(currentPackage.packageName) ? currentPackage.packageId : currentPackage.packageName;
-                titleText = $"Linked to: {pkgName}";
-                descText = $"Package ID: {_profile.packageId}";
-            }
-            else
-            {
-                dot.style.backgroundColor = new Color(0.212f, 0.749f, 0.694f); // Teal
-                titleText = "Local Identity Assigned";
-                descText = $"Package ID: {_profile.packageId}\nThis ID will be registered on the server during the next signed export.";
-            }
+                bool isAssigned = !string.IsNullOrWhiteSpace(_profile.packageId);
+                var menu = new GenericMenu();
 
-            infoCol.Add(MakeLabel(titleText, 13, TextPri, bold: true, mb: 4));
-            infoCol.Add(MakeLabel(descText, 11, TextSec, mb: 0, wrap: true));
-
-            if (!string.IsNullOrWhiteSpace(_creatorPackageCacheError))
-            {
-                infoCol.Add(MakeLabel($"Connection Error: {_creatorPackageCacheError}", 11, Error, mt: 8, wrap: true));
-            }
-            else if (_creatorPackageCacheLoading)
-            {
-                infoCol.Add(MakeLabel("Syncing with registry...", 11, TextMute, mt: 8));
-            }
-
-            row.Add(dot);
-            row.Add(infoCol);
-            
-            panel.Add(row);
-            return panel;
-        }
-
-        private VisualElement BuildActionRow()
-        {
-            var actionContainer = new VisualElement();
-            actionContainer.style.borderTopWidth = 1;
-            actionContainer.style.borderTopColor = Border;
-            actionContainer.style.backgroundColor = new Color(0f, 0f, 0f, 0.2f);
-            actionContainer.style.paddingLeft = 16;
-            actionContainer.style.paddingRight = 16;
-            actionContainer.style.paddingTop = 12;
-            actionContainer.style.paddingBottom = 12;
-            
-            var row = new VisualElement();
-            row.style.flexDirection = FlexDirection.Row;
-            row.style.justifyContent = Justify.SpaceBetween;
-            row.style.alignItems = Align.Center;
-
-            var leftActions = new VisualElement();
-            leftActions.style.flexDirection = FlexDirection.Row;
-            
-            var rightActions = new VisualElement();
-            rightActions.style.flexDirection = FlexDirection.Row;
-
-            bool isAssigned = !string.IsNullOrWhiteSpace(_profile.packageId);
-
-            leftActions.Add(MakeActionButton(
-                "Link Existing Identity",
-                () => {
-                    if (_creatorPackageCache.Count > 0)
+                if (_creatorPackageCache.Count > 0)
+                {
+                    foreach (var package in _creatorPackageCache)
                     {
-                        ShowExistingPackageMenu();
-                        return;
+                        string name = string.IsNullOrWhiteSpace(package.packageName)
+                            ? package.packageId
+                            : package.packageName;
+                        bool isCurrent = string.Equals(
+                            _profile.packageId, package.packageId, StringComparison.OrdinalIgnoreCase);
+                        menu.AddItem(new GUIContent($"Link to existing/{name}"), isCurrent,
+                            () => AssignExistingPackageId(package));
                     }
-                    EnsureCreatorPackagesLoaded(forceRefresh: true, onComplete: () => {
-                        if (_creatorPackageCache.Count > 0)
-                            ShowExistingPackageMenu();
-                    });
-                },
-                !_creatorPackageCacheLoading,
-                isPrimary: true
-            ));
+                    menu.AddSeparator("");
+                }
 
-            if (!isAssigned)
-            {
-                leftActions.Add(MakeActionButton(
-                    "Generate New",
-                    () => {
-                        Undo.RecordObject(_profile, "Generate New Package ID");
-                        PackageIdManager.AssignNewPackageId(_profile);
-                        EditorUtility.SetDirty(_profile);
-                        _onProfileChanged?.Invoke();
-                        _refreshUi?.Invoke();
-                    }
-                ));
-            }
+                menu.AddItem(new GUIContent("Generate a new identity"), false, () =>
+                {
+                    Undo.RecordObject(_profile, "Generate New Package ID");
+                    PackageIdManager.AssignNewPackageId(_profile);
+                    EditorUtility.SetDirty(_profile);
+                    _onProfileChanged?.Invoke();
+                    _refreshUi?.Invoke();
+                });
 
-            rightActions.Add(MakeActionButton(
-                _creatorPackageCacheLoading ? "Syncing..." : "Sync",
-                () => EnsureCreatorPackagesLoaded(forceRefresh: true),
-                !_creatorPackageCacheLoading
-            ));
-
-            if (isAssigned)
-            {
-                rightActions.Add(MakeActionButton(
-                    "Unlink",
-                    () => {
-                        if (EditorUtility.DisplayDialog("Unlink Identity", "Are you sure you want to unlink this package identity? The package will be treated as new.", "Unlink", "Cancel"))
+                if (isAssigned)
+                {
+                    menu.AddItem(new GUIContent("Unlink this identity"), false, () =>
+                    {
+                        if (EditorUtility.DisplayDialog(
+                            "Unlink identity",
+                            "This package will be treated as new on the next export. Continue?",
+                            "Unlink", "Cancel"))
                         {
                             Undo.RecordObject(_profile, "Clear Package ID");
                             PackageIdManager.UnlinkPackageId(_profile);
@@ -361,16 +306,50 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                             _onProfileChanged?.Invoke();
                             _refreshUi?.Invoke();
                         }
-                    },
-                    isDanger: true
-                ));
+                    });
+                }
+
+                menu.AddSeparator("");
+                menu.AddItem(new GUIContent(_creatorPackageCacheLoading ? "Refreshing…" : "Refresh list"),
+                    false, () => EnsureCreatorPackagesLoaded(forceRefresh: true));
+
+                menu.ShowAsContext();
             }
 
-            row.Add(leftActions);
-            row.Add(rightActions);
-            actionContainer.Add(row);
+            if (_creatorPackageCache.Count == 0 && !_creatorPackageCacheLoading)
+                EnsureCreatorPackagesLoaded(forceRefresh: true, onComplete: Build);
+            else
+                Build();
+        }
 
-            return actionContainer;
+        private VisualElement MakeChangeButton(string text, Action onClick)
+        {
+            var btn = new VisualElement();
+            btn.style.flexShrink = 0;
+            btn.style.paddingLeft = btn.style.paddingRight = 10;
+            btn.style.paddingTop = btn.style.paddingBottom = 4;
+            btn.style.borderTopLeftRadius = btn.style.borderTopRightRadius =
+                btn.style.borderBottomLeftRadius = btn.style.borderBottomRightRadius = 6;
+            btn.style.borderTopWidth = btn.style.borderBottomWidth =
+                btn.style.borderLeftWidth = btn.style.borderRightWidth = 1;
+            btn.style.borderTopColor = btn.style.borderBottomColor =
+                btn.style.borderLeftColor = btn.style.borderRightColor = Border;
+            var lbl = MakeLabel(text, 11, TextSec, mb: 0);
+            btn.Add(lbl);
+            btn.RegisterCallback<MouseEnterEvent>(_ =>
+            {
+                btn.style.borderTopColor = btn.style.borderBottomColor =
+                    btn.style.borderLeftColor = btn.style.borderRightColor = TextMute;
+                lbl.style.color = TextPri;
+            });
+            btn.RegisterCallback<MouseLeaveEvent>(_ =>
+            {
+                btn.style.borderTopColor = btn.style.borderBottomColor =
+                    btn.style.borderLeftColor = btn.style.borderRightColor = Border;
+                lbl.style.color = TextSec;
+            });
+            btn.RegisterCallback<ClickEvent>(_ => onClick?.Invoke());
+            return btn;
         }
 
         private static VisualElement MakeCard()
@@ -428,31 +407,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             }
 
             return label;
-        }
-
-        private static Button MakeActionButton(string text, Action onClick, bool enabled = true, bool isPrimary = false, bool isDanger = false)
-        {
-            var btn = new Button(() => { if (enabled) onClick?.Invoke(); }) { text = text };
-            
-            btn.AddToClassList("yucp-button");
-
-            if (isPrimary)
-            {
-                btn.AddToClassList("yucp-button-primary");
-            }
-            else if (isDanger)
-            {
-                btn.AddToClassList("yucp-button-danger");
-            }
-            else
-            {
-                btn.AddToClassList("yucp-button-action");
-            }
-
-            btn.style.marginRight = isDanger ? 0 : 4;
-            btn.SetEnabled(enabled);
-
-            return btn;
         }
     }
 }

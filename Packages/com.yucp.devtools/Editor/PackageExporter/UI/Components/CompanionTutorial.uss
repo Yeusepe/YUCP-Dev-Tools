@@ -1,0 +1,550 @@
+/* ============================================================================
+   Companion Tutorial Editor — beautiful UI Toolkit styling
+   Matches the YUCP design system (teal accent, dark cards, soft radii).
+   ============================================================================ */
+
+.yucp-ct-editor {
+    flex-direction: column;
+}
+
+/* ── Enable / summary toolbar ──────────────────────────────────────────────── */
+.yucp-ct-toolbar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    background-color: rgba(54, 191, 177, 0.06);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+}
+
+.yucp-ct-toolbar__left {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.yucp-ct-count {
+    font-size: 11px;
+    color: #808080;
+    flex-shrink: 0;
+}
+
+/* ── Tutorial title field ──────────────────────────────────────────────────── */
+.yucp-ct-title-row {
+    flex-direction: column;
+    margin-bottom: 12px;
+}
+
+.yucp-ct-title-row .yucp-input {
+    width: 100%;
+}
+
+/* ── Action bar (Preview / Demo / Stop) ────────────────────────────────────── */
+.yucp-ct-actionbar {
+    flex-direction: row;
+    margin-bottom: 12px;
+}
+
+/* Buttons grow to fill the row; their left/right gaps are set in code so the ends stay flush
+   (Unity USS has no reliable :first-child / :last-child). */
+.yucp-ct-actionbar Button {
+    flex-grow: 1;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+/* ── Steps container ───────────────────────────────────────────────────────── */
+.yucp-ct-steps {
+    flex-direction: column;
+    position: relative;
+}
+
+/* ── Step card ─────────────────────────────────────────────────────────────── */
+.yucp-ct-card {
+    background-color: #1e1e1e;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.07);
+    margin-bottom: 10px;
+    overflow: hidden;
+    transition-property: border-color, background-color, opacity, scale;
+    transition-duration: 0.18s, 0.18s, 0.18s, 0.18s;
+    transition-timing-function: ease-out, ease-out, ease-out, ease-out;
+    scale: 1 1;
+}
+
+.yucp-ct-card:hover {
+    border-color: rgba(255, 255, 255, 0.14);
+}
+
+.yucp-ct-card--expanded {
+    background-color: #232323;
+    border-color: rgba(54, 191, 177, 0.35);
+}
+
+.yucp-ct-card--dragging {
+    opacity: 0.95;
+    scale: 1.01 1.01;
+    border-color: #36BFB1;
+    background-color: #262626;
+}
+
+.yucp-ct-card--invalid .yucp-ct-stepno {
+    color: #E24A4A;
+}
+
+.yucp-ct-card--warning .yucp-ct-stepno {
+    color: #E2A54A;
+}
+
+/* ── Card header ───────────────────────────────────────────────────────────── */
+.yucp-ct-card__header {
+    flex-direction: row;
+    align-items: center;
+    padding: 10px 12px;
+    min-height: 42px;
+}
+
+.yucp-ct-header-main {
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.yucp-ct-title-line {
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
+}
+
+.yucp-ct-stepno {
+    font-size: 9px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.38);
+    letter-spacing: 0.8px;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+.yucp-ct-card__title {
+    font-size: 13px;
+    color: #ffffff;
+    -unity-font-style: bold;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.yucp-ct-card__title--empty {
+    color: #6a6a6a;
+    -unity-font-style: italic;
+}
+
+.yucp-ct-chips {
+    flex-direction: row;
+    margin-top: 6px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+
+/* Right-side controls cluster (drag handle, chevron) */
+.yucp-ct-handle {
+    width: 18px;
+    min-width: 18px;
+    height: 24px;
+    margin-left: 8px;
+    -unity-text-align: middle-center;
+    color: rgba(255, 255, 255, 0.22);
+    font-size: 13px;
+    letter-spacing: -3px;
+    cursor: pan;
+    flex-shrink: 0;
+    transition-property: color;
+    transition-duration: 0.15s;
+    transition-timing-function: ease-out;
+}
+
+.yucp-ct-handle:hover {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.yucp-ct-chip {
+    flex-direction: row;
+    align-items: center;
+    border-radius: 4px;
+    padding: 2px 8px;
+    margin-right: 6px;
+    font-size: 10px;
+    -unity-text-align: middle-center;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yucp-ct-chip--target {
+    background-color: rgba(54, 191, 177, 0.12);
+    color: #5fd3c6;
+}
+
+.yucp-ct-chip--wait {
+    background-color: rgba(91, 163, 255, 0.12);
+    color: #8cc0ff;
+}
+
+.yucp-ct-chip--overlay {
+    background-color: rgba(226, 165, 74, 0.12);
+    color: #e2bd7a;
+}
+
+/* Chevron toggle */
+.yucp-ct-chevron {
+    width: 26px;
+    min-width: 26px;
+    height: 26px;
+    padding: 0;
+    margin-left: 4px;
+    margin-right: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    background-color: transparent;
+    border-width: 0;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 11px;
+    -unity-text-align: middle-center;
+    flex-shrink: 0;
+    border-radius: 6px;
+}
+
+.yucp-ct-chevron:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
+}
+
+/* ── Card body ─────────────────────────────────────────────────────────────── */
+.yucp-ct-card__body {
+    flex-direction: column;
+    padding: 10px 14px 14px 14px;
+    border-top-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+.yucp-ct-subhead {
+    font-size: 10px;
+    -unity-font-style: bold;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.6px;
+    margin-top: 16px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom-width: 1px;
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+.yucp-ct-field-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.yucp-ct-field-row--stacked {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.yucp-ct-field-label {
+    width: 110px;
+    min-width: 110px;
+    font-size: 12px;
+    color: #b0b0b0;
+    flex-shrink: 0;
+}
+
+.yucp-ct-field-row--stacked .yucp-ct-field-label {
+    width: 100%;
+    margin-bottom: 4px;
+}
+
+.yucp-ct-field-control {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+/* PopupField styled like the YUCP dropdown */
+.yucp-ct-popup {
+    margin: 0;
+    flex-grow: 1;
+}
+
+.yucp-ct-popup .unity-base-popup-field__input {
+    background-color: rgba(40, 40, 40, 1);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 2px 8px;
+    min-height: 28px;
+}
+
+.yucp-ct-popup:hover .unity-base-popup-field__input {
+    border-color: rgba(255, 255, 255, 0.2);
+    background-color: rgba(45, 45, 45, 1);
+}
+
+.yucp-ct-popup .unity-base-popup-field__text {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 12px;
+}
+
+.yucp-ct-popup .unity-base-popup-field__arrow {
+    -unity-background-image-tint-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Compact text/float inputs inside the card */
+.yucp-ct-input {
+    flex-grow: 1;
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    border-radius: 6px;
+    min-height: 28px;
+}
+
+.yucp-ct-input .unity-base-text-field__input,
+.yucp-ct-input .unity-text-field__input {
+    background-color: transparent;
+    border-width: 0;
+    color: #ffffff;
+    padding: 4px 8px;
+}
+
+.yucp-ct-input:focus {
+    border-color: rgba(54, 191, 177, 0.6);
+    background-color: #2f2f2f;
+}
+
+.yucp-ct-textarea {
+    min-height: 60px;
+}
+
+.yucp-ct-textarea .unity-base-text-field__input {
+    white-space: normal;
+}
+
+/* Vector groups (spotlight padding / manual rect) */
+.yucp-ct-vec {
+    flex-direction: row;
+    flex-grow: 1;
+}
+
+.yucp-ct-vec__cell {
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.yucp-ct-vec__caption {
+    font-size: 9px;
+    color: #707070;
+    margin-bottom: 2px;
+    -unity-text-align: middle-center;
+}
+
+.yucp-ct-vec__field {
+    margin: 0;
+}
+
+.yucp-ct-vec__field .unity-base-text-field__input {
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    border-radius: 6px;
+    color: #ffffff;
+    min-height: 24px;
+    -unity-text-align: middle-center;
+}
+
+/* Advanced foldout */
+.yucp-ct-advanced {
+    margin-top: 10px;
+    border-top-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.05);
+    padding-top: 8px;
+}
+
+.yucp-ct-advanced__toggle {
+    flex-direction: row;
+    align-items: center;
+    cursor: link;
+}
+
+.yucp-ct-advanced__caret {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-right: 6px;
+}
+
+.yucp-ct-advanced__label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+/* Inline validation findings */
+.yucp-ct-findings {
+    flex-direction: column;
+    margin-top: 10px;
+}
+
+.yucp-ct-finding {
+    flex-direction: row;
+    align-items: flex-start;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 4px;
+}
+
+.yucp-ct-finding--error {
+    background-color: rgba(226, 74, 74, 0.14);
+}
+
+.yucp-ct-finding--warning {
+    background-color: rgba(226, 165, 74, 0.14);
+}
+
+.yucp-ct-finding--info {
+    background-color: rgba(91, 163, 255, 0.12);
+}
+
+.yucp-ct-finding__icon {
+    font-size: 11px;
+    -unity-font-style: bold;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.yucp-ct-finding--error .yucp-ct-finding__icon { color: #E24A4A; }
+.yucp-ct-finding--warning .yucp-ct-finding__icon { color: #E2A54A; }
+.yucp-ct-finding--info .yucp-ct-finding__icon { color: #5BA3FF; }
+
+.yucp-ct-finding__text {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.8);
+    white-space: normal;
+    flex-shrink: 1;
+}
+
+/* Card footer actions */
+.yucp-ct-card__footer {
+    flex-direction: row;
+    justify-content: flex-end;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top-width: 1px;
+    border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+.yucp-ct-foot-btn {
+    height: 26px;
+    min-height: 26px;
+    padding-left: 12px;
+    padding-right: 12px;
+    margin-left: 6px;
+    margin-right: 0;
+    font-size: 11px;
+    background-color: #333333;
+    border-radius: 6px;
+    border-width: 0;
+    color: #d8d8d8;
+    transition-property: background-color, color;
+    transition-duration: 0.15s, 0.15s;
+}
+
+.yucp-ct-foot-btn:hover {
+    background-color: #404040;
+    color: #ffffff;
+}
+
+.yucp-ct-foot-btn--primary:hover {
+    background-color: #36BFB1;
+    color: #ffffff;
+}
+
+.yucp-ct-foot-btn--danger:hover {
+    background-color: #E24A4A;
+    color: #ffffff;
+}
+
+/* ── Drag drop indicator ───────────────────────────────────────────────────── */
+.yucp-ct-drop-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: #36BFB1;
+    border-radius: 1px;
+    display: none;
+}
+
+/* ── Empty state ───────────────────────────────────────────────────────────── */
+.yucp-ct-empty {
+    align-items: center;
+    justify-content: center;
+    padding: 28px 20px;
+    background-color: rgba(255, 255, 255, 0.02);
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.yucp-ct-empty__title {
+    font-size: 13px;
+    -unity-font-style: bold;
+    color: #b0b0b0;
+    margin-bottom: 4px;
+}
+
+.yucp-ct-empty__desc {
+    font-size: 11px;
+    color: #777777;
+    -unity-text-align: middle-center;
+    white-space: normal;
+    max-width: 320px;
+    margin-bottom: 12px;
+}
+
+/* ── Add-step button ───────────────────────────────────────────────────────── */
+.yucp-ct-add {
+    height: 34px;
+    min-height: 34px;
+    border-radius: 8px;
+    background-color: rgba(54, 191, 177, 0.12);
+    border-width: 1px;
+    border-color: rgba(54, 191, 177, 0.35);
+    color: #36BFB1;
+    font-size: 12px;
+    -unity-font-style: bold;
+    margin-left: 0;
+    margin-right: 0;
+    transition-property: background-color, scale;
+    transition-duration: 0.15s, 0.15s;
+    scale: 1 1;
+}
+
+.yucp-ct-add:hover {
+    background-color: rgba(54, 191, 177, 0.2);
+    scale: 1.005 1.005;
+}
+
+.yucp-ct-add:active {
+    scale: 0.99 0.99;
+}
+
+/* ── Disabled (tutorial off) dimming ───────────────────────────────────────── */
+.yucp-ct-body-disabled {
+    opacity: 0.45;
+}

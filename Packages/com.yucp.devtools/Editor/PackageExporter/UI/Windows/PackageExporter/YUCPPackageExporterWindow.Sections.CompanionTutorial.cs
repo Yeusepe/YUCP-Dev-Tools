@@ -1,9 +1,6 @@
-using System.Collections.Generic;
-using UnityEditor;
-using UnityEditorInternal;
 using UnityEngine;
 using UnityEngine.UIElements;
-using YUCP.CompanionTutorial.Generated.Source;
+using YUCP.DevTools.Editor.PackageExporter.UI.Components;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -24,178 +21,96 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (!showCompanionTutorial)
                 return section;
 
+            section.Add(CreateBetaBanner());
+
             var helpBox = new VisualElement();
             helpBox.AddToClassList("yucp-help-box");
-            var helpText = new Label("Optional whole-Unity install tutorial that auto-plays once after a buyer imports the package. The overlay is Windows-only and click-through; steps advance from the chosen wait condition. Use the dropdowns to target Unity UI without memorizing strings.");
+            var helpText = new Label("An optional overlay walkthrough that auto-plays once after a buyer imports the package. It's Windows-only and click-through — each step points at part of the Unity UI and advances from the condition you choose. Drag the handle on any step to reorder it.");
             helpText.AddToClassList("yucp-help-box-text");
             helpBox.Add(helpText);
             section.Add(helpBox);
 
-            var buttonRow = new VisualElement();
-            buttonRow.style.flexDirection = FlexDirection.Row;
-            buttonRow.style.marginTop = 8;
-            buttonRow.style.marginBottom = 8;
-
-            var previewButton = new Button(() =>
-            {
-                if (profile != null && profile.companionTutorial != null)
-                    CompanionTutorialRunner.QueueRunFromJson(JsonUtility.ToJson(profile.companionTutorial));
-            })
-            {
-                text = "Preview"
-            };
-            previewButton.AddToClassList("yucp-button");
-            previewButton.SetEnabled(profile != null && profile.companionTutorial != null && profile.companionTutorial.enabled);
-            buttonRow.Add(previewButton);
-
-            var demoButton = new Button(CompanionTutorialRunner.StartDemo)
-            {
-                text = "Run Demo"
-            };
-            demoButton.AddToClassList("yucp-button");
-            demoButton.style.marginLeft = 8;
-            buttonRow.Add(demoButton);
-
-            var stopButton = new Button(CompanionTutorialRunner.Stop)
-            {
-                text = "Stop"
-            };
-            stopButton.AddToClassList("yucp-button");
-            stopButton.style.marginLeft = 8;
-            buttonRow.Add(stopButton);
-
-            section.Add(buttonRow);
-
-            section.Add(BuildCompanionTutorialEditor(profile, previewButton));
+            if (profile != null && profile.companionTutorial != null)
+                section.Add(new CompanionTutorialEditor(profile.companionTutorial, profile));
 
             return section;
         }
 
-        private VisualElement BuildCompanionTutorialEditor(ExportProfile profile, Button previewButton)
+        // Mirrors the beta banner used by the custom Update Steps section so both experimental
+        // features carry the same warning and "Report Issues" entry point.
+        private VisualElement CreateBetaBanner()
         {
-            // State captured by the IMGUIContainer; lives as long as the section is shown.
-            SerializedObject serializedProfile = profile != null ? new SerializedObject(profile) : null;
-            SerializedProperty tutorialProp = serializedProfile?.FindProperty("companionTutorial");
-            SerializedProperty enabledProp = tutorialProp?.FindPropertyRelative("enabled");
-            SerializedProperty titleProp = tutorialProp?.FindPropertyRelative("title");
-            SerializedProperty stepsProp = tutorialProp?.FindPropertyRelative("steps");
+            var betaBanner = new VisualElement();
+            betaBanner.style.flexDirection = FlexDirection.Row;
+            betaBanner.style.alignItems = Align.Center;
+            betaBanner.style.marginTop = 4;
+            betaBanner.style.marginBottom = 12;
+            betaBanner.style.paddingTop = 8;
+            betaBanner.style.paddingBottom = 8;
+            betaBanner.style.paddingLeft = 8;
+            betaBanner.style.paddingRight = 8;
+            betaBanner.style.backgroundColor = new Color(0, 0, 0, 0.1f);
+            betaBanner.style.borderTopWidth = 1;
+            betaBanner.style.borderBottomWidth = 1;
+            betaBanner.style.borderLeftWidth = 1;
+            betaBanner.style.borderRightWidth = 1;
+            var borderColor = new Color(1, 1, 1, 0.1f);
+            betaBanner.style.borderTopColor = borderColor;
+            betaBanner.style.borderBottomColor = borderColor;
+            betaBanner.style.borderLeftColor = borderColor;
+            betaBanner.style.borderRightColor = borderColor;
+            betaBanner.style.borderTopLeftRadius = 8;
+            betaBanner.style.borderTopRightRadius = 8;
+            betaBanner.style.borderBottomLeftRadius = 8;
+            betaBanner.style.borderBottomRightRadius = 8;
 
-            ReorderableList list = null;
-            if (stepsProp != null)
-            {
-                list = new ReorderableList(serializedProfile, stepsProp, true, true, true, true);
-                list.drawHeaderCallback = r => EditorGUI.LabelField(r, "Steps");
-                list.elementHeightCallback = index =>
-                {
-                    var step = stepsProp.GetArrayElementAtIndex(index);
-                    return CompanionTutorialStepGUI.Height(step) + EditorGUIUtility.singleLineHeight + 12f;
-                };
-                list.drawElementCallback = (rect, index, active, focused) =>
-                {
-                    var step = stepsProp.GetArrayElementAtIndex(index);
-                    float line = EditorGUIUtility.singleLineHeight;
+            var betaIcon = new Label("BETA");
+            betaIcon.style.fontSize = 9;
+            betaIcon.style.unityFontStyleAndWeight = FontStyle.Bold;
+            betaIcon.style.color = new Color(0.1f, 0.1f, 0.1f, 1f);
+            betaIcon.style.backgroundColor = new Color(0.98f, 0.57f, 0.24f, 1f);
+            betaIcon.style.paddingTop = 2;
+            betaIcon.style.paddingBottom = 2;
+            betaIcon.style.paddingLeft = 6;
+            betaIcon.style.paddingRight = 6;
+            betaIcon.style.borderTopLeftRadius = 4;
+            betaIcon.style.borderTopRightRadius = 4;
+            betaIcon.style.borderBottomLeftRadius = 4;
+            betaIcon.style.borderBottomRightRadius = 4;
+            betaIcon.style.marginRight = 10;
+            betaBanner.Add(betaIcon);
 
-                    var headerRect = new Rect(rect.x, rect.y + 2f, rect.width, line);
-                    EditorGUI.LabelField(new Rect(headerRect.x, headerRect.y, headerRect.width - 120, line), $"Step {index + 1}", EditorStyles.boldLabel);
+            var textContainer = new VisualElement();
+            textContainer.style.flexGrow = 1;
+            textContainer.style.flexShrink = 1;
 
-                    var testRect = new Rect(headerRect.xMax - 116, headerRect.y, 112, line);
-                    if (GUI.Button(testRect, new GUIContent("Test from here", "Preview the tutorial starting at this step")))
-                    {
-                        serializedProfile.ApplyModifiedProperties();
-                        if (profile.companionTutorial != null)
-                            CompanionTutorialRunner.QueueRunFromJson(JsonUtility.ToJson(profile.companionTutorial), index);
-                    }
+            var betaTitle = new Label("Feature In Beta Testing");
+            betaTitle.style.fontSize = 12;
+            betaTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+            betaTitle.style.color = new Color(1f, 1f, 1f, 0.9f);
+            betaTitle.style.marginBottom = 1;
+            textContainer.Add(betaTitle);
 
-                    var bodyRect = new Rect(rect.x, rect.y + line + 6f, rect.width, rect.height - line - 8f);
-                    CompanionTutorialStepGUI.Draw(bodyRect, step, "Title");
-                };
-                list.onAddCallback = l =>
-                {
-                    int insert = stepsProp.arraySize;
-                    stepsProp.InsertArrayElementAtIndex(insert);
-                    var added = stepsProp.GetArrayElementAtIndex(insert);
-                    added.FindPropertyRelative("id").stringValue = System.Guid.NewGuid().ToString("N");
-                    added.FindPropertyRelative("title").stringValue = $"Step {insert + 1}";
-                    added.FindPropertyRelative("text").stringValue = "";
-                    added.FindPropertyRelative("target").stringValue = "center";
-                    added.FindPropertyRelative("waitFor").stringValue = "manual";
-                    added.FindPropertyRelative("mouseAction").stringValue = "none";
-                    added.FindPropertyRelative("overlayMode").stringValue = "intrusive";
-                    added.FindPropertyRelative("spotlightPadding").vector4Value = new Vector4(12, 12, 12, 12);
-                    added.FindPropertyRelative("targetRect").vector4Value = Vector4.zero;
-                };
-            }
+            var betaDesc = new Label("This feature is experimental. Do not use in final products.");
+            betaDesc.style.fontSize = 10;
+            betaDesc.style.whiteSpace = WhiteSpace.Normal;
+            betaDesc.style.opacity = 0.7f;
+            textContainer.Add(betaDesc);
 
-            var container = new IMGUIContainer(() =>
-            {
-                if (serializedProfile == null)
-                    return;
+            betaBanner.Add(textContainer);
 
-                serializedProfile.Update();
+            var discordBtn = new Button(() => Application.OpenURL("https://discord.gg/dATbJcgMgw"));
+            discordBtn.text = "Report Issues";
+            discordBtn.AddToClassList("yucp-button");
+            discordBtn.style.height = 24;
+            discordBtn.style.paddingLeft = 10;
+            discordBtn.style.paddingRight = 10;
+            discordBtn.style.backgroundColor = new Color(1, 1, 1, 0.1f);
+            discordBtn.style.color = new Color(1, 1, 1, 0.9f);
+            discordBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
+            betaBanner.Add(discordBtn);
 
-                EditorGUILayout.PropertyField(enabledProp, new GUIContent("Enable tutorial"));
-                using (new EditorGUI.DisabledScope(!enabledProp.boolValue))
-                {
-                    EditorGUILayout.PropertyField(titleProp, new GUIContent("Tutorial title"));
-
-                    // Duplicate-step row (the ReorderableList already provides add/remove/reorder).
-                    using (new EditorGUILayout.HorizontalScope())
-                    {
-                        GUILayout.FlexibleSpace();
-                        using (new EditorGUI.DisabledScope(list == null || list.index < 0 || list.index >= stepsProp.arraySize))
-                        {
-                            if (GUILayout.Button("Duplicate selected step", GUILayout.Width(180)))
-                                DuplicateStep(stepsProp, list.index);
-                        }
-                    }
-
-                    list?.DoLayoutList();
-
-                    DrawCompanionValidationSummary(profile);
-                }
-
-                if (serializedProfile.ApplyModifiedProperties())
-                {
-                    EditorUtility.SetDirty(profile);
-                    previewButton?.SetEnabled(profile.companionTutorial != null && profile.companionTutorial.enabled);
-                }
-            });
-            container.style.marginTop = 6;
-            return container;
-        }
-
-        private static void DuplicateStep(SerializedProperty stepsProp, int index)
-        {
-            if (stepsProp == null || index < 0 || index >= stepsProp.arraySize)
-                return;
-
-            stepsProp.InsertArrayElementAtIndex(index);
-            var copy = stepsProp.GetArrayElementAtIndex(index + 1);
-            // Give the duplicate a fresh id so the two steps aren't confused by tooling.
-            copy.FindPropertyRelative("id").stringValue = System.Guid.NewGuid().ToString("N");
-        }
-
-        private static void DrawCompanionValidationSummary(ExportProfile profile)
-        {
-            if (profile?.companionTutorial == null || !profile.companionTutorial.enabled)
-                return;
-
-            List<CompanionTutorialValidator.Finding> findings = CompanionTutorialValidator.Validate(profile.companionTutorial);
-            if (findings.Count == 0)
-            {
-                EditorGUILayout.HelpBox("Tutorial looks good.", MessageType.Info);
-                return;
-            }
-
-            int errors = 0, warnings = 0;
-            foreach (var f in findings)
-            {
-                if (f.Severity == CompanionTutorialValidator.Severity.Error) errors++;
-                else if (f.Severity == CompanionTutorialValidator.Severity.Warning) warnings++;
-            }
-
-            string summary = $"Tutorial has {errors} error(s) and {warnings} warning(s). Per-step details appear above.";
-            EditorGUILayout.HelpBox(summary, errors > 0 ? MessageType.Error : MessageType.Warning);
+            return betaBanner;
         }
     }
 }

@@ -7,8 +7,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
     {
         public const string PrimaryRootKeyId = "yucp-root";
         public const string LegacyRootKeyId = "yucp-root-2025";
+        public const string CreatorToolingRootKeyId = "CREATOR-TOOLING-2026";
         public const string RootAlgorithm = "Ed25519";
         public const string PinnedRootPublicKeyBase64 = "y+8Zs9/mS1MFZFeF4CFjwqe0nsLW8lCcwmyvBx6H0Zo=";
+        public const string CreatorToolingRootPublicKeyBase64 = "SQF9r3TkKGwwQ6jGLBOABnq3UeOcHayQS3WbEJeUhnc=";
 
         private static readonly TrustedRootKey[] s_pinnedTrustedRootKeys =
         {
@@ -23,6 +25,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.Data
                 keyId = LegacyRootKeyId,
                 algorithm = RootAlgorithm,
                 publicKeyBase64 = PinnedRootPublicKeyBase64,
+            },
+            new TrustedRootKey
+            {
+                keyId = CreatorToolingRootKeyId,
+                algorithm = RootAlgorithm,
+                publicKeyBase64 = CreatorToolingRootPublicKeyBase64,
             },
         };
 

@@ -39,6 +39,8 @@ namespace YUCP.CompanionTutorial.Generated.Source
         private static Vector3 s_scaleAtStepStart;
         private static Material s_demoMaterial;
         private static bool s_demoMode;
+        private static bool s_paused;
+        private static bool s_targetIsHierarchyFallback;
 
         [Serializable]
         private class MetadataWithCompanionTutorial
@@ -298,6 +300,8 @@ namespace YUCP.CompanionTutorial.Generated.Source
             s_stepIndex = -1;
             s_currentTargetResolved = false;
             s_demoMode = false;
+            s_paused = false;
+            s_targetIsHierarchyFallback = false;
         }
 
         private static void EnterCurrentStep()
@@ -324,6 +328,17 @@ namespace YUCP.CompanionTutorial.Generated.Source
             if (!IsRunning)
                 return;
 
+            // Pause and hide the overlay whenever Unity isn't the foreground application, so the
+            // tutorial never floats over other apps; resume when the user tabs back into Unity.
+            if (!UnityEditorInternal.InternalEditorUtility.isApplicationActive)
+            {
+                if (!s_paused)
+                    PauseForFocusLoss();
+                return;
+            }
+            if (s_paused)
+                ResumeAfterFocusGain();
+
             TryResolveTarget(GetCurrentStep(), out s_lastTarget);
             s_currentTargetResolved = s_lastTarget.width > 1 && s_lastTarget.height > 1;
             if (!s_currentTargetResolved)
@@ -334,6 +349,23 @@ namespace YUCP.CompanionTutorial.Generated.Source
             {
                 Next();
             }
+        }
+
+        private static void PauseForFocusLoss()
+        {
+            s_paused = true;
+            s_overlay?.Close();
+            CompanionOverlayWindow.CloseOrphanedNativeWindows();
+        }
+
+        private static void ResumeAfterFocusGain()
+        {
+            s_paused = false;
+            if (s_overlay == null)
+                return;
+            // Re-launch the native overlay and re-prime the current step (selection, timers, target).
+            s_overlay.Show();
+            EnterCurrentStep();
         }
 
         private static void RepaintTargetSources()
@@ -352,6 +384,16 @@ namespace YUCP.CompanionTutorial.Generated.Source
             if (step == null)
                 return;
 
+            // When a scene object can't be framed in the Scene view (or we're pointing at its
+            // Hierarchy row as a fallback), guide the user to double-click it so we can find it.
+            string waitDescription = GetWaitDescription(step.waitFor);
+            if (!s_currentTargetResolved || s_targetIsHierarchyFallback)
+            {
+                GameObject sceneObject = GetSceneTargetObject(step);
+                if (sceneObject != null)
+                    waitDescription = $"Double-click “{sceneObject.name}” in the Hierarchy so the overlay can find it.";
+            }
+
             s_overlay.Render(new CompanionOverlayFrame
             {
                 TutorialTitle = s_tutorial.title ?? "Tutorial",
@@ -364,7 +406,7 @@ namespace YUCP.CompanionTutorial.Generated.Source
                 IsLastStep = s_stepIndex >= s_tutorial.steps.Count - 1,
                 SpotlightPadding = step.spotlightPadding,
                 StartedAt = s_stepStartedAt,
-                WaitDescription = GetWaitDescription(step.waitFor),
+                WaitDescription = waitDescription,
                 MouseAction = step.mouseAction ?? "none",
                 OverlayMode = string.IsNullOrWhiteSpace(step.overlayMode) ? "intrusive" : step.overlayMode
             });
@@ -373,6 +415,7 @@ namespace YUCP.CompanionTutorial.Generated.Source
         private static bool TryResolveTarget(CompanionTutorialStep step, out Rect rect)
         {
             rect = Rect.zero;
+            s_targetIsHierarchyFallback = false;
             Rect main = EditorGUIUtility.GetMainWindowPosition();
 
             if (step == null)
@@ -501,7 +544,12 @@ namespace YUCP.CompanionTutorial.Generated.Source
 
                 GameObject sceneObject = ResolveSceneObject(selector);
                 if (sceneObject != null)
+                {
                     Selection.activeGameObject = sceneObject;
+                    // Surface the object in the Hierarchy (scrolls to / expands its row) so the user
+                    // can find and double-click it if the Scene view can't frame it on its own.
+                    EditorGUIUtility.PingObject(sceneObject);
+                }
             }
         }
 
@@ -1241,9 +1289,42 @@ namespace YUCP.CompanionTutorial.Generated.Source
             if (target == null)
                 return false;
 
-            return s_sceneObjectRects.TryGetValue(target.GetInstanceID(), out rect) &&
-                   rect.width > 1 &&
-                   rect.height > 1;
+            if (s_sceneObjectRects.TryGetValue(target.GetInstanceID(), out rect) &&
+                rect.width > 1 && rect.height > 1)
+                return true;
+
+            // The object exists but the Scene view can't frame it (off-screen / no renderer). Fall
+            // back to its Hierarchy row so the overlay can still point somewhere; Render() then asks
+            // the user to double-click it, which frames it in the Scene and lets the scene rect
+            // resolve on a following frame.
+            if (s_hierarchyItemRects.TryGetValue(target.GetInstanceID(), out rect) &&
+                rect.width > 1 && rect.height > 1)
+            {
+                s_targetIsHierarchyFallback = true;
+                return true;
+            }
+
+            rect = Rect.zero;
+            return false;
+        }
+
+        // For scene-object targets (scene: / object: / gameobject:), returns the resolved GameObject
+        // so Render() can tell the user to double-click it in the Hierarchy when the Scene view can't
+        // frame it. Returns null for any other target kind.
+        private static GameObject GetSceneTargetObject(CompanionTutorialStep step)
+        {
+            string target = (step?.target ?? string.Empty).Trim();
+            string selector;
+            if (target.StartsWith("scene:", StringComparison.OrdinalIgnoreCase))
+                selector = target.Substring("scene:".Length).Trim();
+            else if (target.StartsWith("object:", StringComparison.OrdinalIgnoreCase))
+                selector = target.Substring("object:".Length).Trim();
+            else if (target.StartsWith("gameobject:", StringComparison.OrdinalIgnoreCase))
+                selector = target.Substring("gameobject:".Length).Trim();
+            else
+                return null;
+
+            return ResolveSceneObject(selector);
         }
 
         private static void CaptureHierarchyItemRect(int instanceId, Rect selectionRect)

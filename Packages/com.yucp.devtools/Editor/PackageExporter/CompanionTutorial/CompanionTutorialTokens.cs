@@ -160,5 +160,171 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return !string.IsNullOrEmpty(verb) &&
                    KnownWaitVerbs.Any(v => string.Equals(v, verb, StringComparison.OrdinalIgnoreCase));
         }
+
+        // ── Target parse / compose ───────────────────────────────────────────────────────────────
+        // Authoring helpers shared by every editor surface (IMGUI step drawer + UI Toolkit step card)
+        // so the dropdown ↔ raw-string mapping can never drift between them.
+
+        public static TargetCategory ParseTargetCategory(string target, out string selector)
+        {
+            SplitPrefix(target, out string prefix, out selector);
+            bool hasColon = (target ?? string.Empty).IndexOf(':') >= 0;
+
+            if (!hasColon)
+            {
+                string t = (target ?? string.Empty).Trim().ToLowerInvariant();
+                if (string.IsNullOrEmpty(t) || t == "center") { selector = string.Empty; return TargetCategory.Center; }
+                if (t == "gizmo" || t == "transform-gizmo") { selector = string.Empty; return TargetCategory.Gizmo; }
+                if (Array.IndexOf(EditorWindowTargets, t) >= 0) { selector = t; return TargetCategory.EditorWindow; }
+                return TargetCategory.Custom;
+            }
+
+            switch (prefix.ToLowerInvariant())
+            {
+                case "toolbar":
+                case "topbar": return TargetCategory.Toolbar;
+                case "menu":
+                case "menubar": return TargetCategory.MenuBar;
+                case "hierarchy": return TargetCategory.HierarchyItem;
+                case "project": return TargetCategory.ProjectItem;
+                case "scene":
+                case "object":
+                case "gameobject": return TargetCategory.SceneObject;
+                case "property":
+                case "inspector": return TargetCategory.InspectorProperty;
+                case "material":
+                case "shader": return TargetCategory.MaterialProperty;
+                case "ui": return TargetCategory.UiElement;
+                default: return TargetCategory.Custom;
+            }
+        }
+
+        public static string ComposeTarget(TargetCategory category, string selector)
+        {
+            selector = (selector ?? string.Empty).Trim();
+            switch (category)
+            {
+                case TargetCategory.Center: return "center";
+                case TargetCategory.Gizmo: return "gizmo";
+                case TargetCategory.EditorWindow: return string.IsNullOrEmpty(selector) ? "inspector" : selector;
+                case TargetCategory.Toolbar: return "toolbar:" + selector;
+                case TargetCategory.MenuBar: return "menu:" + selector;
+                case TargetCategory.HierarchyItem: return "hierarchy:" + selector;
+                case TargetCategory.ProjectItem: return "project:" + selector;
+                case TargetCategory.SceneObject: return "scene:" + selector;
+                case TargetCategory.InspectorProperty: return "property:" + selector;
+                case TargetCategory.MaterialProperty: return "material:" + selector;
+                case TargetCategory.UiElement: return "ui:" + selector;
+                default: return selector;
+            }
+        }
+
+        public static string DefaultSelectorFor(TargetCategory category)
+        {
+            switch (category)
+            {
+                case TargetCategory.EditorWindow: return "inspector";
+                case TargetCategory.Toolbar: return "play";
+                case TargetCategory.InspectorProperty: return "position";
+                case TargetCategory.HierarchyItem:
+                case TargetCategory.SceneObject: return "Main Camera";
+                default: return string.Empty;
+            }
+        }
+
+        public static string SelectorLabelFor(TargetCategory category)
+        {
+            switch (category)
+            {
+                case TargetCategory.Toolbar: return "Control (play/layers/…)";
+                case TargetCategory.MenuBar: return "Menu name";
+                case TargetCategory.HierarchyItem: return "Object name/path";
+                case TargetCategory.ProjectItem: return "Asset path/name/guid";
+                case TargetCategory.SceneObject: return "Object name";
+                case TargetCategory.InspectorProperty: return "Property (position/…)";
+                case TargetCategory.MaterialProperty: return "Property (shader/color/…)";
+                case TargetCategory.UiElement: return "Element name";
+                default: return "Selector";
+            }
+        }
+
+        public static bool TargetNeedsSelector(TargetCategory category)
+        {
+            return category != TargetCategory.Center && category != TargetCategory.Gizmo;
+        }
+
+        // ── waitFor parse / compose ──────────────────────────────────────────────────────────────
+
+        public static WaitCategory ParseWaitCategory(string waitFor, out string arg)
+        {
+            SplitPrefix(waitFor, out string verb, out arg);
+            switch ((verb ?? string.Empty).ToLowerInvariant())
+            {
+                case "":
+                case "manual": return WaitCategory.Manual;
+                case "delay": return WaitCategory.Delay;
+                case "selection": return WaitCategory.Selection;
+                case "assetexists": return WaitCategory.AssetExists;
+                case "packageinstalled": return WaitCategory.PackageInstalled;
+                case "componentexists": return WaitCategory.ComponentExists;
+                case "transformmoved": return WaitCategory.TransformMoved;
+                default: return WaitCategory.Custom;
+            }
+        }
+
+        public static bool WaitNeedsParam(WaitCategory category)
+        {
+            switch (category)
+            {
+                case WaitCategory.Delay:
+                case WaitCategory.AssetExists:
+                case WaitCategory.PackageInstalled:
+                case WaitCategory.ComponentExists:
+                case WaitCategory.TransformMoved:
+                case WaitCategory.Custom:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        public static string WaitParamLabel(WaitCategory category)
+        {
+            switch (category)
+            {
+                case WaitCategory.Delay: return "Seconds";
+                case WaitCategory.AssetExists: return "Asset path";
+                case WaitCategory.PackageInstalled: return "Package name";
+                case WaitCategory.ComponentExists: return "Type name";
+                case WaitCategory.TransformMoved: return "Object (blank = selection)";
+                default: return "Value";
+            }
+        }
+
+        public static string ComposeWait(WaitCategory category, string arg)
+        {
+            arg = (arg ?? string.Empty).Trim();
+            switch (category)
+            {
+                case WaitCategory.Manual: return "manual";
+                case WaitCategory.Selection: return "selection";
+                case WaitCategory.Delay: return "delay:" + (string.IsNullOrEmpty(arg) ? "2" : arg);
+                case WaitCategory.AssetExists: return "assetExists:" + arg;
+                case WaitCategory.PackageInstalled: return "packageInstalled:" + arg;
+                case WaitCategory.ComponentExists: return "componentExists:" + arg;
+                case WaitCategory.TransformMoved: return "transformMoved:" + arg;
+                default: return arg;
+            }
+        }
+
+        public static string DefaultWaitArg(WaitCategory category)
+        {
+            switch (category)
+            {
+                case WaitCategory.Delay: return "2";
+                case WaitCategory.TransformMoved: return "selected";
+                default: return string.Empty;
+            }
+        }
     }
 }

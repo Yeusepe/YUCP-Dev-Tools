@@ -2,20 +2,93 @@ name: Build Release
 
 on: 
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - Packages/com.yucp.devtools/package.json
+      - Packages/com.yucp.motion/package.json
+
+env:
+  packageNames: com.yucp.devtools com.yucp.motion
+
+permissions:
+  contents: read
 
 jobs:
 
+  detect-version-changes:
+    name: Detect Version Changes
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+      packages: ${{ steps.detect.outputs.packages }}
+    steps:
+
+      # Checkout Local Repository
+      - name: Checkout
+        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac
+        with:
+          fetch-depth: 0
+
+      # Build a matrix containing only packages whose package.json version changed
+      - name: Detect Changed Package Versions
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          changed_packages=()
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            for package in ${{ env.packageNames }}; do
+              changed_packages+=("\"$package\"")
+            done
+          else
+            before="${{ github.event.before }}"
+            after="${{ github.sha }}"
+
+            if [[ -z "$before" || "$before" =~ ^0+$ ]]; then
+              before="${after}^"
+            fi
+
+            for package in ${{ env.packageNames }}; do
+              manifest="Packages/${package}/package.json"
+              current_version="$(jq -r '.version // empty' "$manifest")"
+              previous_version=""
+
+              if git cat-file -e "${before}:${manifest}" 2>/dev/null; then
+                previous_version="$(git show "${before}:${manifest}" | jq -r '.version // empty')"
+              fi
+
+              if [[ -n "$current_version" && "$current_version" != "$previous_version" ]]; then
+                changed_packages+=("\"$package\"")
+              fi
+            done
+          fi
+
+          packages_json="[$(IFS=,; echo "${changed_packages[*]}")]"
+          echo "packages=${packages_json}" >> "$GITHUB_OUTPUT"
+
+          if [[ "$packages_json" == "[]" ]]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No package version changes detected."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Package version changes detected: ${packages_json}"
+          fi
+
   # Build and release the Packages
   build:
+    needs: detect-version-changes
+    if: ${{ needs.detect-version-changes.outputs.has_changes == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
-        package:
-          - com.yucp.devtools
-          - com.yucp.motion
+        package: ${{ fromJSON(needs.detect-version-changes.outputs.packages) }}
     env:
       packageName: ${{ matrix.package }}
       packagePath: Packages/${{ matrix.package }}
@@ -73,3 +146,15 @@ jobs:
             ${{ env.unityPackage }}
             ${{ env.packagePath }}/package.json
           tag_name: ${{ env.packageTag }}
+
+  build-listing:
+    needs:
+      - detect-version-changes
+      - build
+    if: ${{ needs.detect-version-changes.outputs.has_changes == 'true' }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/build-listing.yml
+    secrets: inherit

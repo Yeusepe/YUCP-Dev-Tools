@@ -15,6 +15,23 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
     /// </summary>
     public static class PackageInfoService
     {
+        private const double PublisherPackageCacheLifetimeSeconds = 60d;
+        private const double PublisherPackageErrorCooldownSeconds = 10d;
+        private static readonly DateTime UnixEpoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        private static readonly object PublisherPackagesLock = new object();
+        private static readonly List<Action<List<PackageInfo>>> PendingPublisherPackageSuccess =
+            new List<Action<List<PackageInfo>>>();
+        private static readonly List<Action<string>> PendingPublisherPackageError =
+            new List<Action<string>>();
+        private static List<PackageInfo> CachedPublisherPackages;
+        private static string CachedPublisherPackagesKey;
+        private static double CachedPublisherPackagesAt;
+        private static bool PublisherPackagesLoading;
+        private static string PublisherPackagesLoadingKey;
+        private static string LastPublisherPackagesErrorKey;
+        private static string LastPublisherPackagesError;
+        private static double LastPublisherPackagesErrorAt;
+
         [System.Serializable]
         public class PackageInfo
         {
@@ -94,6 +111,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             }
 
             string url = $"{serverUrl.TrimEnd('/')}/v1/products";
+            string cacheKey = BuildPublisherPackageCacheKey(serverUrl);
+
+            if (TryUsePublisherPackagesCache(cacheKey, onSuccess, onError))
+            {
+                return;
+            }
 
             EditorApplication.delayCall += () =>
             {
@@ -103,13 +126,142 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 monoHelper.StartCoroutine(FetchPackagesCoroutine(url, accessToken, packages =>
                 {
                     UnityEngine.Object.DestroyImmediate(helper);
-                    onSuccess?.Invoke(packages);
+                    CompletePublisherPackagesLoad(cacheKey, packages, null);
                 }, error =>
                 {
                     UnityEngine.Object.DestroyImmediate(helper);
-                    onError?.Invoke(error);
+                    CompletePublisherPackagesLoad(cacheKey, null, error);
                 }));
             };
+        }
+
+        private static string BuildPublisherPackageCacheKey(string serverUrl)
+        {
+            string userId = YucpOAuthService.GetUserId() ?? string.Empty;
+            return $"{(serverUrl ?? string.Empty).TrimEnd('/')}|{userId}";
+        }
+
+        private static bool TryUsePublisherPackagesCache(
+            string cacheKey,
+            Action<List<PackageInfo>> onSuccess,
+            Action<string> onError)
+        {
+            List<PackageInfo> cachedPackages = null;
+            string throttledError = null;
+
+            lock (PublisherPackagesLock)
+            {
+                double now = NowSeconds();
+                if (CachedPublisherPackages != null &&
+                    string.Equals(CachedPublisherPackagesKey, cacheKey, StringComparison.Ordinal) &&
+                    now - CachedPublisherPackagesAt < PublisherPackageCacheLifetimeSeconds)
+                {
+                    cachedPackages = ClonePackageList(CachedPublisherPackages);
+                }
+                else if (PublisherPackagesLoading &&
+                    string.Equals(PublisherPackagesLoadingKey, cacheKey, StringComparison.Ordinal))
+                {
+                    if (onSuccess != null)
+                        PendingPublisherPackageSuccess.Add(onSuccess);
+                    if (onError != null)
+                        PendingPublisherPackageError.Add(onError);
+                    return true;
+                }
+                else if (PublisherPackagesLoading)
+                {
+                    throttledError = "Product loading is already in progress.";
+                }
+                else if (string.Equals(LastPublisherPackagesErrorKey, cacheKey, StringComparison.Ordinal) &&
+                    now - LastPublisherPackagesErrorAt < PublisherPackageErrorCooldownSeconds)
+                {
+                    throttledError = LastPublisherPackagesError;
+                }
+                else
+                {
+                    PublisherPackagesLoading = true;
+                    PublisherPackagesLoadingKey = cacheKey;
+                    PendingPublisherPackageSuccess.Clear();
+                    PendingPublisherPackageError.Clear();
+                    if (onSuccess != null)
+                        PendingPublisherPackageSuccess.Add(onSuccess);
+                    if (onError != null)
+                        PendingPublisherPackageError.Add(onError);
+                    return false;
+                }
+            }
+
+            if (cachedPackages != null)
+            {
+                EditorApplication.delayCall += () => onSuccess?.Invoke(cachedPackages);
+                return true;
+            }
+
+            EditorApplication.delayCall += () => onError?.Invoke(
+                string.IsNullOrEmpty(throttledError)
+                    ? "Product loading is cooling down after a recent failure."
+                    : throttledError);
+            return true;
+        }
+
+        private static void CompletePublisherPackagesLoad(string cacheKey, List<PackageInfo> packages, string error)
+        {
+            List<Action<List<PackageInfo>>> successCallbacks;
+            List<Action<string>> errorCallbacks;
+            List<PackageInfo> callbackPackages = null;
+            string callbackError = error;
+
+            lock (PublisherPackagesLock)
+            {
+                successCallbacks = new List<Action<List<PackageInfo>>>(PendingPublisherPackageSuccess);
+                errorCallbacks = new List<Action<string>>(PendingPublisherPackageError);
+                PendingPublisherPackageSuccess.Clear();
+                PendingPublisherPackageError.Clear();
+
+                PublisherPackagesLoading = false;
+                PublisherPackagesLoadingKey = null;
+
+                if (error == null)
+                {
+                    CachedPublisherPackages = ClonePackageList(packages);
+                    CachedPublisherPackagesKey = cacheKey;
+                    CachedPublisherPackagesAt = NowSeconds();
+                    LastPublisherPackagesErrorKey = null;
+                    LastPublisherPackagesError = null;
+                    LastPublisherPackagesErrorAt = 0;
+                    callbackPackages = ClonePackageList(CachedPublisherPackages);
+                }
+                else
+                {
+                    LastPublisherPackagesErrorKey = cacheKey;
+                    LastPublisherPackagesError = error;
+                    LastPublisherPackagesErrorAt = NowSeconds();
+                }
+            }
+
+            if (callbackError == null)
+            {
+                foreach (var callback in successCallbacks)
+                {
+                    callback?.Invoke(ClonePackageList(callbackPackages));
+                }
+            }
+            else
+            {
+                foreach (var callback in errorCallbacks)
+                {
+                    callback?.Invoke(callbackError);
+                }
+            }
+        }
+
+        private static List<PackageInfo> ClonePackageList(List<PackageInfo> packages)
+        {
+            return packages == null ? new List<PackageInfo>() : new List<PackageInfo>(packages);
+        }
+
+        private static double NowSeconds()
+        {
+            return (DateTime.UtcNow - UnixEpoch).TotalSeconds;
         }
 
         /// <summary>
@@ -203,10 +355,14 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                         ? $"HTTP {request.responseCode}: {request.error}"
                         : responseText;
 
-                    Debug.LogError($"[PackageInfoService] Request failed!\n" +
+                    string logMessage = $"[PackageInfoService] Request failed!\n" +
                         $"URL: {url}\nResult: {request.result}\n" +
                         $"Response Code: {request.responseCode}\n" +
-                        $"Error: {request.error}\nResponse Body: {responseText}");
+                        $"Error: {request.error}\nResponse Body: {responseText}";
+                    if (request.responseCode == 429)
+                        Debug.LogWarning(logMessage);
+                    else
+                        Debug.LogError(logMessage);
 
                     onError?.Invoke(errorMessage);
                 }

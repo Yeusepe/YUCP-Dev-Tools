@@ -679,7 +679,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         }
 
         private static readonly List<ProtectedAssetRegistration> s_pendingProtectedAssetRegistrations = new List<ProtectedAssetRegistration>();
-        
+
         /// <summary>
         /// Export a package using the provided profile
         /// </summary>
@@ -902,7 +902,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Convert derived FBXs after dependencies are collected so derived FBXs referenced only by exported
                 // assets (i.e., not directly in export folders) still get converted into patch artifacts.
                 hasPatchAssets = ConvertDerivedFbxToPatchAssets(assetsToExport, progressCallback, progress: 0.535f, profile: profile);
-                
+
                 progressCallback?.Invoke(0.54f, $"Total assets after dependency collection: {assetsToExport.Count}");
 
                 if ((profile.requiresLicenseVerification || profile.publishReleaseAfterExport) &&
@@ -2890,9 +2890,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (profile.HasScannedAssets && profile.discoveredAssets != null && profile.discoveredAssets.Count > 0)
             {
                 
-                // Only include assets that are explicitly marked as included AND not ignored
+                // Only include assets that are explicitly marked as included AND not ignored.
+                // Honor the Include Dependencies toggle even against a stale scan cache: a scan run
+                // while deps were ON bakes external dependency entries into discoveredAssets, and
+                // toggling deps off does not re-scan. Drop those here so they don't leak into export.
                 var includedAssets = profile.discoveredAssets
-                    .Where(a => a.included && !a.isFolder)
+                    .Where(a => a.included && !a.isFolder && (profile.includeDependencies || !a.isDependency))
                     .Select(a => GetRelativePackagePath(a.assetPath))
                     .Where(path => !string.IsNullOrEmpty(path))
                     .Where(assetPath => !ShouldExcludeAsset(assetPath, profile))

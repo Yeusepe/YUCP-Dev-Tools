@@ -18,12 +18,44 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
     {
         private const string RequiredCertificateScope = "cert:issue";
         private const string RequiredProfileScope = "profile:read";
-        private const string CurrentSessionVersion = "2";
+        private const string RequiredProductsScope = "products:read";
+        // Standard OIDC scope: makes the server issue a (rotating) refresh token so the
+        // session renews silently instead of forcing a new sign-in on every expiry.
+        private const string OfflineAccessScope = "offline_access";
+        private const int CurrentStorageVersion = 3;
+        private const string CurrentSessionVersion = "3";
         private const string LegacySharedStoragePrefix = "YUCP_OAuth";
         private const string LegacySharedSessionFileName = "unity-oauth-session-v2.dat";
         private const int AccessTokenSkewSeconds = 60;
+        private const int CallbackListenerStartAttempts = 10;
         private static readonly object SessionLock = new object();
         private static Task _backgroundRefreshTask;
+        private static bool _isSignInInProgress;
+        private static string _signInStatusMessage;
+
+        public static event Action SignInStateChanged;
+
+        public static bool IsSignInInProgress
+        {
+            get
+            {
+                lock (SessionLock)
+                {
+                    return _isSignInInProgress;
+                }
+            }
+        }
+
+        public static string SignInStatusMessage
+        {
+            get
+            {
+                lock (SessionLock)
+                {
+                    return _signInStatusMessage;
+                }
+            }
+        }
 
         private sealed class OAuthDomainConfig
         {
@@ -56,7 +88,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static readonly OAuthDomainConfig Domain = new OAuthDomainConfig(
             clientId: "yucp-unity-creator",
-            requestedScopes: new[] { RequiredCertificateScope, RequiredProfileScope },
+            requestedScopes: new[] { RequiredCertificateScope, RequiredProfileScope, RequiredProductsScope, OfflineAccessScope },
             editorPrefsPrefix: "YUCP_CreatorOAuth",
             sessionFileName: "unity-creator-oauth-session-v2.dat",
             sessionEntropyLabel: "YUCP.UnityEditor.Creator.Session.v2");
@@ -102,12 +134,49 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr LocalFree(IntPtr hMem);
+
+        // Windows Credential Manager (advapi32) — the OS secret store. The session
+        // (already DPAPI-protected) is kept here instead of a loose file so the
+        // sensitive tokens live in the user's protected credential vault.
+        private const uint CredTypeGeneric = 1;
+        private const uint CredPersistLocalMachine = 2;
+        // CRED_MAX_CREDENTIAL_BLOB_SIZE: generic credential blobs cannot exceed this.
+        private const int CredMaxBlobSize = 5 * 512;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct CredentialNative
+        {
+            public uint Flags;
+            public uint Type;
+            public string TargetName;
+            public string Comment;
+            public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
+            public uint CredentialBlobSize;
+            public IntPtr CredentialBlob;
+            public uint Persist;
+            public uint AttributeCount;
+            public IntPtr Attributes;
+            public string TargetAlias;
+            public string UserName;
+        }
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "CredWriteW")]
+        private static extern bool CredWrite(ref CredentialNative credential, uint flags);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "CredReadW")]
+        private static extern bool CredRead(string targetName, uint type, uint flags, out IntPtr credentialPtr);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool CredFree(IntPtr buffer);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "CredDeleteW")]
+        private static extern bool CredDelete(string targetName, uint type, uint flags);
 #endif
 
         [Serializable]
         private class OAuthSessionV2
         {
-            public int storageVersion = 2;
+            public int storageVersion = CurrentStorageVersion;
             public string accessToken;
             public long accessTokenExpiresAt;
             public string refreshToken;
@@ -205,7 +274,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             if (TryGetLegacyAccessToken(out string legacyToken, out long legacyExpiry))
             {
                 Debug.LogWarning(
-                    $"[YUCP OAuth] Discarding legacy shared Unity session because it cannot prove required scope '{RequiredCertificateScope}'.");
+                    $"[YUCP OAuth] Discarding legacy shared Unity session because it cannot prove required Unity scopes '{Domain.RequestedScopeValue}'.");
                 ClearLegacySharedSessionArtifacts();
             }
 
@@ -221,9 +290,18 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         public static async Task SignInAsync(string serverUrl, Action onSuccess, Action<string> onError)
         {
+            if (!TryBeginSignIn())
+            {
+                Debug.LogWarning("[YUCP OAuth] Ignoring duplicate sign-in request because another sign-in is already in progress.");
+                return;
+            }
+
             Debug.Log("[YUCP OAuth] SignInAsync started");
             try
             {
+                SetSignInStatus("Preparing Creator Assistant sign-in...");
+                await Task.Yield();
+
                 byte[] verifierBytes = new byte[32];
                 using (var rng = RandomNumberGenerator.Create())
                 {
@@ -245,24 +323,20 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 }
                 string state = Base64UrlEncode(stateBytes);
 
-                int port;
-                var probe = new TcpListener(IPAddress.Loopback, 0);
-                probe.Start();
-                port = ((IPEndPoint)probe.LocalEndpoint).Port;
-                probe.Stop();
+                SetSignInStatus("Starting local sign-in callback...");
+                var httpListener = StartLoopbackListener(out int port);
                 Debug.Log($"[YUCP OAuth] Using loopback port {port}");
 
                 string redirectUri = $"http://127.0.0.1:{port}/callback";
                 string authUrl = BuildAuthUrl(serverUrl, codeChallenge, state, redirectUri);
                 Debug.Log($"[YUCP OAuth] Auth URL: {authUrl}");
 
-                var httpListener = new HttpListener();
-                httpListener.Prefixes.Add($"http://127.0.0.1:{port}/");
-                httpListener.Start();
                 Debug.Log($"[YUCP OAuth] HttpListener started on http://127.0.0.1:{port}/");
 
+                SetSignInStatus("Opening Creator Assistant in your browser...");
                 Application.OpenURL(authUrl);
                 Debug.Log("[YUCP OAuth] Browser opened, waiting for callback...");
+                SetSignInStatus("Waiting for browser sign-in...");
 
                 HttpListenerContext context = null;
                 string authCode = null;
@@ -296,7 +370,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                         string desc = qp.TryGetValue("error_description", out string errorDescription)
                             ? Uri.UnescapeDataString(errorDescription)
                             : callbackError;
-                        string msg = BuildAuthorizationErrorMessage(desc, RequiredCertificateScope);
+                        string msg = BuildAuthorizationErrorMessage(desc, Domain.RequestedScopeValue);
                         Debug.LogError($"[YUCP OAuth] {msg}");
                         await SendErrorRedirectAsync(context, serverUrl, msg);
                         onError?.Invoke(msg);
@@ -322,14 +396,17 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                     }
 
                     Debug.Log($"[YUCP OAuth] Auth code received (length {authCode.Length}), sending success page to browser.");
+                    SetSignInStatus("Completing secure sign-in...");
                     await SendSuccessPageAsync(context);
                 }
                 finally
                 {
                     try { httpListener.Stop(); } catch { }
+                    try { httpListener.Close(); } catch { }
                     Debug.Log("[YUCP OAuth] HttpListener stopped.");
                 }
 
+                SetSignInStatus("Exchanging sign-in code...");
                 Debug.Log($"[YUCP OAuth] Exchanging auth code at {serverUrl.TrimEnd('/')}/api/auth/oauth2/token");
                 using var tokenReq = CreateTokenRequest(
                     serverUrl,
@@ -364,7 +441,16 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                     return;
                 }
 
+                if (!HasRequiredUnityScopes(session.scope))
+                {
+                    string missingScopes = GetMissingRequiredScopes(session.scope);
+                    onError?.Invoke($"Sign-in token is missing required Unity scope(s): {missingScopes}. Please sign out and try again.");
+                    return;
+                }
+
+                SetSignInStatus("Loading creator profile...");
                 session = await EnrichSessionWithProfileAsync(serverUrl, session);
+                SetSignInStatus("Finalizing signing trust...");
                 var signingService = new PackageSigningService(serverUrl);
                 if (!await signingService.FetchAndCacheRootPublicKeyAsync())
                 {
@@ -384,6 +470,109 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             {
                 Debug.LogError($"[YUCP OAuth] Unhandled exception: {ex}");
                 onError?.Invoke($"Sign-in error: {ex.Message}");
+            }
+            finally
+            {
+                EndSignIn();
+            }
+        }
+
+        private static bool TryBeginSignIn()
+        {
+            lock (SessionLock)
+            {
+                if (_isSignInInProgress)
+                    return false;
+
+                _isSignInInProgress = true;
+                _signInStatusMessage = "Preparing Creator Assistant sign-in...";
+            }
+
+            QueueSignInStateChanged();
+            return true;
+        }
+
+        private static void EndSignIn()
+        {
+            lock (SessionLock)
+            {
+                if (!_isSignInInProgress)
+                    return;
+
+                _isSignInInProgress = false;
+                _signInStatusMessage = null;
+            }
+
+            QueueSignInStateChanged();
+        }
+
+        private static void SetSignInStatus(string message)
+        {
+            bool changed;
+            lock (SessionLock)
+            {
+                changed = !string.Equals(_signInStatusMessage, message, StringComparison.Ordinal);
+                _signInStatusMessage = message;
+            }
+
+            if (changed)
+            {
+                QueueSignInStateChanged();
+            }
+        }
+
+        private static void QueueSignInStateChanged()
+        {
+            EditorApplication.delayCall += () => SignInStateChanged?.Invoke();
+        }
+
+        private static HttpListener StartLoopbackListener(out int port)
+        {
+            Exception lastException = null;
+
+            for (int attempt = 1; attempt <= CallbackListenerStartAttempts; attempt++)
+            {
+                port = ReserveEphemeralLoopbackPort();
+                var listener = new HttpListener();
+                listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+
+                try
+                {
+                    listener.Start();
+                    return listener;
+                }
+                catch (Exception ex) when (
+                    ex is HttpListenerException ||
+                    ex is SocketException ||
+                    ex is ObjectDisposedException)
+                {
+                    lastException = ex;
+                    try { listener.Close(); } catch { }
+
+                    Debug.LogWarning(
+                        $"[YUCP OAuth] Failed to start loopback listener on port {port} " +
+                        $"(attempt {attempt}/{CallbackListenerStartAttempts}): {ex.Message}");
+                }
+            }
+
+            port = 0;
+            throw new InvalidOperationException(
+                "Unity could not start the local sign-in callback listener. " +
+                "Check whether security software or another process is blocking loopback callbacks.",
+                lastException);
+        }
+
+        private static int ReserveEphemeralLoopbackPort()
+        {
+            var probe = new TcpListener(IPAddress.Loopback, 0);
+            try
+            {
+                probe.Start();
+                return ((IPEndPoint)probe.LocalEndpoint).Port;
+            }
+            finally
+            {
+                probe.Stop();
             }
         }
 
@@ -455,10 +644,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return null;
             }
 
-            if (!HasRequiredScope(refreshedSession.scope, RequiredCertificateScope))
+            if (!HasRequiredUnityScopes(refreshedSession.scope))
             {
+                string missingScopes = GetMissingRequiredScopes(refreshedSession.scope);
                 Debug.LogWarning(
-                    $"[YUCP OAuth] Refreshed session is missing required scope '{RequiredCertificateScope}'. Clearing the current auth domain session.");
+                    $"[YUCP OAuth] Refreshed session is missing required Unity scope(s): {missingScopes}. Clearing the current auth domain session.");
                 SignOut();
                 return null;
             }
@@ -514,7 +704,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
             return new OAuthSessionV2
             {
-                storageVersion = 2,
+                storageVersion = CurrentStorageVersion,
                 accessToken = accessToken,
                 accessTokenExpiresAt = accessTokenExpiresAt,
                 refreshToken = refreshToken,
@@ -650,7 +840,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         {
             if (TryGetCachedSession(out session))
             {
-                if (HasUsableAccessToken(session) || (IsRefreshableSession(session) && HasRequiredScope(session.scope, RequiredCertificateScope)))
+                if (HasUsableAccessToken(session) || (IsRefreshableSession(session) && HasRequiredUnityScopes(session.scope)))
                 {
                     PersistPresenceHints(session);
                     return true;
@@ -660,7 +850,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             if (TryGetLegacyAccessToken(out string legacyToken, out long legacyExpiry))
             {
                 Debug.LogWarning(
-                    $"[YUCP OAuth] Clearing legacy shared Unity session because it cannot prove required scope '{RequiredCertificateScope}'.");
+                    $"[YUCP OAuth] Clearing legacy shared Unity session because it cannot prove required Unity scopes '{Domain.RequestedScopeValue}'.");
                 ClearLegacySharedSessionArtifacts();
             }
 
@@ -698,8 +888,35 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         {
             return session != null
                 && !string.IsNullOrEmpty(session.accessToken)
-                && HasRequiredScope(session.scope, RequiredCertificateScope)
+                && HasRequiredUnityScopes(session.scope)
                 && session.accessTokenExpiresAt > DateTimeOffset.UtcNow.ToUnixTimeSeconds() + AccessTokenSkewSeconds;
+        }
+
+        private static bool HasRequiredUnityScopes(string scopeValue)
+        {
+            foreach (string requiredScope in Domain.RequestedScopes)
+            {
+                if (!HasRequiredScope(scopeValue, requiredScope))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static string GetMissingRequiredScopes(string scopeValue)
+        {
+            var missingScopes = new List<string>();
+            foreach (string requiredScope in Domain.RequestedScopes)
+            {
+                if (!HasRequiredScope(scopeValue, requiredScope))
+                {
+                    missingScopes.Add(requiredScope);
+                }
+            }
+
+            return missingScopes.Count == 0 ? "none" : string.Join(" ", missingScopes.ToArray());
         }
 
         private static bool HasRequiredScope(string scopeValue, string requiredScope)
@@ -757,25 +974,20 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return;
             }
 
+#if UNITY_EDITOR_WIN
             string sessionJson = JsonUtility.ToJson(session);
             byte[] sessionBytes = Encoding.UTF8.GetBytes(sessionJson);
-
- #if UNITY_EDITOR_WIN
             byte[] protectedBytes = ProtectForCurrentUser(sessionBytes);
-            string sessionPath = GetSessionFilePath();
-            string sessionDir = Path.GetDirectoryName(sessionPath);
-            if (!string.IsNullOrEmpty(sessionDir))
+
+            // Preferred store: the Windows Credential Manager vault.
+            if (protectedBytes.Length <= CredMaxBlobSize && TryWriteCredential(GetCredentialTarget(), protectedBytes))
             {
-                Directory.CreateDirectory(sessionDir);
+                DeleteSessionFile();
+                return;
             }
 
-            string tempPath = sessionPath + ".tmp";
-            File.WriteAllBytes(tempPath, protectedBytes);
-            if (File.Exists(sessionPath))
-            {
-                File.Delete(sessionPath);
-            }
-            File.Move(tempPath, sessionPath);
+            // Fallback (e.g. blob exceeds the credential size cap): the DPAPI-protected file.
+            WriteSessionFile(protectedBytes);
 #endif
         }
 
@@ -786,29 +998,26 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return null;
             }
 
+#if UNITY_EDITOR_WIN
             try
             {
-                string sessionPath = GetSessionFilePath();
-                if (!File.Exists(sessionPath))
+                // Prefer the credential vault; fall back to a pre-existing DPAPI file (migration).
+                byte[] protectedBytes = TryReadCredential(GetCredentialTarget()) ?? ReadSessionFile();
+                if (protectedBytes == null)
                 {
                     return null;
                 }
 
-#if UNITY_EDITOR_WIN
-                byte[] protectedBytes = File.ReadAllBytes(sessionPath);
                 byte[] sessionBytes = UnprotectForCurrentUser(protectedBytes);
                 string sessionJson = Encoding.UTF8.GetString(sessionBytes);
                 var session = JsonUtility.FromJson<OAuthSessionV2>(sessionJson);
-                if (session == null || session.storageVersion < 2)
+                if (session == null || session.storageVersion < CurrentStorageVersion)
                 {
                     ClearPersistentSession();
                     return null;
                 }
 
                 return session;
-#else
-                return null;
-#endif
             }
             catch (Exception ex)
             {
@@ -816,6 +1025,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 ClearPersistentSession();
                 return null;
             }
+#else
+            return null;
+#endif
         }
 
         private static void ClearPersistentSession()
@@ -825,18 +1037,18 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return;
             }
 
+#if UNITY_EDITOR_WIN
             try
             {
-                string sessionPath = GetSessionFilePath();
-                if (File.Exists(sessionPath))
-                {
-                    File.Delete(sessionPath);
-                }
+                DeleteCredential(GetCredentialTarget());
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[YUCP OAuth] Failed to clear persistent session: {ex.Message}");
+                Debug.LogWarning($"[YUCP OAuth] Failed to clear credential session: {ex.Message}");
             }
+
+            DeleteSessionFile();
+#endif
         }
 
         private static void PersistPresenceHints(OAuthSessionV2 session)
@@ -920,6 +1132,141 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             return Path.Combine(localAppData, "YUCP", "Auth", LegacySharedSessionFileName);
         }
+
+#if UNITY_EDITOR_WIN
+        // Unique vault key per auth domain so the user and creator sessions never collide.
+        private static string GetCredentialTarget()
+        {
+            return $"YUCP/{Domain.ClientId}/session";
+        }
+
+        private static bool TryWriteCredential(string target, byte[] blob)
+        {
+            IntPtr blobPtr = IntPtr.Zero;
+            try
+            {
+                blobPtr = Marshal.AllocHGlobal(blob.Length);
+                Marshal.Copy(blob, 0, blobPtr, blob.Length);
+
+                var credential = new CredentialNative
+                {
+                    Type = CredTypeGeneric,
+                    TargetName = target,
+                    CredentialBlobSize = (uint)blob.Length,
+                    CredentialBlob = blobPtr,
+                    Persist = CredPersistLocalMachine,
+                    UserName = Domain.ClientId,
+                };
+
+                if (!CredWrite(ref credential, 0))
+                {
+                    Debug.LogWarning($"[YUCP OAuth] CredWrite failed (Win32 error {Marshal.GetLastWin32Error()}).");
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP OAuth] Failed to write credential: {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                if (blobPtr != IntPtr.Zero)
+                {
+                    Marshal.FreeHGlobal(blobPtr);
+                }
+            }
+        }
+
+        private static byte[] TryReadCredential(string target)
+        {
+            IntPtr credPtr = IntPtr.Zero;
+            try
+            {
+                if (!CredRead(target, CredTypeGeneric, 0, out credPtr))
+                {
+                    return null;
+                }
+
+                var credential = (CredentialNative)Marshal.PtrToStructure(credPtr, typeof(CredentialNative));
+                if (credential.CredentialBlobSize == 0 || credential.CredentialBlob == IntPtr.Zero)
+                {
+                    return null;
+                }
+
+                byte[] blob = new byte[credential.CredentialBlobSize];
+                Marshal.Copy(credential.CredentialBlob, blob, 0, (int)credential.CredentialBlobSize);
+                return blob;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP OAuth] Failed to read credential: {ex.Message}");
+                return null;
+            }
+            finally
+            {
+                if (credPtr != IntPtr.Zero)
+                {
+                    CredFree(credPtr);
+                }
+            }
+        }
+
+        private static void DeleteCredential(string target)
+        {
+            if (!CredDelete(target, CredTypeGeneric, 0))
+            {
+                int err = Marshal.GetLastWin32Error();
+                // 1168 == ERROR_NOT_FOUND, expected when no session was stored yet.
+                if (err != 1168)
+                {
+                    Debug.LogWarning($"[YUCP OAuth] CredDelete failed (Win32 error {err}).");
+                }
+            }
+        }
+
+        private static void WriteSessionFile(byte[] protectedBytes)
+        {
+            string sessionPath = GetSessionFilePath();
+            string sessionDir = Path.GetDirectoryName(sessionPath);
+            if (!string.IsNullOrEmpty(sessionDir))
+            {
+                Directory.CreateDirectory(sessionDir);
+            }
+
+            string tempPath = sessionPath + ".tmp";
+            File.WriteAllBytes(tempPath, protectedBytes);
+            if (File.Exists(sessionPath))
+            {
+                File.Delete(sessionPath);
+            }
+            File.Move(tempPath, sessionPath);
+        }
+
+        private static byte[] ReadSessionFile()
+        {
+            string sessionPath = GetSessionFilePath();
+            return File.Exists(sessionPath) ? File.ReadAllBytes(sessionPath) : null;
+        }
+
+        private static void DeleteSessionFile()
+        {
+            try
+            {
+                string sessionPath = GetSessionFilePath();
+                if (File.Exists(sessionPath))
+                {
+                    File.Delete(sessionPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP OAuth] Failed to delete legacy session file: {ex.Message}");
+            }
+        }
+#endif
 
 #if UNITY_EDITOR_WIN
         private static byte[] ProtectForCurrentUser(byte[] data)

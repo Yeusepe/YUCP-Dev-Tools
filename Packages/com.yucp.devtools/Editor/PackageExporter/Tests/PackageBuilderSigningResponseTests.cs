@@ -73,7 +73,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 + "\"accessTokenExpiresAt\":4102444800,"
                 + "\"refreshToken\":\"refresh-token-value\","
                 + "\"refreshTokenExpiresAt\":4102531200,"
-                + "\"scope\":\"cert:issue profile:read\""
+                + "\"scope\":\"cert:issue profile:read products:read\""
                 + "}";
 
             object session = InvokeBuildSessionFromTokenResponse(tokenJson);
@@ -83,7 +83,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             Assert.That(GetLongField(session, "accessTokenExpiresAt"), Is.EqualTo(4102444800));
             Assert.That(GetStringField(session, "refreshToken"), Is.EqualTo("refresh-token-value"));
             Assert.That(GetLongField(session, "refreshTokenExpiresAt"), Is.EqualTo(4102531200));
-            Assert.That(GetStringField(session, "scope"), Is.EqualTo("cert:issue profile:read"));
+            Assert.That(GetStringField(session, "scope"), Is.EqualTo("cert:issue profile:read products:read"));
         }
 
         [Test]
@@ -92,7 +92,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             const string tokenJson = "{"
                 + "\"accessToken\":\"access-token-value\","
                 + "\"refreshToken\":\"refresh-token-value\","
-                + "\"scope\":\"cert:issue profile:read\""
+                + "\"scope\":\"cert:issue profile:read products:read\""
                 + "}";
 
             MethodInfo describeMethod = typeof(YucpOAuthService).GetMethod(
@@ -105,7 +105,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
 
             Assert.That(summary, Does.Contain("hasAccessToken: true"));
             Assert.That(summary, Does.Contain("hasRefreshToken: true"));
-            Assert.That(summary, Does.Contain("cert:issue profile:read"));
+            Assert.That(summary, Does.Contain("cert:issue profile:read products:read"));
         }
 
         [Test]

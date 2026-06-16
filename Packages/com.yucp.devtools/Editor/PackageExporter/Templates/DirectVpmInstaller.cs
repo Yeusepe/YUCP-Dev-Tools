@@ -1344,36 +1344,13 @@ namespace YUCP.DirectVpmInstaller
                                         }
                                         else
                                         {
-                                            Debug.Log($"[DirectVpmInstaller] Bundled package {bundledPackageName}@{bundledPackageVersion} is already installed (current: {existingVersion}). Skipping extraction.");
-                                            
-                                            // Still enable any .yucp_disabled files (might be from previous failed install)
-                                            string txnIdEarly = InstallerTxn.Begin();
-                                            Debug.Log($"[DirectVpmInstaller] Started enable transaction {txnIdEarly} for already-installed package cleanup.");
-                                            bool enableOkEarly = false;
-                                            try
-                                            {
-                                                EnableBundledPackagesTransactional();
-                                                enableOkEarly = true;
-                                            }
-                                            catch (Exception exEnable)
-                                            {
-                                                Debug.LogError($"[DirectVpmInstaller] Failed while enabling bundled packages: {exEnable.Message}. Rolling back...");
-                                                InstallerTxn.Rollback();
-                                                throw;
-                                            }
-                                            finally
-                                            {
-                                                if (enableOkEarly)
-                                                {
-                                                    InstallerTxn.Commit();
-                                                    if (!InstallerTxn.VerifyManifest())
-                                                        throw new Exception("Post-install manifest verification failed");
-                                                }
-                                            }
-                                            // Mark install complete and cleanup
-                                            InstallerTxn.SetMarker("complete");
-                                            CleanupTemporaryFiles(packageJsonPath);
-                                            return;
+                                            // Already installed at >= the bundled version, and no disabled files pending.
+                                            // Do NOT enable + finalize here: that path skips the dependency check, which is
+                                            // how bundled scripts got enabled while a declared dependency (e.g. VRCFury) was
+                                            // still missing -> CS0246 and no install prompt. Fall through to the vpmDependencies
+                                            // check below, which prompts/installs anything missing and only then finalizes.
+                                            Debug.Log($"[DirectVpmInstaller] Bundled package {bundledPackageName}@{bundledPackageVersion} is already installed (current: {existingVersion}). Verifying declared dependencies before finalizing.");
+                                            InstallerTxn.LogDiagnostic($"Already-installed package; verifying vpmDependencies before finalizing. package={bundledPackageName} current={existingVersion} incoming={bundledPackageVersion}");
                                         }
                                     }
                                     else
