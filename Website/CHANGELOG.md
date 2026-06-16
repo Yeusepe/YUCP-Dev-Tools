@@ -7,8 +7,6 @@
   - Overhauled the Companion Tutorial UI in the Package Exporter with new dedicated components, styling, and token management.
   - Enhanced the Package Signing workflow, significantly improving OAuth authentication, registry section handling, and the signing UI.
   - Added new signing trust defaults to the package signing data.
-  - Updated the Direct VPM Installer runtime binary and templates.
-  - Refined the core Package Builder and corresponding unit tests.
 
 ## 2026-06-12
 

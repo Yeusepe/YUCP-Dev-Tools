@@ -176,6 +176,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (string.IsNullOrEmpty(t) || t == "center") { selector = string.Empty; return TargetCategory.Center; }
                 if (t == "gizmo" || t == "transform-gizmo") { selector = string.Empty; return TargetCategory.Gizmo; }
                 if (Array.IndexOf(EditorWindowTargets, t) >= 0) { selector = t; return TargetCategory.EditorWindow; }
+                selector = (target ?? string.Empty).Trim();
                 return TargetCategory.Custom;
             }
 
@@ -195,7 +196,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 case "material":
                 case "shader": return TargetCategory.MaterialProperty;
                 case "ui": return TargetCategory.UiElement;
-                default: return TargetCategory.Custom;
+                default:
+                    selector = (target ?? string.Empty).Trim();
+                    return TargetCategory.Custom;
             }
         }
 
@@ -268,7 +271,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 case "packageinstalled": return WaitCategory.PackageInstalled;
                 case "componentexists": return WaitCategory.ComponentExists;
                 case "transformmoved": return WaitCategory.TransformMoved;
-                default: return WaitCategory.Custom;
+                default:
+                    arg = (waitFor ?? string.Empty).Trim();
+                    return WaitCategory.Custom;
             }
         }
 

@@ -242,14 +242,28 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             {
                 foreach (var callback in successCallbacks)
                 {
-                    callback?.Invoke(ClonePackageList(callbackPackages));
+                    try
+                    {
+                        callback?.Invoke(ClonePackageList(callbackPackages));
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogException(ex);
+                    }
                 }
             }
             else
             {
                 foreach (var callback in errorCallbacks)
                 {
-                    callback?.Invoke(callbackError);
+                    try
+                    {
+                        callback?.Invoke(callbackError);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogException(ex);
+                    }
                 }
             }
         }

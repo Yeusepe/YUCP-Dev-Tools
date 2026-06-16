@@ -496,6 +496,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             var group = new VisualElement();
             group.AddToClassList("yucp-ct-vec");
 
+            var current = new[] { value };
             float[] comps = { value.x, value.y, value.z, value.w };
             for (int i = 0; i < 4; i++)
             {
@@ -512,9 +513,9 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 field.AddToClassList("yucp-ct-vec__field");
                 field.RegisterValueChangedCallback(evt =>
                 {
-                    var v = value;
+                    var v = current[0];
                     v[idx] = evt.newValue;
-                    value = v;
+                    current[0] = v;
                     onSet(v);
                 });
                 cell.Add(field);

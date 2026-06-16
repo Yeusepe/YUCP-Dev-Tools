@@ -324,7 +324,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private VisualElement MakeChangeButton(string text, Action onClick)
         {
-            var btn = new VisualElement();
+            var btn = new Button(() => onClick?.Invoke());
             btn.style.flexShrink = 0;
             btn.style.paddingLeft = btn.style.paddingRight = 10;
             btn.style.paddingTop = btn.style.paddingBottom = 4;
@@ -348,7 +348,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                     btn.style.borderLeftColor = btn.style.borderRightColor = Border;
                 lbl.style.color = TextSec;
             });
-            btn.RegisterCallback<ClickEvent>(_ => onClick?.Invoke());
             return btn;
         }
 

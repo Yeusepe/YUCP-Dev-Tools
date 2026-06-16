@@ -8,6 +8,9 @@ env:
 on: 
   workflow_dispatch:
   workflow_call:
+    secrets:
+      GITHUB_TOKEN:
+        required: true
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:

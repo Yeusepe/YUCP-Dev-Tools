@@ -896,6 +896,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         {
             foreach (string requiredScope in Domain.RequestedScopes)
             {
+                if (string.Equals(requiredScope, OfflineAccessScope, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 if (!HasRequiredScope(scopeValue, requiredScope))
                 {
                     return false;
@@ -910,6 +915,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             var missingScopes = new List<string>();
             foreach (string requiredScope in Domain.RequestedScopes)
             {
+                if (string.Equals(requiredScope, OfflineAccessScope, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 if (!HasRequiredScope(scopeValue, requiredScope))
                 {
                     missingScopes.Add(requiredScope);
@@ -987,6 +997,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             }
 
             // Fallback (e.g. blob exceeds the credential size cap): the DPAPI-protected file.
+            DeleteCredential(GetCredentialTarget());
             WriteSessionFile(protectedBytes);
 #endif
         }

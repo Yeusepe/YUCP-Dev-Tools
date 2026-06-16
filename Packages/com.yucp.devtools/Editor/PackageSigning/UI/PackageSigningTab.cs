@@ -1498,17 +1498,15 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
             _productLoadErrorMessage = null;
             EditorApplication.delayCall += () => RebuildProductPicker();
 
-            string serverUrl = GetServerUrl();
-            string accessToken = await YucpOAuthService.GetValidAccessTokenAsync(serverUrl);
-            if (string.IsNullOrEmpty(accessToken))
-            {
-                _productsLoading = false;
-                EditorApplication.delayCall += () => RebuildProductPicker();
-                return;
-            }
-
             try
             {
+                string serverUrl = GetServerUrl();
+                string accessToken = await YucpOAuthService.GetValidAccessTokenAsync(serverUrl);
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    return;
+                }
+
                 using var request = UnityEngine.Networking.UnityWebRequest.Get(serverUrl.TrimEnd('/') + "/v1/products");
                 request.SetRequestHeader("Authorization", "Bearer " + accessToken);
                 request.SetRequestHeader("Accept", "application/json");
