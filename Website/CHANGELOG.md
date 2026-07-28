@@ -2,6 +2,10 @@
 
 ## 2026-07-28
 
+- `com.yucp.devtools` 0.3.19:
+  - Fixed clean-install compilation against the current importer by removing the obsolete `ProtectedPayloadManifestEntry` dependency.
+  - Kept signed-manifest canonicalization compatible with the importer by omitting the unused legacy `protectedPayloads` field.
+
 - `com.yucp.devtools` 0.3.18:
   - Removed the unfinished Renderer Optimizer, which referenced a `RendererOptimizerMarker` component that was never shipped and caused package compilation to fail for clean installs.
   - Fixed derived FBX reconstruction so the exported project-relative base path fallback is used when the original GUID cannot be resolved.
