@@ -27,18 +27,12 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         [Test]
         public void PatchRuntimeInjectedFiles_InjectsPatchRuntimeBinaryIntoTempEditorFolder()
         {
-            MethodInfo method = typeof(PackageBuilder).GetMethod(
-                "TryInjectPrecompiledPatchRuntime",
-                BindingFlags.Static | BindingFlags.NonPublic);
-
-            Assert.That(method, Is.Not.Null);
-
             string tempExtractDir = Path.Combine(Path.GetTempPath(), "yucp-precompiled-patch-runtime-" + System.Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempExtractDir);
 
             try
             {
-                bool injected = (bool)method.Invoke(null, new object[] { tempExtractDir });
+                bool injected = PatchImportPackageInjector.TryInjectPrecompiledPatchRuntime(tempExtractDir);
                 Assert.That(injected, Is.True, "Expected the patch runtime binary to be emitted.");
 
                 string[] pathnameFiles = Directory.GetFiles(tempExtractDir, "pathname", SearchOption.AllDirectories);
@@ -52,6 +46,67 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 });
 
                 Assert.That(matchedPathnameFile, Is.Not.Null, "Expected an emitted patch runtime DLL pathname.");
+            }
+            finally
+            {
+                if (Directory.Exists(tempExtractDir))
+                {
+                    Directory.Delete(tempExtractDir, true);
+                }
+            }
+        }
+
+        [Test]
+        public void PatchRuntimeInjectedFiles_InjectsPatchImporterScriptsIntoTempEditorFolder()
+        {
+            string tempExtractDir = Path.Combine(Path.GetTempPath(), "yucp-patch-importer-scripts-" + System.Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempExtractDir);
+
+            try
+            {
+                bool injected = PatchImportPackageInjector.TryInjectPatchProcessingScripts(tempExtractDir);
+                Assert.That(injected, Is.True, "Expected the patch importer scripts to be emitted.");
+
+                string[] pathnames = ReadInjectedPathnames(tempExtractDir);
+                Assert.That(pathnames, Has.Member("Packages/com.yucp.temp/Editor/YUCPPatchImporter.cs"));
+                Assert.That(pathnames, Has.Member("Packages/com.yucp.temp/Editor/YUCPPatchCleanup.cs"));
+            }
+            finally
+            {
+                if (Directory.Exists(tempExtractDir))
+                {
+                    Directory.Delete(tempExtractDir, true);
+                }
+            }
+        }
+
+        [Test]
+        public void PatchRuntimeInjectedFiles_InjectsCompletePatchImportSurface()
+        {
+            string tempExtractDir = Path.Combine(Path.GetTempPath(), "yucp-complete-patch-import-surface-" + System.Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempExtractDir);
+
+            try
+            {
+                PatchImportPackageInjector.InjectRequiredPatchImportFiles(
+                    tempExtractDir,
+                    usingPrecompiledInstallerRuntime: true,
+                    tryInjectInstallerRuntime: (dir, root) =>
+                    {
+                        Assert.Fail("Installer runtime should not be injected when the precompiled installer runtime is already available.");
+                        return false;
+                    });
+
+                string[] pathnames = ReadInjectedPathnames(tempExtractDir);
+                Assert.That(pathnames, Has.Member("Packages/com.yucp.temp/Editor/YUCP.PatchRuntime.dll"));
+                Assert.That(pathnames, Has.Member("Packages/com.yucp.temp/Editor/YUCPPatchImporter.cs"));
+                Assert.That(pathnames, Has.Member("Packages/com.yucp.temp/Editor/YUCPPatchCleanup.cs"));
+                Assert.That(pathnames, Has.Member("Packages/com.yucp.temp/Plugins/hdiffz.dll"));
+                Assert.That(pathnames, Has.Member("Packages/com.yucp.temp/Plugins/hpatchz.dll"));
+                Assert.That(pathnames, Has.Member("Packages/com.yucp.temp/Plugins/hdiffinfo.dll"));
+                Assert.That(pathnames, Has.Member("Packages/com.yucp.temp/Plugins/Linux/x86_64/libhdiffz.so"));
+                Assert.That(pathnames, Has.Member("Packages/com.yucp.temp/Plugins/Linux/x86_64/libhpatchz.so"));
+                Assert.That(pathnames, Has.Member("Packages/com.yucp.temp/Plugins/Linux/x86_64/libhdiffinfo.so"));
             }
             finally
             {
@@ -108,6 +163,12 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             bool shouldSkip = (bool)method.Invoke(null, new object[] { "on load", null });
 
             Assert.That(shouldSkip, Is.True);
+        }
+
+        private static string[] ReadInjectedPathnames(string tempExtractDir)
+        {
+            string[] pathnameFiles = Directory.GetFiles(tempExtractDir, "pathname", SearchOption.AllDirectories);
+            return System.Array.ConvertAll(pathnameFiles, pathnameFile => File.ReadAllText(pathnameFile).Replace('\\', '/'));
         }
     }
 }

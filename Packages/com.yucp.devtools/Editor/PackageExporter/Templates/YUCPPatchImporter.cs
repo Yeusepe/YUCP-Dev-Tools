@@ -44,6 +44,10 @@ namespace YUCP.PatchCleanup
                 return;
             }
 
+            // Remove any leftover legacy source runtime that would collide with the precompiled
+            // runtime DLLs. Runs first so the collision clears before patches are processed.
+            EditorApplication.delayCall += PurgeLegacyRuntimeSourceOnLoad;
+
             EditorApplication.delayCall += CheckForPatchesOnLoad;
 
             // Clean up DLLs on editor load
@@ -56,6 +60,7 @@ namespace YUCP.PatchCleanup
         private static HashSet<string> importedTempFiles = new HashSet<string>();
         private static HashSet<string> createdDerivedFbxPaths = new HashSet<string>();
         private static bool s_hasCleanedOnLoad = false;
+        private static bool s_hasPurgedLegacyRuntimeSource = false;
         private static string _currentPatchPathForRetry = null;
         private const int MaxPatchRetryCount = 8;
         private const string ExportInProgressKey = "YUCP.PackageBuilder.ExportingTempPatchAssets";
@@ -525,6 +530,130 @@ namespace YUCP.PatchCleanup
             catch (Exception ex)
             {
                 WriteLog($"ERROR in CleanupDllsOnLoad: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// Legacy packages shipped the patch/installer runtime into Packages/com.yucp.temp/Editor as
+        /// SOURCE (*.cs + YUCP.PatchRuntime.asmdef). Current packages ship it as precompiled DLLs into
+        /// the same folder. When a project that imported an old package then imports a new one, both
+        /// land side by side and Unity builds an assembly named "YUCP.PatchRuntime" from the leftover
+        /// asmdef that collides with YUCP.PatchRuntime.dll ("...has the same filename as Assembly
+        /// Definition File..."), and two copies of this importer run at once. Because this code only
+        /// executes from the compiled DLL, its very presence proves DLL delivery is active, so any
+        /// C# source or assembly-definition file still sitting in that folder is stale legacy delivery
+        /// and is safe to remove.
+        /// </summary>
+        private static void PurgeLegacyRuntimeSourceOnLoad()
+        {
+            if (s_hasPurgedLegacyRuntimeSource) return;
+            s_hasPurgedLegacyRuntimeSource = true;
+
+            try
+            {
+                string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string editorDir = Path.Combine(projectPath, "Packages", "com.yucp.temp", "Editor");
+                if (!Directory.Exists(editorDir))
+                {
+                    return;
+                }
+
+                // Only act when a compiled runtime DLL is actually present; otherwise there is nothing
+                // for the source to collide with and a pure-source install should be left untouched.
+                bool hasRuntimeDll =
+                    File.Exists(Path.Combine(editorDir, "YUCP.PatchRuntime.dll")) ||
+                    File.Exists(Path.Combine(editorDir, "YUCP.DirectVpmInstaller.Runtime.dll"));
+                if (!hasRuntimeDll)
+                {
+                    return;
+                }
+
+                // In the DLL-based layout this folder must contain only compiled assemblies and their
+                // .meta files. Any C# source or assembly-definition file here is a leftover legacy
+                // source runtime that must be removed to resolve the duplicate-assembly collision.
+                string[] legacyExtensions =
+                {
+                    ".cs", ".cs.meta",
+                    ".asmdef", ".asmdef.meta",
+                    ".asmdef.json", ".asmdef.json.meta"
+                };
+
+                int deletedCount = 0;
+                foreach (string filePath in Directory.GetFiles(editorDir, "*", SearchOption.AllDirectories))
+                {
+                    string normalized = filePath.Replace('\\', '/');
+                    bool isLegacySource = legacyExtensions.Any(ext =>
+                        normalized.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+                    if (!isLegacySource)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        // Direct file deletion bypasses Unity's asset locks on the colliding assembly.
+                        File.SetAttributes(filePath, FileAttributes.Normal);
+                        File.Delete(filePath);
+                        deletedCount++;
+                        WriteLog($"  Removed stale legacy runtime source: {normalized}");
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteLog($"  Warning: could not delete legacy runtime source {normalized}: {ex.Message}");
+                    }
+                }
+
+                // Sweep now-empty legacy subfolders (e.g. Core/, Data/) and their .meta so the temp
+                // package tree stays clean. The Editor root itself is preserved for the DLLs.
+                DeleteEmptyLegacySubfolders(editorDir);
+
+                if (deletedCount > 0)
+                {
+                    WriteLog($"Purged {deletedCount} stale legacy runtime source file(s) from com.yucp.temp/Editor to resolve the assembly collision with the precompiled runtime DLLs.");
+                    Debug.Log($"[YUCP PatchImporter] Removed {deletedCount} stale legacy patch-runtime source file(s) from Packages/com.yucp.temp/Editor that collided with the precompiled runtime DLLs. Reimport the package if any patches did not apply.");
+                    AssetDatabase.Refresh();
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in PurgeLegacyRuntimeSourceOnLoad: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        private static void DeleteEmptyLegacySubfolders(string editorDir)
+        {
+            try
+            {
+                // Deepest-first so a parent becomes empty only after its children are removed.
+                foreach (string dir in Directory.GetDirectories(editorDir, "*", SearchOption.AllDirectories)
+                             .OrderByDescending(d => d.Length))
+                {
+                    if (!Directory.Exists(dir) ||
+                        Directory.EnumerateFileSystemEntries(dir).Any())
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        Directory.Delete(dir);
+                        string metaPath = dir + ".meta";
+                        if (File.Exists(metaPath))
+                        {
+                            File.SetAttributes(metaPath, FileAttributes.Normal);
+                            File.Delete(metaPath);
+                        }
+                        WriteLog($"  Removed empty legacy runtime folder: {dir.Replace('\\', '/')}");
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteLog($"  Warning: could not delete empty legacy folder {dir.Replace('\\', '/')}: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"ERROR in DeleteEmptyLegacySubfolders: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -1445,8 +1574,8 @@ namespace YUCP.PatchCleanup
 
                 if (string.IsNullOrEmpty(createdPath))
                 {
-                    WriteLog($"  ERROR: BuildDerivedFbx returned null");
-                    Debug.LogError($"[YUCP PatchImporter] Failed to build derived FBX");
+                    WriteLog("  ERROR: BuildDerivedFbx returned null. See the preceding [DerivedFbxBuilder] message for the required base GUID, fallback path, and hash check.");
+                    Debug.LogError("[YUCP PatchImporter] Failed to build derived FBX. See the preceding [DerivedFbxBuilder] error for the required base GUID, direct path fallback, and hash check.");
                     CleanupAfterFailure("BuildDerivedFbx returned null");
                     return false;
                 }

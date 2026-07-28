@@ -333,6 +333,55 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
+        public void DirectVpmInstaller_UpsertUserRepoSetting_DoesNotDuplicateAcrossUrlSpellings()
+        {
+            Type directInstallerType = GetDirectInstallerType();
+            MethodInfo method = directInstallerType.GetMethod(
+                "UpsertUserRepoSetting",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+
+            // How VCC itself stores the built-in source.
+            JObject settings = JObject.Parse(@"{
+                ""userRepos"": [
+                    {
+                        ""name"": ""Official"",
+                        ""id"": ""com.vrchat.repos.official"",
+                        ""url"": ""https://packages.vrchat.com/official"",
+                        ""localPath"": ""C:\\Repos\\vrc-official.json""
+                    }
+                ]
+            }");
+
+            // What an exported package declares for the same listing.
+            method.Invoke(null, new object[]
+            {
+                settings,
+                "VRChat Official",
+                "https://packages.vrchat.com/official?download",
+                @"C:\Cache\official-abc123.json",
+                null,
+            });
+
+            JArray userRepos = settings["userRepos"] as JArray;
+            Assert.That(userRepos, Is.Not.Null);
+            Assert.That(userRepos.Count, Is.EqualTo(1), "Query-string variant must not create a second source.");
+
+            // A genuinely different listing still gets added.
+            method.Invoke(null, new object[]
+            {
+                settings,
+                "Other Repo",
+                "https://packages.example.com/index.json",
+                @"C:\Cache\other.json",
+                null,
+            });
+
+            Assert.That(userRepos.Count, Is.EqualTo(2));
+        }
+
+        [Test]
         public void DirectVpmInstaller_FriendlyRepositoryLabel_FallsBackToHostForGenericCustomNames()
         {
             Type directInstallerType = GetDirectInstallerType();
@@ -471,35 +520,6 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
-        public void AliasPackageShellRoot_UsesPackageRootUntilPatchAssetsRequireLegacyFallback()
-        {
-            MethodInfo method = typeof(PackageBuilder).GetMethod(
-                "ResolveAliasPackageShellRoot",
-                BindingFlags.Static | BindingFlags.NonPublic);
-            Assert.That(method, Is.Not.Null);
-
-            ExportProfile profile = ScriptableObject.CreateInstance<ExportProfile>();
-            try
-            {
-                profile.packageName = "Alias Shell";
-                profile.version = "1.0.0";
-                profile.packageId = "alias-shell";
-
-                string packageJson = DependencyScanner.GeneratePackageJson(profile, new List<PackageDependency>());
-
-                string aliasRoot = method.Invoke(null, new object[] { packageJson, false }) as string;
-                string legacyRoot = method.Invoke(null, new object[] { packageJson, true }) as string;
-
-                Assert.That(aliasRoot, Is.EqualTo("Packages/alias.shell"));
-                Assert.That(legacyRoot, Is.Null, "Patch-asset exports should stay on the legacy shell until alias-safe patch packaging exists.");
-            }
-            finally
-            {
-                UnityEngine.Object.DestroyImmediate(profile);
-            }
-        }
-
-        [Test]
         public void PrecompiledInstallerRuntime_ResolvesSigningRootFromAliasPackageJson()
         {
             string tempExtractDir = Path.Combine(Path.GetTempPath(), "yucp-alias-signing-root-" + System.Guid.NewGuid().ToString("N"));
@@ -582,80 +602,6 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             {
                 SignatureEmbedder.RemoveSigningData();
                 DeleteIfPresent(packagePath);
-            }
-        }
-
-        [Test]
-        public void AliasPackageShell_InjectionAvoidsLegacyResidueAndEmbedsMetadataInPackageJson()
-        {
-            string packagePath = null;
-            ExportProfile profile = null;
-
-            try
-            {
-                packagePath = CreateUnityPackage(new Dictionary<string, byte[]>
-                {
-                    ["shell/pathname"] = Encoding.UTF8.GetBytes("Assets/Dummy.txt"),
-                    ["shell/asset"] = Encoding.UTF8.GetBytes("dummy"),
-                });
-
-                profile = ScriptableObject.CreateInstance<ExportProfile>();
-                profile.packageName = "Alias Shell";
-                profile.version = "1.0.0";
-                profile.packageId = "alias-shell";
-
-                string packageJson = DependencyScanner.GeneratePackageJson(profile, new List<PackageDependency>());
-
-                Type embedContextType = typeof(PackageBuilder).GetNestedType("PackageEmbedContext", BindingFlags.NonPublic);
-                Assert.That(embedContextType, Is.Not.Null);
-                ConstructorInfo embedContextCtor = embedContextType.GetConstructor(
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                    binder: null,
-                    types: new[] { typeof(ExportProfile), typeof(string) },
-                    modifiers: null);
-                Assert.That(embedContextCtor, Is.Not.Null);
-                object embedContext = embedContextCtor.Invoke(new object[] { profile, "Packages/alias.shell" });
-
-                MethodInfo method = typeof(PackageBuilder).GetMethod(
-                    "InjectPackageJsonInstallerAndBundles",
-                    BindingFlags.Static | BindingFlags.NonPublic);
-                Assert.That(method, Is.Not.Null);
-
-                method.Invoke(null, new object[]
-                {
-                    packagePath,
-                    packageJson,
-                    new Dictionary<string, string>(),
-                    new List<AssemblyObfuscationSettings>(),
-                    profile,
-                    false,
-                    "{\"packageName\":\"Alias Shell\",\"icon\":\"Packages/alias.shell/Embedded/Icons/icon.png\"}",
-                    embedContext,
-                    null,
-                });
-
-                string[] pathnames = ReadPackagePathnames(packagePath);
-                Assert.That(pathnames, Has.Some.EqualTo("Packages/alias.shell/package.json"));
-                Assert.That(pathnames, Has.None.Matches<string>(path => path.Contains("YUCP_TempInstall_", StringComparison.Ordinal)));
-                Assert.That(pathnames, Has.None.Matches<string>(path => path.EndsWith("YUCP_PackageInfo.json", StringComparison.Ordinal)));
-                Assert.That(pathnames, Has.None.EqualTo("Packages/yucp.installed-packages/package.json"));
-                Assert.That(pathnames, Has.None.Matches<string>(path => path.StartsWith("Packages/com.yucp.temp/", StringComparison.Ordinal)));
-                Assert.That(pathnames, Has.None.Matches<string>(path => path.EndsWith(".yucp_disabled", StringComparison.Ordinal)));
-                Assert.That(pathnames, Has.None.Matches<string>(path => path.Contains("YUCP.DirectVpmInstaller.Runtime.dll", StringComparison.Ordinal)));
-                Assert.That(pathnames, Has.None.Matches<string>(path => path.Contains("YUCP_Installer", StringComparison.Ordinal)));
-
-                JObject packageJsonObject = JObject.Parse(ReadPackagedAssetByPathname(packagePath, "Packages/alias.shell/package.json"));
-                Assert.That((string)packageJsonObject["yucp"]?["kind"], Is.EqualTo("alias-v1"));
-                Assert.That((string)packageJsonObject["yucp"]?["packageMetadata"]?["packageName"], Is.EqualTo("Alias Shell"));
-                Assert.That((string)packageJsonObject["yucp"]?["packageMetadata"]?["icon"], Is.EqualTo("Packages/alias.shell/Embedded/Icons/icon.png"));
-            }
-            finally
-            {
-                DeleteIfPresent(packagePath);
-                if (profile != null)
-                {
-                    UnityEngine.Object.DestroyImmediate(profile);
-                }
             }
         }
 

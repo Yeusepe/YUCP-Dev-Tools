@@ -360,6 +360,11 @@ namespace YUCP.DirectVpmInstaller
                         continue;
                     }
 
+                    // Already a known source: leave the user's entry untouched. Rewriting its url or
+                    // name is what made VCC re-add its own copy and show the source twice.
+                    if (FindUserRepoSetting(settings, repositoryUrl, null) != null)
+                        continue;
+
                     string repositoryName = GetFriendlyRepositoryLabel(repository.Key, repositoryUrl);
                     string cachedRepositoryJson = null;
                     string repoId = null;
@@ -380,6 +385,11 @@ namespace YUCP.DirectVpmInstaller
                     {
                         Debug.LogWarning($"[DirectVpmInstaller] Failed to prefetch repository {repositoryUrl}: {ex.Message}");
                     }
+
+                    // The listing's own id is the authoritative identity; it only becomes known
+                    // after the download above, so re-check before adding a second entry.
+                    if (FindUserRepoSetting(settings, repositoryUrl, repoId) != null)
+                        continue;
 
                     string localPath = ResolveRepositoryCachePath(settings, reposPath, repositoryName, repositoryUrl, repoId);
                     UpsertUserRepoSetting(settings, repositoryName, repositoryUrl, localPath, repoId);
@@ -438,9 +448,25 @@ namespace YUCP.DirectVpmInstaller
             return Path.Combine(reposPath, BuildRepositoryCacheFileName(repositoryName, repoId, repositoryUrl));
         }
 
+        // Two spellings of the same listing must not become two sources. VCC stores the VRChat
+        // repos as ".../official" while packages declare ".../official?download", and trailing
+        // slashes vary freely, so compare on scheme+host+path with the query dropped.
+        internal static string NormalizeRepositoryUrl(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return string.Empty;
+
+            string trimmed = url.Trim();
+            if (Uri.TryCreate(trimmed, UriKind.Absolute, out Uri uri))
+                trimmed = uri.GetLeftPart(UriPartial.Path);
+
+            return trimmed.TrimEnd('/');
+        }
+
         private static JObject FindUserRepoSetting(JObject settings, string repositoryUrl, string repoId)
         {
             JArray userRepos = GetOrCreateUserRepos(settings);
+            string normalizedUrl = NormalizeRepositoryUrl(repositoryUrl);
             foreach (JToken token in userRepos)
             {
                 JObject entry = token as JObject;
@@ -448,8 +474,8 @@ namespace YUCP.DirectVpmInstaller
                     continue;
 
                 string existingUrl = entry["url"]?.ToString();
-                if (!string.IsNullOrWhiteSpace(existingUrl) &&
-                    string.Equals(existingUrl.Trim(), repositoryUrl?.Trim(), StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrWhiteSpace(normalizedUrl) &&
+                    string.Equals(NormalizeRepositoryUrl(existingUrl), normalizedUrl, StringComparison.OrdinalIgnoreCase))
                 {
                     return entry;
                 }

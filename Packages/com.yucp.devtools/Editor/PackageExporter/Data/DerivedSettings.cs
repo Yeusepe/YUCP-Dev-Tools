@@ -33,5 +33,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// If true, replace all references to original FBX with new one after generation.
         /// </summary>
         public bool overrideOriginalReferences = false;
+
+        /// <summary>
+        /// Advanced export option. When enabled, exported patch entries include direct
+        /// project-relative base FBX paths to use only if GUID lookup fails.
+        /// </summary>
+        public bool useBasePathFallback = false;
+
+        /// <summary>
+        /// Project-relative base FBX paths aligned by index with baseGuids.
+        /// These are exported only when useBasePathFallback is true.
+        /// </summary>
+        public List<string> basePathFallbacks = new List<string>();
     }
 }

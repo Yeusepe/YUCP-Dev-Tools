@@ -496,14 +496,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
 
-            JObject yucpContract = AliasPackageContractBuilder.Build(profile, dependencies);
-            if (yucpContract != null)
-            {
-                packageJson["yucp"] = yucpContract;
-            }
-            else if (packageJson.TryGetValue("yucp", out JToken existingYucp) &&
-                     existingYucp is JObject existingYucpObject &&
-                     string.Equals((string)existingYucpObject["kind"], AliasPackageContractBuilder.ContractKind, StringComparison.Ordinal))
+            // The package exporter never authorizes server-mediated delivery — only the server does,
+            // when a package is installed from the creator's VPM URL. Strip any alias contract so every
+            // exported package stays self-contained and imports offline without an install plan.
+            if (packageJson.TryGetValue("yucp", out JToken existingYucp) &&
+                existingYucp is JObject existingYucpObject &&
+                string.Equals((string)existingYucpObject["kind"], "alias-v1", StringComparison.Ordinal))
             {
                 packageJson.Remove("yucp");
             }

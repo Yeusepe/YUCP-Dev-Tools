@@ -87,7 +87,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     if (IsDerivedFbx(asset.assetPath, out DerivedSettings settings, out string basePath))
                     {
                         string assetName = Path.GetFileName(asset.assetPath);
-                        
+
+                        if (settings != null && settings.useBasePathFallback)
+                        {
+                            warnings.Add($"Derived FBX '{assetName}' exports direct base path fallback(s). GUID lookup is safer; path fallback only works while the buyer keeps the base FBX at that exact project path.");
+                        }
+
                         if (string.IsNullOrEmpty(basePath))
                         {
                             warnings.Add($"Derived FBX '{assetName}' is missing its origin file");

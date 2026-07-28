@@ -84,6 +84,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		public class PatchEntry
 		{
 			public string baseGuid;
+			public string basePathFallback; // Optional project-relative path used only when baseGuid cannot resolve.
 			public string baseHash; // SHA256 of base FBX bytes (hex)
 			public string shareEnc; // base64: share XOR mask(base FBX bytes)
 			public string hdiffFilePath; // encrypted diff payload

@@ -8,17 +8,21 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
     public class AliasPackageContractBuilderTests
     {
         [Test]
-        public void GeneratePackageJson_WritesAliasContractAndMinimumImporterVersion()
+        public void GeneratePackageJson_NeverWritesAliasContract_EvenForLicensedPublishedPackage()
         {
             var profile = ScriptableObject.CreateInstance<ExportProfile>();
             try
             {
+                // Even a fully-configured licensed + published profile must not bake server-authorized
+                // delivery into the exported package — only the server authorizes that at install time.
                 profile.packageName = "Alias Contract";
                 profile.version = "1.2.3";
                 profile.packageId = "creator.alias";
                 profile.publishChannel = "beta";
                 profile.licenseProductId = "product-primary";
                 profile.licenseProductIds.Add("product-secondary");
+                profile.requiresLicenseVerification = true;
+                profile.publishReleaseAfterExport = true;
 
                 var dependencies = new List<PackageDependency>
                 {
@@ -34,18 +38,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 };
 
                 JObject packageJson = JObject.Parse(DependencyScanner.GeneratePackageJson(profile, dependencies));
-                JObject yucp = packageJson["yucp"] as JObject;
 
-                Assert.That(yucp, Is.Not.Null);
-                Assert.That((string)yucp["kind"], Is.EqualTo("alias-v1"));
-                Assert.That((string)yucp["aliasId"], Is.EqualTo("creator.alias"));
-                Assert.That((string)yucp["installStrategy"], Is.EqualTo("server-authorized"));
-                Assert.That((string)yucp["importerPackage"], Is.EqualTo("com.yucp.importer"));
-                Assert.That((string)yucp["minImporterVersion"], Is.EqualTo("0.4.0"));
-                Assert.That((string)yucp["channel"], Is.EqualTo("beta"));
-                CollectionAssert.AreEquivalent(
-                    new[] { "product-secondary", "product-primary" },
-                    yucp["catalogProductIds"]?.Values<string>());
+                Assert.That(packageJson["yucp"], Is.Null);
             }
             finally
             {

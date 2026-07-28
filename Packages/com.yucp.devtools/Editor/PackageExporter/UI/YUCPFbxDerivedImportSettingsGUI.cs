@@ -107,7 +107,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			}
 			else
 			{
-				DrawHelpText("Add one or more base FBXs. The installer will use the first compatible base it finds.");
+				DrawHelpText("Add one or more base FBXs. Every listed base is required during import and must match the exported hash.");
 			}
 
 			for (int i = 0; i < settings.baseGuids.Count; i++)
@@ -132,11 +132,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					{
 						string path = AssetDatabase.GetAssetPath(newBase);
 						settings.baseGuids[i] = string.IsNullOrEmpty(path) ? null : AssetDatabase.AssetPathToGUID(path);
+						if (settings.useBasePathFallback)
+						{
+							EnsureBasePathFallbackList(settings);
+							settings.basePathFallbacks[i] = NormalizeAssetPathForSetting(path);
+						}
 					}
 
 					if (GUILayout.Button("Remove", GUILayout.Width(70)))
 					{
 						settings.baseGuids.RemoveAt(i);
+						if (settings.basePathFallbacks != null && i < settings.basePathFallbacks.Count)
+						{
+							settings.basePathFallbacks.RemoveAt(i);
+						}
 						i--;
 						continue;
 					}
@@ -146,6 +155,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			if (GUILayout.Button("Add Base FBX", GUILayout.Height(22)))
 			{
 				settings.baseGuids.Add(null);
+				EnsureBasePathFallbackList(settings);
 			}
 		}
 
@@ -159,6 +169,51 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			{
 				UnityEditor.SessionState.SetBool(foldoutKey, true);
 				EditorGUI.indentLevel++;
+
+				EditorGUILayout.LabelField("Base FBX Resolution", EditorStyles.miniBoldLabel);
+				settings.useBasePathFallback = EditorGUILayout.ToggleLeft(
+					new GUIContent(
+						"Export direct base path fallback",
+						"Advanced: include a project-relative base FBX path that is used only when GUID lookup fails in the importing project."),
+					settings.useBasePathFallback);
+
+				if (settings.useBasePathFallback)
+				{
+					EnsureBasePathFallbackList(settings);
+					EditorGUILayout.HelpBox(
+						"Advanced creator option. Import still tries GUIDs first. If GUID lookup fails, the patch will try these exact project paths. This can help packages that depend on assets with unstable or regenerated GUIDs, but it is less reliable: moving or renaming the base FBX breaks the import, the path may reveal where the base asset is expected, and a hash mismatch will stop generation.",
+						MessageType.Warning);
+
+					for (int i = 0; i < settings.baseGuids.Count; i++)
+					{
+						string guidPath = string.IsNullOrEmpty(settings.baseGuids[i])
+							? string.Empty
+							: AssetDatabase.GUIDToAssetPath(settings.baseGuids[i]);
+						string currentFallback = settings.basePathFallbacks[i];
+						if (string.IsNullOrEmpty(currentFallback))
+						{
+							currentFallback = guidPath;
+						}
+
+						using (new EditorGUILayout.HorizontalScope())
+						{
+							settings.basePathFallbacks[i] = EditorGUILayout.TextField(
+								new GUIContent(
+									$"Base Path {i + 1}",
+									"Project-relative path used only if the base GUID cannot be found during import."),
+								NormalizeAssetPathForSetting(currentFallback));
+
+							GUI.enabled = !string.IsNullOrEmpty(guidPath);
+							if (GUILayout.Button("Use Current", GUILayout.Width(90)))
+							{
+								settings.basePathFallbacks[i] = NormalizeAssetPathForSetting(guidPath);
+							}
+							GUI.enabled = true;
+						}
+					}
+
+					EditorGUILayout.Space(5);
+				}
 				
 				// Reference Override
 				EditorGUILayout.LabelField("Reference Handling", EditorStyles.miniBoldLabel);
@@ -181,6 +236,56 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			{
 				UnityEditor.SessionState.SetBool(foldoutKey, false);
 			}
+		}
+
+		private static void EnsureBasePathFallbackList(DerivedSettings settings)
+		{
+			if (settings == null) return;
+			if (settings.baseGuids == null)
+			{
+				settings.baseGuids = new List<string>();
+			}
+			if (settings.basePathFallbacks == null)
+			{
+				settings.basePathFallbacks = new List<string>();
+			}
+
+			while (settings.basePathFallbacks.Count < settings.baseGuids.Count)
+			{
+				int index = settings.basePathFallbacks.Count;
+				string path = string.Empty;
+				if (index < settings.baseGuids.Count && !string.IsNullOrEmpty(settings.baseGuids[index]))
+				{
+					path = AssetDatabase.GUIDToAssetPath(settings.baseGuids[index]);
+				}
+				settings.basePathFallbacks.Add(NormalizeAssetPathForSetting(path));
+			}
+
+			while (settings.basePathFallbacks.Count > settings.baseGuids.Count)
+			{
+				settings.basePathFallbacks.RemoveAt(settings.basePathFallbacks.Count - 1);
+			}
+		}
+
+		private static string NormalizeAssetPathForSetting(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+			{
+				return string.Empty;
+			}
+
+			string normalized = path.Trim().Replace('\\', '/');
+			if (Path.IsPathRooted(normalized))
+			{
+				string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/').TrimEnd('/');
+				string fullPath = Path.GetFullPath(normalized).Replace('\\', '/');
+				if (fullPath.StartsWith(projectPath + "/", StringComparison.OrdinalIgnoreCase))
+				{
+					normalized = fullPath.Substring(projectPath.Length).TrimStart('/');
+				}
+			}
+
+			return normalized;
 		}
 		
 		/// <summary>

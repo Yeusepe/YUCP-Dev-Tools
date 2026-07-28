@@ -126,13 +126,52 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		private static string ResolveFirstBasePath(DerivedSettings settings)
 		{
 			if (settings?.baseGuids == null) return null;
-			foreach (var guid in settings.baseGuids)
+			for (int i = 0; i < settings.baseGuids.Count; i++)
 			{
+				var guid = settings.baseGuids[i];
 				if (string.IsNullOrEmpty(guid)) continue;
 				var path = AssetDatabase.GUIDToAssetPath(guid);
 				if (!string.IsNullOrEmpty(path)) return path;
+
+				if (settings.useBasePathFallback &&
+					settings.basePathFallbacks != null &&
+					i < settings.basePathFallbacks.Count)
+				{
+					string fallbackPath = NormalizeProjectRelativeAssetPathForDerivedScan(settings.basePathFallbacks[i]);
+					if (!string.IsNullOrEmpty(fallbackPath)) return fallbackPath;
+				}
 			}
 			return null;
+		}
+
+		private static string NormalizeProjectRelativeAssetPathForDerivedScan(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+			{
+				return string.Empty;
+			}
+
+			string normalized = path.Trim().Replace('\\', '/');
+			string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/').TrimEnd('/');
+
+			if (Path.IsPathRooted(normalized))
+			{
+				string rooted = Path.GetFullPath(normalized).Replace('\\', '/');
+				if (!rooted.StartsWith(projectRoot + "/", StringComparison.OrdinalIgnoreCase))
+				{
+					return string.Empty;
+				}
+
+				normalized = rooted.Substring(projectRoot.Length).TrimStart('/');
+			}
+
+			if (!normalized.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) &&
+				!normalized.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+			{
+				return string.Empty;
+			}
+
+			return normalized;
 		}
 
     }

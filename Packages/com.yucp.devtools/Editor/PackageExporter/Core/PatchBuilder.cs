@@ -412,6 +412,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			return new DerivedFbxAsset.PatchEntry
 			{
 				baseGuid = baseGuid ?? string.Empty,
+				basePathFallback = string.Empty,
 				baseHash = string.Empty,
 				shareEnc = string.Empty,
 				hdiffFilePath = hdiffRelativePath
@@ -426,9 +427,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			out string encryptedDiffPath,
 			out List<DerivedFbxAsset.PatchEntry> entries)
 		{
+			return CreateEncryptedPatchEntries(
+				baseFbxPaths,
+				baseGuids,
+				null,
+				modifiedFbxPath,
+				friendlyName,
+				out encryptedDiffPath,
+				out entries);
+		}
+
+		public static bool CreateEncryptedPatchEntries(
+			List<string> baseFbxPaths,
+			List<string> baseGuids,
+			List<string> basePathFallbacks,
+			string modifiedFbxPath,
+			string friendlyName,
+			out string encryptedDiffPath,
+			out List<DerivedFbxAsset.PatchEntry> entries)
+		{
 			return CreateEncryptedPatchEntriesCore(
 				baseFbxPaths,
 				baseGuids,
+				basePathFallbacks,
 				modifiedFbxPath,
 				friendlyName,
 				useWrappedContentKey: false,
@@ -448,9 +469,33 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			out string protectedAssetId,
 			out string wrappedContentKey)
 		{
+			return CreateServerProtectedPatchEntries(
+				baseFbxPaths,
+				baseGuids,
+				null,
+				modifiedFbxPath,
+				friendlyName,
+				out encryptedDiffPath,
+				out entries,
+				out protectedAssetId,
+				out wrappedContentKey);
+		}
+
+		public static bool CreateServerProtectedPatchEntries(
+			List<string> baseFbxPaths,
+			List<string> baseGuids,
+			List<string> basePathFallbacks,
+			string modifiedFbxPath,
+			string friendlyName,
+			out string encryptedDiffPath,
+			out List<DerivedFbxAsset.PatchEntry> entries,
+			out string protectedAssetId,
+			out string wrappedContentKey)
+		{
 			return CreateEncryptedPatchEntriesCore(
 				baseFbxPaths,
 				baseGuids,
+				basePathFallbacks,
 				modifiedFbxPath,
 				friendlyName,
 				useWrappedContentKey: true,
@@ -497,6 +542,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		private static bool CreateEncryptedPatchEntriesCore(
 			List<string> baseFbxPaths,
 			List<string> baseGuids,
+			List<string> basePathFallbacks,
 			string modifiedFbxPath,
 			string friendlyName,
 			bool useWrappedContentKey,
@@ -567,6 +613,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				entries.Add(new DerivedFbxAsset.PatchEntry
 				{
 					baseGuid = baseGuid,
+					basePathFallback = GetBasePathFallback(basePathFallbacks, i),
 					baseHash = baseHashHex,
 					shareEnc = string.Empty,
 					hdiffFilePath = encryptedPath
@@ -603,6 +650,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			}
 
 			return true;
+		}
+
+		private static string GetBasePathFallback(List<string> basePathFallbacks, int index)
+		{
+			if (basePathFallbacks == null || index < 0 || index >= basePathFallbacks.Count)
+			{
+				return string.Empty;
+			}
+
+			return NormalizeProjectRelativeAssetPath(basePathFallbacks[index]);
 		}
 
 		private static void EnsureMetaFile(string filePath)
@@ -778,6 +835,36 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			if (Path.IsPathRooted(normalized))
 				return Path.GetFullPath(normalized);
 			return Path.GetFullPath(Path.Combine(projectPath, normalized));
+		}
+
+		private static string NormalizeProjectRelativeAssetPath(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+			{
+				return string.Empty;
+			}
+
+			string normalized = path.Trim().Replace('\\', '/');
+			string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/').TrimEnd('/');
+
+			if (Path.IsPathRooted(normalized))
+			{
+				string rooted = Path.GetFullPath(normalized).Replace('\\', '/');
+				if (!rooted.StartsWith(projectRoot + "/", StringComparison.OrdinalIgnoreCase))
+				{
+					return string.Empty;
+				}
+
+				normalized = rooted.Substring(projectRoot.Length).TrimStart('/');
+			}
+
+			if (!normalized.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) &&
+				!normalized.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+			{
+				return string.Empty;
+			}
+
+			return normalized;
 		}
 		
 		/// <summary>
