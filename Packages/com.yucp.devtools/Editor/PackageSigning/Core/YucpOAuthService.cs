@@ -16,22 +16,44 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 {
     public static class YucpOAuthService
     {
-        private const string RequiredCertificateScope = "cert:issue";
-        private const string RequiredProfileScope = "profile:read";
-        private const string RequiredProductsScope = "products:read";
+        // Scopes the exporter actually needs, one per route it calls:
+        //   cert:issue        POST /v1/certificates, GET /v1/certificates/{me,devices}
+        //   products:read     GET /v1/products (Gumroad/Jinxxy pickers)
+        //   verification:read GET /v1/me (profile card)
+        private const string RequiredCertIssueScope = "cert:issue";
+        private const string RequiredProductsReadScope = "products:read";
+        private const string RequiredVerificationReadScope = "verification:read";
         // Standard OIDC scope: makes the server issue a (rotating) refresh token so the
         // session renews silently instead of forcing a new sign-in on every expiry.
         private const string OfflineAccessScope = "offline_access";
-        private const int CurrentStorageVersion = 3;
-        private const string CurrentSessionVersion = "3";
-        private const string LegacySharedStoragePrefix = "YUCP_OAuth";
-        private const string LegacySharedSessionFileName = "unity-oauth-session-v2.dat";
+        private const int CurrentStorageVersion = 5;
         private const int AccessTokenSkewSeconds = 60;
+
+        // Must match the registered redirect URI path. RFC 8252 §7.3 lets the
+        // server vary only the loopback port, so scheme, host, and path are fixed.
+        private const string CallbackPath = "/callback";
         private const int CallbackListenerStartAttempts = 10;
         private static readonly object SessionLock = new object();
         private static Task _backgroundRefreshTask;
         private static bool _isSignInInProgress;
         private static string _signInStatusMessage;
+
+        // Reading the session means a Credential Manager lookup plus a DPAPI
+        // decrypt. IsSignedIn/GetDisplayName/GetProfileImageUrl are called from
+        // editor repaint code, so an uncached read runs that per frame. Hold the
+        // decrypted session briefly instead; the TTL is short enough that a second
+        // Unity instance signing in is still picked up without a domain reload.
+        private static readonly long SessionCacheTicks = System.Diagnostics.Stopwatch.Frequency * 5;
+        private static OAuthSessionV2 _sessionCache;
+        private static long _sessionCacheStamp;
+        private static bool _sessionCacheValid;
+
+        // Refresh tokens rotate, so a token may be redeemed exactly once. Several
+        // call sites can ask for a valid access token at the same moment, and if
+        // each ran its own exchange the losers would replay a consumed token — the
+        // server treats that as theft and invalidates the whole family, signing the
+        // user out at random. Concurrent callers share one exchange instead.
+        private static Task<string> _refreshInFlight;
 
         public static event Action SignInStateChanged;
 
@@ -62,44 +84,50 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             public OAuthDomainConfig(
                 string clientId,
                 string[] requestedScopes,
-                string editorPrefsPrefix,
+                string resource,
                 string sessionFileName,
                 string sessionEntropyLabel)
             {
                 ClientId = clientId;
                 RequestedScopes = requestedScopes;
-                EditorPrefsPrefix = editorPrefsPrefix;
+                Resource = resource;
                 SessionFileName = sessionFileName;
                 SessionEntropyLabel = sessionEntropyLabel;
             }
 
             public string ClientId { get; }
             public string[] RequestedScopes { get; }
-            public string EditorPrefsPrefix { get; }
+
+            /// <summary>
+            /// RFC 8707 resource indicator. Sent on both the authorization and token
+            /// requests so the server issues an audience-bound JWT for the public API
+            /// instead of an opaque token. Without it the API gateway substitutes its
+            /// own default, which this client is not authorized for.
+            /// </summary>
+            public string Resource { get; }
             public string SessionFileName { get; }
             public string SessionEntropyLabel { get; }
             public string RequestedScopeValue => string.Join(" ", RequestedScopes);
-
-            public string GetEditorPrefKey(string suffix)
-            {
-                return $"{EditorPrefsPrefix}_{suffix}";
-            }
         }
 
+        // RFC 8252 §8.4: a native app is a public client with its own client_id.
+        // The exporter is a distinct application from the consumer-side package
+        // broker and deliberately cannot request `package:operate`.
         private static readonly OAuthDomainConfig Domain = new OAuthDomainConfig(
-            clientId: "yucp-unity-creator",
-            requestedScopes: new[] { RequiredCertificateScope, RequiredProfileScope, RequiredProductsScope, OfflineAccessScope },
-            editorPrefsPrefix: "YUCP_CreatorOAuth",
-            sessionFileName: "unity-creator-oauth-session-v2.dat",
-            sessionEntropyLabel: "YUCP.UnityEditor.Creator.Session.v2");
+            clientId: "yucp-package-exporter",
+            requestedScopes: new[]
+            {
+                RequiredCertIssueScope,
+                RequiredProductsReadScope,
+                RequiredVerificationReadScope,
+                OfflineAccessScope,
+            },
+            resource: "https://api.creators.yucp.club",
+            sessionFileName: "unity-exporter-oauth-session-v5.dat",
+            sessionEntropyLabel: "YUCP.UnityEditor.PackageExporter.Session.v5");
 
         public static string ClientId => Domain.ClientId;
 
-        private static string KeyToken => Domain.GetEditorPrefKey("AccessToken");
-        private static string KeyExpiry => Domain.GetEditorPrefKey("TokenExpiry");
-        private static string KeyUserId => Domain.GetEditorPrefKey("UserId");
-        private static string KeyDisplayName => Domain.GetEditorPrefKey("DisplayName");
-        private static string KeySessionVersion => Domain.GetEditorPrefKey("SessionVersion");
         private static readonly byte[] SessionEntropy = Encoding.UTF8.GetBytes(Domain.SessionEntropyLabel);
 
 #if UNITY_EDITOR_WIN
@@ -185,6 +213,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             public string displayName;
             public string imageUrl;
             public string scope;
+            // DPoP (RFC 9449): RSA key pair for proof-of-possession binding.
+            // Persisted so refresh token exchanges re-prove the same key.
+            public string dpopPrivateKeyXml;
+            public string dpopPublicKeyJwk;
         }
 
         public static bool IsSignedIn()
@@ -201,24 +233,16 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         public static string GetUserId()
         {
-            if (TryGetCachedSession(out OAuthSessionV2 session) && !string.IsNullOrEmpty(session.userId))
-            {
-                return session.userId;
-            }
-
-            string userId = EditorPrefs.GetString(KeyUserId, null);
-            return string.IsNullOrEmpty(userId) ? null : userId;
+            return TryGetCachedSession(out OAuthSessionV2 session) && !string.IsNullOrEmpty(session.userId)
+                ? session.userId
+                : null;
         }
 
         public static string GetDisplayName()
         {
-            if (TryGetCachedSession(out OAuthSessionV2 session) && !string.IsNullOrEmpty(session.displayName))
-            {
-                return session.displayName;
-            }
-
-            string name = EditorPrefs.GetString(KeyDisplayName, null);
-            return string.IsNullOrEmpty(name) ? null : name;
+            return TryGetCachedSession(out OAuthSessionV2 session) && !string.IsNullOrEmpty(session.displayName)
+                ? session.displayName
+                : null;
         }
 
         public static string GetProfileImageUrl()
@@ -257,13 +281,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             {
                 if (HasUsableAccessToken(session))
                 {
-                    PersistPresenceHints(session);
                     return session.accessToken;
                 }
 
                 if (!string.IsNullOrEmpty(session.refreshToken))
                 {
-                    string refreshedAccessToken = await RefreshAccessTokenAsync(serverUrl, session);
+                    string refreshedAccessToken = await RefreshAccessTokenCoalescedAsync(serverUrl, session);
                     if (!string.IsNullOrEmpty(refreshedAccessToken))
                     {
                         return refreshedAccessToken;
@@ -271,21 +294,110 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 }
             }
 
-            if (TryGetLegacyAccessToken(out string legacyToken, out long legacyExpiry))
-            {
-                Debug.LogWarning(
-                    $"[YUCP OAuth] Discarding legacy shared Unity session because it cannot prove required Unity scopes '{Domain.RequestedScopeValue}'.");
-                ClearLegacySharedSessionArtifacts();
-            }
-
             return null;
         }
 
-        public static void SignOut()
+        /// <summary>
+        /// Joins the in-flight refresh when one is already running, so a rotating
+        /// refresh token is redeemed exactly once no matter how many callers ask
+        /// for a token at the same time.
+        /// </summary>
+        private static Task<string> RefreshAccessTokenCoalescedAsync(string serverUrl, OAuthSessionV2 currentSession)
         {
+            lock (SessionLock)
+            {
+                if (_refreshInFlight != null && !_refreshInFlight.IsCompleted)
+                {
+                    return _refreshInFlight;
+                }
+
+                _refreshInFlight = RunRefreshAsync(serverUrl, currentSession);
+                return _refreshInFlight;
+            }
+        }
+
+        private static async Task<string> RunRefreshAsync(string serverUrl, OAuthSessionV2 currentSession)
+        {
+            try
+            {
+                return await RefreshAccessTokenAsync(serverUrl, currentSession);
+            }
+            finally
+            {
+                lock (SessionLock)
+                {
+                    _refreshInFlight = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Signs out. When <paramref name="serverUrl"/> is supplied the refresh
+        /// token is also revoked server-side per RFC 7009, so the grant dies with
+        /// the session instead of staying valid for the rest of its 30-day life.
+        /// </summary>
+        public static void SignOut(string serverUrl = null)
+        {
+            if (!string.IsNullOrEmpty(serverUrl) &&
+                TryGetCachedSession(out OAuthSessionV2 session) &&
+                !string.IsNullOrEmpty(session.refreshToken))
+            {
+                // Best effort: the local session is cleared either way, so a failed
+                // or slow revocation must never block signing out.
+                _ = RevokeRefreshTokenAsync(serverUrl, session);
+            }
+
             ClearPersistentSession();
-            ClearCurrentDomainKeys();
-            ClearLegacySharedSessionArtifacts();
+        }
+
+        /// <summary>
+        /// RFC 7009 token revocation. The endpoint answers 200 for an unknown or
+        /// already-revoked token, so there is nothing to retry on failure.
+        /// </summary>
+        private static async Task RevokeRefreshTokenAsync(string serverUrl, OAuthSessionV2 session)
+        {
+            try
+            {
+                string endpoint = $"{serverUrl.TrimEnd('/')}/api/auth/oauth2/revoke";
+                string body = BuildFormUrlEncodedBody(new Dictionary<string, string>
+                {
+                    ["token"] = session.refreshToken,
+                    ["token_type_hint"] = "refresh_token",
+                    ["client_id"] = ClientId,
+                });
+
+                using var request = new UnityWebRequest(endpoint, UnityWebRequest.kHttpVerbPOST)
+                {
+                    uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body)),
+                    downloadHandler = new DownloadHandlerBuffer(),
+                };
+                request.SetRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+                request.SetRequestHeader("Accept", "application/json");
+                request.SetRequestHeader("Accept-Encoding", "identity");
+                if (!string.IsNullOrEmpty(session.dpopPrivateKeyXml))
+                {
+                    request.SetRequestHeader(
+                        "DPoP",
+                        CreateDpopProof("POST", endpoint, null, session.dpopPrivateKeyXml, session.dpopPublicKeyJwk));
+                }
+
+                var operation = request.SendWebRequest();
+                while (!operation.isDone)
+                {
+                    await Task.Yield();
+                }
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    Debug.LogWarning(
+                        $"[YUCP OAuth] Refresh token revocation returned {request.responseCode}: {request.error}. " +
+                        "The local session was still cleared.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP OAuth] Refresh token revocation failed: {ex.Message}. The local session was still cleared.");
+            }
         }
 
         public static async Task SignInAsync(string serverUrl, Action onSuccess, Action<string> onError)
@@ -323,11 +435,16 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 }
                 string state = Base64UrlEncode(stateBytes);
 
+                // DPoP (RFC 9449): generate an RSA-2048 key pair for proof-of-possession binding.
+                string dpopPrivateKeyXml;
+                string dpopPublicKeyJwk;
+                GenerateDpopKeyPair(out dpopPrivateKeyXml, out dpopPublicKeyJwk);
+
                 SetSignInStatus("Starting local sign-in callback...");
                 var httpListener = StartLoopbackListener(out int port);
                 Debug.Log($"[YUCP OAuth] Using loopback port {port}");
 
-                string redirectUri = $"http://127.0.0.1:{port}/callback";
+                string redirectUri = $"http://127.0.0.1:{port}{CallbackPath}";
                 string authUrl = BuildAuthUrl(serverUrl, codeChallenge, state, redirectUri);
                 Debug.Log($"[YUCP OAuth] Auth URL: {authUrl}");
 
@@ -344,22 +461,40 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 {
                     using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120)))
                     {
-                        Task<HttpListenerContext> contextTask = httpListener.GetContextAsync();
-                        Task timeoutTask = Task.Delay(Timeout.Infinite, cts.Token);
-
-                        Task finished = await Task.WhenAny(contextTask, timeoutTask);
-                        cts.Cancel();
-
-                        if (finished != contextTask)
+                        // An ephemeral loopback port also receives requests that have
+                        // nothing to do with the callback — browser favicon probes,
+                        // link prefetches, local port scanners. Accepting the first
+                        // request blindly lets any of those consume the sign-in and
+                        // fail it, so serve only the redirect path and answer the
+                        // rest with 404. RFC 8252 §7.3.
+                        while (true)
                         {
-                            Debug.LogWarning("[YUCP OAuth] Timed out waiting for browser callback.");
-                            httpListener.Stop();
-                            onError?.Invoke("Sign-in timed out after 2 minutes. Please try again.");
-                            return;
+                            Task<HttpListenerContext> contextTask = httpListener.GetContextAsync();
+                            Task timeoutTask = Task.Delay(Timeout.Infinite, cts.Token);
+
+                            Task finished = await Task.WhenAny(contextTask, timeoutTask);
+                            if (finished != contextTask)
+                            {
+                                Debug.LogWarning("[YUCP OAuth] Timed out waiting for browser callback.");
+                                httpListener.Stop();
+                                onError?.Invoke("Sign-in timed out after 2 minutes. Please try again.");
+                                return;
+                            }
+
+                            HttpListenerContext candidate = await contextTask;
+                            string candidatePath = candidate.Request.Url?.AbsolutePath ?? string.Empty;
+                            if (string.Equals(candidatePath, CallbackPath, StringComparison.Ordinal))
+                            {
+                                context = candidate;
+                                Debug.Log($"[YUCP OAuth] Callback received: {candidate.Request.Url}");
+                                break;
+                            }
+
+                            Debug.Log($"[YUCP OAuth] Ignoring unrelated loopback request for '{candidatePath}'.");
+                            await SendNotFoundAsync(candidate);
                         }
 
-                        context = await contextTask;
-                        Debug.Log($"[YUCP OAuth] Callback received: {context.Request.Url}");
+                        cts.Cancel();
                     }
 
                     var qp = ParseQueryString(context.Request.Url?.Query ?? "");
@@ -407,7 +542,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 }
 
                 SetSignInStatus("Exchanging sign-in code...");
-                Debug.Log($"[YUCP OAuth] Exchanging auth code at {serverUrl.TrimEnd('/')}/api/auth/oauth2/token");
+                string tokenEndpoint = $"{serverUrl.TrimEnd('/')}/api/auth/oauth2/token";
+                Debug.Log($"[YUCP OAuth] Exchanging auth code at {tokenEndpoint}");
                 using var tokenReq = CreateTokenRequest(
                     serverUrl,
                     new Dictionary<string, string>
@@ -418,6 +554,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                         ["code_verifier"] = codeVerifier,
                         ["redirect_uri"] = redirectUri,
                     });
+                tokenReq.SetRequestHeader("DPoP", CreateDpopProof("POST", tokenEndpoint, null, dpopPrivateKeyXml, dpopPublicKeyJwk));
 
                 var op = tokenReq.SendWebRequest();
                 while (!op.isDone)
@@ -435,6 +572,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 }
 
                 OAuthSessionV2 session = BuildSessionFromTokenResponse(tokenJson, null);
+                if (session != null)
+                {
+                    session.dpopPrivateKeyXml = dpopPrivateKeyXml;
+                    session.dpopPublicKeyJwk = dpopPublicKeyJwk;
+                }
+
                 if (session == null || string.IsNullOrEmpty(session.accessToken))
                 {
                     onError?.Invoke($"No access_token in server response: {DescribeTokenResponse(tokenJson)}");
@@ -619,6 +762,11 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                     ["client_id"] = ClientId,
                     ["refresh_token"] = currentSession.refreshToken,
                 });
+            if (!string.IsNullOrEmpty(currentSession.dpopPrivateKeyXml))
+            {
+                string refreshTokenEndpoint = $"{serverUrl.TrimEnd('/')}/api/auth/oauth2/token";
+                tokenReq.SetRequestHeader("DPoP", CreateDpopProof("POST", refreshTokenEndpoint, null, currentSession.dpopPrivateKeyXml, currentSession.dpopPublicKeyJwk));
+            }
 
             var operation = tokenReq.SendWebRequest();
             while (!operation.isDone)
@@ -702,6 +850,10 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
             string imageUrl = previousSession?.imageUrl;
 
+            // DPoP keys persist across token refreshes; set once during initial sign-in.
+            string dpopPrivateKeyXml = previousSession?.dpopPrivateKeyXml;
+            string dpopPublicKeyJwk = previousSession?.dpopPublicKeyJwk;
+
             return new OAuthSessionV2
             {
                 storageVersion = CurrentStorageVersion,
@@ -713,13 +865,25 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 displayName = displayName,
                 imageUrl = imageUrl,
                 scope = scope,
+                dpopPrivateKeyXml = dpopPrivateKeyXml,
+                dpopPublicKeyJwk = dpopPublicKeyJwk,
             };
         }
 
         private static UnityWebRequest CreateTokenRequest(string serverUrl, IReadOnlyDictionary<string, string> fields)
         {
             string endpoint = $"{serverUrl.TrimEnd('/')}/api/auth/oauth2/token";
-            string body = BuildFormUrlEncodedBody(fields);
+
+            // RFC 8707 §2: name the resource on every token request, including
+            // refreshes, so the renewed token keeps the same audience.
+            var boundFields = new Dictionary<string, string>();
+            foreach (KeyValuePair<string, string> field in fields)
+            {
+                boundFields[field.Key] = field.Value;
+            }
+            boundFields["resource"] = Domain.Resource;
+
+            string body = BuildFormUrlEncodedBody(boundFields);
             var request = new UnityWebRequest(endpoint, UnityWebRequest.kHttpVerbPOST)
             {
                 uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body)),
@@ -731,14 +895,29 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             return request;
         }
 
-        private static UnityWebRequest CreateProfileRequest(string serverUrl, string accessToken)
+        private static UnityWebRequest CreateProfileRequest(string serverUrl, string accessToken, OAuthSessionV2 session)
         {
             string endpoint = $"{serverUrl.TrimEnd('/')}/v1/me";
             var request = UnityWebRequest.Get(endpoint);
             request.downloadHandler = new DownloadHandlerBuffer();
-            request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
             request.SetRequestHeader("Accept", "application/json");
             request.SetRequestHeader("Accept-Encoding", "identity");
+
+            // The session is not persisted yet during sign-in, so the key comes from
+            // the in-flight session rather than storage. Scheme rules are the same as
+            // ApplyAuthHeaders: DPoP-bound tokens must not be sent as Bearer.
+            if (session != null && !string.IsNullOrEmpty(session.dpopPrivateKeyXml))
+            {
+                request.SetRequestHeader("Authorization", $"DPoP {accessToken}");
+                request.SetRequestHeader(
+                    "DPoP",
+                    CreateDpopProof("GET", endpoint, accessToken, session.dpopPrivateKeyXml, session.dpopPublicKeyJwk));
+            }
+            else
+            {
+                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+            }
+
             return request;
         }
 
@@ -746,13 +925,12 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         {
             if (session == null
                 || string.IsNullOrEmpty(serverUrl)
-                || string.IsNullOrEmpty(session.accessToken)
-                || !HasRequiredScope(session.scope, RequiredProfileScope))
+                || string.IsNullOrEmpty(session.accessToken))
             {
                 return session;
             }
 
-            using var request = CreateProfileRequest(serverUrl, session.accessToken);
+            using var request = CreateProfileRequest(serverUrl, session.accessToken, session);
             var operation = request.SendWebRequest();
             while (!operation.isDone)
             {
@@ -842,16 +1020,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             {
                 if (HasUsableAccessToken(session) || (IsRefreshableSession(session) && HasRequiredUnityScopes(session.scope)))
                 {
-                    PersistPresenceHints(session);
                     return true;
                 }
-            }
-
-            if (TryGetLegacyAccessToken(out string legacyToken, out long legacyExpiry))
-            {
-                Debug.LogWarning(
-                    $"[YUCP OAuth] Clearing legacy shared Unity session because it cannot prove required Unity scopes '{Domain.RequestedScopeValue}'.");
-                ClearLegacySharedSessionArtifacts();
             }
 
             session = null;
@@ -860,28 +1030,30 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static bool TryGetCachedSession(out OAuthSessionV2 session)
         {
-            session = LoadPersistentSession();
+            lock (SessionLock)
+            {
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                if (!_sessionCacheValid || now - _sessionCacheStamp > SessionCacheTicks)
+                {
+                    _sessionCache = LoadPersistentSession();
+                    _sessionCacheStamp = now;
+                    _sessionCacheValid = true;
+                }
+
+                session = _sessionCache;
+            }
+
             return session != null;
         }
 
-        private static bool TryGetLegacyAccessToken(out string token, out long expiry)
+        private static void SetCachedSession(OAuthSessionV2 session)
         {
-            token = null;
-            expiry = 0;
-
-            if (!EditorPrefs.HasKey(GetLegacySharedKey("AccessToken")) || !EditorPrefs.HasKey(GetLegacySharedKey("TokenExpiry")))
+            lock (SessionLock)
             {
-                return false;
+                _sessionCache = session;
+                _sessionCacheStamp = System.Diagnostics.Stopwatch.GetTimestamp();
+                _sessionCacheValid = true;
             }
-
-            token = EditorPrefs.GetString(GetLegacySharedKey("AccessToken"), string.Empty);
-            expiry = EditorPrefs.GetInt(GetLegacySharedKey("TokenExpiry"), 0);
-            if (string.IsNullOrEmpty(token))
-            {
-                return false;
-            }
-
-            return expiry > DateTimeOffset.UtcNow.ToUnixTimeSeconds() + AccessTokenSkewSeconds;
         }
 
         private static bool HasUsableAccessToken(OAuthSessionV2 session)
@@ -970,17 +1142,14 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 return;
             }
 
-            ClearCurrentDomainKeys();
-            ClearLegacySharedSessionArtifacts();
-            PersistPresenceHints(session);
+            SetCachedSession(session);
 
+            // ponytail: Windows-only session storage. Unity ships no cross-platform
+            // secret store, and writing a refresh token to a plain file off Windows
+            // is worse than asking the user to sign in again. macOS/Linux editors
+            // stay signed in only for the lifetime of the access token.
             if (!SupportsProtectedSessionStorage())
             {
-                if (HasUsableAccessToken(session))
-                {
-                    EditorPrefs.SetString(KeyToken, session.accessToken);
-                    EditorPrefs.SetInt(KeyExpiry, (int)session.accessTokenExpiresAt);
-                }
                 return;
             }
 
@@ -1043,6 +1212,8 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static void ClearPersistentSession()
         {
+            SetCachedSession(null);
+
             if (!SupportsProtectedSessionStorage())
             {
                 return;
@@ -1062,67 +1233,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 #endif
         }
 
-        private static void PersistPresenceHints(OAuthSessionV2 session)
-        {
-            if (session == null)
-            {
-                return;
-            }
-
-            if (!string.IsNullOrEmpty(session.userId))
-            {
-                EditorPrefs.SetString(KeyUserId, session.userId);
-            }
-
-            if (!string.IsNullOrEmpty(session.displayName))
-            {
-                EditorPrefs.SetString(KeyDisplayName, session.displayName);
-            }
-
-            EditorPrefs.SetString(KeySessionVersion, CurrentSessionVersion);
-        }
-
-        private static void ClearCurrentDomainKeys()
-        {
-            EditorPrefs.DeleteKey(KeyToken);
-            EditorPrefs.DeleteKey(KeyExpiry);
-            EditorPrefs.DeleteKey(KeyUserId);
-            EditorPrefs.DeleteKey(KeyDisplayName);
-            EditorPrefs.DeleteKey(KeySessionVersion);
-        }
-
-        private static string GetLegacySharedKey(string suffix)
-        {
-            return $"{LegacySharedStoragePrefix}_{suffix}";
-        }
-
-        private static void ClearLegacySharedSessionArtifacts()
-        {
-            EditorPrefs.DeleteKey(GetLegacySharedKey("AccessToken"));
-            EditorPrefs.DeleteKey(GetLegacySharedKey("TokenExpiry"));
-            EditorPrefs.DeleteKey(GetLegacySharedKey("UserId"));
-            EditorPrefs.DeleteKey(GetLegacySharedKey("DisplayName"));
-            EditorPrefs.DeleteKey(GetLegacySharedKey("SessionVersion"));
-
-            if (!SupportsProtectedSessionStorage())
-            {
-                return;
-            }
-
-            try
-            {
-                string legacySessionPath = GetLegacySharedSessionFilePath();
-                if (File.Exists(legacySessionPath))
-                {
-                    File.Delete(legacySessionPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[YUCP OAuth] Failed to clear legacy shared session: {ex.Message}");
-            }
-        }
-
         private static bool SupportsProtectedSessionStorage()
         {
 #if UNITY_EDITOR_WIN
@@ -1136,12 +1246,6 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
         {
             string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             return Path.Combine(localAppData, "YUCP", "Auth", Domain.SessionFileName);
-        }
-
-        private static string GetLegacySharedSessionFilePath()
-        {
-            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            return Path.Combine(localAppData, "YUCP", "Auth", LegacySharedSessionFileName);
         }
 
 #if UNITY_EDITOR_WIN
@@ -1406,6 +1510,28 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             return $"{{ authUserId: \"{authUserId}\", hasName: {(!string.IsNullOrEmpty(name)).ToString().ToLowerInvariant()}, hasImage: {hasImage.ToString().ToLowerInvariant()} }}";
         }
 
+        /// <summary>
+        /// Closes out a request to the loopback listener that is not the OAuth
+        /// callback, so the browser stops waiting and the listener can accept the
+        /// real redirect.
+        /// </summary>
+        private static async Task SendNotFoundAsync(HttpListenerContext ctx)
+        {
+            try
+            {
+                byte[] body = Encoding.UTF8.GetBytes("Not found.");
+                ctx.Response.StatusCode = 404;
+                ctx.Response.ContentType = "text/plain; charset=utf-8";
+                ctx.Response.ContentLength64 = body.Length;
+                await ctx.Response.OutputStream.WriteAsync(body, 0, body.Length);
+                ctx.Response.OutputStream.Close();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[YUCP OAuth] Failed to answer an unrelated loopback request: {ex.Message}");
+            }
+        }
+
         private static async Task SendSuccessPageAsync(HttpListenerContext ctx)
         {
             byte[] html = Encoding.UTF8.GetBytes(BuildSuccessHtml());
@@ -1427,19 +1553,157 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
         private static string BuildAuthUrl(string serverUrl, string codeChallenge, string state, string redirectUri)
         {
-            return $"{serverUrl.TrimEnd('/')}/api/yucp/oauth/authorize"
+            return $"{serverUrl.TrimEnd('/')}/api/auth/oauth2/authorize"
                 + $"?client_id={Uri.EscapeDataString(ClientId)}"
                 + "&response_type=code"
                 + $"&code_challenge={Uri.EscapeDataString(codeChallenge)}"
                 + "&code_challenge_method=S256"
                 + $"&redirect_uri={Uri.EscapeDataString(redirectUri)}"
                 + $"&state={Uri.EscapeDataString(state)}"
+                + $"&resource={Uri.EscapeDataString(Domain.Resource)}"
                 + $"&scope={Uri.EscapeDataString(Domain.RequestedScopeValue)}";
         }
 
         private static string Base64UrlEncode(byte[] data)
         {
             return Convert.ToBase64String(data).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        }
+
+        // ──────────────────────────────────────────────────────────────
+        //  DPoP (RFC 9449) — Proof-of-Possession key binding
+        // ──────────────────────────────────────────────────────────────
+
+        private static void GenerateDpopKeyPair(out string privateKeyXml, out string publicKeyJwk)
+        {
+            using (var rsa = new RSACryptoServiceProvider(2048))
+            {
+                rsa.PersistKeyInCsp = false;
+                privateKeyXml = rsa.ToXmlString(true);
+                RSAParameters parameters = rsa.ExportParameters(false);
+                publicKeyJwk = BuildRsaJwk(parameters);
+            }
+        }
+
+        private static string BuildRsaJwk(RSAParameters parameters)
+        {
+            string n = Base64UrlEncode(parameters.Modulus);
+            string e = Base64UrlEncode(parameters.Exponent);
+            return $"{{\"kty\":\"RSA\",\"n\":\"{n}\",\"e\":\"{e}\",\"alg\":\"RS256\"}}";
+        }
+
+        private static string CreateDpopProof(string httpMethod, string requestUrl, string accessToken, string privateKeyXml, string publicKeyJwk)
+        {
+            byte[] jtiBytes = new byte[16];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(jtiBytes);
+            }
+
+            string jti = Base64UrlEncode(jtiBytes);
+            long iat = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            string htu = StripQueryAndFragment(requestUrl);
+
+            string header = $"{{\"typ\":\"dpop+jwt\",\"alg\":\"RS256\",\"jwk\":{publicKeyJwk}}}";
+
+            var payload = new StringBuilder();
+            payload.Append($"{{\"jti\":\"{jti}\"");
+            payload.Append($",\"htm\":\"{httpMethod}\"");
+            payload.Append($",\"htu\":\"{htu}\"");
+            payload.Append($",\"iat\":{iat}");
+
+            if (!string.IsNullOrEmpty(accessToken))
+            {
+                byte[] tokenHash;
+                using (var sha = SHA256.Create())
+                {
+                    tokenHash = sha.ComputeHash(Encoding.ASCII.GetBytes(accessToken));
+                }
+
+                payload.Append($",\"ath\":\"{Base64UrlEncode(tokenHash)}\"");
+            }
+
+            payload.Append('}');
+
+            string encodedHeader = Base64UrlEncode(Encoding.UTF8.GetBytes(header));
+            string encodedPayload = Base64UrlEncode(Encoding.UTF8.GetBytes(payload.ToString()));
+            string signingInput = $"{encodedHeader}.{encodedPayload}";
+
+            byte[] signature;
+            using (var rsa = new RSACryptoServiceProvider())
+            {
+                rsa.PersistKeyInCsp = false;
+                rsa.FromXmlString(privateKeyXml);
+                using (var sha256 = SHA256.Create())
+                {
+                    signature = rsa.SignData(Encoding.UTF8.GetBytes(signingInput), sha256);
+                }
+            }
+
+            return $"{signingInput}.{Base64UrlEncode(signature)}";
+        }
+
+        private static string StripQueryAndFragment(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+            {
+                return url;
+            }
+
+            int fragmentIndex = url.IndexOf('#');
+            if (fragmentIndex >= 0)
+            {
+                url = url.Substring(0, fragmentIndex);
+            }
+
+            int queryIndex = url.IndexOf('?');
+            if (queryIndex >= 0)
+            {
+                url = url.Substring(0, queryIndex);
+            }
+
+            return url;
+        }
+
+        /// <summary>
+        /// Creates a DPoP proof JWT for the given HTTP method and URL,
+        /// using the current session's key pair. Returns null when no DPoP
+        /// key pair is available (e.g. session not established).
+        /// </summary>
+        public static string CreateDpopProofForRequest(string httpMethod, string requestUrl, string accessToken)
+        {
+            if (!TryGetCachedSession(out OAuthSessionV2 session) || string.IsNullOrEmpty(session.dpopPrivateKeyXml))
+            {
+                return null;
+            }
+
+            return CreateDpopProof(httpMethod, requestUrl, accessToken, session.dpopPrivateKeyXml, session.dpopPublicKeyJwk);
+        }
+
+        /// <summary>
+        /// Applies the OAuth authorization headers to a <see cref="UnityWebRequest"/>.
+        /// Always use this instead of setting the Authorization header by hand.
+        ///
+        /// This client registers with dpopBoundAccessTokens, so its access tokens
+        /// carry a cnf.jkt confirmation claim. RFC 9449 §7.1 requires such a token to
+        /// be presented with the DPoP scheme and an accompanying proof; a server
+        /// following the spec rejects the same token sent as Bearer outright. The
+        /// proof binds this request's method and URL and carries `ath`, the hash of
+        /// the access token being presented.
+        ///
+        /// Falls back to Bearer only when no DPoP key exists, which is the case for
+        /// a session that was never DPoP-bound.
+        /// </summary>
+        public static void ApplyAuthHeaders(UnityWebRequest request, string accessToken, string httpMethod, string requestUrl)
+        {
+            string dpopProof = CreateDpopProofForRequest(httpMethod, requestUrl, accessToken);
+            if (!string.IsNullOrEmpty(dpopProof))
+            {
+                request.SetRequestHeader("Authorization", $"DPoP {accessToken}");
+                request.SetRequestHeader("DPoP", dpopProof);
+                return;
+            }
+
+            request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
         }
 
         private static Dictionary<string, string> ParseQueryString(string query)

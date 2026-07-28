@@ -1507,8 +1507,9 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
                     return;
                 }
 
-                using var request = UnityEngine.Networking.UnityWebRequest.Get(serverUrl.TrimEnd('/') + "/v1/products");
-                request.SetRequestHeader("Authorization", "Bearer " + accessToken);
+                string productsUrl = serverUrl.TrimEnd('/') + "/v1/products";
+                using var request = UnityEngine.Networking.UnityWebRequest.Get(productsUrl);
+                YucpOAuthService.ApplyAuthHeaders(request, accessToken, "GET", productsUrl);
                 request.SetRequestHeader("Accept", "application/json");
                 request.SetRequestHeader("Accept-Encoding", "identity");
 
@@ -1783,10 +1784,15 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
         {
             var body = MakePad(16, 18, 10, 16);
 
-            // Plain-language lead instead of a jargon label.
-            body.Add(MakeLabel("Require a purchase to unlock premium assets", 13, TextPri, bold: true, mb: 3));
+            // Plain-language lead instead of a jargon label. Keep this honest:
+            // verification happens through the Creator Companion bootstrap, not
+            // inside a directly shared .unitypackage — a direct share of a
+            // license-protected export refuses to import.
+            body.Add(MakeLabel("Require a purchase (distributes via Creator Companion)", 13, TextPri, bold: true, mb: 3));
             body.Add(MakeLabel(
-                "Buyers verify their license when they import the package. Free files stay open.",
+                "Buyers install this product through Creator Companion, which checks their purchase before delivering the files. " +
+                "A directly shared .unitypackage with this enabled will NOT import for anyone — including you. " +
+                "Turn this off if you plan to hand the file out directly.",
                 11, TextSec, wrap: true, mb: 12));
 
             // Collect all profiles: main + bundled
@@ -2294,7 +2300,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private void OnSignOutClicked()
         {
-            YucpOAuthService.SignOut();
+            YucpOAuthService.SignOut(GetServerUrl());
             _accountState = null;
             _isLoadingAccountState = false;
             RefreshUI();

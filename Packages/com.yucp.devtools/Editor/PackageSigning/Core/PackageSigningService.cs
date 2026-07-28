@@ -194,7 +194,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             try
             {
                 using var req = UnityWebRequest.Get($"{_serverUrl}/v1/certificates/me");
-                req.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                YucpOAuthService.ApplyAuthHeaders(req, accessToken, "GET", $"{_serverUrl}/v1/certificates/me");
                 req.SetRequestHeader("X-Dev-Public-Key", devPublicKey);
                 req.SetRequestHeader("Accept-Encoding", "identity");
                 var op = req.SendWebRequest();
@@ -216,7 +216,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             try
             {
                 using var req = UnityWebRequest.Get($"{_serverUrl}/v1/certificates/me");
-                req.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                YucpOAuthService.ApplyAuthHeaders(req, accessToken, "GET", $"{_serverUrl}/v1/certificates/me");
                 req.SetRequestHeader("X-Dev-Public-Key", devPublicKey);
                 req.SetRequestHeader("Accept-Encoding", "identity");
                 req.timeout = 30;
@@ -243,7 +243,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             try
             {
                 using var req = UnityWebRequest.Get($"{_serverUrl}/v1/certificates/devices");
-                req.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                YucpOAuthService.ApplyAuthHeaders(req, accessToken, "GET", $"{_serverUrl}/v1/certificates/devices");
                 req.SetRequestHeader("Accept-Encoding", "identity");
 
                 var op = req.SendWebRequest();
@@ -270,7 +270,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
             try
             {
                 using var req = UnityWebRequest.Get($"{_serverUrl}/v1/certificates/devices");
-                req.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                YucpOAuthService.ApplyAuthHeaders(req, accessToken, "GET", $"{_serverUrl}/v1/certificates/devices");
                 req.SetRequestHeader("Accept-Encoding", "identity");
                 req.timeout = 30;
 
@@ -484,7 +484,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 using var req = new UnityWebRequest($"{_serverUrl}/v1/certificates", "POST");
                 req.uploadHandler   = new UploadHandlerRaw(bodyBytes);
                 req.downloadHandler = new DownloadHandlerBuffer();
-                req.SetRequestHeader("Authorization",    $"Bearer {accessToken}");
+                YucpOAuthService.ApplyAuthHeaders(req, accessToken, "POST", $"{_serverUrl}/v1/certificates");
                 req.SetRequestHeader("Content-Type",     "application/json");
                 req.SetRequestHeader("Accept-Encoding",  "identity");
 
@@ -525,7 +525,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
                 using var req = new UnityWebRequest($"{_serverUrl}/v1/certificates", "POST");
                 req.uploadHandler = new UploadHandlerRaw(bodyBytes);
                 req.downloadHandler = new DownloadHandlerBuffer();
-                req.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                YucpOAuthService.ApplyAuthHeaders(req, accessToken, "POST", $"{_serverUrl}/v1/certificates");
                 req.SetRequestHeader("Content-Type", "application/json");
                 req.SetRequestHeader("Accept-Encoding", "identity");
                 req.timeout = 30;

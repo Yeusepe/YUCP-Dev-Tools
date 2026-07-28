@@ -928,7 +928,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.UI
 
         private void OnSignOutClicked()
         {
-            YucpOAuthService.SignOut();
+            YucpOAuthService.SignOut(GetServerUrl());
             _accountState = null;
             _isLoadingAccountState = false;
             BuildUI();

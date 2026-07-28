@@ -216,11 +216,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 actionsSection.name = "section-actions";
                 contentWrapper.Add(actionsSection);
                 
-                // Package Signing Section
-                var signingSection = CreatePackageSigningSection(selectedProfile);
-                signingSection.name = "section-signing";
-                contentWrapper.Add(signingSection);
-                
+                // The signing section (creator sign-in, certificates, product links,
+                // license toggle) is retired from the exporter surface: signing runs
+                // automatically at export when a session exists, and licensed
+                // distribution moved to the Creator Companion bootstrap. The section
+                // code (CreatePackageSigningSection, PackageSigningTab, the OAuth
+                // stack) is kept dormant for a future direct Unity → Creator
+                // Assistant upload UI.
+
                 _profileDetailsContainer.Add(contentWrapper);
                 
                 // Add banner button directly to ScrollView so it's definitely on top and clickable

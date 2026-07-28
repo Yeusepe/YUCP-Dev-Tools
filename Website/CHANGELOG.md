@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-27
+
+- `com.yucp.devtools`:
+  - Removed the signing section (sign-in, certificates, product links) and the license-protection toggle from the Package Exporter. Licensed distribution moved to the Creator Companion bootstrap, so a license-locked direct export could not be imported by anyone; existing profiles with the old toggle enabled now export normal, importable packages. The sign-in stack remains for a future direct Unity to Creator Assistant upload flow.
+  - Fixed Package Exporter sign-in, which authenticated as the consumer package broker and so could never be granted the certificate scope it needs. It now uses its own dedicated OAuth client and names the API resource on every token exchange.
+  - Fixed being signed out at random: concurrent callers now share a single token refresh instead of each redeeming a rotating refresh token, which the server treated as replay.
+  - Fixed an editor freeze when publishing to backstage with an expired session.
+  - Signing out now revokes the session on the server instead of only clearing it locally.
+  - Sped up the signing UI, which previously decrypted the stored session on every repaint.
+
 ## 2026-06-15
 
 - Updated GitHub Actions workflows for building listings and releases.
@@ -11,8 +21,6 @@
 ## 2026-06-12
 
 - `com.yucp.devtools`:
-  - Introduced a new Renderer Optimizer pipeline featuring static mesh merging, texture atlas building, and automated shader conversion.
-  - Added a dedicated Renderer Optimizer settings window and integrated optimization passes into the build process.
   - Refactored the Companion Tutorial system into a dedicated runtime module with improved validation and UI components.
   - Added comprehensive unit tests for tutorial injection, serialization, and validation.
   - Updated the Package Exporter UI and building logic to support the enhanced tutorial system.

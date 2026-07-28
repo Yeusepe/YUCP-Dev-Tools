@@ -117,7 +117,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 result.success = false;
                 result.errorMessage =
-                    $"Backstage publishing requires a creator sign-in or {AccessTokenEnvironmentVariable} in batch mode.";
+                    "Backstage publishing needs a valid creator sign-in. If you are signed in, the session was " +
+                    "renewing in the background, so try publishing again in a moment. In batch mode set " +
+                    $"{AccessTokenEnvironmentVariable} instead.";
                 return result;
             }
 
@@ -244,7 +246,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return envToken;
             }
 
-            return YucpOAuthService.GetValidAccessTokenAsync(apiBaseUrl).GetAwaiter().GetResult();
+            // Must not block: publishing runs on the editor's main thread, and a
+            // token refresh drives UnityWebRequest from that same thread. Waiting
+            // on the refresh here would deadlock the editor outright. Take the
+            // token only if it is already valid, and otherwise start the refresh
+            // in the background so the retry a moment later succeeds.
+            string accessToken = YucpOAuthService.GetAccessToken();
+            if (!string.IsNullOrEmpty(accessToken))
+            {
+                return accessToken;
+            }
+
+            YucpOAuthService.TryBeginBackgroundRefresh(apiBaseUrl);
+            return null;
         }
 
         private static string RequestUploadUrl(string apiBaseUrl, string accessToken, string packageId)
@@ -254,7 +268,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 request.uploadHandler = new UploadHandlerRaw(Array.Empty<byte>());
                 request.downloadHandler = new DownloadHandlerBuffer();
-                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                YucpOAuthService.ApplyAuthHeaders(request, accessToken, UnityWebRequest.kHttpVerbPOST, url);
                 request.SetRequestHeader("Accept", "application/json");
                 request.SetRequestHeader("Accept-Encoding", "identity");
 
@@ -302,7 +316,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(payloadJson));
                 request.downloadHandler = new DownloadHandlerBuffer();
-                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                YucpOAuthService.ApplyAuthHeaders(request, accessToken, UnityWebRequest.kHttpVerbPOST, url);
                 request.SetRequestHeader("Content-Type", "application/json");
                 request.SetRequestHeader("Accept", "application/json");
                 request.SetRequestHeader("Accept-Encoding", "identity");

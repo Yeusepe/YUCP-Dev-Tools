@@ -5,19 +5,31 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
 {
     public class ServerFirstExportTests
     {
+        /// <summary>
+        /// License-locked direct exports are retired: in-Unity license verification
+        /// was removed in the native broker cutover, so a direct export embedding a
+        /// license requirement produced a package nobody could import. The profile
+        /// flag still accepts writes (the dormant UI is kept for a future return)
+        /// but must always read false, so no profile can produce a locked export.
+        /// </summary>
         [Test]
-        public void RequiresLicenseVerification_IsDetectedForServerFirstExport()
+        public void RequiresLicenseVerification_IsRetiredAndAlwaysReadsFalse()
         {
             var profile = UnityEngine.ScriptableObject.CreateInstance<ExportProfile>();
             try
             {
                 profile.requiresLicenseVerification = true;
+
+                Assert.That(profile.requiresLicenseVerification, Is.False);
+
                 var requiresLicenseVerification = typeof(PackageBuilder).GetMethod(
                     "RequiresLicenseVerification",
                     BindingFlags.NonPublic | BindingFlags.Static);
 
                 Assert.That(requiresLicenseVerification, Is.Not.Null);
-                Assert.That((bool)requiresLicenseVerification.Invoke(null, new object[] { profile }), Is.True);
+                Assert.That(
+                    (bool)requiresLicenseVerification.Invoke(null, new object[] { profile }),
+                    Is.False);
             }
             finally
             {
@@ -26,7 +38,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
-        public void RequiresLicenseVerification_DoesNotSkipDerivedFbxPatchAuthoring()
+        public void RetiredLicenseFlag_DoesNotTriggerDerivedFbxServerUnlock()
         {
             var profile = UnityEngine.ScriptableObject.CreateInstance<ExportProfile>();
             try
@@ -37,7 +49,9 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                     BindingFlags.NonPublic | BindingFlags.Static);
 
                 Assert.That(shouldRequireDerivedFbxServerUnlock, Is.Not.Null);
-                Assert.That((bool)shouldRequireDerivedFbxServerUnlock.Invoke(null, new object[] { profile }), Is.True);
+                Assert.That(
+                    (bool)shouldRequireDerivedFbxServerUnlock.Invoke(null, new object[] { profile }),
+                    Is.False);
             }
             finally
             {

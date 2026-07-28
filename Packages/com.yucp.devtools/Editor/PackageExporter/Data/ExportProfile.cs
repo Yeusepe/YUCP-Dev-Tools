@@ -259,9 +259,24 @@ namespace YUCP.DevTools.Editor.PackageExporter
         public bool embedYucpMetadata = true;
 
         [Header("License Protection")]
-        [Tooltip("Require consumers to verify a purchase license before derived FBX assets are applied.\n" +
-                 "Enables the YUCP Importer license gate; adds com.yucp.importer as a VPM dependency.")]
-        public bool requiresLicenseVerification = false;
+        [SerializeField]
+        [UnityEngine.Serialization.FormerlySerializedAs("requiresLicenseVerification")]
+        [Tooltip("Retired: license-locked direct exports are no longer produced. The stored value is kept for a possible future return of the feature.")]
+        private bool licenseVerificationRequested = false;
+
+        /// <summary>
+        /// License-locked direct exports are retired: in-Unity license verification
+        /// was removed in the native broker cutover, so embedding the requirement
+        /// only produced packages nobody could import — licensed products ship
+        /// through the Creator Companion bootstrap instead. Reads are forced off so
+        /// existing profiles stop exporting locked packages; the stored value (and
+        /// the setter, for the dormant UI) is preserved so the feature can return.
+        /// </summary>
+        public bool requiresLicenseVerification
+        {
+            get => false;
+            set => licenseVerificationRequested = value;
+        }
 
         public string GetPrimaryLicenseProductId()
         {

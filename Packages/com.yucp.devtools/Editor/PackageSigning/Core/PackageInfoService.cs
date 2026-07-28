@@ -319,7 +319,7 @@ namespace YUCP.DevTools.Editor.PackageSigning.Core
 
             using (UnityWebRequest request = UnityWebRequest.Get(url))
             {
-                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
+                YucpOAuthService.ApplyAuthHeaders(request, accessToken, "GET", url);
                 request.SetRequestHeader("Accept", "application/json");
                 request.SetRequestHeader("Accept-Encoding", "identity");
 
