@@ -67,6 +67,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             StringAssert.Contains("\"signature\": null", json);
             StringAssert.DoesNotContain("\"issuerKeyId\": \"\"", json);
             StringAssert.DoesNotContain("\"signature\": \"\"", json);
+            StringAssert.DoesNotContain("\"protectedPayloads\"", json);
         }
     }
 }
