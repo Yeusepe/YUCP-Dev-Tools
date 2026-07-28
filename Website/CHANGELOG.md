@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-28
+
+- `com.yucp.devtools` 0.3.18:
+  - Removed the unfinished Renderer Optimizer, which referenced a `RendererOptimizerMarker` component that was never shipped and caused package compilation to fail for clean installs.
+  - Fixed derived FBX reconstruction so the exported project-relative base path fallback is used when the original GUID cannot be resolved.
+  - Improved derived FBX failure messages with actionable GUID, fallback-path, missing-file, and hash-mismatch details.
+
 ## 2026-07-27
 
 - `com.yucp.devtools`:

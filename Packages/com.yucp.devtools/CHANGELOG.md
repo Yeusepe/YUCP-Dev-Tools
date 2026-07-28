@@ -5,6 +5,15 @@ All notable changes to YUCP DevTools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.18] - 2026-07-28
+
+### Changed
+- Removed the unfinished Renderer Optimizer and its unused Mesh Optimizer folder structure from the distributed editor package.
+
+### Fixed
+- Fixed a package compilation failure caused by `RendererOptimizerBuildProcessor` referencing a `RendererOptimizerMarker` component that was never included in the package.
+- Derived FBX reconstruction now uses the exported project-relative base path fallback when its original asset GUID cannot be resolved, and reports more actionable GUID, file, and hash diagnostics when reconstruction cannot continue.
+
 ## [0.3.17] - 2026-07-28
 
 ### Changed

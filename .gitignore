@@ -157,3 +157,7 @@ Plugins/0Harmony.dll.meta
 Plugins/0Harmony.dll
 /.antigravitycli/
 /antigravitycli/
+
+# Importer tests are dev-only; never ship/expose in the open-source package
+/Assets/YUCP_ImporterDevTests/
+/Assets/YUCP_ImporterDevTests.meta

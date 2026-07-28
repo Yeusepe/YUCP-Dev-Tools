@@ -71,6 +71,7 @@ namespace YUCP.PatchRuntime
 				}
 				
 				var shares = new List<byte[]>();
+				var resolvedBasePathsByGuid = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 				string encryptedDiffPath = entries[0].hdiffFilePath;
 				
 				foreach (var entry in entries)
@@ -81,17 +82,17 @@ namespace YUCP.PatchRuntime
 						return null;
 					}
 					
-					string basePath = AssetDatabase.GUIDToAssetPath(entry.baseGuid);
+					string basePath = ResolveBaseFbxPath(projectPath, entry, "Base FBX");
 					if (string.IsNullOrEmpty(basePath))
 					{
-						Debug.LogError($"[DerivedFbxBuilder] Base FBX not found for GUID: {entry.baseGuid}");
+						Debug.LogError(BuildBaseResolutionFailureMessage("Required base FBX", entry, projectPath));
 						return null;
 					}
 					
 					string basePhysicalPath = ResolvePhysicalPath(projectPath, basePath);
 					if (!File.Exists(basePhysicalPath))
 					{
-						Debug.LogError($"[DerivedFbxBuilder] Base FBX file missing: {basePath}");
+						Debug.LogError(BuildBaseFileMissingMessage("Required base FBX", basePath));
 						return null;
 					}
 					
@@ -99,13 +100,14 @@ namespace YUCP.PatchRuntime
 					string baseHashHex = BytesToHex(baseHash);
 					if (!string.IsNullOrEmpty(entry.baseHash) && !string.Equals(entry.baseHash, baseHashHex, StringComparison.OrdinalIgnoreCase))
 					{
-						Debug.LogError($"[DerivedFbxBuilder] Base FBX hash mismatch: {basePath}");
+						Debug.LogError(BuildBaseHashMismatchMessage("Required base FBX", basePath, entry.baseHash, baseHashHex));
 						return null;
 					}
 					
 					byte[] shareEnc = Convert.FromBase64String(entry.shareEnc);
 					byte[] share = XorBytes(shareEnc, mask);
 					shares.Add(share);
+					resolvedBasePathsByGuid[entry.baseGuid] = basePath;
 				}
 				
 				byte[] recoveryKey = RecoverKey(shares);
@@ -131,17 +133,37 @@ namespace YUCP.PatchRuntime
 				if (string.IsNullOrEmpty(canonicalBaseGuid))
 					canonicalBaseGuid = entries[0].baseGuid;
 				
-				string canonicalBasePath = AssetDatabase.GUIDToAssetPath(canonicalBaseGuid);
+				string canonicalBasePath = null;
+				if (!string.IsNullOrEmpty(canonicalBaseGuid))
+				{
+					resolvedBasePathsByGuid.TryGetValue(canonicalBaseGuid, out canonicalBasePath);
+				}
 				if (string.IsNullOrEmpty(canonicalBasePath))
 				{
-					Debug.LogError($"[DerivedFbxBuilder] Canonical base FBX not found for GUID: {canonicalBaseGuid}");
+					DerivedFbxAsset.PatchEntry canonicalEntry = entries.FirstOrDefault(e =>
+						e != null &&
+						string.Equals(e.baseGuid, canonicalBaseGuid, StringComparison.OrdinalIgnoreCase));
+					canonicalBasePath = canonicalEntry != null
+						? ResolveBaseFbxPath(projectPath, canonicalEntry, "Canonical base FBX")
+						: AssetDatabase.GUIDToAssetPath(canonicalBaseGuid);
+					if (string.IsNullOrEmpty(canonicalBasePath))
+					{
+						Debug.LogError(canonicalEntry != null
+							? BuildBaseResolutionFailureMessage("Canonical base FBX", canonicalEntry, projectPath)
+							: BuildGuidOnlyResolutionFailureMessage("Canonical base FBX", canonicalBaseGuid, projectPath));
+						return null;
+					}
+				}
+				if (string.IsNullOrEmpty(canonicalBasePath))
+				{
+					Debug.LogError(BuildGuidOnlyResolutionFailureMessage("Canonical base FBX", canonicalBaseGuid, projectPath));
 					return null;
 				}
 				
 				string canonicalPhysicalPath = ResolvePhysicalPath(projectPath, canonicalBasePath);
 				if (!File.Exists(canonicalPhysicalPath))
 				{
-					Debug.LogError($"[DerivedFbxBuilder] Canonical base FBX file missing: {canonicalBasePath}");
+					Debug.LogError(BuildBaseFileMissingMessage("Canonical base FBX", canonicalBasePath));
 					return null;
 				}
 				
@@ -206,6 +228,167 @@ namespace YUCP.PatchRuntime
 				Debug.LogError($"[DerivedFbxBuilder] Error applying binary patch: {ex.Message}\n{ex.StackTrace}");
 				return null;
 			}
+		}
+
+		private static string BuildBaseResolutionFailureMessage(string label, DerivedFbxAsset.PatchEntry entry, string projectPath)
+		{
+			var sb = new System.Text.StringBuilder();
+			sb.AppendLine($"[DerivedFbxBuilder] {label} could not be resolved. The derived FBX was not generated.");
+			sb.AppendLine("This usually means the original base FBX is not imported yet, its .meta GUID changed, or it was moved away from the exported fallback path.");
+			AppendGuidResolutionDetails(sb, projectPath, entry?.baseGuid);
+
+			string rawFallback = entry?.basePathFallback;
+			if (string.IsNullOrWhiteSpace(rawFallback))
+			{
+				sb.AppendLine("Direct path fallback: none was exported for this required base.");
+			}
+			else
+			{
+				string fallbackPath = NormalizeProjectRelativeAssetPath(rawFallback);
+				if (string.IsNullOrEmpty(fallbackPath))
+				{
+					sb.AppendLine($"Direct path fallback: exported value '{rawFallback}' is not a valid project path. It must start with Assets/ or Packages/.");
+				}
+				else
+				{
+					string fallbackPhysicalPath = ResolvePhysicalPath(projectPath, fallbackPath);
+					string fallbackStatus = File.Exists(fallbackPhysicalPath)
+						? "exists"
+						: "does not exist in this project";
+					sb.AppendLine($"Direct path fallback: '{fallbackPath}' {fallbackStatus}.");
+				}
+			}
+
+			if (!string.IsNullOrEmpty(entry?.baseHash))
+			{
+				sb.AppendLine($"Required base hash: {ShortHash(entry.baseHash)}. A same-looking FBX with different bytes will still be rejected.");
+			}
+
+			sb.Append("Fix: import the exact original base FBX first. If a patcher regenerated the GUID, keep the FBX at the exported fallback path or re-export this derived FBX with the correct direct path fallback.");
+			return sb.ToString().TrimEnd();
+		}
+
+		private static string BuildGuidOnlyResolutionFailureMessage(string label, string guid, string projectPath)
+		{
+			var sb = new System.Text.StringBuilder();
+			sb.AppendLine($"[DerivedFbxBuilder] {label} could not be resolved. The derived FBX was not generated.");
+			AppendGuidResolutionDetails(sb, projectPath, guid);
+			sb.Append("Fix: import the exact original base FBX first, then retry the package import.");
+			return sb.ToString().TrimEnd();
+		}
+
+		private static void AppendGuidResolutionDetails(System.Text.StringBuilder sb, string projectPath, string guid)
+		{
+			if (string.IsNullOrEmpty(guid))
+			{
+				sb.AppendLine("GUID lookup: no GUID was exported for this required base.");
+				return;
+			}
+
+			string guidPath = AssetDatabase.GUIDToAssetPath(guid);
+			if (string.IsNullOrEmpty(guidPath))
+			{
+				sb.AppendLine($"GUID lookup: no asset in this project has GUID '{guid}'.");
+				return;
+			}
+
+			string guidPhysicalPath = ResolvePhysicalPath(projectPath, guidPath);
+			string status = File.Exists(guidPhysicalPath)
+				? "exists"
+				: "resolved, but the file is missing on disk";
+			sb.AppendLine($"GUID lookup: '{guid}' -> '{guidPath}' ({status}).");
+		}
+
+		private static string BuildBaseFileMissingMessage(string label, string basePath)
+		{
+			return $"[DerivedFbxBuilder] {label} resolved to '{basePath}', but the file is missing on disk. " +
+			       "Reimport or restore the base FBX before retrying. The derived FBX was not generated.";
+		}
+
+		private static string BuildBaseHashMismatchMessage(string label, string basePath, string expectedHash, string actualHash)
+		{
+			return $"[DerivedFbxBuilder] {label} hash mismatch. A base FBX was found at '{basePath}', but it is not the exact file this patch was exported against.\n" +
+			       $"Expected SHA256: {ShortHash(expectedHash)}\n" +
+			       $"Actual SHA256:   {ShortHash(actualHash)}\n" +
+			       "Fix: import the exact original base FBX. Same-looking FBXs, regenerated exports, or different variants are intentionally rejected.";
+		}
+
+		private static string ShortHash(string hash)
+		{
+			if (string.IsNullOrEmpty(hash))
+				return "<none>";
+			return hash.Length <= 16 ? hash : hash.Substring(0, 16) + "...";
+		}
+
+		private static string ResolveBaseFbxPath(string projectPath, DerivedFbxAsset.PatchEntry entry, string label)
+		{
+			if (entry == null)
+			{
+				return null;
+			}
+
+			if (!string.IsNullOrEmpty(entry.baseGuid))
+			{
+				string guidPath = AssetDatabase.GUIDToAssetPath(entry.baseGuid);
+				if (!string.IsNullOrEmpty(guidPath))
+				{
+					string guidPhysicalPath = ResolvePhysicalPath(projectPath, guidPath);
+					if (File.Exists(guidPhysicalPath))
+					{
+						return guidPath;
+					}
+
+					Debug.LogWarning($"[DerivedFbxBuilder] {label} GUID resolved to '{guidPath}', but the file was missing.");
+				}
+			}
+
+			string fallbackPath = NormalizeProjectRelativeAssetPath(entry.basePathFallback);
+			if (string.IsNullOrEmpty(fallbackPath))
+			{
+				return null;
+			}
+
+			string fallbackPhysicalPath = ResolvePhysicalPath(projectPath, fallbackPath);
+			if (!File.Exists(fallbackPhysicalPath))
+			{
+				Debug.LogWarning($"[DerivedFbxBuilder] {label} direct path fallback does not exist: {fallbackPath}");
+				return null;
+			}
+
+			Debug.LogWarning(
+				$"[DerivedFbxBuilder] Using advanced direct path fallback '{fallbackPath}' for base GUID '{entry.baseGuid}'. " +
+				"GUID lookup is safer; this fallback can break if the base FBX is moved or renamed.");
+			return fallbackPath;
+		}
+
+		private static string NormalizeProjectRelativeAssetPath(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+			{
+				return string.Empty;
+			}
+
+			string normalized = path.Trim().Replace('\\', '/');
+			string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/').TrimEnd('/');
+
+			if (Path.IsPathRooted(normalized))
+			{
+				string rooted = Path.GetFullPath(normalized).Replace('\\', '/');
+				if (!rooted.StartsWith(projectRoot + "/", StringComparison.OrdinalIgnoreCase))
+				{
+					return string.Empty;
+				}
+
+				normalized = rooted.Substring(projectRoot.Length).TrimStart('/');
+			}
+
+			if (!normalized.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) &&
+				!normalized.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+			{
+				return string.Empty;
+			}
+
+			return normalized;
 		}
 
 		private static bool TryAuthorizeProtectedAsset(
@@ -528,4 +711,3 @@ namespace YUCP.PatchRuntime
 		}
 	}
 }
-
