@@ -157,5 +157,3 @@ jobs:
       pages: write
       id-token: write
     uses: ./.github/workflows/build-listing.yml
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
