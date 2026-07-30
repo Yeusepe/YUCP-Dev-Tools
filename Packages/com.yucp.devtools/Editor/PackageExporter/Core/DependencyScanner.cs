@@ -501,7 +501,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // exported package stays self-contained and imports offline without an install plan.
             if (packageJson.TryGetValue("yucp", out JToken existingYucp) &&
                 existingYucp is JObject existingYucpObject &&
-                string.Equals((string)existingYucpObject["kind"], "alias-v1", StringComparison.Ordinal))
+                (string.Equals(
+                        (string)existingYucpObject["kind"],
+                        "alias-v1",
+                        StringComparison.Ordinal) ||
+                    string.Equals(
+                        (string)existingYucpObject["kind"],
+                        "alias-v2",
+                        StringComparison.Ordinal)))
             {
                 packageJson.Remove("yucp");
             }

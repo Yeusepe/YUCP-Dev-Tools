@@ -214,10 +214,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             try
             {
                 var packageJson = JObject.Parse(packageJsonContent);
+                string kind =
+                    packageJson["yucp"]?["kind"]?.ToString();
                 return string.Equals(
-                    packageJson["yucp"]?["kind"]?.ToString(),
-                    "alias-v1",
-                    StringComparison.Ordinal);
+                        kind,
+                        "alias-v1",
+                        StringComparison.Ordinal) ||
+                    string.Equals(
+                        kind,
+                        "alias-v2",
+                        StringComparison.Ordinal);
             }
             catch (Exception ex)
             {

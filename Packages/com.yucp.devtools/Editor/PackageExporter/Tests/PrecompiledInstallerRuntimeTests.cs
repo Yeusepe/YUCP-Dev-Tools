@@ -75,6 +75,40 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
+        public void DirectVpmInstaller_BootstrapHandoffPreservesTheCompleteDescriptor()
+        {
+            const string descriptor =
+                "{\"name\":\"com.yucp.example\",\"version\":\"2.0.0-beta.1\"," +
+                "\"yucp\":{\"kind\":\"alias-v2\",\"aliasId\":\"example\"," +
+                "\"installStrategy\":\"server-authorized\"," +
+                "\"importerPackage\":\"com.yucp.importer\"," +
+                "\"bootstrapIntent\":{\"schemaVersion\":1," +
+                "\"intentId\":\"33333333-3333-4333-8333-333333333333\"," +
+                "\"mode\":\"specific\",\"issuedAt\":1785384000," +
+                "\"keyId\":\"bootstrap-key\",\"editionId\":\"pro\"," +
+                "\"version\":\"2.0.0-beta.1\",\"versionId\":\"version-beta\"," +
+                "\"releaseRoot\":\"" +
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"," +
+                "\"signature\":\"" +
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+                "\"}}}";
+            MethodInfo method = GetDirectInstallerType().GetMethod(
+                "ExtractBootstrapDescriptorForHandoff",
+                BindingFlags.Static | BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null);
+            string extracted = (string)method.Invoke(
+                null,
+                new object[] { descriptor });
+
+            Assert.That(extracted, Is.EqualTo(descriptor));
+            Assert.That(
+                JObject.Parse(extracted)["yucp"]["bootstrapIntent"],
+                Is.EqualTo(
+                    JObject.Parse(descriptor)["yucp"]["bootstrapIntent"]));
+        }
+
+        [Test]
         public void PrecompiledInstallerRuntime_CanInjectIntoTempPatchEditorFolder()
         {
             MethodInfo method = typeof(PackageBuilder).GetMethod(
@@ -202,7 +236,9 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
 
             try
             {
-                method.Invoke(null, new object[] { tempJsonPath });
+                method.Invoke(
+                    null,
+                    new object[] { tempJsonPath, null });
 
                 Assert.That(File.Exists(tempJsonPath), Is.False, "Expected the temp install descriptor to be deleted.");
                 Assert.That(File.Exists(tempJsonPath + ".meta"), Is.False, "Expected the temp install descriptor meta file to be deleted.");
@@ -519,8 +555,10 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             }
         }
 
-        [Test]
-        public void PrecompiledInstallerRuntime_ResolvesSigningRootFromAliasPackageJson()
+        [TestCase("alias-v1")]
+        [TestCase("alias-v2")]
+        public void PrecompiledInstallerRuntime_ResolvesSigningRootFromAliasPackageJson(
+            string aliasKind)
         {
             string tempExtractDir = Path.Combine(Path.GetTempPath(), "yucp-alias-signing-root-" + System.Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempExtractDir);
@@ -534,7 +572,8 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                     "Packages/com.example.alias/package.json");
                 File.WriteAllText(
                     Path.Combine(entryFolder, "asset"),
-                    "{\n  \"name\": \"com.example.alias\",\n  \"yucp\": {\n    \"kind\": \"alias-v1\"\n  }\n}");
+                    "{\n  \"name\": \"com.example.alias\",\n  \"yucp\": {\n" +
+                    $"    \"kind\": \"{aliasKind}\"\n  }}\n}}");
 
                 MethodInfo method = typeof(PackageBuilder).GetMethod(
                     "ResolveSigningRootPathname",
