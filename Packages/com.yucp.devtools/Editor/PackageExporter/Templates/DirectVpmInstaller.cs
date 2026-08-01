@@ -2382,6 +2382,11 @@ namespace YUCP.DirectVpmInstaller
             return safe;
         }
         
+        private static bool IsYucpImporterPackage(string packageName)
+        {
+            return string.Equals(packageName, "com.yucp.importer", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static bool ShouldInstallPackage(string packageName, string versionRequirement, out string warningMessage)
         {
             warningMessage = null;
@@ -2396,6 +2401,16 @@ namespace YUCP.DirectVpmInstaller
                 return true;
 
             string normalizedRequirement = NormalizeRequirement(versionRequirement);
+            if (IsYucpImporterPackage(packageName) && !IsExactVersionRequirement(normalizedRequirement))
+            {
+                // Every delivery depends on the importer understanding the current
+                // contract, so it follows the newest published build rather than
+                // stopping at the first version that clears the minimum. Resolution
+                // decides what that is; InstallPackage drops the work if the newest
+                // is what is already here.
+                return true;
+            }
+
             if (IsExactVersionRequirement(normalizedRequirement))
             {
                 int compare = CompareVersions(installedVersion, normalizedRequirement);
@@ -2454,6 +2469,18 @@ namespace YUCP.DirectVpmInstaller
                 }
 
                 packageLabel = GetFriendlyPackageLabel(resolution.displayName, packageName);
+
+                // A package that follows the newest build reaches this point even
+                // when nothing changed, so stop before downloading and reloading
+                // the domain over a version the project already has.
+                string alreadyInstalledVersion = GetInstalledPackageVersion(packageName);
+                if (!string.IsNullOrEmpty(alreadyInstalledVersion) &&
+                    CompareVersions(alreadyInstalledVersion, resolution.resolvedVersion) >= 0)
+                {
+                    Debug.Log($"[DirectVpmInstaller] {packageName}@{alreadyInstalledVersion} is already the newest published build.");
+                    return true;
+                }
+
                 if (!string.IsNullOrEmpty(resolution.friendlyWarningMessage))
                 {
                     Debug.LogWarning($"[DirectVpmInstaller] {resolution.friendlyWarningMessage}");
@@ -2538,7 +2565,7 @@ namespace YUCP.DirectVpmInstaller
                 
                 // Add to VPM manifest so VCC recognizes it as installed
                 // VPM packages from repositories should be in both dependencies and locked
-                AddToVpmManifest(packageName, resolution.resolvedVersion, addToDependencies: true);
+                AddToVpmManifest(packageName, resolution.resolvedVersion, addToDependencies: true, versionRequirement: versionRequirement);
                 
                 Debug.Log($"[DirectVpmInstaller] Installed {packageName}@{resolution.resolvedVersion}");
                 return true;
@@ -2575,7 +2602,7 @@ namespace YUCP.DirectVpmInstaller
             }
         }
         
-        private static void AddToVpmManifest(string packageName, string version, bool addToDependencies = true)
+        private static void AddToVpmManifest(string packageName, string version, bool addToDependencies = true, string versionRequirement = null)
         {
             try
             {
@@ -2604,9 +2631,15 @@ namespace YUCP.DirectVpmInstaller
                         dependencies = new JObject();
                         manifest["dependencies"] = dependencies;
                     }
+                    // The requirement, not the resolved version: dependencies is
+                    // what the project asks for and locked is what it got. Writing
+                    // the resolved version here turns every install into a pin, so
+                    // the package never moves again.
                     dependencies[packageName] = new JObject
                     {
-                        ["version"] = version
+                        ["version"] = string.IsNullOrWhiteSpace(versionRequirement)
+                            ? version
+                            : versionRequirement
                     };
                 }
                 else
