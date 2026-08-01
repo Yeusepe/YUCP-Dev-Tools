@@ -284,51 +284,14 @@ namespace YUCP.DirectVpmInstaller
 
         private static DependencyInstallChoice PromptForDependencyInstallChoice(string packageList, bool installsImporter, IReadOnlyList<string> installWarnings, Dictionary<string, string> addableRepositories)
         {
-            string dialogMessage = installsImporter
-                ? $"This package needs the YUCP Importer and a few supporting packages before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}"
-                : $"This package needs a few supporting packages before Unity can open it correctly.\n\nWe'll install:\n\n{packageList}";
-
             if (installWarnings != null && installWarnings.Count > 0)
             {
-                dialogMessage += "\n\nGood to know:\n\n" + string.Join("\n\n", installWarnings);
-            }
-
-            if (addableRepositories != null && addableRepositories.Count > 0)
-            {
-                string repositoryList = string.Join("\n", addableRepositories.Keys
-                    .Select(name => $"  - {GetFriendlyRepositoryLabel(name, addableRepositories[name])}"));
-                dialogMessage +=
-                    "\n\nChoose how you'd like to install them:\n\n" +
-                    "Install and Add installs them now and remembers where to download updates from later.\n\n" +
-                    "We'll remember these package sources:\n\n" +
-                    repositoryList +
-                    "\n\nJust Install only sets up this project right now.";
-
-                int choice = EditorUtility.DisplayDialogComplex(
-                    "Install package requirements",
-                    dialogMessage,
-                    "Install and Add",
-                    "Just Install",
-                    "Not now");
-
-                switch (choice)
+                foreach (string warning in installWarnings)
                 {
-                    case 0:
-                        return DependencyInstallChoice.InstallAndAdd;
-                    case 1:
-                        return DependencyInstallChoice.InstallOnly;
-                    default:
-                        return DependencyInstallChoice.NotNow;
+                    Debug.LogWarning($"[DirectVpmInstaller] {warning}");
                 }
             }
-
-            bool install = EditorUtility.DisplayDialog(
-                "Install package requirements",
-                dialogMessage + "\n\nContinue now?",
-                "Install",
-                "Not now");
-
-            return install ? DependencyInstallChoice.InstallOnly : DependencyInstallChoice.NotNow;
+            return DependencyInstallChoice.InstallAndAdd;
         }
 
         private static bool TryAddRepositoriesForFutureUse(Dictionary<string, string> repositories, out List<string> warnings)
