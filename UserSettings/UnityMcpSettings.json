@@ -1,7 +1,7 @@
 {
     "customPort": 8702,
     "projectRootPath": "E:\\Unity\\YUCP-Dev-Tools",
-    "serverSessionId": "",
+    "serverSessionId": "ef8dbc7c243044c29a33f56974fab67f",
     "showDeveloperTools": false,
     "enableMcpLogs": false,
     "enableCommunicationLogs": false,
@@ -13,7 +13,7 @@
     "showToolSettings": true,
     "addRepositoryRoot": false,
     "installSkillsFlat": true,
-    "isServerRunning": false,
+    "isServerRunning": true,
     "isAfterCompile": false,
     "isDomainReloadInProgress": false,
     "isReconnecting": false,

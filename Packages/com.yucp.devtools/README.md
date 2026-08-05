@@ -92,60 +92,6 @@ Development tools for YUCP package creators and avatar variant management.
 - **Backup System** - Automatic prefab backup before patch application
 - **Installation Health Tools** - Validate, repair, and clean installation artifacts
 
-### Avatar Tools (Avatar Uploader)
-
-#### Avatar Management
-- **Avatar Collections** - Organize avatars into profiles/collections
-- **Avatar Asset System** - Comprehensive avatar metadata management
-- **Hero Section** - Visual hero slides with configurable avatars
-- **Performance Metrics** - Automatic tracking of polygon counts, materials, performance ratings
-- **Platform Support** - Separate PC and Quest platform configurations
-
-#### Build & Upload System
-- **Build Workflows** - Three workflow modes:
-  - **BuildOnly** - Build avatar without uploading
-  - **TestOnly** - Test build validation
-  - **Publish** - Build and upload to VRChat
-- **Batch Operations** - Build/upload multiple avatars simultaneously
-- **Build Queue** - Sequential build processing with progress tracking
-- **Upload Queue** - Queue multiple uploads for automated processing
-- **Blueprint ID Management** - Separate or shared blueprint IDs for PC/Quest
-- **Control Panel Integration** - Direct integration with VRChat SDK Control Panel
-
-#### Avatar Capture System
-- **Dedicated Capture Window** - Full-featured avatar thumbnail capture tool
-- **Capture Modes** - Headshot, FullBody, or Custom camera positioning
-- **Resolution Presets** - VRChat standard resolutions and custom sizes
-- **Background Options**:
-  - Transparent backgrounds
-  - Solid color backgrounds
-  - Gradient backgrounds
-  - Custom texture backgrounds
-- **Lighting Controls** - Full lighting setup for optimal capture
-- **Camera Controls** - Position, rotation, FOV, and distance controls
-- **Post-Processing** - Image processing options for final output
-
-#### Validation & Quality
-- **Pre-Build Validation** - Check avatars for issues before building
-- **Performance Warnings** - Automatic detection of performance issues
-- **Blueprint ID Validation** - Ensure blueprint IDs are properly configured
-- **Icon Validation** - Require avatar icons before first upload
-
-#### Avatar Metadata
-- **Categories & Tags** - Organize avatars with categories and custom tags
-- **Release Status** - Manage avatar visibility (Private, Public, etc.)
-- **Version Tracking** - Track avatar versions
-- **Styles** - Avatar style tagging system
-- **Descriptions** - Rich text descriptions
-
-#### Settings & Preferences
-- **Auto-Upload After Build** - Automatically upload after successful build
-- **Build Notifications** - Configurable build status notifications
-- **Upload Notifications** - Upload completion notifications
-- **Parallel Builds** - Optional parallel build processing
-- **Build Caching** - Cache builds for faster iterations
-- **Gallery Integration** - Optional avatar gallery client integration
-
 ### Model Revision Manager (Beta)
 
 #### Variant Management
@@ -279,26 +225,6 @@ Development tools for YUCP package creators and avatar variant management.
 - `Delete/Backspace` - Delete profile
 - `Ctrl/Cmd+F` - Focus search
 - `F5` - Refresh profiles
-
-### Avatar Tools
-
-#### Quick Start
-1. Open from menu: `Tools > YUCP > Avatar Tools`
-2. Create a new Avatar Collection (profile)
-3. Add avatars to the collection
-4. Configure avatar settings (blueprint IDs, metadata, etc.)
-5. Build or upload using the toolbar buttons
-
-#### Avatar Capture
-1. Select an avatar in the Avatar Tools window
-2. Click "Capture" or use the capture window button
-3. Adjust camera, lighting, and background settings
-4. Choose capture mode (Headshot/FullBody/Custom)
-5. Capture and save thumbnail
-
-#### Batch Operations
-- Select multiple avatars (Ctrl/Cmd+Click)
-- Use "Build All Selected" or "Upload All Selected" from the Build/Upload menus
 
 ### Model Revision Manager
 
