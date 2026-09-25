@@ -288,12 +288,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 case "Dependencies":
                     target = _profileDetailsContainer.Q("section-dependencies");
                     break;
-                case "Updates":
-                    target = _profileDetailsContainer.Q("section-update-steps");
-                    break;
                 case "Security":
                     target = _profileDetailsContainer.Q("section-advanced");
-                    if (target == null) target = _profileDetailsContainer.Q("section-signing");
                     break;
                 case "Actions":
                     target = _profileDetailsContainer.Q("section-actions");
@@ -320,9 +316,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 ("section-files", "Files"),
                 ("section-filters", "Files"),
                 ("section-dependencies", "Dependencies"),
-                ("section-update-steps", "Updates"),
                 ("section-advanced", "Security"),
-                ("section-signing", "Security"),
                 ("section-actions", "Actions")
             };
 
