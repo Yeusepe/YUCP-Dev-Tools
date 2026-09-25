@@ -8,7 +8,6 @@ using System.Linq;
 using System.Net;
 using Newtonsoft.Json.Linq;
 using System.Security.Cryptography;
-using System.Reflection;
 using System.Text;
 
 namespace YUCP.DirectVpmInstaller
@@ -21,12 +20,6 @@ namespace YUCP.DirectVpmInstaller
             private const string ZipPackageSourceKind = "zip";
             private const string UnityPackageSourceKind = "unitypackage";
             private const string RepoTokenHeaderName = "X-YUCP-Repo-Token";
-            private const string BootstrapHandoffDirectory =
-                "Library/YUCP/bootstrap-handoffs";
-            private const string ImporterActivationTypeName =
-                "YUCP.Importer.Editor.PackageManager.Core.AliasPackageActivation";
-            private const string ImporterActivationMethodName =
-                "SubmitUnityPackageDescriptor";
         private static readonly HashSet<string> TrustedCommunityRepoHostsWithoutHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "vcc.vrcfury.com"
@@ -282,7 +275,7 @@ namespace YUCP.DirectVpmInstaller
                 : Path.Combine(creatorCompanionRoot, "Repos");
         }
 
-        private static DependencyInstallChoice PromptForDependencyInstallChoice(string packageList, bool installsImporter, IReadOnlyList<string> installWarnings, Dictionary<string, string> addableRepositories)
+        private static DependencyInstallChoice PromptForDependencyInstallChoice(string packageList, IReadOnlyList<string> installWarnings, Dictionary<string, string> addableRepositories)
         {
             if (installWarnings != null && installWarnings.Count > 0)
             {
@@ -1221,7 +1214,6 @@ namespace YUCP.DirectVpmInstaller
                 }
 
                 InstallerTxn.SetMarker("complete");
-                QueueBootstrapDescriptorHandoff(packageJsonPath);
                 CleanupTemporaryFiles(packageJsonPath);
             }
             finally
@@ -1248,7 +1240,6 @@ namespace YUCP.DirectVpmInstaller
 
             // Clean up any old installer scripts first to prevent duplicate class definitions on re-import
             CleanupInstallerScript();
-            TryDeliverPendingBootstrapHandoffs();
 
             // Find any YUCP temp install JSON files
             string[] tempJsonFiles = Array.Empty<string>();
@@ -1446,8 +1437,7 @@ namespace YUCP.DirectVpmInstaller
                         : $"{label} ({p.Item1})";
                     return $"  - {displayName}@{FormatVersionRequirementForDisplay(p.Item2)}";
                 }));
-                bool installsImporter = packagesToInstall.Any(p => string.Equals(p.Item1, "com.yucp.importer", StringComparison.OrdinalIgnoreCase));
-                DependencyInstallChoice installChoice = PromptForDependencyInstallChoice(packageList, installsImporter, installWarnings, addableRepositories);
+                DependencyInstallChoice installChoice = PromptForDependencyInstallChoice(packageList, installWarnings, addableRepositories);
                 
                 if (installChoice == DependencyInstallChoice.NotNow)
                 {
@@ -1637,8 +1627,7 @@ namespace YUCP.DirectVpmInstaller
 
                     // Clean up temporary files
                     InstallerTxn.SetMarker("complete");
-                    QueueBootstrapDescriptorHandoff(packageJsonPath);
-                    CleanupTemporaryFiles(packageJsonPath);
+                        CleanupTemporaryFiles(packageJsonPath);
                 }
                     else
                     {
@@ -1889,159 +1878,6 @@ namespace YUCP.DirectVpmInstaller
             }
         }
         
-        private static string ExtractBootstrapDescriptorForHandoff(
-            string descriptorJson)
-        {
-            if (string.IsNullOrWhiteSpace(descriptorJson))
-            {
-                return null;
-            }
-
-            JObject descriptor = JObject.Parse(descriptorJson);
-            JObject yucp = descriptor["yucp"] as JObject;
-            string kind = yucp?["kind"]?.Value<string>();
-            if ((!string.Equals(kind, "alias-v1", StringComparison.Ordinal) &&
-                    !string.Equals(kind, "alias-v2", StringComparison.Ordinal)) ||
-                !string.Equals(
-                    yucp?["installStrategy"]?.Value<string>(),
-                    "server-authorized",
-                    StringComparison.Ordinal) ||
-                !string.Equals(
-                    yucp?["importerPackage"]?.Value<string>(),
-                    "com.yucp.importer",
-                    StringComparison.Ordinal))
-            {
-                return null;
-            }
-
-            return descriptorJson;
-        }
-
-        private static string GetBootstrapHandoffDirectory()
-        {
-            return Path.Combine(
-                GetProjectRoot(),
-                BootstrapHandoffDirectory.Replace('/', Path.DirectorySeparatorChar));
-        }
-
-        private static string ComputeSha256Hex(byte[] bytes)
-        {
-            using (SHA256 sha256 = SHA256.Create())
-            {
-                return string.Concat(
-                    sha256.ComputeHash(bytes ?? Array.Empty<byte>())
-                        .Select(value => value.ToString("x2")));
-            }
-        }
-
-        private static void QueueBootstrapDescriptorHandoff(
-            string packageJsonPath)
-        {
-            if (string.IsNullOrWhiteSpace(packageJsonPath) ||
-                !File.Exists(packageJsonPath))
-            {
-                return;
-            }
-
-            try
-            {
-                string descriptor = ExtractBootstrapDescriptorForHandoff(
-                    File.ReadAllText(packageJsonPath));
-                if (descriptor == null)
-                {
-                    return;
-                }
-
-                JObject parsed = JObject.Parse(descriptor);
-                string intentId = parsed["yucp"]?["bootstrapIntent"]?
-                    ["intentId"]?.Value<string>();
-                string fileKey = !string.IsNullOrWhiteSpace(intentId)
-                    ? intentId
-                    : ComputeSha256Hex(Encoding.UTF8.GetBytes(descriptor));
-                string handoffDirectory = GetBootstrapHandoffDirectory();
-                Directory.CreateDirectory(handoffDirectory);
-                string destinationPath = Path.Combine(
-                    handoffDirectory,
-                    fileKey + ".json");
-                if (File.Exists(destinationPath))
-                {
-                    return;
-                }
-
-                string tempPath = destinationPath + "." +
-                    Guid.NewGuid().ToString("N") + ".tmp";
-                File.WriteAllText(
-                    tempPath,
-                    descriptor,
-                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-                File.Move(tempPath, destinationPath);
-                Debug.Log(
-                    "[DirectVpmInstaller] Queued the signed bootstrap " +
-                    "descriptor for importer review.");
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException(
-                    "Could not preserve the bootstrap descriptor for importer handoff.",
-                    ex);
-            }
-        }
-
-        private static void TryDeliverPendingBootstrapHandoffs()
-        {
-            string handoffDirectory = GetBootstrapHandoffDirectory();
-            if (!Directory.Exists(handoffDirectory))
-            {
-                return;
-            }
-
-            Type activationType = AppDomain.CurrentDomain.GetAssemblies()
-                .Select(assembly => assembly.GetType(
-                    ImporterActivationTypeName,
-                    throwOnError: false))
-                .FirstOrDefault(type => type != null);
-            MethodInfo submitMethod = activationType?.GetMethod(
-                ImporterActivationMethodName,
-                BindingFlags.Public | BindingFlags.Static);
-            if (submitMethod == null)
-            {
-                return;
-            }
-
-            foreach (string descriptorPath in Directory
-                .GetFiles(handoffDirectory, "*.json", SearchOption.TopDirectoryOnly)
-                .OrderBy(path => path, StringComparer.Ordinal))
-            {
-                try
-                {
-                    submitMethod.Invoke(
-                        null,
-                        new object[] { File.ReadAllText(descriptorPath) });
-                    File.Delete(descriptorPath);
-                    Debug.Log(
-                        "[DirectVpmInstaller] Delivered the signed bootstrap " +
-                        "descriptor to the YUCP importer.");
-                }
-                catch (Exception ex)
-                {
-                    Exception failure =
-                        ex is TargetInvocationException invocation &&
-                        invocation.InnerException != null
-                            ? invocation.InnerException
-                            : ex;
-                    string rejectedPath = descriptorPath + ".rejected";
-                    if (File.Exists(rejectedPath))
-                    {
-                        File.Delete(rejectedPath);
-                    }
-                    File.Move(descriptorPath, rejectedPath);
-                    Debug.LogError(
-                        "[DirectVpmInstaller] The importer rejected a pending " +
-                        "bootstrap descriptor: " + failure.Message);
-                }
-            }
-        }
-
         private static void CleanupTemporaryFiles(string packageJsonPath, string disabledFilesContext = null)
         {
             try
@@ -2077,24 +1913,6 @@ namespace YUCP.DirectVpmInstaller
                 OrganizeYucpArtifacts();
                 PruneEmptyInstalledPackageResidue();
                 
-                // Clean up signing folder if it exists (from signed package imports)
-                string signingFolder = Path.Combine(Application.dataPath, "_Signing");
-                if (Directory.Exists(signingFolder))
-                {
-                    try
-                    {
-                        Directory.Delete(signingFolder, true);
-                        string signingMeta = signingFolder + ".meta";
-                        if (File.Exists(signingMeta))
-                            File.Delete(signingMeta);
-                        Debug.Log($"[DirectVpmInstaller] Cleaned up signing folder: {signingFolder}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[DirectVpmInstaller] Failed to cleanup signing folder: {ex.Message}");
-                    }
-                }
-
                 // Refresh AssetDatabase to reflect file deletions and moves
                 AssetDatabase.Refresh();
             }
@@ -2345,11 +2163,6 @@ namespace YUCP.DirectVpmInstaller
             return safe;
         }
         
-        private static bool IsYucpImporterPackage(string packageName)
-        {
-            return string.Equals(packageName, "com.yucp.importer", StringComparison.OrdinalIgnoreCase);
-        }
-
         private static bool ShouldInstallPackage(string packageName, string versionRequirement, out string warningMessage)
         {
             warningMessage = null;
@@ -2364,16 +2177,6 @@ namespace YUCP.DirectVpmInstaller
                 return true;
 
             string normalizedRequirement = NormalizeRequirement(versionRequirement);
-            if (IsYucpImporterPackage(packageName) && !IsExactVersionRequirement(normalizedRequirement))
-            {
-                // Every delivery depends on the importer understanding the current
-                // contract, so it follows the newest published build rather than
-                // stopping at the first version that clears the minimum. Resolution
-                // decides what that is; InstallPackage drops the work if the newest
-                // is what is already here.
-                return true;
-            }
-
             if (IsExactVersionRequirement(normalizedRequirement))
             {
                 int compare = CompareVersions(installedVersion, normalizedRequirement);

@@ -38,12 +38,6 @@ namespace YUCP.PatchCleanup
         static YUCPPatchImporter()
         {
             WriteLog("YUCPPatchImporter static constructor called - importer is loaded and compiled!");
-            if (IsImporterManagedProtectedInstallPending())
-            {
-                WriteLog("Importer-managed protected install detected. Automatic patch hooks are disabled for this transaction.");
-                return;
-            }
-
             // Remove any leftover legacy source runtime that would collide with the precompiled
             // runtime DLLs. Runs first so the collision clears before patches are processed.
             EditorApplication.delayCall += PurgeLegacyRuntimeSourceOnLoad;
@@ -64,7 +58,6 @@ namespace YUCP.PatchCleanup
         private static string _currentPatchPathForRetry = null;
         private const int MaxPatchRetryCount = 8;
         private const string ExportInProgressKey = "YUCP.PackageBuilder.ExportingTempPatchAssets";
-        private const string PendingFinalizationKey = "YUCP.PackageManager.ProtectedPayload.PendingFinalization";
         private static bool s_useDeferredCleanup = true;
 
         private class PatchEntryInfo
@@ -108,18 +101,6 @@ namespace YUCP.PatchCleanup
             }
 
             return false;
-        }
-
-        private static bool IsImporterManagedProtectedInstallPending()
-        {
-            try
-            {
-                return !string.IsNullOrEmpty(EditorPrefs.GetString(PendingFinalizationKey, string.Empty));
-            }
-            catch
-            {
-                return false;
-            }
         }
 
         private static bool IsInstallerManagedInstallPending()
@@ -348,12 +329,6 @@ namespace YUCP.PatchCleanup
 
         private static void CheckForPatchesOnLoad()
         {
-            if (IsImporterManagedProtectedInstallPending())
-            {
-                WriteLog("CheckForPatchesOnLoad skipped because the importer owns this protected install transaction.");
-                return;
-            }
-
             if (IsExporterGeneratingTempPatchAssets())
             {
                 WriteLog("CheckForPatchesOnLoad skipped because the exporter is generating temp patch assets.");
@@ -877,12 +852,6 @@ namespace YUCP.PatchCleanup
         static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
             WriteLog($"OnPostprocessAllAssets called with {importedAssets?.Length ?? 0} imported assets");
-
-            if (IsImporterManagedProtectedInstallPending())
-            {
-                WriteLog("OnPostprocessAllAssets skipped because the importer owns this protected install transaction.");
-                return;
-            }
 
             if (IsInstallerManagedInstallPending())
             {

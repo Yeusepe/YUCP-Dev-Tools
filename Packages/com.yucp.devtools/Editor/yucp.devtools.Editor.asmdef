@@ -9,15 +9,13 @@
         "com.yucp.devtools.Runtime",
         "com.yucp.components.Runtime",
         "com.yucp.components.Editor",
-        "com.yucp.importer.Editor",
         "VRCFury-Editor",
         "VRCFury",
         "com.vrcfury.api",
         "Autodesk.Fbx",
         "com.yucp.motion.Core",
         "com.yucp.motion.Unity",
-        "com.yucp.motion.Editor",
-        "YUCP.CompanionTutorial.Source"
+        "com.yucp.motion.Editor"
     ],
     "includePlatforms": [
         "Editor"
