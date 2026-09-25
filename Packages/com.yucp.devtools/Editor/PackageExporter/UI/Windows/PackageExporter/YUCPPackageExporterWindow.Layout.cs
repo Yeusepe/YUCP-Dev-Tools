@@ -171,20 +171,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 UpdateResponsiveLayout(rootVisualElement.resolvedStyle.width);
             }).StartingIn(100);
 
-            // Initialize Onboarding Overlay (Hidden by default)
-            _onboardingOverlay = new OnboardingOverlay(root, () => 
-            {
-                _onboardingOverlay.style.display = DisplayStyle.None;
-                // Remove from actual parent to avoid "not my child" error
-                _onboardingOverlay.RemoveFromHierarchy();
-                _onboardingOverlay = null;
-            });
-            _onboardingOverlay.style.display = DisplayStyle.None;
-            root.Add(_onboardingOverlay);
-
-            // Check for first-time launch
-            root.schedule.Execute(CheckAndStartOnboarding).StartingIn(500); // Delay to ensure layout is ready
-
             // Register keyboard shortcuts handler
             root.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
 

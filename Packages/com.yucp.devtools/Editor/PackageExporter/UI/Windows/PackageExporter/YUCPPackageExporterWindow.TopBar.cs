@@ -154,15 +154,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 new ToolbarMenuItem
                 {
-                    Label = "Restart Onboarding",
-                    Tooltip = "Restart the onboarding tour",
-                    Callback = () => {
-                         EditorPrefs.SetBool(OnboardingPrefKey, false);
-                         StartOnboarding();
-                    }
-                },
-                new ToolbarMenuItem
-                {
                     Label = "Documentation",
                     Tooltip = "Open online documentation",
                     Callback = () => Application.OpenURL(PackageExporterWikiUrl)

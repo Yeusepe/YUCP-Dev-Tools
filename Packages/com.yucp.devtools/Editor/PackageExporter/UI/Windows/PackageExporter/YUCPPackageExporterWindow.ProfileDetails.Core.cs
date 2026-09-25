@@ -16,15 +16,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
     public partial class YUCPPackageExporterWindow
     {
-        private static void TagOnboardingTarget(VisualElement element, string targetId)
-        {
-            if (element == null || string.IsNullOrEmpty(targetId)) return;
-            if (!element.ClassListContains(targetId))
-            {
-                element.AddToClassList(targetId);
-            }
-        }
-
         /// <summary>
         /// True if the profile has folders and/or bundled profiles to scan for the export inspector.
         /// </summary>
@@ -150,7 +141,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Package Metadata Section
                 _metadataSection = CreateMetadataSection(selectedProfile);
-                TagOnboardingTarget(_metadataSection, "package-identity-section");
                 _metadataSection.name = "section-metadata";
                 contentWrapper.Add(_metadataSection);
                 
@@ -167,7 +157,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Export Options Section
                 var optionsSection = CreateExportOptionsSection(selectedProfile);
-                TagOnboardingTarget(optionsSection, "versioning-section");
                 optionsSection.name = "section-settings";
                 contentWrapper.Add(optionsSection);
                 
@@ -181,7 +170,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Export Inspector Section
                 var inspectorSection = CreateExportInspectorSection(selectedProfile);
-                TagOnboardingTarget(inspectorSection, "export-inspector-section");
                 inspectorSection.name = "section-files";
                 contentWrapper.Add(inspectorSection);
                 
@@ -192,20 +180,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Dependencies Section
                 var dependenciesSection = CreateDependenciesSection(selectedProfile);
-                TagOnboardingTarget(dependenciesSection, "dependencies-section");
                 dependenciesSection.name = "section-dependencies";
                 contentWrapper.Add(dependenciesSection);
 
-                // Custom Update Steps Section
-                var updateStepsSection = CreateUpdateStepsSection(selectedProfile);
-                TagOnboardingTarget(updateStepsSection, "update-steps-section");
-                updateStepsSection.name = "section-update-steps";
-                contentWrapper.Add(updateStepsSection);
-
-                var companionTutorialSection = CreateCompanionTutorialSection(selectedProfile);
-                companionTutorialSection.name = "section-companion-tutorial";
-                contentWrapper.Add(companionTutorialSection);
-                
                 // Obfuscation Section
                 var obfuscationSection = CreateObfuscationSection(selectedProfile);
                 obfuscationSection.name = "section-advanced";
@@ -216,14 +193,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 actionsSection.name = "section-actions";
                 contentWrapper.Add(actionsSection);
                 
-                // The signing section (creator sign-in, certificates, product links,
-                // license toggle) is retired from the exporter surface: signing runs
-                // automatically at export when a session exists, and licensed
-                // distribution moved to the Creator Companion bootstrap. The section
-                // code (CreatePackageSigningSection, PackageSigningTab, the OAuth
-                // stack) is kept dormant for a future direct Unity → Creator
-                // Assistant upload UI.
-
                 _profileDetailsContainer.Add(contentWrapper);
                 
                 // Add banner button directly to ScrollView so it's definitely on top and clickable

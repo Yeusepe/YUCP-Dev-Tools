@@ -3,7 +3,6 @@ using UnityEngine;
 using System;
 using System.IO;
 using System.Linq;
-using YUCP.CompanionTutorial.Generated.Source;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -265,60 +264,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
-        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Run Demo")]
-        public static void RunCompanionTutorialDemo()
-        {
-            CompanionTutorialRunner.StartDemo();
-        }
-
-        [MenuItem("Tools/YUCP/Others/Companion Tutorial/Run Overlay Test")]
-        public static void RunCompanionTutorialOverlayTest()
-        {
-            CompanionTutorialRunner.StartDemo();
-        }
-
-        [MenuItem("Tools/YUCP/Others/Companion Tutorial/Force Close Overlay")]
-        public static void ForceCloseCompanionTutorialOverlay()
-        {
-            CompanionTutorialRunner.Stop();
-        }
-
-        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Next Step")]
-        public static void CompanionTutorialNextStep()
-        {
-            CompanionTutorialRunner.Next();
-        }
-
-        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Next Step", true)]
-        private static bool CompanionTutorialNextStepValidate()
-        {
-            return CompanionTutorialRunner.IsRunning;
-        }
-
-        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Previous Step")]
-        public static void CompanionTutorialPreviousStep()
-        {
-            CompanionTutorialRunner.Previous();
-        }
-
-        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Previous Step", true)]
-        private static bool CompanionTutorialPreviousStepValidate()
-        {
-            return CompanionTutorialRunner.IsRunning;
-        }
-
-        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Stop")]
-        public static void CompanionTutorialStop()
-        {
-            CompanionTutorialRunner.Stop();
-        }
-
-        [MenuItem("Tools/YUCP/Others/Package Exporter/Companion Tutorial/Stop", true)]
-        private static bool CompanionTutorialStopValidate()
-        {
-            return CompanionTutorialRunner.IsRunning;
-        }
-        
         [MenuItem("Tools/YUCP/Others/Package Exporter/Smart Version Bump/Scan for @bump Directives")]
         public static void ScanProjectForVersionDirectives()
         {
@@ -338,36 +283,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 message,
                 "OK"
             );
-        }
-
-        [MenuItem("Tools/YUCP/Others/Installation/Revert Last Package Update")]
-        public static void RevertLastPackageUpdate()
-        {
-            bool confirmed = EditorUtility.DisplayDialog(
-                "Revert Last Update",
-                "This will restore files from the last update backup. Continue?",
-                "Revert",
-                "Cancel"
-            );
-
-            if (!confirmed)
-                return;
-
-            if (UpdateTransaction.TryRollbackLast(out string message))
-            {
-                EditorUtility.DisplayDialog("Update Reverted", message, "OK");
-                AssetDatabase.Refresh();
-            }
-            else
-            {
-                EditorUtility.DisplayDialog("Revert Failed", message, "OK");
-            }
-        }
-
-        [MenuItem("Tools/YUCP/Others/Installation/Restore Archived Assets (_old)")]
-        public static void RestoreArchivedAssets()
-        {
-            UpdateArchiveRestoreWindow.ShowWindow("_old");
         }
 
         [MenuItem("Tools/YUCP/Others/Installation/Open DevTools Listing")]
