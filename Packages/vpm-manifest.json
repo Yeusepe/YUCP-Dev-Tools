@@ -60,9 +60,10 @@
       "dependencies": {}
     },
     "com.yucp.components": {
-      "version": "0.3.33",
+      "version": "0.3.44",
       "dependencies": {
-        "com.vrcfury.vrcfury": ">=1.1258.0"
+        "com.vrcfury.vrcfury": ">=1.1258.0",
+        "com.vrchat.core.vpm-resolver": ">=0.1.27"
       }
     },
     "vrchat.blackstartx.gesture-manager": {
