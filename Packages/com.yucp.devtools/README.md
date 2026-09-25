@@ -42,14 +42,6 @@ Development tools for YUCP package creators and avatar variant management.
 - **Reference Preservation** - Maintain prefab compatibility with original FBX GUIDs
 - **Automatic Patch Application** - Patches applied automatically on package import via YUCPPatchImporter
 
-#### Package Signing
-- **Certificate Management** - Import and manage signing certificates
-- **Manifest Generation** - Automatic manifest creation with package metadata
-- **Server-Based Signing** - Secure server-side signature generation
-- **Signature Embedding** - Automatically embed signatures in exported packages
-- **Certificate Chain Support** - Full certificate chain validation
-- **Gumroad/Jinxxy Integration** - Product ID linking for distribution platforms
-
 #### Dependency Management
 - **Automatic Dependency Scanner** - Auto-detect VPM and Unity package dependencies
 - **Dependency Export Modes** - Configure how dependencies are handled (include, exclude, reference)
@@ -65,8 +57,6 @@ Development tools for YUCP package creators and avatar variant management.
 #### Media Management
 - **Custom Package Icons** - Inject custom icons into .unitypackage files
 - **Package Banners** - Display custom banners in the exporter window
-- **Favicon Support** - Automatic favicon generation for web assets
-- **Animated GIF Support** - GIF preview and management
 
 #### Bulk Operations
 - **Bulk Profile Editor** - Edit multiple profiles simultaneously:
@@ -86,7 +76,6 @@ Development tools for YUCP package creators and avatar variant management.
 
 #### Templates & Utilities
 - **Export Profile Templates** - Pre-configured templates for quick setup
-- **Companion Tutorials** - Author a whole-Unity overlay walkthrough that auto-plays once after a buyer imports your package (Windows; self-contained, self-cleaning). See [CompanionTutorial/README](Editor/PackageExporter/CompanionTutorial/README.md)
 - **Direct VPM Installer** - Install VPM dependencies directly from packages
 - **AutoFinalize System** - Automatic editor refresh after compilation
 - **Backup System** - Automatic prefab backup before patch application
@@ -214,7 +203,6 @@ Development tools for YUCP package creators and avatar variant management.
 - **Custom Version Rules**: Create custom versioning with `Assets > Create > YUCP > Custom Version Rule`
 - **@bump Directives**: Add `// @bump rule_name` comments in code files for automatic version bumping
 - **Derived FBX**: Mark FBX files as derived in Model Importer to export as derived FBXs
-- **Package Signing**: Configure certificates in `Tools > YUCP > Others > Development > Package Signing Settings`
 
 #### Keyboard Shortcuts
 - `Ctrl/Cmd+E` - Export selected profiles
