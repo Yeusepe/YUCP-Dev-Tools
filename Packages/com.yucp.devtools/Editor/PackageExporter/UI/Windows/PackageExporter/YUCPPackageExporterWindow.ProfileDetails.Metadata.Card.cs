@@ -1,16 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using UnityEditor;
-using UnityEditor.UIElements;
 using UnityEngine;
-using UnityEngine.Networking;
 using UnityEngine.UIElements;
-using YUCP.DevTools.Components;
-using YUCP.DevTools.Editor.PackageExporter.UI.Components;
-using YUCP.Motion;
-using YUCP.Motion.Core;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -40,11 +30,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             else
             {
                 iconImage.image = GetPlaceholderTexture();
-                // Fetch favicon if URL is provided and no custom icon
-                if (!string.IsNullOrEmpty(link.url))
-                {
-                    FetchFavicon(profile, link, iconImage);
-                }
             }
             
             iconContainer.Add(iconImage);
@@ -148,32 +133,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     link.url = evt.newValue;
                     EditorUtility.SetDirty(profile);
                     
-                    // Always fetch and save icon when URL is entered/changed
-                    if (!string.IsNullOrEmpty(evt.newValue))
-                    {
-                        EditorApplication.delayCall += () =>
-                        {
-                            if (profile != null && link != null && !string.IsNullOrEmpty(link.url))
-                            {
-                                FetchFavicon(profile, link, iconImage);
-                            }
-                        };
-                    }
-                }
-            });
-            
-            // Also fetch favicon when user finishes typing (on blur) as backup
-            urlField.RegisterCallback<BlurEvent>(evt =>
-            {
-                Debug.Log($"[YUCP PackageExporter] URL field blur event triggered for URL: {link.url}");
-                if (profile != null && link != null && !string.IsNullOrEmpty(link.url))
-                {
-                    Debug.Log($"[YUCP PackageExporter] Calling FetchFavicon from blur event");
-                    FetchFavicon(profile, link, iconImage);
-                }
-                else
-                {
-                    Debug.LogWarning($"[YUCP PackageExporter] Blur event: profile or link is null, or URL is empty. Profile: {profile != null}, Link: {link != null}, URL: {link?.url ?? "null"}");
                 }
             });
             urlRow.Add(urlField);
@@ -201,7 +160,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 });
                 clearIconButton.text = "↺";
-                clearIconButton.tooltip = "Clear custom icon (use auto-fetched)";
+                clearIconButton.tooltip = "Clear link icon";
                 clearIconButton.AddToClassList("yucp-button");
                 clearIconButton.AddToClassList("yucp-button-icon");
                 clearIconButton.style.width = 32;

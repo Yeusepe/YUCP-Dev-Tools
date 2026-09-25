@@ -48,13 +48,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (displayBanner != null)
             {
                 _bannerImageContainer.style.backgroundImage = new StyleBackground(displayBanner);
-                
-                // Check if banner is a GIF and animate it
-                string bannerPath = AssetDatabase.GetAssetPath(displayBanner);
-                if (!string.IsNullOrEmpty(bannerPath) && bannerPath.EndsWith(".gif", StringComparison.OrdinalIgnoreCase))
-                {
-                    StartGifAnimation(_bannerImageContainer, bannerPath);
-                }
             }
             bannerContainer.Add(_bannerImageContainer);
             

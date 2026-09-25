@@ -4,7 +4,7 @@ using UnityEditor;
 namespace YUCP.DevTools.Editor.PackageExporter
 {
     /// <summary>
-    /// Tracks asset changes and signals the ExportProfile inspector to rescan when needed.
+    /// Tracks asset changes and signals the Package Exporter window to rescan when needed.
     /// </summary>
     public class ExportProfileAssetChangeMonitor : AssetPostprocessor
     {
@@ -26,7 +26,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
 
-            ExportProfileEditor.NotifyAssetsChanged(changed.ToArray());
             YUCPPackageExporterWindow.NotifyAssetsChanged(changed.ToArray());
         }
 
