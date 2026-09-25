@@ -24,31 +24,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		[SerializeField] public UIHints uiHints = new UIHints();
 		[SerializeField] public SeedMaps seedMaps = new SeedMaps();
 
-		/// <summary>
-		/// When true, the consumer must hold a verified license for <see cref="licensePackageId"/>
-		/// before DerivedFbxBuilder will decrypt and apply this asset.
-		/// Set automatically by PackageBuilder when the export profile has requiresLicenseVerification.
-		/// </summary>
-		[SerializeField] public bool requiresLicense = false;
-
-		/// <summary>
-		/// YUCP package ID (e.g. "yeusepe/MyAvatar") whose license must be verified.
-		/// Checked against the "yucp.license.{licensePackageId}" SessionState key.
-		/// </summary>
-		[SerializeField] public string licensePackageId = "";
-
-		/// <summary>
-		/// When true, reconstructing this protected asset requires a server-issued unlock token
-		/// containing the wrapped content key for this machine/project.
-		/// </summary>
-		[SerializeField] public bool requiresServerUnlock = false;
-
-		/// <summary>
-		/// Stable identifier for the protected payload registration on the YUCP server.
-		/// Empty for legacy packages that still embed enough material to recover the content key locally.
-		/// </summary>
-		[SerializeField] public string protectedAssetId = "";
-		
 		[Serializable]
 		public struct Policy
 		{

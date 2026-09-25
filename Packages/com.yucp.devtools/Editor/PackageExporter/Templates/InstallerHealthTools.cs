@@ -95,24 +95,6 @@ namespace YUCP.DirectVpmInstaller
                     catch { }
                 }
                 
-                // Clean up signing folder
-                string signingFolder = Path.Combine(assetsPath, "_Signing");
-                if (Directory.Exists(signingFolder))
-                {
-                    try
-                    {
-                        Directory.Delete(signingFolder, true);
-                        string signingMeta = signingFolder + ".meta";
-                        if (File.Exists(signingMeta)) File.Delete(signingMeta);
-                        cleanedCount++;
-                        cleanedItems.Add("Signing folder: Assets/_Signing");
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[YUCP] Failed to delete signing folder: {ex.Message}");
-                    }
-                }
-                
                 // Show results
                 if (cleanedCount > 0)
                 {

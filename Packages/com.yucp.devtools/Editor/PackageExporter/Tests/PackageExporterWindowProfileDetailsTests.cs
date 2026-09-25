@@ -2,7 +2,6 @@ using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.UIElements;
-using YUCP.DevTools.Editor.PackageSigning.UI;
 
 namespace YUCP.DevTools.Editor.PackageExporter.Tests
 {
@@ -65,49 +64,6 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
 
                 Assert.That(optionsSection, Is.Not.Null);
                 Assert.That(ContainsLabel(optionsSection, "Embed YUCP Metadata"), Is.True);
-            }
-            finally
-            {
-                Object.DestroyImmediate(profile);
-                Object.DestroyImmediate(window);
-            }
-        }
-
-        [Test]
-        public void PackageSigningTab_RendersPackageRegistry_WhenProfileIsProvided()
-        {
-            var profile = ScriptableObject.CreateInstance<ExportProfile>();
-
-            try
-            {
-                var signingTab = new PackageSigningTab(profile);
-                VisualElement root = signingTab.CreateUI();
-
-                Assert.That(root, Is.Not.Null);
-                Assert.That(ContainsLabel(root, "Package Registry"), Is.True);
-            }
-            finally
-            {
-                Object.DestroyImmediate(profile);
-            }
-        }
-
-        [Test]
-        public void CreatePackageSigningSection_ReusesSigningTab_ForSameProfile()
-        {
-            var window = ScriptableObject.CreateInstance<YUCPPackageExporterWindow>();
-            var profile = ScriptableObject.CreateInstance<ExportProfile>();
-
-            try
-            {
-                var createMethod = typeof(YUCPPackageExporterWindow)
-                    .GetMethod("CreatePackageSigningSection", BindingFlags.Instance | BindingFlags.NonPublic);
-
-                var first = createMethod?.Invoke(window, new object[] { profile }) as VisualElement;
-                var second = createMethod?.Invoke(window, new object[] { profile }) as VisualElement;
-
-                Assert.That(first, Is.Not.Null);
-                Assert.That(second, Is.SameAs(first));
             }
             finally
             {

@@ -452,59 +452,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				basePathFallbacks,
 				modifiedFbxPath,
 				friendlyName,
-				useWrappedContentKey: false,
 				out encryptedDiffPath,
-				out entries,
-				out _,
-				out _);
+				out entries);
 		}
 
-		public static bool CreateServerProtectedPatchEntries(
-			List<string> baseFbxPaths,
-			List<string> baseGuids,
-			string modifiedFbxPath,
-			string friendlyName,
-			out string encryptedDiffPath,
-			out List<DerivedFbxAsset.PatchEntry> entries,
-			out string protectedAssetId,
-			out string wrappedContentKey)
-		{
-			return CreateServerProtectedPatchEntries(
-				baseFbxPaths,
-				baseGuids,
-				null,
-				modifiedFbxPath,
-				friendlyName,
-				out encryptedDiffPath,
-				out entries,
-				out protectedAssetId,
-				out wrappedContentKey);
-		}
-
-		public static bool CreateServerProtectedPatchEntries(
-			List<string> baseFbxPaths,
-			List<string> baseGuids,
-			List<string> basePathFallbacks,
-			string modifiedFbxPath,
-			string friendlyName,
-			out string encryptedDiffPath,
-			out List<DerivedFbxAsset.PatchEntry> entries,
-			out string protectedAssetId,
-			out string wrappedContentKey)
-		{
-			return CreateEncryptedPatchEntriesCore(
-				baseFbxPaths,
-				baseGuids,
-				basePathFallbacks,
-				modifiedFbxPath,
-				friendlyName,
-				useWrappedContentKey: true,
-				out encryptedDiffPath,
-				out entries,
-				out protectedAssetId,
-				out wrappedContentKey);
-		}
-		
 		/// <summary>
 		/// Builds a DerivedFbxAsset with binary diff (.hdiff) file.
 		/// Adapted from CocoTools CocoDiff.cs ExecuteProcess() method.
@@ -545,16 +496,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			List<string> basePathFallbacks,
 			string modifiedFbxPath,
 			string friendlyName,
-			bool useWrappedContentKey,
 			out string encryptedDiffPath,
-			out List<DerivedFbxAsset.PatchEntry> entries,
-			out string protectedAssetId,
-			out string wrappedContentKey)
+			out List<DerivedFbxAsset.PatchEntry> entries)
 		{
 			encryptedDiffPath = null;
 			entries = new List<DerivedFbxAsset.PatchEntry>();
-			protectedAssetId = string.Empty;
-			wrappedContentKey = string.Empty;
 
 			if (baseFbxPaths == null || baseFbxPaths.Count == 0 || baseGuids == null || baseGuids.Count != baseFbxPaths.Count)
 				return false;
@@ -620,17 +566,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				});
 			}
 
-			byte[] recoveryKey = contentKey;
-			if (useWrappedContentKey)
-			{
-				byte[] wrappingKey = new byte[32];
-				RandomNumberGenerator.Fill(wrappingKey);
-				recoveryKey = wrappingKey;
-				protectedAssetId = Guid.NewGuid().ToString("N");
-				wrappedContentKey = ProtectedContentKeyUtility.WrapContentKey(contentKey, wrappingKey);
-			}
-
-			var shares = SplitKeyAllOfN(recoveryKey, entries.Count);
+			var shares = SplitKeyAllOfN(contentKey, entries.Count);
 			for (int i = 0; i < entries.Count; i++)
 			{
 				byte[] shareEnc = XorBytes(shares[i], masks[i]);

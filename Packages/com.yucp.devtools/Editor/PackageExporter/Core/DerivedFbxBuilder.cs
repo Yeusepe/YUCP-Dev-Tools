@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 namespace YUCP.DevTools.Editor.PackageExporter
@@ -13,9 +12,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 	/// </summary>
 	public static class DerivedFbxBuilder
 	{
-		private const string ProtectedAssetUnlockServiceTypeName =
-			"YUCP.Importer.Editor.PackageManager.Core.ProtectedAssetUnlockService";
-
 		/// <summary>
 		/// Builds a derived FBX by applying a binary patch to the base FBX.
 		/// Adapted from CocoTools CocoPatch.cs ExecuteProcess() method.
@@ -26,23 +22,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			{
 				Debug.LogError("[DerivedFbxBuilder] Invalid inputs: derivedAsset is null");
 				return null;
-			}
-
-			string wrappedContentKey = null;
-			if (derivedAsset.requiresLicense && !string.IsNullOrEmpty(derivedAsset.licensePackageId))
-			{
-				string protectedAssetId = derivedAsset.requiresServerUnlock ? derivedAsset.protectedAssetId : null;
-				if (!TryAuthorizeProtectedAsset(
-					derivedAsset.licensePackageId,
-					protectedAssetId,
-					out wrappedContentKey,
-					out var authorizationError))
-				{
-					Debug.LogError(
-						$"[DerivedFbxBuilder] License required for package '{derivedAsset.licensePackageId}'. " +
-						$"{authorizationError}");
-					return null;
-				}
 			}
 
 			if (derivedAsset.entries == null || derivedAsset.entries.Count == 0)
@@ -110,18 +89,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					resolvedBasePathsByGuid[entry.baseGuid] = basePath;
 				}
 				
-				byte[] recoveryKey = RecoverKey(shares);
-				byte[] contentKey = recoveryKey;
-				if (derivedAsset.requiresServerUnlock && !string.IsNullOrEmpty(derivedAsset.protectedAssetId))
-				{
-					if (string.IsNullOrEmpty(wrappedContentKey) ||
-					    !ProtectedContentKeyUtility.TryUnwrapContentKey(wrappedContentKey, recoveryKey, out contentKey))
-					{
-						Debug.LogError("[DerivedFbxBuilder] Failed to unwrap protected content key for this derived asset.");
-						return null;
-					}
-				}
-				
+				byte[] contentKey = RecoverKey(shares);
+
 				string encryptedPhysicalPath = ResolvePhysicalPath(projectPath, encryptedDiffPath);
 				if (!File.Exists(encryptedPhysicalPath))
 				{
@@ -389,65 +358,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			}
 
 			return normalized;
-		}
-
-		private static bool TryAuthorizeProtectedAsset(
-			string packageId,
-			string protectedAssetId,
-			out string wrappedContentKey,
-			out string error)
-		{
-			wrappedContentKey = null;
-			error = null;
-
-			Type serviceType = AppDomain.CurrentDomain
-				.GetAssemblies()
-				.Select(assembly => assembly.GetType(ProtectedAssetUnlockServiceTypeName, false))
-				.FirstOrDefault(type => type != null);
-
-			if (serviceType == null)
-			{
-				error = "Protected asset unlock requires com.yucp.importer. Re-export without license verification or install the importer before importing this package.";
-				return false;
-			}
-
-			MethodInfo method = serviceType.GetMethod(
-				"TryAuthorizePackage",
-				BindingFlags.Public | BindingFlags.Static,
-				null,
-				new[] { typeof(string), typeof(string), typeof(string).MakeByRefType(), typeof(string).MakeByRefType() },
-				null);
-
-			if (method == null)
-			{
-				error = "Could not find the YUCP importer protected unlock entry point.";
-				return false;
-			}
-
-			try
-			{
-				object[] args = { packageId, protectedAssetId, null, null };
-				bool isAuthorized = method.Invoke(null, args) is bool result && result;
-				wrappedContentKey = args[2] as string;
-				error = args[3] as string;
-
-				if (!isAuthorized && string.IsNullOrEmpty(error))
-				{
-					error = "Protected asset authorization failed.";
-				}
-
-				return isAuthorized;
-			}
-			catch (TargetInvocationException ex)
-			{
-				error = ex.InnerException?.Message ?? ex.Message;
-				return false;
-			}
-			catch (Exception ex)
-			{
-				error = ex.Message;
-				return false;
-			}
 		}
 
 		private static bool IsAssetDatabasePath(string path)

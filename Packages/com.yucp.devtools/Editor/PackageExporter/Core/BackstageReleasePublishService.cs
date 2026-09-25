@@ -5,13 +5,14 @@ using System.Security.Cryptography;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
-using YUCP.DevTools.Editor.PackageSigning.Core;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
     internal static class BackstageReleasePublishService
     {
         private const string ApiBaseUrlEnvironmentVariable = "YUCP_API_BASE_URL";
+        internal const string ApiBaseUrlEditorPref = "YUCP.PackageExporter.ApiBaseUrl";
+        internal const string DefaultApiBaseUrl = "https://api.creators.yucp.club";
         private const string AccessTokenEnvironmentVariable = "YUCP_ACCESS_TOKEN";
 
         [Serializable]
@@ -108,18 +109,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 result.success = false;
                 result.errorMessage =
-                    $"Backstage publishing requires {ApiBaseUrlEnvironmentVariable} or Signing Settings to define the YUCP API base URL.";
+                    $"Backstage publishing requires {ApiBaseUrlEnvironmentVariable} or a YUCP API URL in Package Exporter settings.";
                 return result;
             }
 
-            string accessToken = ResolveAccessToken(apiBaseUrl);
+            string accessToken = NormalizeOptional(Environment.GetEnvironmentVariable(AccessTokenEnvironmentVariable));
             if (string.IsNullOrWhiteSpace(accessToken))
             {
                 result.success = false;
-                result.errorMessage =
-                    "Backstage publishing needs a valid creator sign-in. If you are signed in, the session was " +
-                    "renewing in the background, so try publishing again in a moment. In batch mode set " +
-                    $"{AccessTokenEnvironmentVariable} instead.";
+                result.errorMessage = $"Backstage publishing requires {AccessTokenEnvironmentVariable}.";
                 return result;
             }
 
@@ -226,7 +224,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             };
         }
 
-        private static string ResolveApiBaseUrl()
+        internal static string ResolveApiBaseUrl()
         {
             string envOverride = NormalizeOptional(Environment.GetEnvironmentVariable(ApiBaseUrlEnvironmentVariable));
             if (!string.IsNullOrEmpty(envOverride))
@@ -234,31 +232,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return envOverride;
             }
 
-            var settings = SigningSettingsLocator.Load();
-            return settings != null ? NormalizeOptional(settings.GetEffectiveServerUrl()) : null;
-        }
-
-        private static string ResolveAccessToken(string apiBaseUrl)
-        {
-            string envToken = NormalizeOptional(Environment.GetEnvironmentVariable(AccessTokenEnvironmentVariable));
-            if (!string.IsNullOrEmpty(envToken))
-            {
-                return envToken;
-            }
-
-            // Must not block: publishing runs on the editor's main thread, and a
-            // token refresh drives UnityWebRequest from that same thread. Waiting
-            // on the refresh here would deadlock the editor outright. Take the
-            // token only if it is already valid, and otherwise start the refresh
-            // in the background so the retry a moment later succeeds.
-            string accessToken = YucpOAuthService.GetAccessToken();
-            if (!string.IsNullOrEmpty(accessToken))
-            {
-                return accessToken;
-            }
-
-            YucpOAuthService.TryBeginBackgroundRefresh(apiBaseUrl);
-            return null;
+            return NormalizeOptional(UnityEditor.EditorPrefs.GetString(ApiBaseUrlEditorPref, DefaultApiBaseUrl));
         }
 
         private static string RequestUploadUrl(string apiBaseUrl, string accessToken, string packageId)
@@ -268,7 +242,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 request.uploadHandler = new UploadHandlerRaw(Array.Empty<byte>());
                 request.downloadHandler = new DownloadHandlerBuffer();
-                YucpOAuthService.ApplyAuthHeaders(request, accessToken, UnityWebRequest.kHttpVerbPOST, url);
+                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
                 request.SetRequestHeader("Accept", "application/json");
                 request.SetRequestHeader("Accept-Encoding", "identity");
 
@@ -316,7 +290,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(payloadJson));
                 request.downloadHandler = new DownloadHandlerBuffer();
-                YucpOAuthService.ApplyAuthHeaders(request, accessToken, UnityWebRequest.kHttpVerbPOST, url);
+                request.SetRequestHeader("Authorization", $"Bearer {accessToken}");
                 request.SetRequestHeader("Content-Type", "application/json");
                 request.SetRequestHeader("Accept", "application/json");
                 request.SetRequestHeader("Accept-Encoding", "identity");

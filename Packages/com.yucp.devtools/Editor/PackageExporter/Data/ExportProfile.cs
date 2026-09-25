@@ -36,24 +36,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Stable package ID for this package. Keep the same ID across projects when you want exports to map to the same package on the website.")]
         public string packageId = "";
         
-        [Tooltip("Gumroad Product ID (for Gumroad integration)")]
-        public string gumroadProductId = "";
-        
-        [Tooltip("Jinxxy Product ID (for Jinxxy integration)")]
-        public string jinxxyProductId = "";
-
         [Tooltip("Canonical YUCP product ID from the product catalog (auto-filled when picking a product)")]
         public string licenseProductId = "";
 
         [Tooltip("Multiple canonical YUCP product IDs — buyers owning any one of these products are granted access.")]
         public List<string> licenseProductIds = new List<string>();
 
-        [Tooltip("Discord guild ID whose members with the required role get access (for Discord role verification)")]
-        public string licenseDiscordGuildId = "";
-
-        [Tooltip("Discord role ID required for Discord-based license verification")]
-        public string licenseDiscordRoleId = "";
-        
         [Tooltip("Author name(s) - separate multiple authors with commas")]
         public string author = "";
         
@@ -255,42 +243,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Generate/update package.json with dependency information")]
         public bool generatePackageJson = true;
 
-        [Tooltip("Embed optional YUCP metadata and storefront media in the exported package. Disable for a cleaner package surface; package signing is also skipped.")]
+        [Tooltip("Embed optional YUCP metadata and storefront media in the exported package.")]
         public bool embedYucpMetadata = true;
-
-        [Header("License Protection")]
-        [SerializeField]
-        [UnityEngine.Serialization.FormerlySerializedAs("requiresLicenseVerification")]
-        [Tooltip("Retired: license-locked direct exports are no longer produced. The stored value is kept for a possible future return of the feature.")]
-        private bool licenseVerificationRequested = false;
-
-        /// <summary>
-        /// License-locked direct exports are retired: in-Unity license verification
-        /// was removed in the native broker cutover, so embedding the requirement
-        /// only produced packages nobody could import — licensed products ship
-        /// through the Creator Companion bootstrap instead. Reads are forced off so
-        /// existing profiles stop exporting locked packages; the stored value (and
-        /// the setter, for the dormant UI) is preserved so the feature can return.
-        /// </summary>
-        public bool requiresLicenseVerification
-        {
-            get => false;
-            set => licenseVerificationRequested = value;
-        }
-
-        public string GetPrimaryLicenseProductId()
-        {
-            if (licenseProductIds != null)
-            {
-                foreach (string productId in licenseProductIds)
-                {
-                    if (!string.IsNullOrWhiteSpace(productId))
-                        return productId;
-                }
-            }
-
-            return licenseProductId ?? "";
-        }
 
         public List<string> GetResolvedLicenseProductIds()
         {
@@ -408,18 +362,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             "Android"
         };
 
-        [Header("Signing")]
-        [Tooltip("Legacy signing server override. Trusted signing server URLs are now pinned in code and this field is ignored.")]
-        public string signingServerUrl = "";
 
-        [Header("Custom Update Steps")]
-        [Tooltip("Custom steps to run when updating this package. Steps are only run if enabled.")]
-        public UpdateStepList updateSteps = new UpdateStepList();
-
-        [Header("Companion Tutorial")]
-        [Tooltip("Optional whole-editor tutorial shown after this package is imported.")]
-        public CompanionTutorialDefinition companionTutorial = new CompanionTutorialDefinition();
-        
         /// <summary>
         /// Available preset tag options
         /// </summary>
@@ -940,14 +883,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Tooltip("Full URL to the product page")]
         public string url = "";
         
-        [Tooltip("Custom icon for this link (overrides auto-fetched favicon)")]
+        [Tooltip("Icon displayed for this link")]
         public Texture2D customIcon;
-        
-        [Tooltip("Cached favicon/icon for the website (auto-fetched)")]
-        public Texture2D icon;
-
-        [Tooltip("Editor-only cache path for auto-fetched icons (stored outside Assets)")]
-        public string cachedIconPath;
         
         public ProductLink()
         {
@@ -959,30 +896,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             this.label = label;
         }
         
-        /// <summary>
-        /// Get the icon to display (custom icon takes priority over auto-fetched icon)
-        /// </summary>
-        public Texture2D GetDisplayIcon()
-        {
-            if (customIcon != null)
-                return customIcon;
-
-            if (icon == null && !string.IsNullOrEmpty(cachedIconPath) && File.Exists(cachedIconPath))
-            {
-                try
-                {
-                    byte[] data = File.ReadAllBytes(cachedIconPath);
-                    var tex = new Texture2D(2, 2);
-                    if (tex.LoadImage(data))
-                    {
-                        icon = tex;
-                    }
-                }
-                catch { }
-            }
-
-            return icon;
-        }
+        public Texture2D GetDisplayIcon() => customIcon;
     }
     
     /// <summary>

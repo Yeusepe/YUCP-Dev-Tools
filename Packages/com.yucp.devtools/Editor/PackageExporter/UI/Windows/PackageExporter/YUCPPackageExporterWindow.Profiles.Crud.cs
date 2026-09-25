@@ -176,8 +176,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Reset distribution-ish fields for template use
             clone.version = "1.0.0";
             clone.UnlinkPackageId();
-            clone.gumroadProductId = "";
-            clone.jinxxyProductId = "";
             clone.profileSaveLocation = "";
             clone.productLinks = new List<ProductLink>();
             clone.ResetExportStats();

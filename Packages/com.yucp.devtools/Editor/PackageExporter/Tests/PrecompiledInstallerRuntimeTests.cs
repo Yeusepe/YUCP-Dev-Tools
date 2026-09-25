@@ -9,9 +9,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
-using YUCP.DevTools.Editor.PackageSigning.Core;
-using YUCP.DevTools.Editor.PackageSigning.Data;
-using YUCP.Importer.Editor.PackageManager;
 using UnityEngine;
 
 namespace YUCP.DevTools.Editor.PackageExporter.Tests
@@ -72,40 +69,6 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 defineConstraints?.Values<string>(),
                 Does.Contain("YUCP_COMPILE_INSTALLER_TEMPLATE_SOURCE"),
                 "Template source should only compile when explicitly opted in; exported packages use the precompiled DLL.");
-        }
-
-        [Test]
-        public void DirectVpmInstaller_BootstrapHandoffPreservesTheCompleteDescriptor()
-        {
-            const string descriptor =
-                "{\"name\":\"com.yucp.example\",\"version\":\"2.0.0-beta.1\"," +
-                "\"yucp\":{\"kind\":\"alias-v2\",\"aliasId\":\"example\"," +
-                "\"installStrategy\":\"server-authorized\"," +
-                "\"importerPackage\":\"com.yucp.importer\"," +
-                "\"bootstrapIntent\":{\"schemaVersion\":1," +
-                "\"intentId\":\"33333333-3333-4333-8333-333333333333\"," +
-                "\"mode\":\"specific\",\"issuedAt\":1785384000," +
-                "\"keyId\":\"bootstrap-key\",\"editionId\":\"pro\"," +
-                "\"version\":\"2.0.0-beta.1\",\"versionId\":\"version-beta\"," +
-                "\"releaseRoot\":\"" +
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"," +
-                "\"signature\":\"" +
-                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
-                "\"}}}";
-            MethodInfo method = GetDirectInstallerType().GetMethod(
-                "ExtractBootstrapDescriptorForHandoff",
-                BindingFlags.Static | BindingFlags.NonPublic);
-
-            Assert.That(method, Is.Not.Null);
-            string extracted = (string)method.Invoke(
-                null,
-                new object[] { descriptor });
-
-            Assert.That(extracted, Is.EqualTo(descriptor));
-            Assert.That(
-                JObject.Parse(extracted)["yucp"]["bootstrapIntent"],
-                Is.EqualTo(
-                    JObject.Parse(descriptor)["yucp"]["bootstrapIntent"]));
         }
 
         [Test]
@@ -524,127 +487,6 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
-        public void PrecompiledInstallerRuntime_ResolvesSigningRootFromProtectedShellMetadata()
-        {
-            string tempExtractDir = Path.Combine(Path.GetTempPath(), "yucp-signing-root-" + System.Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempExtractDir);
-
-            try
-            {
-                string entryFolder = Path.Combine(tempExtractDir, "shell-metadata");
-                Directory.CreateDirectory(entryFolder);
-                File.WriteAllText(
-                    Path.Combine(entryFolder, "pathname"),
-                    "Packages/yucp.installed-packages/Wasbeer/YUCP_PackageInfo.json");
-
-                MethodInfo method = typeof(PackageBuilder).GetMethod(
-                    "ResolveSigningRootPathname",
-                    BindingFlags.Static | BindingFlags.NonPublic);
-
-                Assert.That(method, Is.Not.Null);
-
-                string signingRoot = method.Invoke(null, new object[] { tempExtractDir }) as string;
-                Assert.That(signingRoot, Is.EqualTo("Packages/yucp.installed-packages/Wasbeer"));
-            }
-            finally
-            {
-                if (Directory.Exists(tempExtractDir))
-                {
-                    Directory.Delete(tempExtractDir, true);
-                }
-            }
-        }
-
-        [TestCase("alias-v1")]
-        [TestCase("alias-v2")]
-        public void PrecompiledInstallerRuntime_ResolvesSigningRootFromAliasPackageJson(
-            string aliasKind)
-        {
-            string tempExtractDir = Path.Combine(Path.GetTempPath(), "yucp-alias-signing-root-" + System.Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempExtractDir);
-
-            try
-            {
-                string entryFolder = Path.Combine(tempExtractDir, "alias-shell");
-                Directory.CreateDirectory(entryFolder);
-                File.WriteAllText(
-                    Path.Combine(entryFolder, "pathname"),
-                    "Packages/com.example.alias/package.json");
-                File.WriteAllText(
-                    Path.Combine(entryFolder, "asset"),
-                    "{\n  \"name\": \"com.example.alias\",\n  \"yucp\": {\n" +
-                    $"    \"kind\": \"{aliasKind}\"\n  }}\n}}");
-
-                MethodInfo method = typeof(PackageBuilder).GetMethod(
-                    "ResolveSigningRootPathname",
-                    BindingFlags.Static | BindingFlags.NonPublic);
-                Assert.That(method, Is.Not.Null);
-
-                string signingRoot = method.Invoke(null, new object[] { tempExtractDir }) as string;
-                Assert.That(signingRoot, Is.EqualTo("Packages/com.example.alias"));
-            }
-            finally
-            {
-                if (Directory.Exists(tempExtractDir))
-                {
-                    Directory.Delete(tempExtractDir, true);
-                }
-            }
-        }
-
-        [Test]
-        public void PrecompiledInstallerRuntime_InjectsSigningFilesIntoProtectedShellRoot()
-        {
-            string packagePath = null;
-            try
-            {
-                SignatureEmbedder.EmbedSigningData(
-                    new PackageManifest
-                    {
-                        authorityId = "unitysign.yucp",
-                        keyId = "authority-key",
-                        publisherId = "publisher-123",
-                        packageId = "package-123",
-                        version = "1.0.0",
-                        archiveSha256 = "deadbeef",
-                        fileHashes = new Dictionary<string, string>(),
-                        certificateChain = Array.Empty<YUCP.Importer.Editor.PackageVerifier.Data.CertificateData>(),
-                    },
-                    new SignatureData
-                    {
-                        algorithm = "ed25519",
-                        keyId = "authority-key",
-                        signature = "c2lnbmF0dXJl",
-                        certificateIndex = 0,
-                    });
-
-                packagePath = CreateUnityPackage(new Dictionary<string, byte[]>
-                {
-                    ["asset-shell/pathname"] = Encoding.UTF8.GetBytes("Packages/yucp.installed-packages/Wasbeer/YUCP_PackageInfo.json"),
-                    ["asset-shell/asset"] = Encoding.UTF8.GetBytes("{\"packageName\":\"Wasbeer\"}"),
-                });
-
-                MethodInfo method = typeof(PackageBuilder).GetMethod(
-                    "InjectSigningDataIntoPackage",
-                    BindingFlags.Static | BindingFlags.NonPublic);
-                Assert.That(method, Is.Not.Null);
-
-                method.Invoke(null, new object[] { packagePath });
-
-                string[] pathnames = ReadPackagePathnames(packagePath);
-                Assert.That(pathnames, Has.Some.EqualTo("Packages/yucp.installed-packages/Wasbeer/_Signing/PackageManifest.json"));
-                Assert.That(pathnames, Has.Some.EqualTo("Packages/yucp.installed-packages/Wasbeer/_Signing/PackageManifest.sig"));
-                Assert.That(pathnames, Has.None.EqualTo("Assets/_Signing/PackageManifest.json"));
-                Assert.That(pathnames, Has.None.EqualTo("Assets/_Signing/PackageManifest.sig"));
-            }
-            finally
-            {
-                SignatureEmbedder.RemoveSigningData();
-                DeleteIfPresent(packagePath);
-            }
-        }
-
-        [Test]
         public void LegacyShell_InjectionCanSkipOptionalYucpMetadata()
         {
             string packagePath = null;
@@ -715,28 +557,6 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
-        public void MetadataToggle_DisablesPackageSigning()
-        {
-            MethodInfo method = typeof(PackageBuilder).GetMethod(
-                "ShouldAttemptPackageSigning",
-                BindingFlags.Static | BindingFlags.NonPublic);
-            Assert.That(method, Is.Not.Null);
-
-            ExportProfile profile = ScriptableObject.CreateInstance<ExportProfile>();
-            try
-            {
-                profile.embedYucpMetadata = false;
-
-                bool shouldSign = (bool)method.Invoke(null, new object[] { profile });
-                Assert.That(shouldSign, Is.False);
-            }
-            finally
-            {
-                UnityEngine.Object.DestroyImmediate(profile);
-            }
-        }
-
-        [Test]
         public void DirectInstallerRuntime_SearchesTempPackageWorkspace()
         {
             Type directInstallerType = GetDirectInstallerType();
@@ -769,7 +589,6 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
 
                 profile = ScriptableObject.CreateInstance<ExportProfile>();
                 profile.packageName = "Wasbeer";
-                profile.requiresLicenseVerification = true;
 
                 Type embedContextType = typeof(PackageBuilder).GetNestedType("PackageEmbedContext", BindingFlags.NonPublic);
                 Assert.That(embedContextType, Is.Not.Null);

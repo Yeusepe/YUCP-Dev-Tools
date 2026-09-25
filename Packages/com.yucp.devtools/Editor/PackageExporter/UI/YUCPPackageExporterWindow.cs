@@ -61,9 +61,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private VisualElement _supportToast;
         private ToastNotification _toast;
         
-        // Animated GIF support
-        private Dictionary<string, AnimatedGifData> animatedGifs = new Dictionary<string, AnimatedGifData>();
-        
         // Resizable inspector state
         private bool isResizingInspector = false;
         private float resizeStartY = 0f;
@@ -177,8 +174,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private bool showFolders = true;
         private bool showDependencies = true;
         private bool showQuickActions = true;
-        private bool showUpdateSteps = true;
-        private bool showCompanionTutorial = true;
         
         private Texture2D logoTexture;
         private Texture2D bannerGradientTexture;
@@ -219,12 +214,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private VisualElement _currentPopover = null;
         private VisualElement _popoverBackdrop = null;
         private double lastGapUpdateTime = 0;
-        private List<FaviconRequestData> faviconRequests = new List<FaviconRequestData>();
-        private VisualElement _signingSectionElement;
-        private YUCP.DevTools.Editor.PackageSigning.UI.PackageSigningTab _packageSigningTab;
-        private ExportProfile _packageSigningProfile;
-        private float lastGifUpdateTime = 0f;
-        private Dictionary<string, bool> _updateStepValidationFoldouts = new Dictionary<string, bool>();
         /// <summary>Main Package Exporter wiki (Help / Documentation).</summary>
         private const string PackageExporterWikiUrl = "https://github.com/Yeusepe/YUCP-Dev-Tools/wiki/Package-Exporter";
         /// <summary>Derived FBXs section (onboarding "Learn more" link).</summary>

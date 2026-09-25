@@ -86,7 +86,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             var embedMetadataToggle = new Toggle("Embed YUCP Metadata") { value = profile.embedYucpMetadata };
             embedMetadataToggle.AddToClassList("yucp-toggle");
-            embedMetadataToggle.tooltip = "Include optional YUCP package metadata and storefront media in the export. Disable for a cleaner package surface; package signing is also skipped.";
+            embedMetadataToggle.tooltip = "Include optional YUCP package metadata and storefront media in the export.";
             embedMetadataToggle.RegisterValueChangedCallback(evt =>
             {
                 if (profile != null)
@@ -119,7 +119,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             if (!profile.embedYucpMetadata)
             {
-                var metadataHelp = new Label("YUCP_PackageInfo.json, embedded storefront media, and package signing will be skipped for this export.");
+                var metadataHelp = new Label("YUCP_PackageInfo.json and embedded storefront media will be skipped for this export.");
                 metadataHelp.style.fontSize = 11;
                 metadataHelp.style.color = new UnityEngine.UIElements.StyleColor(new Color(0.6f, 0.8f, 1.0f));
                 metadataHelp.style.marginLeft = 4;

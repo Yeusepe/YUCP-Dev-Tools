@@ -59,11 +59,6 @@ namespace YUCP.DevTools.Editor.PackageExporter.Bridge
                     }
                 }
 
-                if (!string.IsNullOrWhiteSpace(result.warningMessage))
-                {
-                    Console.WriteLine($"[YUCP-Export] Warning: {result.warningMessage}");
-                }
-
                 if (publishResult != null && publishResult.wasPublished)
                 {
                     Console.WriteLine(

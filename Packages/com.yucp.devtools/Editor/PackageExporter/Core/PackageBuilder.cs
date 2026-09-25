@@ -8,13 +8,8 @@ using System.Text;
 using ICSharpCode.SharpZipLib.GZip;
 using ICSharpCode.SharpZipLib.Tar;
 #endif
-using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
-using YUCP.Importer.Editor.PackageManager;
-using PackageVerifierData = YUCP.Importer.Editor.PackageVerifier.Data;
-using YUCP.DevTools.Editor.PackageSigning.Core;
-using PackageSigningData = YUCP.DevTools.Editor.PackageSigning.Data;
 
 namespace YUCP.DevTools.Editor.PackageExporter
 {
@@ -25,7 +20,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
     public static class PackageBuilder
     {
         internal static bool s_isExporting = false;
-        private static string s_lastSigningFailureMessage;
         
         private const string DefaultGridPlaceholderPath = "Packages/com.yucp.devtools/Resources/DefaultGrid.png";
         private const string InstalledPackagesRoot = "Packages/yucp.installed-packages";
@@ -36,13 +30,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private const string PrecompiledInstallerRuntimePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/YUCP.DirectVpmInstaller.Runtime.dll";
         private const string PrecompiledInstallerRuntimeTargetFileName = "YUCP.DirectVpmInstaller.Runtime.dll";
 
-        // Companion tutorial runtime (injected as C# source + a .bytes overlay payload, never a raw .exe).
-        private const string CompanionRuntimeDir = "Packages/com.yucp.devtools/Editor/PackageExporter/CompanionRuntime";
-        private const string CompanionBootstrapTemplatePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Templates/CompanionBootstrap.cs.txt";
-        private const string CompanionOverlayBinaryPath = "Packages/com.yucp.devtools/Editor/PackageExporter/Binaries/CompanionOverlay/YUCPCompanionOverlay.exe";
-        private const string CompanionNamespaceMarker = "YUCP.CompanionTutorial.Generated.Source";
-        private const string CompanionOverlayBytesFileName = "YUCPCompanionOverlay.bytes";
-        
         private static bool IsDefaultGridPlaceholder(Texture2D texture)
         {
             if (texture == null) return false;
@@ -54,7 +41,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             public bool success;
             public string errorMessage;
-            public string warningMessage;
             public string outputPath;
             public float buildTimeSeconds;
             public int filesExported;
@@ -137,101 +123,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
-        private sealed class SigningRequestResult
-        {
-            public PackageSigningData.SigningResponse response;
-            public string rawError;
-            public string normalizedError;
-            public long responseCode;
-        }
-
-        private sealed class ProtectedAssetRegistration
-        {
-            public string protectedAssetId;
-            public string unlockMode;
-            public string wrappedContentKey;
-            public string contentKeyBase64;
-            public string contentHash;
-            public string manifestBindingSha256;
-            public string displayName;
-        }
-
-        private static bool IsSigningPathname(string pathname)
-        {
-            if (string.IsNullOrWhiteSpace(pathname))
-            {
-                return false;
-            }
-
-            string normalized = pathname.Replace('\\', '/');
-            return normalized.EndsWith("/_Signing/PackageManifest.json", StringComparison.OrdinalIgnoreCase) ||
-                   normalized.EndsWith("/_Signing/PackageManifest.sig", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static string ResolveSigningRootPathname(string tempExtractDir)
-        {
-            if (string.IsNullOrWhiteSpace(tempExtractDir) || !Directory.Exists(tempExtractDir))
-            {
-                return "Assets";
-            }
-
-            foreach (string folder in Directory.GetDirectories(tempExtractDir))
-            {
-                string pathnameFile = Path.Combine(folder, "pathname");
-                if (!File.Exists(pathnameFile))
-                {
-                    continue;
-                }
-
-                string pathname = File.ReadAllText(pathnameFile).Trim().Replace('\\', '/');
-                if (pathname.EndsWith("/YUCP_PackageInfo.json", StringComparison.OrdinalIgnoreCase))
-                {
-                    return Path.GetDirectoryName(pathname)?.Replace('\\', '/') ?? "Assets";
-                }
-
-                if (pathname.EndsWith("/package.json", StringComparison.OrdinalIgnoreCase))
-                {
-                    string assetFile = Path.Combine(folder, "asset");
-                    if (File.Exists(assetFile) && PackageJsonDeclaresAliasContract(File.ReadAllText(assetFile)))
-                    {
-                        return Path.GetDirectoryName(pathname)?.Replace('\\', '/') ?? "Assets";
-                    }
-                }
-            }
-
-            return "Assets";
-        }
-
-        // Defensive detection only: the exporter never writes an alias contract, but signing
-        // extraction still recognises a pre-existing one so the signing root is resolved correctly.
-        private static bool PackageJsonDeclaresAliasContract(string packageJsonContent)
-        {
-            if (string.IsNullOrWhiteSpace(packageJsonContent))
-            {
-                return false;
-            }
-
-            try
-            {
-                var packageJson = JObject.Parse(packageJsonContent);
-                string kind =
-                    packageJson["yucp"]?["kind"]?.ToString();
-                return string.Equals(
-                        kind,
-                        "alias-v1",
-                        StringComparison.Ordinal) ||
-                    string.Equals(
-                        kind,
-                        "alias-v2",
-                        StringComparison.Ordinal);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[PackageBuilder] Failed to inspect package.json for alias contract detection: {ex.Message}");
-                return false;
-            }
-        }
-
         private static bool TryInjectInstallerPreflightBootstrap(string tempExtractDir, string installerRoot, string installerScriptPath)
         {
             if (string.IsNullOrEmpty(installerScriptPath) || !File.Exists(installerScriptPath))
@@ -281,95 +172,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 "yucp-precompiled-installer-runtime");
         }
 
-        /// <summary>
-        /// Injects a self-contained companion-tutorial runtime so the tutorial auto-plays once in a
-        /// buyer's clean project (no com.yucp.devtools required), then self-cleans. Delivery is C#
-        /// source (the runner/overlay/data files relocated under CompanionRuntime/) wrapped in a
-        /// per-export-unique namespace so two imported packages never collide, plus a self-deleting
-        /// bootstrap and the native overlay shipped as a benign .bytes TextAsset (never a raw .exe).
-        /// Files land under <paramref name="companionDir"/>/Editor (an Assets Editor folder, which
-        /// always compiles regardless of installer-workspace settings). The tutorial definition is
-        /// carried inline as Base64 JSON in the bootstrap, so nothing depends on a separately-imported
-        /// metadata asset.
-        /// </summary>
-        private static bool TryInjectCompanionTutorial(string tempExtractDir, string companionDir, string tutorialJsonBase64, string runOnceKey)
-        {
-            string runnerPath = $"{CompanionRuntimeDir}/CompanionTutorialRunner.cs";
-            string overlayPath = $"{CompanionRuntimeDir}/CompanionOverlayWindow.cs";
-            string dataPath = $"{CompanionRuntimeDir}/CompanionTutorialRuntimeData.cs";
-
-            if (!File.Exists(runnerPath) || !File.Exists(overlayPath) || !File.Exists(dataPath))
-            {
-                Debug.LogWarning("[PackageBuilder] Companion tutorial runtime source not found. Skipping companion injection.");
-                return false;
-            }
-            if (!File.Exists(CompanionBootstrapTemplatePath))
-            {
-                Debug.LogWarning("[PackageBuilder] CompanionBootstrap.cs.txt template not found. Skipping companion injection.");
-                return false;
-            }
-
-            // One namespace per export — shared across this package's runtime + bootstrap files.
-            string uniqueNamespace = "YUCP.CompanionTutorial.Generated_" + Guid.NewGuid().ToString("N");
-            string editorDir = $"{companionDir}/Editor";
-            string overlayBytesPath = $"{editorDir}/CompanionOverlay/{CompanionOverlayBytesFileName}";
-
-            // 1. Runtime source files (namespace marker swapped to the unique namespace).
-            InjectCompanionSourceFile(tempExtractDir, runnerPath, $"{editorDir}/YUCP_CompanionRuntime_Runner.cs", uniqueNamespace);
-            InjectCompanionSourceFile(tempExtractDir, overlayPath, $"{editorDir}/YUCP_CompanionRuntime_Overlay.cs", uniqueNamespace);
-            InjectCompanionSourceFile(tempExtractDir, dataPath, $"{editorDir}/YUCP_CompanionRuntime_Data.cs", uniqueNamespace);
-
-            // 2. Bootstrap (namespace swap + token substitution; tutorial JSON carried inline).
-            string bootstrapGuid = Guid.NewGuid().ToString("N");
-            string bootstrapContent = File.ReadAllText(CompanionBootstrapTemplatePath)
-                .Replace(CompanionNamespaceMarker, uniqueNamespace)
-                .Replace("__YUCP_TUTORIAL_B64__", tutorialJsonBase64 ?? string.Empty)
-                .Replace("__YUCP_OVERLAY_PATH__", overlayBytesPath)
-                .Replace("__YUCP_COMPANION_DIR__", companionDir)
-                .Replace("__YUCP_RUNONCE_KEY__", runOnceKey);
-            WriteInjectedFile(tempExtractDir, bootstrapContent, $"{editorDir}/YUCP_CompanionBootstrap_{bootstrapGuid}.cs", MonoImporterMeta());
-
-            // 3. Overlay helper as a .bytes TextAsset (NOT an executable). The runtime extracts it to
-            //    Temp/ at launch — no .exe ever sits in the package or the visible project tree.
-            if (File.Exists(CompanionOverlayBinaryPath))
-            {
-                string helperGuid = Guid.NewGuid().ToString("N");
-                string helperFolder = Path.Combine(tempExtractDir, helperGuid);
-                Directory.CreateDirectory(helperFolder);
-                File.Copy(CompanionOverlayBinaryPath, Path.Combine(helperFolder, "asset"), true);
-                File.WriteAllText(Path.Combine(helperFolder, "pathname"), overlayBytesPath);
-                File.WriteAllText(Path.Combine(helperFolder, "asset.meta"), DefaultImporterMeta(helperGuid));
-            }
-            else
-            {
-                Debug.LogWarning("[PackageBuilder] Companion overlay binary not found; tutorial will be inert on Windows for this export.");
-            }
-
-            return true;
-        }
-
-        private static void InjectCompanionSourceFile(string tempExtractDir, string sourcePath, string targetPath, string uniqueNamespace)
-        {
-            string content = File.ReadAllText(sourcePath).Replace(CompanionNamespaceMarker, uniqueNamespace);
-            WriteInjectedFile(tempExtractDir, content, targetPath, MonoImporterMeta());
-        }
-
-        /// <summary>Writes an injected text asset (asset/pathname/asset.meta triple) into the staging dir.</summary>
-        private static void WriteInjectedFile(string tempExtractDir, string content, string targetPath, string metaWithoutGuid)
-        {
-            UnityPackageStagingWriter.WriteTextAsset(tempExtractDir, content, targetPath, metaWithoutGuid);
-        }
-
-        private static string MonoImporterMeta()
-        {
-            return UnityPackageStagingWriter.MonoImporterMeta();
-        }
-
-        private static string DefaultImporterMeta(string guid)
-        {
-            return UnityPackageStagingWriter.DefaultImporterMeta(guid);
-        }
-
         private static bool TryGetPatchRuntimeScriptReference(out string guid, out long localFileId)
         {
             guid = null;
@@ -398,58 +200,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
-        private static bool RequiresLicenseVerification(ExportProfile profile)
-        {
-            return profile != null && profile.requiresLicenseVerification;
-        }
-
         private static bool ShouldEmbedOptionalYucpMetadata(ExportProfile profile)
         {
             return profile == null || profile.embedYucpMetadata;
         }
 
-        private static bool ShouldAttemptPackageSigning(ExportProfile profile)
-        {
-            return ShouldEmbedOptionalYucpMetadata(profile);
-        }
-
         private static bool ShouldAssignPackageIdForExport(ExportProfile profile)
         {
             return profile != null &&
-                   (profile.requiresLicenseVerification ||
-                    profile.publishReleaseAfterExport ||
-                    ShouldEmbedOptionalYucpMetadata(profile));
+                   (profile.publishReleaseAfterExport || ShouldEmbedOptionalYucpMetadata(profile));
         }
-
-        private static bool AnyProfileRequiresLicenseVerification(ExportProfile profile)
-        {
-            if (RequiresLicenseVerification(profile))
-            {
-                return true;
-            }
-
-            if (profile == null || !profile.HasIncludedProfiles())
-            {
-                return false;
-            }
-
-            foreach (var sub in profile.GetIncludedProfiles())
-            {
-                if (RequiresLicenseVerification(sub))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool ShouldRequireDerivedFbxServerUnlock(ExportProfile profile)
-        {
-            return RequiresLicenseVerification(profile);
-        }
-
-        private static readonly List<ProtectedAssetRegistration> s_pendingProtectedAssetRegistrations = new List<ProtectedAssetRegistration>();
 
         /// <summary>
         /// Export a package using the provided profile
@@ -458,7 +218,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var result = new ExportResult();
             var startTime = DateTime.Now;
-            s_pendingProtectedAssetRegistrations.Clear();
             
             // Set exporting flag
             s_isExporting = true;
@@ -668,15 +427,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Manually collect dependencies if enabled (respects ignore list)
                 CollectFilteredDependencies(assetsToExport, profile, progressCallback);
                 
-                // Protected-payload exports build their real derived patch assets inside the synthetic payload export.
-                // The outer shell should stay metadata-only and must not create a second competing patch authoring pass.
                 // Convert derived FBXs after dependencies are collected so derived FBXs referenced only by exported
                 // assets (i.e., not directly in export folders) still get converted into patch artifacts.
                 hasPatchAssets = ConvertDerivedFbxToPatchAssets(assetsToExport, progressCallback, progress: 0.535f, profile: profile);
 
                 progressCallback?.Invoke(0.54f, $"Total assets after dependency collection: {assetsToExport.Count}");
 
-                if ((profile.requiresLicenseVerification || profile.publishReleaseAfterExport) &&
+                if (profile.publishReleaseAfterExport &&
                     string.IsNullOrWhiteSpace(profile.packageId))
                 {
                     PackageIdManager.AssignPackageId(profile);
@@ -711,34 +468,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                  {
                      progressCallback?.Invoke(0.58f, "Generating package.json...");
 
-                     // Collect all profiles (main + bundled) to check if any require verified purchase gating.
-                     bool anyProfileRequiresLicense = AnyProfileRequiresLicenseVerification(profile);
-
-                     // Build effective dependency list — inject com.yucp.importer when any profile requires
-                     // verified purchase gating for derived assets.
-                     var effectiveDeps = new List<PackageDependency>(profile.dependencies ?? new List<PackageDependency>());
-                     if (anyProfileRequiresLicense)
-                     {
-                          bool alreadyListed = effectiveDeps.Any(d => d.packageName == "com.yucp.importer");
-                         if (!alreadyListed)
-                         {
-                            effectiveDeps.Add(new PackageDependency
-                            {
-                                packageName = "com.yucp.importer",
-                                packageVersion = "0.1.0",
-                                specificVersion = "0.1.0",
-                                versionMode = DependencyVersionMode.Latest,
-                                displayName = "YUCP Importer",
-                                enabled = true,
-                                exportMode = DependencyExportMode.Dependency,
-                                isVpmDependency = true,
-                            });
-                         }
-                     }
-                     
-                      packageJsonContent = DependencyScanner.GeneratePackageJson(
+                     packageJsonContent = DependencyScanner.GeneratePackageJson(
                           profile,
-                          effectiveDeps,
+                          profile.dependencies.Where(d => d != null && !string.Equals(d.packageName, "com.yucp.importer", StringComparison.OrdinalIgnoreCase)).ToList(),
                           null
                       );
                   }
@@ -773,8 +505,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     foreach (var link in profile.productLinks)
                     {
-                        Texture2D iconToAdd = link.customIcon ?? link.icon;
-                        string exportAssetPath;
+                        Texture2D iconToAdd = link.customIcon;
+                        string exportAssetPath = null;
                         string linkIconPath = null;
 
                         if (iconToAdd != null)
@@ -786,20 +518,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                                 out exportAssetPath
                             );
                         }
-                        else if (!string.IsNullOrEmpty(link.cachedIconPath) && File.Exists(link.cachedIconPath))
-                        {
-                            exportAssetPath = null;
-                            linkIconPath = embedContext.RegisterEmbeddedFile(link.cachedIconPath, "ProductLinks", link.label ?? "ProductLink");
-                        }
-                        else
-                        {
-                            exportAssetPath = null;
-                        }
-
                         if (!string.IsNullOrEmpty(exportAssetPath) && !assetsToExport.Contains(exportAssetPath))
                         {
                             assetsToExport.Add(exportAssetPath);
-                            Debug.Log($"[PackageBuilder] Added product link icon to export: {exportAssetPath} (source: {(link.customIcon != null ? "customIcon" : "icon")})");
+                            Debug.Log($"[PackageBuilder] Added product link icon to export: {exportAssetPath}");
                         }
 
                         if (!string.IsNullOrEmpty(linkIconPath))
@@ -1064,8 +786,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 
                 // At this point tempPackagePath contains the full package contents
-                // (all assets, package.json/installer/bundles/metadata), but no icon
-                // and no signing data yet.
+                // (all assets, package.json/installer/bundles/metadata), but no icon yet.
                 
                 // Get final output path
                 string finalOutputPath = profile.GetOutputFilePath();
@@ -1077,7 +798,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     Directory.CreateDirectory(outputDir);
                 }
                 
-                // We'll produce the final signed package at this path:
+                // Add the icon to the package before copying it to the output location.
                 string contentPackagePath = tempPackagePath;
                 
                 if (profile.icon != null && !IsDefaultGridPlaceholder(profile.icon))
@@ -1105,105 +826,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
                 
-                // Assign packageId if not already assigned (before signing)
-                string packageId = profile.packageId;
-                if (ShouldAssignPackageIdForExport(profile) && string.IsNullOrEmpty(packageId))
-                {
-                    progressCallback?.Invoke(0.81f, "Assigning package ID...");
-                    packageId = PackageIdManager.AssignPackageId(profile);
-                    if (string.IsNullOrEmpty(packageId))
-                    {
-                        Debug.LogWarning("[PackageBuilder] Failed to assign packageId, continuing without it");
-                    }
-                    else
-                    {
-                        Debug.Log($"[PackageBuilder] Using packageId: {packageId}");
-                    }
-                }
+                progressCallback?.Invoke(0.86f, "Copying package to output location...");
+                File.Copy(contentPackagePath, finalOutputPath, true);
 
-                // Sign package if certificate is available, using the fully-prepared contentPackagePath
-                bool packageSigned = false;
-                bool signingWasRequired = false;
-                bool signingBlockedExport = false;
-                string signingWarningMessage = null;
-                s_lastSigningFailureMessage = null;
-                try
-                {
-                    var signingSettings = GetSigningSettings();
-                    if (ShouldAttemptPackageSigning(profile) && signingSettings != null && signingSettings.HasValidCertificate())
-                    {
-                        signingWasRequired = true;
-                        progressCallback?.Invoke(0.82f, "Signing package...");
-                        packageSigned = SignPackageBeforeExport(
-                            contentPackagePath,
-                            profile,
-                            progressCallback);
-                        if (packageSigned)
-                        {
-                            progressCallback?.Invoke(0.84f, "Package signed successfully");
-                        }
-                        else
-                        {
-                            string signingFailureMessage = s_lastSigningFailureMessage;
-                            if (ShouldAllowUnsignedExportAfterSigningFailure(signingFailureMessage))
-                            {
-                                signingWarningMessage = BuildUnsignedExportWarning(signingFailureMessage);
-                                progressCallback?.Invoke(0.84f, "Signing unavailable, exporting unsigned package...");
-                                Debug.LogWarning($"[PackageBuilder] {signingWarningMessage}");
-                            }
-                            else
-                            {
-                                signingBlockedExport = true;
-                                Debug.LogWarning("[PackageBuilder] Package signing failed, canceling export");
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[PackageBuilder] Package signing error: {ex.Message}");
-                    if (signingWasRequired)
-                    {
-                        string signingFailureMessage = $"Package signing failed before export completed: {ex.Message}";
-                        s_lastSigningFailureMessage = signingFailureMessage;
-                        if (ShouldAllowUnsignedExportAfterSigningFailure(signingFailureMessage))
-                        {
-                            signingWarningMessage = BuildUnsignedExportWarning(signingFailureMessage);
-                            progressCallback?.Invoke(0.84f, "Signing unavailable, exporting unsigned package...");
-                            Debug.LogWarning($"[PackageBuilder] {signingWarningMessage}");
-                        }
-                        else
-                        {
-                            signingBlockedExport = true;
-                        }
-                    }
-                }
-
-                if (signingBlockedExport)
-                {
-                    progressCallback?.Invoke(0.86f, "Signing requirements blocked export.");
-                }
-                else
-                {
-                    // Copy signed (or unsigned) content package to final location
-                    progressCallback?.Invoke(0.86f, "Copying package to output location...");
-                    File.Copy(contentPackagePath, finalOutputPath, true);
-                }
-                
                 progressCallback?.Invoke(0.9f, "Cleaning up temporary files...");
-                
-                if (packageSigned)
-                {
-                    try
-                    {
-                        SignatureEmbedder.RemoveSigningData();
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[PackageBuilder] Failed to clean up signing data: {ex.Message}");
-                    }
-                }
-                
+
                 // Clean up temp package
                 if (File.Exists(tempPackagePath))
                 {
@@ -1275,16 +902,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     ConfuserExManager.RestoreOriginalDlls(profile.assembliesToObfuscate);
                 }
 
-                if (signingBlockedExport)
-                {
-                    result.success = false;
-                    result.errorMessage = !string.IsNullOrEmpty(s_lastSigningFailureMessage)
-                        ? s_lastSigningFailureMessage
-                        : "Package signing failed. Resolve the billing or certificate issue and try exporting again.";
-                    result.buildTimeSeconds = (float)(DateTime.Now - startTime).TotalSeconds;
-                    return result;
-                }
-                
                 progressCallback?.Invoke(0.98f, "Saving export statistics...");
                 
                 // Update profile statistics
@@ -1296,22 +913,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 // Build result
                 result.success = true;
-                result.warningMessage = signingWarningMessage;
 
-                // Surface companion-tutorial issues as a non-blocking warning so creators don't ship a
-                // broken walkthrough. The tutorial never fails the export.
-                if (profile.companionTutorial != null && profile.companionTutorial.enabled)
-                {
-                    var companionFindings = CompanionTutorialValidator.Validate(profile.companionTutorial);
-                    string companionSummary = CompanionTutorialValidator.Summarize(companionFindings);
-                    if (!string.IsNullOrEmpty(companionSummary))
-                    {
-                        result.warningMessage = string.IsNullOrEmpty(result.warningMessage)
-                            ? companionSummary
-                            : result.warningMessage + "\n\n" + companionSummary;
-                    }
-                }
-                
                 // Track export for milestones
                 try
                 {
@@ -1323,50 +925,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 result.outputPath = finalOutputPath;
                 result.buildTimeSeconds = (float)(DateTime.Now - startTime).TotalSeconds;
-                Debug.Log($"[PackageBuilder] Export succeeded: '{finalOutputPath}' in {result.buildTimeSeconds:0.###}s. files={validAssets.Count}, signed={packageSigned}, warning={(string.IsNullOrEmpty(signingWarningMessage) ? "none" : signingWarningMessage)}");
-                
-                // Register exported package in ExportedPackageRegistry
-                if (!string.IsNullOrEmpty(packageId))
-                {
-                    try
-                    {
-                        progressCallback?.Invoke(0.99f, "Registering export...");
-                        var exportedRegistry = ExportedPackageRegistry.GetOrCreate();
-                        var signingSettings = GetSigningSettings();
-                        string publisherId = signingSettings?.publisherId ?? "";
-                        
-                        // Compute archive hash for registration
-                        string archiveSha256 = "";
-                        try
-                        {
-                            using (var sha256 = System.Security.Cryptography.SHA256.Create())
-                            using (var stream = File.OpenRead(finalOutputPath))
-                            {
-                                byte[] hash = sha256.ComputeHash(stream);
-                                archiveSha256 = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.LogWarning($"[PackageBuilder] Failed to compute archive hash for registry: {ex.Message}");
-                        }
-                        
-                        exportedRegistry.RegisterExport(
-                            packageId,
-                            profile.packageName,
-                            publisherId,
-                            profile.version,
-                            archiveSha256,
-                            finalOutputPath
-                        );
-                        
-                        Debug.Log($"[PackageBuilder] Registered export: {packageId} v{profile.version}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[PackageBuilder] Failed to register export: {ex.Message}");
-                    }
-                }
+                Debug.Log($"[PackageBuilder] Export succeeded: '{finalOutputPath}' in {result.buildTimeSeconds:0.###}s. files={validAssets.Count}");
                 
                 return result;
             }
@@ -1399,7 +958,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 // Clear exporting flag
                 s_isExporting = false;
                 EditorPrefs.DeleteKey(TempPatchExportMarkerKey);
-                s_pendingProtectedAssetRegistrations.Clear();
             }
         }
         
@@ -1613,36 +1171,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             "Moving or renaming that base FBX will prevent generation.");
                     }
 
-                    bool requiresServerUnlock = ShouldRequireDerivedFbxServerUnlock(profile);
-                    bool builtEntries;
-                    string protectedAssetId = string.Empty;
-                    string wrappedContentKey = string.Empty;
-                    List<DerivedFbxAsset.PatchEntry> entries;
-
-                    if (requiresServerUnlock)
-                    {
-                        builtEntries = PatchBuilder.CreateServerProtectedPatchEntries(
-                            basePaths,
-                            baseGuids,
-                            basePathFallbacks,
-                            normalizedModifiedPath,
-                            hints.friendlyName,
-                            out _,
-                            out entries,
-                            out protectedAssetId,
-                            out wrappedContentKey);
-                    }
-                    else
-                    {
-                        builtEntries = PatchBuilder.CreateEncryptedPatchEntries(
-                            basePaths,
-                            baseGuids,
-                            basePathFallbacks,
-                            normalizedModifiedPath,
-                            hints.friendlyName,
-                            out _,
-                            out entries);
-                    }
+                    bool builtEntries = PatchBuilder.CreateEncryptedPatchEntries(
+                        basePaths,
+                        baseGuids,
+                        basePathFallbacks,
+                        normalizedModifiedPath,
+                        hints.friendlyName,
+                        out _,
+                        out List<DerivedFbxAsset.PatchEntry> entries);
 
                     if (!builtEntries)
                     {
@@ -1664,23 +1200,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     
                     PatchBuilder.EmbedMetaFile(normalizedModifiedPath, derivedAsset);
 
-                    // Propagate license gate from the export profile
-                    if (ShouldRequireDerivedFbxServerUnlock(profile))
-                    {
-                        derivedAsset.requiresLicense = true;
-                        derivedAsset.licensePackageId = profile.packageId;
-                        derivedAsset.requiresServerUnlock = true;
-                        derivedAsset.protectedAssetId = protectedAssetId;
-
-                        s_pendingProtectedAssetRegistrations.Add(new ProtectedAssetRegistration
-                        {
-                            protectedAssetId = protectedAssetId,
-                            unlockMode = "wrapped_content_key",
-                            wrappedContentKey = wrappedContentKey,
-                            displayName = hints.friendlyName
-                        });
-                    }
-                    
                     // Use derived FBX GUID as filename identifier
                     string fileName = $"DerivedFbxAsset_{derivedFbxGuid.Substring(0, 8)}_{SanitizeFileName(hints.friendlyName)}.asset";
                     string pkgPath = $"Packages/com.yucp.temp/Patches/{fileName}";
@@ -2043,79 +1562,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return safe;
         }
 
-        private static string ComputeFileSha256Hex(string filePath)
-        {
-            using (var stream = File.OpenRead(filePath))
-            using (var sha256 = System.Security.Cryptography.SHA256.Create())
-            {
-                byte[] hash = sha256.ComputeHash(stream);
-                var sb = new StringBuilder(hash.Length * 2);
-                for (int i = 0; i < hash.Length; i++)
-                    sb.Append(hash[i].ToString("x2"));
-                return sb.ToString();
-            }
-        }
-
         /// <summary>
         /// Generate a package.json file for the export
         /// </summary>
-        private static string GeneratePackageJson(ExportProfile profile)
-        {
-            try
-            {
-                string existingPackageJsonPath = null;
-                foreach (string folder in profile.foldersToExport)
-                {
-                    string testPath = Path.Combine(folder, "package.json");
-                    if (File.Exists(testPath))
-                    {
-                        existingPackageJsonPath = testPath;
-                        break;
-                    }
-                }
-                
-                // Generate package.json content
-                string packageJsonContent = DependencyScanner.GeneratePackageJson(
-                    profile,
-                    profile.dependencies,
-                    existingPackageJsonPath
-                );
-                
-                // If we have an existing package.json, update it in place
-                if (!string.IsNullOrEmpty(existingPackageJsonPath))
-                {
-                    File.WriteAllText(existingPackageJsonPath, packageJsonContent);
-                    AssetDatabase.Refresh();
-                    return existingPackageJsonPath;
-                }
-                
-                 if (profile.foldersToExport.Count > 0)
-                 {
-                     string tempPackageJsonPath = Path.Combine(profile.foldersToExport[0], "package.json");
-                     
-                     // Ensure the file is created with proper permissions and timestamp
-                     File.WriteAllText(tempPackageJsonPath, packageJsonContent);
-                     
-                     // Force file system sync and refresh
-                     File.SetLastWriteTime(tempPackageJsonPath, DateTime.Now);
-                     AssetDatabase.Refresh();
-                     
-                     // Wait a moment for Unity to process the file
-                     System.Threading.Thread.Sleep(100);
-                     AssetDatabase.Refresh();
-                     
-                     return tempPackageJsonPath;
-                 }
-                
-                return null;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[PackageBuilder] Failed to generate package.json: {ex.Message}");
-                return null;
-            }
-        }
-
         private static void CreateEmptyUnityPackage(string packagePath)
         {
 #if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
@@ -2348,9 +1797,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     version = profile.version ?? "",
                     author = profile.author ?? "",
                     description = profile.description ?? "",
-                    productLinks = new List<ProductLinkJson>(),
-                    updateSteps = profile.updateSteps,
-                    companionTutorial = profile.companionTutorial
+                    productLinks = new List<ProductLinkJson>()
                 };
 
                 // Convert product links
@@ -2372,14 +1819,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                         else
                         {
-                            Texture2D iconToUse = link.customIcon ?? link.icon;
+                            Texture2D iconToUse = link.customIcon;
                             if (iconToUse != null && embedContext != null)
                             {
                                 iconPath = embedContext.RegisterTextureForExport(iconToUse, link.label ?? "ProductLink", "ProductLinks", out var _);
-                            }
-                            else if (!string.IsNullOrEmpty(link.cachedIconPath) && File.Exists(link.cachedIconPath) && embedContext != null)
-                            {
-                                iconPath = embedContext.RegisterEmbeddedFile(link.cachedIconPath, "ProductLinks", link.label ?? "ProductLink");
                             }
                             else if (iconToUse != null)
                             {
@@ -2545,34 +1988,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
 
-                // Embed license requirements for all profiles (main + bundled)
-                var licensePackages = new List<LicensePackageJson>();
-                void AddLicenseProfile(ExportProfile p)
-                {
-                    if (p != null && p.requiresLicenseVerification && !string.IsNullOrEmpty(p.packageId))
-                    {
-                        licensePackages.Add(new LicensePackageJson
-                        {
-                            packageId = p.packageId,
-                            packageName = p.packageName ?? p.packageId,
-                            productId = p.GetPrimaryLicenseProductId(),
-                            gumroadPermalink = p.gumroadProductId ?? "",
-                            jinxxyProductId = p.jinxxyProductId ?? "",
-                            discordGuildId = p.licenseDiscordGuildId ?? "",
-                            discordRoleId  = p.licenseDiscordRoleId  ?? "",
-                            creatorAuthUserId = YUCP.DevTools.Editor.PackageSigning.Core.YucpOAuthService.GetUserId() ?? "",
-                        });
-                    }
-                }
-                AddLicenseProfile(profile);
-                if (profile.HasIncludedProfiles())
-                {
-                    foreach (var sub in profile.GetIncludedProfiles())
-                        AddLicenseProfile(sub);
-                }
-                if (licensePackages.Count > 0)
-                    metadataJson.licensePackages = licensePackages;
-
                 // Serialize to JSON
                 return JsonUtility.ToJson(metadataJson, true);
             }
@@ -2595,13 +2010,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public List<ProductLinkJson> productLinks;
             public string versionRule;
             public string versionRuleName;
-            public UpdateStepList updateSteps;
-            public CompanionTutorialDefinition companionTutorial;
             public List<FileHashJson> fileHashes;
-            /// <summary>Per-profile license requirements embedded at export time.</summary>
-            public List<LicensePackageJson> licensePackages;
-            
-            // Storefront metadata
             public string tagline;
             public string category;
             public List<string> supportedPlatforms;
@@ -2623,20 +2032,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             /// </summary>
             public List<AssetBreakdownJson> assetBreakdown;
             public string exportDate;
-        }
-
-        [Serializable]
-        private class LicensePackageJson
-        {
-            public string packageId;
-            public string packageName;
-            public string productId;
-            public string gumroadPermalink;
-            public string jinxxyProductId;
-            public string discordGuildId;
-            public string discordRoleId;
-            /// <summary>Creator's YUCP auth user ID — embedded so importer can query Discord entitlements.</summary>
-            public string creatorAuthUserId;
         }
 
         [Serializable]
@@ -3082,16 +2477,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 #endif
                 
                 bool shouldInjectInstallerSurface = !string.IsNullOrEmpty(packageJsonContent);
-                bool enableCustomUpdateSteps = profile != null && profile.updateSteps != null && profile.updateSteps.enabled;
                 bool shouldInjectInstallerRuntime = shouldInjectInstallerSurface;
-
-                // 0. Disable main assets by default to avoid Unity overwriting existing files on import.
-                // This only affects already-exported assets (not injected items below).
-                if (enableCustomUpdateSteps)
-                {
-                    progressCallback?.Invoke(0.753f, "Preparing imported assets for staged update flow...");
-                    DisablePackageEntriesByDefault(tempExtractDir);
-                }
 
                 // 1. Inject package.json shell metadata.
                 progressCallback?.Invoke(0.754f, "Injecting package shell metadata...");
@@ -3130,33 +2516,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         ? $"{InstalledPackagesRoot}/{embedContext.SafePackageName}/YUCP_PackageInfo.json"
                         : "Assets/YUCP_PackageInfo.json";
                     File.WriteAllText(Path.Combine(metadataFolder, "pathname"), metadataPath);
-                }
-
-                // 1b-companion. Inject a self-contained companion-tutorial runtime so the tutorial
-                // auto-plays once in a clean buyer project (no devtools) and then self-cleans.
-                if (!string.IsNullOrEmpty(packageMetadataJson) &&
-                    embedContext != null &&
-                    profile != null &&
-                    profile.companionTutorial != null &&
-                    profile.companionTutorial.enabled &&
-                    profile.companionTutorial.steps != null &&
-                    profile.companionTutorial.steps.Count > 0)
-                {
-                    progressCallback?.Invoke(0.755f, "Injecting companion tutorial runtime...");
-                    // Files go under an Assets Editor folder so they always compile in the buyer's
-                    // project (independent of whether the installed-packages workspace exists).
-                    string companionDir = $"Assets/YUCP_Companion/{embedContext.SafePackageName}";
-                    string runOnceKey = $"YUCP.CompanionTutorial.Ran.{embedContext.SafePackageName}.{profile.version}";
-                    string tutorialJsonBase64 = Convert.ToBase64String(
-                        Encoding.UTF8.GetBytes(JsonUtility.ToJson(profile.companionTutorial)));
-                    try
-                    {
-                        TryInjectCompanionTutorial(tempExtractDir, companionDir, tutorialJsonBase64, runOnceKey);
-                    }
-                    catch (Exception companionEx)
-                    {
-                        Debug.LogWarning($"[PackageBuilder] Companion tutorial injection failed (export continues without it): {companionEx.Message}");
-                    }
                 }
 
                 // 1c. Inject embedded assets (icons, banners, etc.)
@@ -3202,77 +2561,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     File.WriteAllText(Path.Combine(installedPackageFolder, "asset.meta"), installedPackageMeta);
                 }
 
-                // 2a. Inject Mini Package Guardian (permanent protection layer)
-                //
-                // Requirements:
-                // - Must be fully self-contained (must NOT reference YUCP.Components.*), because it is bundled for projects
-                //   that don't have com.yucp.components installed.
-                // - Must NOT be injected if the exported package.json will install com.yucp.components (avoids conflicts).
                 progressCallback?.Invoke(0.758f, "Injecting installer and patch runtime...");
-                bool hasYucpComponentsDependency = profile.dependencies != null &&
-                    profile.dependencies.Any(d => d.enabled && d.packageName == "com.yucp.components");
-
-                bool packageJsonWillInstallYucpComponents =
-                    !string.IsNullOrEmpty(packageJsonContent) &&
-                    packageJsonContent.IndexOf("\"com.yucp.components\"", StringComparison.OrdinalIgnoreCase) >= 0;
-
-                if (enableCustomUpdateSteps &&
-                    !hasYucpComponentsDependency &&
-                    !packageJsonWillInstallYucpComponents)
-                {
-                    string guardianTemplatePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Templates/PackageGuardianMini.cs";
-                    string transactionTemplatePath = "Packages/com.yucp.devtools/Editor/PackageExporter/Templates/GuardianTransaction.cs";
-
-                    if (!File.Exists(guardianTemplatePath) || !File.Exists(transactionTemplatePath))
-                    {
-                        Debug.LogWarning("[PackageBuilder] Mini Guardian templates missing in com.yucp.devtools. Skipping yucp.packageguardian injection.");
-                    }
-                    else
-                    {
-                        // 1. Inject GuardianTransaction.cs (core dependency)
-                        string transactionGuid = Guid.NewGuid().ToString("N");
-                        string transactionFolder = Path.Combine(tempExtractDir, transactionGuid);
-                        Directory.CreateDirectory(transactionFolder);
-
-                        string transactionContent = File.ReadAllText(transactionTemplatePath);
-                        File.WriteAllText(Path.Combine(transactionFolder, "asset"), transactionContent);
-                        File.WriteAllText(Path.Combine(transactionFolder, "pathname"), "Packages/yucp.packageguardian/Editor/Core/Transactions/GuardianTransaction.cs");
-
-                        string transactionMeta = "fileFormatVersion: 2\nguid: " + transactionGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
-                        File.WriteAllText(Path.Combine(transactionFolder, "asset.meta"), transactionMeta);
-
-                        // 2. Inject PackageGuardianMini.cs (self-contained implementation)
-                        string guardianGuid = Guid.NewGuid().ToString("N");
-                        string guardianFolder = Path.Combine(tempExtractDir, guardianGuid);
-                        Directory.CreateDirectory(guardianFolder);
-
-                        string guardianContent = File.ReadAllText(guardianTemplatePath);
-                        File.WriteAllText(Path.Combine(guardianFolder, "asset"), guardianContent);
-                        File.WriteAllText(Path.Combine(guardianFolder, "pathname"), "Packages/yucp.packageguardian/Editor/PackageGuardianMini.cs");
-
-                        string guardianMeta = "fileFormatVersion: 2\nguid: " + guardianGuid + "\nMonoImporter:\n  externalObjects: {}\n  serializedVersion: 2\n  defaultReferences: []\n  executionOrder: 0\n  icon: {instanceID: 0}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
-                        File.WriteAllText(Path.Combine(guardianFolder, "asset.meta"), guardianMeta);
-
-                        // 3. Create package.json for the guardian package
-                        string guardianPackageJsonGuid = Guid.NewGuid().ToString("N");
-                        string guardianPackageJsonFolder = Path.Combine(tempExtractDir, guardianPackageJsonGuid);
-                        Directory.CreateDirectory(guardianPackageJsonFolder);
-
-                        string guardianPackageJson = @"{
-  ""name"": ""yucp.packageguardian"",
-  ""displayName"": ""YUCP Package Guardian (Mini)"",
-  ""version"": ""2.0.0"",
-  ""description"": ""Lightweight import protection for YUCP packages. Resolves .yucp_disabled files and preserves meta GUIDs."",
-  ""unity"": ""2019.4""
-}";
-                        File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "asset"), guardianPackageJson);
-                        File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "pathname"), "Packages/yucp.packageguardian/package.json");
-
-                        string guardianPackageJsonMeta = "fileFormatVersion: 2\nguid: " + guardianPackageJsonGuid + "\nTextScriptImporter:\n  externalObjects: {}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
-                        File.WriteAllText(Path.Combine(guardianPackageJsonFolder, "asset.meta"), guardianPackageJsonMeta);
-                    }
-                }
-                
                 // 2b. Inject DirectVpmInstaller runtime
                 string installerRoot = embedContext != null ? embedContext.InstallerRoot : "Assets/Editor";
                 bool deferInstallerActivation = embedContext != null && shouldInjectInstallerRuntime;
@@ -3558,10 +2847,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             
                             bool isInObfuscatedAssembly = !string.IsNullOrEmpty(asmdefInDir);
                             
-                            // Check if this is a script file that could cause compilation errors
                             string extension = Path.GetExtension(filePath).ToLower();
-                            bool isCompilableScript = extension == ".cs" || extension == ".asmdef";
-                            bool shouldDisableScript = isCompilableScript && enableCustomUpdateSteps;
                             
                             // Skip ConfuserEx project files
                             if (extension == ".crproj")
@@ -3641,10 +2927,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             }
                             
                             string unityPathname = $"Packages/{packageName}/{relativePath.Replace('\\', '/')}";
-                            if (shouldDisableScript)
-                            {
-                                unityPathname += ".yucp_disabled";
-                            }
                             
                             // GUID handling strategy:
                             // - For .yucp_disabled files: Generate NEW GUID, but store ORIGINAL GUID in meta userData for restoration
@@ -3665,14 +2947,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             }
                             catch { /* best-effort */ }
                             
-                            if (shouldDisableScript)
-                            {
-                                // Generate new GUID for disabled files (prevents GUID conflicts on re-import)
-                                fileGuid = Guid.NewGuid().ToString("N");
-                                // Store original GUID token so the installer/resolver can restore GUID on enable.
-                                metaContent = GenerateMetaForFileWithOriginalGuid(filePath, fileGuid, originalGuid);
-                            }
-                            else if (File.Exists(originalMetaPath))
+                            if (File.Exists(originalMetaPath))
                             {
                                 // Preserve original GUID for non-script files (safe, no renaming occurs)
                                 string originalMeta = File.ReadAllText(originalMetaPath);
@@ -3756,83 +3031,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
-        private static void DisablePackageEntriesByDefault(string extractDir)
-        {
-            try
-            {
-                int disabledCount = 0;
-                var disabledSamples = new List<string>();
-
-                foreach (string folder in Directory.GetDirectories(extractDir))
-                {
-                    string pathnameFile = Path.Combine(folder, "pathname");
-                    string metaFile = Path.Combine(folder, "asset.meta");
-
-                    if (!File.Exists(pathnameFile) || !File.Exists(metaFile))
-                        continue;
-
-                    string pathname = File.ReadAllText(pathnameFile).Trim();
-                    if (string.IsNullOrEmpty(pathname))
-                        continue;
-
-                    // Skip folders (do not rename folder assets)
-                    if (IsFolderMeta(metaFile))
-                        continue;
-
-                    // Only apply to project assets
-                    if (!pathname.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) &&
-                        !pathname.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    // Avoid double-suffixing
-                    if (pathname.EndsWith(".yucp_disabled", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    string normalizedPath = pathname.Replace('\\', '/');
-
-                    // Keep embedded artifacts readable by the update system and UI
-                    if (normalizedPath.IndexOf($"{InstalledPackagesRoot}/", StringComparison.OrdinalIgnoreCase) >= 0)
-                        continue;
-
-                    // Back-compat: keep legacy metadata file readable
-                    if (string.Equals(pathname, "Assets/YUCP_PackageInfo.json", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    // Disable
-                    File.WriteAllText(pathnameFile, pathname + ".yucp_disabled");
-                    disabledCount++;
-                    if (disabledSamples.Count < 10)
-                        disabledSamples.Add(pathname);
-                }
-
-                if (disabledCount > 0)
-                {
-                    Debug.Log($"[PackageBuilder] Marked {disabledCount} exported asset(s) as .yucp_disabled for staged import protection. Samples: {string.Join(", ", disabledSamples)}");
-                }
-                else
-                {
-                    Debug.Log("[PackageBuilder] Staged import protection ran, but no package entries needed .yucp_disabled renaming.");
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[PackageBuilder] Failed to apply default disable pass: {ex.Message}\n{ex.StackTrace}");
-            }
-        }
-
-        private static bool IsFolderMeta(string metaPath)
-        {
-            try
-            {
-                var content = File.ReadAllText(metaPath);
-                return content.IndexOf("folderAsset: yes", StringComparison.OrdinalIgnoreCase) >= 0;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-        
         /// <summary>
         /// Helper to recursively add files to a tar archive
         /// </summary>
@@ -3860,30 +3058,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 #endif
         }
         
-        /// <summary>
-        /// Generate appropriate .meta file content using file extension
-        /// </summary>
-        private static string GenerateMetaForFileWithOriginalGuid(string filePath, string guid, string originalGuid)
-        {
-            string baseMeta = GenerateMetaForFile(filePath, guid);
-
-            if (string.IsNullOrEmpty(originalGuid))
-                return baseMeta;
-
-            // Store original GUID in a Unity-stable string format.
-            // Unity expects userData to be a string; inline YAML objects may be dropped.
-            string token = $"YUCP_ORIGINAL_GUID={originalGuid}";
-
-            baseMeta = System.Text.RegularExpressions.Regex.Replace(
-                baseMeta,
-                @"(\s+)userData:\s*\r?\n",
-                $"$1userData: {token}\n",
-                System.Text.RegularExpressions.RegexOptions.Multiline
-            );
-
-            return baseMeta;
-        }
-
         /// <summary>
         /// Generate appropriate .meta file content using file extension
         /// </summary>
@@ -3949,1161 +3123,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return $"fileFormatVersion: 2\nguid: {guid}\nDefaultImporter:\n  externalObjects: {{}}\n  userData:\n  assetBundleName:\n  assetBundleVariant:\n";
         }
         
-        /// <summary>
-        /// Sign package before final export - creates manifest, gets signature from server, and embeds it
-        /// </summary>
-        private static bool SignPackageBeforeExport(
-            string packagePath,
-            ExportProfile profile,
-            Action<float, string> progressCallback)
-        {
-            try
-            {
-                var settings = GetSigningSettings();
-                string resolvedServerUrl = settings?.GetEffectiveServerUrl();
-                bool shouldAutoManageCertificate =
-                    settings != null &&
-                    !string.IsNullOrEmpty(resolvedServerUrl) &&
-                    YucpOAuthService.IsSignedIn();
-
-                if (shouldAutoManageCertificate &&
-                    (!settings.HasValidCertificate() || !IsStoredCertificateForCurrentDevKey(settings)))
-                {
-                    if (!TryRepairSigningCertificateForExport(
-                            resolvedServerUrl,
-                            settings,
-                            progressCallback,
-                            out string repairError,
-                            out string rawRepairError))
-                    {
-                        s_lastSigningFailureMessage = repairError;
-                        if (!string.IsNullOrEmpty(rawRepairError))
-                        {
-                            Debug.LogWarning($"[PackageBuilder] Raw certificate repair failure: {rawRepairError}");
-                        }
-                        return false;
-                    }
-
-                    settings = GetSigningSettings();
-                }
-
-                if (settings == null || !settings.HasValidCertificate())
-                {
-                    return false;
-                }
-
-                var certificate = CertificateManager.GetCurrentCertificate();
-                if (certificate == null)
-                {
-                    Debug.LogWarning("[PackageBuilder] No certificate found for signing");
-                    return false;
-                }
-
-                // Verify dev key matches certificate
-                string currentDevPublicKey = DevKeyManager.GetPublicKeyBase64();
-                if (certificate.cert.devPublicKey != currentDevPublicKey)
-                {
-                    string repairError = null;
-                    string rawRepairError = null;
-                    if (!shouldAutoManageCertificate ||
-                        !TryRepairSigningCertificateForExport(
-                            resolvedServerUrl,
-                            settings,
-                            progressCallback,
-                            out repairError,
-                            out rawRepairError))
-                    {
-                        Debug.LogError($"[PackageBuilder] Dev public key mismatch! Certificate expects: {certificate.cert.devPublicKey}, Current: {currentDevPublicKey}");
-                        Debug.LogError("[PackageBuilder] The certificate was issued for a different dev key. Please regenerate or import the correct certificate.");
-                        s_lastSigningFailureMessage = repairError ?? "The stored signing certificate belongs to a different device key. Restore or request a certificate for this machine before exporting again.";
-                        if (!string.IsNullOrEmpty(rawRepairError))
-                        {
-                            Debug.LogWarning($"[PackageBuilder] Raw certificate repair failure: {rawRepairError}");
-                        }
-                        return false;
-                    }
-
-                    settings = GetSigningSettings();
-                    certificate = CertificateManager.GetCurrentCertificate();
-                    currentDevPublicKey = DevKeyManager.GetPublicKeyBase64();
-                    if (certificate == null || certificate.cert.devPublicKey != currentDevPublicKey)
-                    {
-                        s_lastSigningFailureMessage = "The signing certificate could not be refreshed for the current device.";
-                        return false;
-                    }
-                }
-
-                Debug.Log($"[PackageBuilder] Dev public key matches certificate: {currentDevPublicKey}");
-
-                progressCallback?.Invoke(0.821f, "Computing package hash...");
-                
-                // Compute archive SHA-256 using canonical content hashing:
-                // - Decompress .unitypackage
-                // - Enumerate all assets
-                // - Ignore any */_Signing/*
-                // - Hash (pathname UTF8 + 0x00 + asset bytes) in sorted pathname order
-                string archiveSha256 = ComputeArchiveHashExcludingSigningData(packagePath);
-
-                progressCallback?.Invoke(0.722f, "Building manifest...");
-
-                // Build manifest (use packageId if available, otherwise fallback to packageName)
-                string manifestPackageId = !string.IsNullOrEmpty(profile.packageId) ? profile.packageId : profile.packageName;
-                var manifest = YUCP.DevTools.Editor.PackageSigning.Core.ManifestBuilder.BuildManifest(
-                    packagePath,
-                    manifestPackageId,
-                    profile.version,
-                    settings.publisherId,
-                    settings.vrchatUserId,
-                    profile.gumroadProductId,
-                    profile.jinxxyProductId
-                );
-                
-                // Override the hash computed by BuildManifest (which also computes it from packagePath)
-                // We want to use the hash we just computed to ensure consistency
-                manifest.archiveSha256 = archiveSha256;
-
-                progressCallback?.Invoke(0.723f, "Preparing signing metadata...");
-
-                SigningRequestResult SubmitSigningRequest(
-                    PackageSigningData.YucpCertificate activeCertificate,
-                    PackageSigningData.SigningSettings activeSettings,
-                    bool suppressFailureLog = false)
-                {
-                    progressCallback?.Invoke(0.724f, "Sending signing request to server...");
-                    return SendSigningRequestSynchronously(
-                        resolvedServerUrl,
-                        activeSettings.GetCertificateJson(),
-                        manifest?.packageId ?? "",
-                        profile.packageName ?? "",
-                        manifest?.archiveSha256 ?? "",
-                        manifest?.version ?? "",
-                        s_pendingProtectedAssetRegistrations,
-                        progressCallback,
-                        suppressFailureLog
-                    );
-                }
-
-                SigningRequestResult signingResult = SubmitSigningRequest(
-                    certificate,
-                    settings,
-                    suppressFailureLog: shouldAutoManageCertificate
-                );
-
-                if (signingResult?.response == null)
-                {
-                    if (shouldAutoManageCertificate && LooksLikeRepairableSigningFailure(signingResult))
-                    {
-                        if (TryRepairSigningCertificateForExport(
-                                resolvedServerUrl,
-                                settings,
-                                progressCallback,
-                                out _,
-                                out string rawRepairError))
-                        {
-                            settings = GetSigningSettings();
-                            certificate = CertificateManager.GetCurrentCertificate();
-                            if (settings != null &&
-                                certificate != null &&
-                                settings.HasValidCertificate() &&
-                                certificate.cert.devPublicKey == DevKeyManager.GetPublicKeyBase64())
-                            {
-                                progressCallback?.Invoke(0.724f, "Retrying signing with refreshed certificate...");
-                                signingResult = SubmitSigningRequest(certificate, settings);
-                            }
-                        }
-                        else if (!string.IsNullOrEmpty(rawRepairError))
-                        {
-                            Debug.LogWarning($"[PackageBuilder] Raw certificate repair failure: {rawRepairError}");
-                        }
-                    }
-                }
-
-                if (signingResult?.response == null)
-                {
-                    string friendlyError = signingResult?.normalizedError ?? "Signing failed before the server returned a signature.";
-                    s_lastSigningFailureMessage = friendlyError;
-                    Debug.LogWarning($"[PackageBuilder] Package signing failed: {friendlyError}");
-                    if (!string.IsNullOrEmpty(signingResult?.rawError))
-                    {
-                        Debug.LogWarning($"[PackageBuilder] Raw signing failure: {signingResult.rawError}");
-                    }
-                    return false;
-                }
-
-                var signingResponse = signingResult.response;
-
-                if (signingResponse.certificateChain == null || signingResponse.certificateChain.Length == 0)
-                {
-                    s_lastSigningFailureMessage = "Signing failed because the server did not return a certificate chain.";
-                    Debug.LogWarning("[PackageBuilder] Signing response did not include a certificate chain.");
-                    return false;
-                }
-
-                manifest.certificateChain = signingResponse.certificateChain;
-
-                progressCallback?.Invoke(0.726f, "Signing manifest with device key...");
-
-                PackageSigningData.SignatureData signatureData =
-                    CreateLocalManifestSignatureData(manifest, signingResponse);
-
-                progressCallback?.Invoke(0.728f, "Embedding signature in package...");
-
-                SignatureEmbedder.EmbedSigningData(manifest, signatureData);
-                
-                // Inject signing data into the package
-                InjectSigningDataIntoPackage(packagePath);
-                s_lastSigningFailureMessage = null;
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[PackageBuilder] Signing error: {ex.Message}\n{ex.StackTrace}");
-                return false;
-            }
-        }
-
-        private static bool IsStoredCertificateForCurrentDevKey(PackageSigningData.SigningSettings settings)
-        {
-            if (settings == null || string.IsNullOrEmpty(settings.devPublicKey))
-            {
-                return false;
-            }
-
-            try
-            {
-                string currentDevPublicKey = DevKeyManager.GetPublicKeyBase64();
-                return !string.IsNullOrEmpty(currentDevPublicKey) &&
-                    string.Equals(settings.devPublicKey, currentDevPublicKey, StringComparison.Ordinal);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static bool LooksLikeRepairableSigningFailure(SigningRequestResult signingResult)
-        {
-            string message = $"{signingResult?.normalizedError ?? ""}\n{signingResult?.rawError ?? ""}";
-            return message.IndexOf("Certificate has been revoked", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   message.IndexOf("restore the correct certificate", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   message.IndexOf("Signing authentication failed", StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static bool ShouldAllowUnsignedExportAfterSigningFailure(string signingFailureMessage)
-        {
-            if (string.IsNullOrWhiteSpace(signingFailureMessage))
-                return false;
-
-            string message = signingFailureMessage.Trim();
-
-            if (message.IndexOf("service not configured", StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-
-            if (message.IndexOf("network error while requesting a package signature", StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-
-            if (message.IndexOf("server returned HTML", StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-
-            if (message.IndexOf("HTTP 5", StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-
-            if (message.StartsWith("HTTP 0", StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            string[] availabilityHints =
-            {
-                "cannot connect",
-                "destination host",
-                "host unreachable",
-                "timed out",
-                "timeout",
-                "cannot resolve",
-                "could not resolve",
-                "name resolution",
-                "no internet",
-                "offline",
-                "connection refused",
-                "connection failed",
-                "failed to connect",
-                "temporarily unavailable",
-                "service unavailable",
-                "gateway timeout",
-                "bad gateway",
-                "dns"
-            };
-
-            return availabilityHints.Any(hint =>
-                message.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0);
-        }
-
-        private static string BuildUnsignedExportWarning(string signingFailureMessage)
-        {
-            if (string.IsNullOrWhiteSpace(signingFailureMessage))
-                return "Package was exported unsigned because the signing service was unavailable.";
-
-            return $"Package was exported unsigned because signing was unavailable: {signingFailureMessage}";
-        }
-
-        private static string AppendAccountCertificatesUrlIfNeeded(
-            string message,
-            PackageSigningData.SigningSettings settings)
-        {
-            if (string.IsNullOrEmpty(message) ||
-                message.IndexOf("Certificates & Billing", StringComparison.OrdinalIgnoreCase) < 0)
-            {
-                return message;
-            }
-
-            string accountUrl = settings?.GetEffectiveAccountCertificatesUrl();
-            if (string.IsNullOrEmpty(accountUrl) ||
-                message.IndexOf(accountUrl, StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return message;
-            }
-
-            return $"{message} Open: {accountUrl}";
-        }
-
-        private static bool TryRepairSigningCertificateForExport(
-            string resolvedServerUrl,
-            PackageSigningData.SigningSettings settings,
-            Action<float, string> progressCallback,
-            out string friendlyError,
-            out string rawError)
-        {
-            friendlyError = null;
-            rawError = null;
-
-            if (settings == null || string.IsNullOrEmpty(resolvedServerUrl))
-            {
-                friendlyError = "Certificate repair is unavailable because the signing server is not configured.";
-                return false;
-            }
-
-            string accessToken = YucpOAuthService.GetAccessToken();
-            if (string.IsNullOrEmpty(accessToken))
-            {
-                friendlyError = "Your creator session expired. Sign in again from Package Signing, then retry the export.";
-                return false;
-            }
-
-            string devPublicKey;
-            try
-            {
-                devPublicKey = DevKeyManager.GetPublicKeyBase64();
-            }
-            catch (Exception ex)
-            {
-                friendlyError = $"Could not load the current device key: {ex.Message}";
-                rawError = ex.Message;
-                return false;
-            }
-
-            if (string.IsNullOrEmpty(devPublicKey))
-            {
-                friendlyError = "Could not load the current device key for this project.";
-                return false;
-            }
-
-            string publisherName = YucpOAuthService.GetDisplayName();
-            if (string.IsNullOrEmpty(publisherName))
-            {
-                publisherName = settings.publisherName;
-            }
-            if (string.IsNullOrEmpty(publisherName))
-            {
-                publisherName = "YUCP Creator";
-            }
-
-            var service = new PackageSigningService(resolvedServerUrl);
-            progressCallback?.Invoke(0.7242f, "Refreshing signing certificate...");
-
-            var accountState = service.GetCertificateAccountState(accessToken, devPublicKey);
-            if (accountState?.billing != null)
-            {
-                if (!accountState.billing.allowSigning && accountState.currentDeviceKnown)
-                {
-                    friendlyError = AppendAccountCertificatesUrlIfNeeded(
-                        accountState.error ?? "This machine cannot restore its certificate until billing is fixed.",
-                        settings);
-                    rawError = accountState.error;
-                    return false;
-                }
-
-                if (!accountState.billing.allowEnrollment && !accountState.currentDeviceKnown)
-                {
-                    friendlyError = AppendAccountCertificatesUrlIfNeeded(
-                        accountState.error ?? "This machine cannot enroll a certificate right now.",
-                        settings);
-                    rawError = accountState.error;
-                    return false;
-                }
-
-                if (accountState.deviceCapReachedForCurrentMachine)
-                {
-                    friendlyError = AppendAccountCertificatesUrlIfNeeded(
-                        accountState.error ?? "This plan has no free device slots for this machine.",
-                        settings);
-                    rawError = accountState.error;
-                    return false;
-                }
-            }
-
-            string certJson = service.RestoreCertificate(accessToken, devPublicKey);
-            if (string.IsNullOrEmpty(certJson))
-            {
-                var requestResult = service.RequestCertificate(accessToken, devPublicKey, publisherName);
-                if (!requestResult.success || string.IsNullOrEmpty(requestResult.certJson))
-                {
-                    rawError = requestResult.error;
-                    friendlyError = AppendAccountCertificatesUrlIfNeeded(
-                        PackageSigningService.NormalizeCertificateRequestError(
-                            requestResult.responseCode,
-                            requestResult.error ?? "Certificate request failed.",
-                            accountState?.currentDeviceKnown == true),
-                        settings);
-                    return false;
-                }
-
-                certJson = requestResult.certJson;
-            }
-
-            var importResult = CertificateManager.ImportAndVerifyFromJson(certJson);
-            if (!importResult.valid)
-            {
-                rawError = importResult.error;
-                friendlyError = $"Certificate repair failed: {importResult.error}";
-                return false;
-            }
-
-            progressCallback?.Invoke(0.7248f, "Signing certificate refreshed.");
-            return true;
-        }
-
-        /// <summary>
-        /// Canonicalize signing payload to match server's expected format
-        /// Uses recursive canonicalization like PackageInfoService (server expects this)
-        /// </summary>
-        private static string CanonicalizeSigningPayload(SigningRequestPayload payload)
-        {
-            // Use recursive canonicalization to match server's format
-            return CanonicalizeJsonRecursive(payload);
-        }
-
-        /// <summary>
-        /// Recursively canonicalize JSON to match server's format
-        /// Sorts keys alphabetically at all levels (like PackageInfoService)
-        /// </summary>
-        private static string CanonicalizeJsonRecursive(object obj)
-        {
-            if (obj == null)
-            {
-                return "null";
-            }
-            
-            var objType = obj.GetType();
-            
-            // Handle dictionaries (must come before IList check)
-            if (obj is System.Collections.IDictionary dict)
-            {
-                // Skip empty dictionaries (server omits them)
-                if (dict.Count == 0)
-                {
-                    return "{}"; // Return empty object, but caller should skip this field
-                }
-                
-                var items = new List<string>();
-                var keys = new List<object>();
-                foreach (var key in dict.Keys)
-                {
-                    keys.Add(key);
-                }
-                
-                // Sort keys alphabetically (convert to string for comparison)
-                keys.Sort((a, b) => string.Compare(a?.ToString() ?? "", b?.ToString() ?? "", StringComparison.Ordinal));
-                
-                foreach (var key in keys)
-                {
-                    var value = dict[key];
-                    var keyStr = EscapeJsonString(key?.ToString() ?? "");
-                    var jsonValue = CanonicalizeJsonRecursive(value);
-                    items.Add($"\"{keyStr}\":{jsonValue}");
-                }
-                return "{" + string.Join(",", items) + "}";
-            }
-            
-            // Handle arrays and lists
-            if (objType.IsArray)
-            {
-                var array = (Array)obj;
-                var items = new List<string>();
-                foreach (var item in array)
-                {
-                    items.Add(CanonicalizeJsonRecursive(item));
-                }
-                return "[" + string.Join(",", items) + "]";
-            }
-            
-            if (obj is System.Collections.IList list)
-            {
-                var items = new List<string>();
-                foreach (var item in list)
-                {
-                    items.Add(CanonicalizeJsonRecursive(item));
-                }
-                return "[" + string.Join(",", items) + "]";
-            }
-            
-            // Handle objects (serializable classes)
-            if (objType.IsClass && !objType.IsPrimitive && objType != typeof(string))
-            {
-                // Get all serializable fields
-                var fields = objType.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
-                    .Where(f => !f.IsStatic)
-                    .OrderBy(f => f.Name)
-                    .ToList();
-                
-                var items = new List<string>();
-                foreach (var field in fields)
-                {
-                    var value = field.GetValue(obj);
-                    
-                    // Include all values (null becomes "null", empty dicts become "{}")
-                    // Server's canonicalizeJson includes all keys, even if null or empty
-                    var key = EscapeJsonString(field.Name);
-                    var jsonValue = CanonicalizeJsonRecursive(value);
-                    items.Add($"\"{key}\":{jsonValue}");
-                }
-                return "{" + string.Join(",", items) + "}";
-            }
-            
-            // Handle primitives
-            if (obj is string str)
-            {
-                return $"\"{EscapeJsonString(str)}\"";
-            }
-            
-            if (obj is bool b)
-            {
-                return b ? "true" : "false";
-            }
-            
-            if (obj is int || obj is long || obj is short || obj is byte || obj is uint || obj is ulong || obj is ushort || obj is sbyte)
-            {
-                return obj.ToString();
-            }
-            
-            if (obj is float || obj is double || obj is decimal)
-            {
-                return obj.ToString();
-            }
-            
-            // Fallback to JSON serialization
-            return JsonUtility.ToJson(obj);
-        }
-
-        /// <summary>
-        /// Escape JSON string
-        /// </summary>
-        private static string EscapeJsonString(string str)
-        {
-            if (string.IsNullOrEmpty(str)) return "";
-            return str.Replace("\\", "\\\\")
-                      .Replace("\"", "\\\"")
-                      .Replace("\n", "\\n")
-                      .Replace("\r", "\\r")
-                      .Replace("\t", "\\t");
-        }
-
-        private static string BuildSigningProofPayload(
-            string certNonce,
-            string packageId,
-            string contentHash,
-            string packageVersion,
-            string requestNonce,
-            long requestTimestamp)
-        {
-            return string.Join("\n", new[]
-            {
-                "yucp-signature-proof-v1",
-                certNonce ?? "",
-                packageId ?? "",
-                contentHash ?? "",
-                packageVersion ?? "",
-                requestNonce ?? "",
-                requestTimestamp.ToString()
-            });
-        }
-
-        private static PackageSigningData.SigningResponse ParseSigningResponseJson(string responseJson)
-        {
-            return SigningResponseParser.Parse(responseJson, "PackageBuilder");
-        }
-
-        private static PackageSigningData.SignatureData CreateLocalManifestSignatureData(
-            PackageSigningData.PackageManifest manifest,
-            PackageSigningData.SigningResponse signingResponse)
-        {
-            if (manifest == null)
-                throw new InvalidOperationException("Manifest is required for local signing.");
-            if (signingResponse?.certificateChain == null || signingResponse.certificateChain.Length == 0)
-                throw new InvalidOperationException("Certificate chain is required for local signing.");
-
-            int certificateIndex = signingResponse.certificateIndex;
-            if (certificateIndex < 0 || certificateIndex >= signingResponse.certificateChain.Length)
-                certificateIndex = 0;
-
-            string canonicalManifest = CanonicalizeManifestForSignature(manifest);
-            byte[] manifestBytes = Encoding.UTF8.GetBytes(canonicalManifest);
-            byte[] manifestSignature = DevKeyManager.SignData(manifestBytes);
-
-            return new PackageSigningData.SignatureData
-            {
-                algorithm = "Ed25519",
-                keyId = signingResponse.certificateChain[certificateIndex]?.keyId ?? signingResponse.keyId ?? string.Empty,
-                signature = Convert.ToBase64String(manifestSignature),
-                certificateIndex = certificateIndex,
-            };
-        }
-
-        private static string CanonicalizeManifestForSignature(PackageSigningData.PackageManifest manifest)
-        {
-            if (manifest == null)
-                return "null";
-
-            return CanonicalizeManifestValue(manifest);
-        }
-
-        private static string CanonicalizeManifestValue(object obj)
-        {
-            if (obj == null)
-                return "null";
-
-            var objType = obj.GetType();
-
-            if (obj is System.Collections.IList list)
-            {
-                var items = new List<string>();
-                foreach (var item in list)
-                {
-                    items.Add(CanonicalizeManifestValue(item));
-                }
-                return "[" + string.Join(",", items) + "]";
-            }
-
-            if (obj is System.Collections.IDictionary dict)
-            {
-                var sortedKeys = new List<string>();
-                foreach (var key in dict.Keys)
-                {
-                    sortedKeys.Add(key?.ToString() ?? "");
-                }
-                sortedKeys.Sort(StringComparer.Ordinal);
-
-                var items = new List<string>();
-                foreach (var key in sortedKeys)
-                {
-                    items.Add($"\"{EscapeJsonString(key)}\":{CanonicalizeManifestValue(dict[key])}");
-                }
-                return "{" + string.Join(",", items) + "}";
-            }
-
-            if (objType.IsClass && objType != typeof(string))
-            {
-                var items = new List<string>();
-                var fields = objType.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-
-                if (fields != null && fields.Length > 0)
-                {
-                    var sortedFields = new List<System.Reflection.FieldInfo>(fields);
-                    sortedFields.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.Ordinal));
-
-                    foreach (var field in sortedFields)
-                    {
-                        var value = field.GetValue(obj);
-                        if (value == null &&
-                            field.FieldType.IsGenericType &&
-                            field.FieldType.GetGenericTypeDefinition() == typeof(Dictionary<,>))
-                        {
-                            var dictType = typeof(Dictionary<,>).MakeGenericType(field.FieldType.GetGenericArguments());
-                            value = Activator.CreateInstance(dictType);
-                        }
-
-                        items.Add($"\"{field.Name}\":{CanonicalizeManifestValue(value)}");
-                    }
-                }
-                else
-                {
-                    var properties = objType.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    var sortedProps = new List<System.Reflection.PropertyInfo>(properties);
-                    sortedProps.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.Ordinal));
-
-                    foreach (var prop in sortedProps)
-                    {
-                        var value = prop.GetValue(obj);
-                        if (value == null &&
-                            prop.PropertyType.IsGenericType &&
-                            prop.PropertyType.GetGenericTypeDefinition() == typeof(Dictionary<,>))
-                        {
-                            var dictType = typeof(Dictionary<,>).MakeGenericType(prop.PropertyType.GetGenericArguments());
-                            value = Activator.CreateInstance(dictType);
-                        }
-
-                        items.Add($"\"{prop.Name}\":{CanonicalizeManifestValue(value)}");
-                    }
-                }
-
-                return "{" + string.Join(",", items) + "}";
-            }
-
-            if (obj is string str)
-            {
-                return "\"" + EscapeJsonString(str) + "\"";
-            }
-
-            if (obj is bool b)
-            {
-                return b ? "true" : "false";
-            }
-
-            if (objType.IsEnum)
-            {
-                return "\"" + EscapeJsonString(obj.ToString()) + "\"";
-            }
-
-            if (obj is IConvertible && !(obj is string))
-            {
-                return Convert.ToString(obj, System.Globalization.CultureInfo.InvariantCulture);
-            }
-
-            return "\"" + EscapeJsonString(obj?.ToString() ?? string.Empty) + "\"";
-        }
-
-        /// <summary>
-        /// Send signing request to server synchronously.
-        /// Calls POST /v1/signatures (transparency log). The server authenticates via the YUCP
-        /// certificate envelope as a Bearer token and records the package hash.
-        /// Returns certificate-chain metadata from the server, then the manifest itself is signed
-        /// locally with the active device key.
-        /// </summary>
-        private static SigningRequestResult SendSigningRequestSynchronously(
-            string serverUrl,
-            string rawCertJson,
-            string packageId,
-            string packageName,
-            string contentHash,
-            string packageVersion,
-            IReadOnlyList<ProtectedAssetRegistration> protectedAssets,
-            Action<float, string> progressCallback,
-            bool suppressFailureLog = false)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(rawCertJson))
-                {
-                    Debug.LogError("[PackageBuilder] No certificate JSON available");
-                    return new SigningRequestResult
-                    {
-                        rawError = "No certificate JSON available.",
-                        normalizedError = "No certificate is available for signing. Restore or request a certificate before exporting a signed package.",
-                    };
-                }
-
-                // POST /v1/signatures
-                // Auth: Bearer <base64(raw cert JSON as UTF-8)>
-                // The server uses atob() then JSON.parse() so we must base64-encode the raw
-                // JSON string exactly as it was stored (which is what the CA signed).
-                string certBase64 = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(rawCertJson));
-                var parsedCert = JsonUtility.FromJson<PackageSigningData.YucpCertificate>(rawCertJson);
-                if (string.IsNullOrEmpty(parsedCert?.cert?.nonce))
-                {
-                    Debug.LogError("[PackageBuilder] Certificate nonce missing");
-                    return new SigningRequestResult
-                    {
-                        rawError = "Certificate nonce missing.",
-                        normalizedError = "The stored certificate is incomplete. Restore the correct certificate before exporting again.",
-                    };
-                }
-
-                string requestNonce = Guid.NewGuid().ToString();
-                long requestTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                string proofPayload = BuildSigningProofPayload(
-                    parsedCert.cert.nonce,
-                    packageId,
-                    contentHash,
-                    packageVersion,
-                    requestNonce,
-                    requestTimestamp
-                );
-                byte[] proofSignature = DevKeyManager.SignData(Encoding.UTF8.GetBytes(proofPayload));
-                string proofSignatureBase64 = Convert.ToBase64String(proofSignature);
-
-                string bodyJson = $"{{\"packageId\":\"{EscapeJsonString(packageId)}\","
-                                + $"\"packageName\":\"{EscapeJsonString(packageName ?? string.Empty)}\","
-                                + $"\"contentHash\":\"{EscapeJsonString(contentHash)}\","
-                                + $"\"packageVersion\":\"{EscapeJsonString(packageVersion)}\","
-                                + $"\"requestNonce\":\"{EscapeJsonString(requestNonce)}\","
-                                + $"\"requestTimestamp\":{requestTimestamp},"
-                                + $"\"requestSignature\":\"{EscapeJsonString(proofSignatureBase64)}\"";
-
-                if (protectedAssets != null && protectedAssets.Count > 0)
-                {
-                    var serializedProtectedAssets = protectedAssets
-                        .Where(asset =>
-                            asset != null &&
-                            !string.IsNullOrEmpty(asset.protectedAssetId) &&
-                            !string.IsNullOrEmpty(asset.unlockMode) &&
-                            ((asset.unlockMode == "wrapped_content_key" && !string.IsNullOrEmpty(asset.wrappedContentKey)) ||
-                             (asset.unlockMode == "content_key_b64" && !string.IsNullOrEmpty(asset.contentKeyBase64))))
-                        .Select(asset =>
-                        {
-                            string keyField = asset.unlockMode == "content_key_b64"
-                                ? $"\"contentKeyBase64\":\"{EscapeJsonString(asset.contentKeyBase64)}\","
-                                : $"\"wrappedContentKey\":\"{EscapeJsonString(asset.wrappedContentKey)}\",";
-                            string contentHashField = !string.IsNullOrEmpty(asset.contentHash)
-                                ? $"\"contentHash\":\"{EscapeJsonString(asset.contentHash)}\","
-                                : string.Empty;
-                            string manifestBindingSha256Field = !string.IsNullOrEmpty(asset.manifestBindingSha256)
-                                ? $"\"manifestBindingSha256\":\"{EscapeJsonString(asset.manifestBindingSha256)}\","
-                                : string.Empty;
-                            return "{"
-                                + $"\"protectedAssetId\":\"{EscapeJsonString(asset.protectedAssetId)}\","
-                                + $"\"unlockMode\":\"{EscapeJsonString(asset.unlockMode)}\","
-                                + keyField
-                                + contentHashField
-                                + manifestBindingSha256Field
-                                + $"\"displayName\":\"{EscapeJsonString(asset.displayName ?? string.Empty)}\""
-                                + "}";
-                        });
-                    bodyJson += ",\"protectedAssets\":[" + string.Join(",", serializedProtectedAssets) + "]";
-                }
-
-                bodyJson += "}";
-                byte[] requestBytes = System.Text.Encoding.UTF8.GetBytes(bodyJson);
-
-                string url = $"{serverUrl.TrimEnd('/')}/v1/signatures";
-                Debug.Log($"[PackageBuilder] Posting to transparency log: {url}");
-
-                using (var request = new UnityEngine.Networking.UnityWebRequest(url, "POST"))
-                {
-                    request.uploadHandler   = new UnityEngine.Networking.UploadHandlerRaw(requestBytes);
-                    request.downloadHandler = new UnityEngine.Networking.DownloadHandlerBuffer();
-                    request.SetRequestHeader("Content-Type",    "application/json");
-                    request.SetRequestHeader("Authorization",   $"Bearer {certBase64}");
-                    request.SetRequestHeader("Accept-Encoding", "identity");
-                    request.timeout = 30;
-
-                    var operation = request.SendWebRequest();
-                    while (!operation.isDone)
-                    {
-                        progressCallback?.Invoke(0.725f + operation.progress * 0.002f, "Waiting for server response...");
-                        System.Threading.Thread.Sleep(50);
-                    }
-
-                    string responseText = request.downloadHandler.text;
-
-                    if (request.result == UnityEngine.Networking.UnityWebRequest.Result.Success)
-                    {
-                        Debug.Log($"[PackageBuilder] Transparency log recorded: {responseText}");
-
-                        var response = ParseSigningResponseJson(responseText);
-                        if (response == null || response.certificateChain == null || response.certificateChain.Length == 0)
-                        {
-                            return new SigningRequestResult
-                            {
-                                rawError = responseText,
-                                normalizedError = "Signing server returned an invalid certificate chain response.",
-                                responseCode = request.responseCode,
-                            };
-                        }
-
-                        if (string.IsNullOrEmpty(response.algorithm))
-                            response.algorithm = "Ed25519";
-                        if (response.certificateIndex < 0 || response.certificateIndex >= response.certificateChain.Length)
-                            response.certificateIndex = 0;
-                        if (string.IsNullOrEmpty(response.keyId))
-                            response.keyId = response.certificateChain[response.certificateIndex]?.keyId ?? "";
-
-                        return new SigningRequestResult
-                        {
-                            response = response,
-                            responseCode = request.responseCode,
-                        };
-                    }
-                    else
-                    {
-                        string error = string.IsNullOrEmpty(responseText)
-                            ? $"HTTP {request.responseCode}: {request.error}"
-                            : responseText;
-
-                        if (error.TrimStart().StartsWith("<"))
-                            error = $"HTTP {request.responseCode} (server returned HTML — likely wrong URL or auth)";
-
-                        string normalizedError = PackageSigningService.NormalizeSigningError(request.responseCode, error);
-                        if (normalizedError.IndexOf("Certificates & Billing", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            string accountUrl = GetSigningSettings()?.GetEffectiveAccountCertificatesUrl();
-                            if (!string.IsNullOrEmpty(accountUrl))
-                            {
-                                normalizedError = $"{normalizedError} Open: {accountUrl}";
-                            }
-                        }
-
-                        if (!suppressFailureLog)
-                        {
-                            Debug.LogError($"[PackageBuilder] Signing request failed: {normalizedError}");
-                        }
-                        return new SigningRequestResult
-                        {
-                            responseCode = request.responseCode,
-                            rawError = error,
-                            normalizedError = normalizedError,
-                        };
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[PackageBuilder] Signing request exception: {ex.Message}");
-                return new SigningRequestResult
-                {
-                    rawError = ex.Message,
-                    normalizedError = $"Network error while requesting a package signature: {ex.Message}",
-                };
-            }
-        }
-
-
-        /// <summary>
-        /// Inject signing data folder into the package
-        /// </summary>
-        private static void InjectSigningDataIntoPackage(string packagePath)
-        {
-            string signingFolder = "Assets/_Signing";
-            if (!AssetDatabase.IsValidFolder(signingFolder))
-            {
-                return;
-            }
-
-            string[] guids = AssetDatabase.FindAssets("", new[] { signingFolder });
-            if (guids.Length == 0)
-            {
-                return;
-            }
-
-            // Use the same injection mechanism as package.json
-            // Extract package, add signing files, repackage
-            string tempExtractDir = Path.Combine(Path.GetTempPath(), $"YUCP_Signing_{Guid.NewGuid():N}");
-            
-            try
-            {
-                Directory.CreateDirectory(tempExtractDir);
-
-                // Extract package (using same approach as PackageIconInjector)
-#if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
-                ArchiveExtractionUtility.ExtractUnityPackageSafely(packagePath, tempExtractDir);
-
-                string signingRootPathname = ResolveSigningRootPathname(tempExtractDir);
-
-                // Remove existing signing files to avoid duplicates
-                string[] existingFolders = Directory.GetDirectories(tempExtractDir);
-                foreach (string folder in existingFolders)
-                {
-                    string pathnameFile = Path.Combine(folder, "pathname");
-                    if (File.Exists(pathnameFile))
-                    {
-                        string pathname = File.ReadAllText(pathnameFile).Trim();
-                        if (IsSigningPathname(pathname))
-                        {
-                            Directory.Delete(folder, true);
-                        }
-                    }
-                }
-
-                // Add signing files
-                foreach (string guid in guids)
-                {
-                    string assetPath = AssetDatabase.GUIDToAssetPath(guid);
-                    if (string.IsNullOrEmpty(assetPath) || !File.Exists(assetPath))
-                        continue;
-
-                    string fileName = Path.GetFileName(assetPath);
-                    string fileGuid = Guid.NewGuid().ToString("N");
-                    string fileFolder = Path.Combine(tempExtractDir, fileGuid);
-                    Directory.CreateDirectory(fileFolder);
-
-                    // Copy asset file
-                    File.Copy(assetPath, Path.Combine(fileFolder, "asset"), true);
-
-                    File.WriteAllText(
-                        Path.Combine(fileFolder, "pathname"),
-                        $"{signingRootPathname}/_Signing/{fileName}".Replace('\\', '/'));
-
-                    // Create .meta file
-                    string metaGuid = Guid.NewGuid().ToString("N");
-                    string metaContent = GenerateMetaForFile(assetPath, metaGuid);
-                    File.WriteAllText(Path.Combine(fileFolder, "asset.meta"), metaContent);
-                }
-
-                // Repackage (using same approach as PackageIconInjector)
-                string tempPackagePath = packagePath + ".tmp";
-                using (Stream outStream = File.Create(tempPackagePath))
-                using (Stream gzipStream = new GZipOutputStream(outStream))
-                {
-                    var tarArchive = TarArchive.CreateOutputTarArchive(gzipStream);
-                    
-                    // Set root path (case sensitive, must use forward slashes, must not end with slash)
-                    tarArchive.RootPath = tempExtractDir.Replace('\\', '/');
-                    if (tarArchive.RootPath.EndsWith("/"))
-                        tarArchive.RootPath = tarArchive.RootPath.TrimEnd('/');
-
-                    // Add all files from extracted directory
-                    var filenames = Directory.GetFiles(tempExtractDir, "*", SearchOption.AllDirectories);
-                    foreach (var filename in filenames)
-                    {
-                        var relativePath = filename.Substring(tempExtractDir.Length);
-                        if (relativePath.StartsWith("\\") || relativePath.StartsWith("/"))
-                            relativePath = relativePath.Substring(1);
-                        relativePath = relativePath.Replace('\\', '/');
-                        
-                        var tarEntry = TarEntry.CreateEntryFromFile(filename);
-                        tarEntry.Name = relativePath;
-                        tarArchive.WriteEntry(tarEntry, true);
-                    }
-                    
-                    tarArchive.Close();
-                }
-
-                // Replace original with signed version
-                File.Delete(packagePath);
-                File.Move(tempPackagePath, packagePath);
-
-#else
-                Debug.LogWarning("[PackageBuilder] ICSharpCode.SharpZipLib not available - cannot inject signing data. Please install SharpZipLib.");
-#endif
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[PackageBuilder] Failed to inject signing data: {ex.Message}");
-            }
-            finally
-            {
-                try
-                {
-                    if (Directory.Exists(tempExtractDir))
-                        Directory.Delete(tempExtractDir, true);
-                }
-                catch { }
-            }
-        }
-
-        /// <summary>
-        /// Get signing settings
-        /// </summary>
-        private static PackageSigningData.SigningSettings GetSigningSettings()
-        {
-            return PackageSigning.Core.SigningSettingsLocator.Load();
-        }
-
-        /// <summary>
-        /// Compute canonical archive hash over package contents, excluding signing data.
-        /// Hash is SHA-256 over a deterministic stream of:
-        ///   UTF8(pathname) + 0x00 + asset-bytes, in sorted pathname order,
-        /// ignoring any */_Signing/* entries.
-        /// </summary>
-        private static string ComputeArchiveHashExcludingSigningData(string packagePath)
-        {
-#if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
-            string tempExtractDir = Path.Combine(Path.GetTempPath(), $"YUCP_Hash_{Guid.NewGuid():N}");
-            Directory.CreateDirectory(tempExtractDir);
-
-            try
-            {
-                ArchiveExtractionUtility.ExtractUnityPackageSafely(packagePath, tempExtractDir);
-
-                // Collect all non-signing assets
-                var entries = new System.Collections.Generic.List<(string pathname, string assetPath)>();
-
-                string[] folders = Directory.GetDirectories(tempExtractDir);
-                foreach (string folder in folders)
-                {
-                    string pathnameFile = Path.Combine(folder, "pathname");
-                    string assetFile = Path.Combine(folder, "asset");
-
-                    if (!File.Exists(pathnameFile) || !File.Exists(assetFile))
-                        continue;
-
-                    string pathname = File.ReadAllText(pathnameFile).Trim().Replace('\\', '/');
-
-                    // Skip signing data
-                    if (IsSigningPathname(pathname))
-                        continue;
-
-                    entries.Add((pathname, assetFile));
-                }
-
-                // Sort by pathname for determinism
-                entries.Sort((a, b) => string.CompareOrdinal(a.pathname, b.pathname));
-
-                using (var sha256 = System.Security.Cryptography.SHA256.Create())
-                {
-                    foreach (var entry in entries)
-                    {
-                        byte[] pathBytes = Encoding.UTF8.GetBytes(entry.pathname);
-                        sha256.TransformBlock(pathBytes, 0, pathBytes.Length, null, 0);
-
-                        // Separator byte to avoid path/data ambiguity
-                        byte[] sep = new byte[] { 0x00 };
-                        sha256.TransformBlock(sep, 0, 1, null, 0);
-
-                        byte[] data = File.ReadAllBytes(entry.assetPath);
-                        sha256.TransformBlock(data, 0, data.Length, null, 0);
-                    }
-
-                    sha256.TransformFinalBlock(System.Array.Empty<byte>(), 0, 0);
-                    return BitConverter.ToString(sha256.Hash).Replace("-", "").ToLowerInvariant();
-                }
-            }
-            finally
-            {
-                try
-                {
-                    if (Directory.Exists(tempExtractDir))
-                        Directory.Delete(tempExtractDir, true);
-                }
-                catch { }
-            }
-#else
-            throw new System.InvalidOperationException("SharpZipLib (TarArchive/GZipInputStream) not available in this Unity version; cannot compute archive hash.");
-#endif
-        }
-
-        /// <summary>
-        /// Signing request payload structure (matches PackageSigningService)
-        /// </summary>
-        [Serializable]
-        private class SigningRequestPayload
-        {
-            public string publisherId;
-            public string vrchatUserId;
-            public PackageSigningData.PackageManifest manifest;
-            public PackageSigningData.YucpCertificate yucpCert;
-            public string timestamp;
-            public string nonce;
-        }
-
-        /// <summary>
-        /// Signing request structure (matches PackageSigningService)
-        /// </summary>
-        [Serializable]
-        private class SigningRequest
-        {
-            public SigningRequestPayload payload;
-            public string devSignature;
-        }
-
         /// <summary>
         /// Export multiple profiles in sequence
         /// </summary>
