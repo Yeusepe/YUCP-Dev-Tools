@@ -2,6 +2,9 @@
 
 ## [2026-10-15]
 
+### com.yucp.motion 0.1.2
+- Shorten the package display name to "YUCP Motion".
+
 ### com.yucp.devtools 0.3.22
 - Require YUCP UI 0.1.0 and Components 0.3.45 from the main YUCP repository.
 - Update Package Exporter profiles, sidebar, search, dependency scanning, and installer runtime.

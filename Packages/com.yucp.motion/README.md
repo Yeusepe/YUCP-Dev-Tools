@@ -1,4 +1,4 @@
-# YUCP Motion - UI Toolkit Core Infrastructure
+# YUCP Motion
 
 Allocation-free UI Toolkit infrastructure for Editor inspector UI, EditorWindow, and runtime UI. Core is Unity-free, a single global tick drives all controllers, Unity version quirks are isolated in one compat layer, and gestures use correct pointer capture + coordinate conversion.
 
