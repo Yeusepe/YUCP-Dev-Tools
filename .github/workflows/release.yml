@@ -31,51 +31,47 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Build a matrix containing only packages whose package.json version changed
-      - name: Detect Changed Package Versions
+      # Build a matrix of packages whose version is not released yet. A package
+      # sitting at an already tagged version cannot be released again: the tag
+      # push fails, the run concludes failed, and the listing build that follows
+      # it never publishes the package that did release.
+      - name: Detect Unreleased Package Versions
         id: detect
         shell: bash
         run: |
           set -euo pipefail
 
-          changed_packages=()
+          unreleased_packages=()
 
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            for package in ${{ env.packageNames }}; do
-              changed_packages+=("\"$package\"")
-            done
-          else
-            before="${{ github.event.before }}"
-            after="${{ github.sha }}"
+          for package in ${{ env.packageNames }}; do
+            manifest="Packages/${package}/package.json"
+            version="$(jq -r '.version // empty' "$manifest")"
 
-            if [[ -z "$before" || "$before" =~ ^0+$ ]]; then
-              before="${after}^"
+            if [[ -z "$version" ]]; then
+              echo "::error::${manifest} has no version."
+              exit 1
             fi
 
-            for package in ${{ env.packageNames }}; do
-              manifest="Packages/${package}/package.json"
-              current_version="$(jq -r '.version // empty' "$manifest")"
-              previous_version=""
+            tag="${package}-${version}"
 
-              if git cat-file -e "${before}:${manifest}" 2>/dev/null; then
-                previous_version="$(git show "${before}:${manifest}" | jq -r '.version // empty')"
-              fi
+            if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+              echo "${tag} is already released."
+              continue
+            fi
 
-              if [[ -n "$current_version" && "$current_version" != "$previous_version" ]]; then
-                changed_packages+=("\"$package\"")
-              fi
-            done
-          fi
+            echo "${tag} is not released yet."
+            unreleased_packages+=("\"$package\"")
+          done
 
-          packages_json="[$(IFS=,; echo "${changed_packages[*]}")]"
+          packages_json="[$(IFS=,; echo "${unreleased_packages[*]}")]"
           echo "packages=${packages_json}" >> "$GITHUB_OUTPUT"
 
           if [[ "$packages_json" == "[]" ]]; then
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            echo "No package version changes detected."
+            echo "Every package version is already released."
           else
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
-            echo "Package version changes detected: ${packages_json}"
+            echo "Releasing: ${packages_json}"
           fi
 
   # Build and release the Packages
@@ -146,6 +142,7 @@ jobs:
             ${{ env.unityPackage }}
             ${{ env.packagePath }}/package.json
           tag_name: ${{ env.packageTag }}
+          generate_release_notes: true
 
   build-listing:
     needs:

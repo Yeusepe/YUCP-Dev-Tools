@@ -1,6 +1,451 @@
+/* Package Exporter layout. Shared controls and tokens come from com.yucp.ui (YUCPDesignSystem.uss). */
+
+.yucp-logo {
+    width: 116px;
+    height: 50px;
+    margin-right: 20px;
+    flex-shrink: 0;
+    transition-property: margin, width, height, opacity;
+    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
+}
+
+.yucp-package-logo {
+    flex-shrink: 0;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.yucp-menu-spacer {
+    flex-grow: 1;
+    min-width: 20px;
+}
+
+.yucp-menu-button-group {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.yucp-menu-button {
+    height: 32px;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-left: 4px;
+    margin-right: 4px;
+    background-color: transparent;
+    border-width: 1px;
+    border-color: #2a2a2a;
+    border-radius: 6px;
+    color: #b0b0b0;
+    font-size: 12px;
+    -unity-font-style: normal;
+    transition-property: background-color, color, border-color;
+    transition-duration: 0.15s, 0.15s, 0.15s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+}
+
+.yucp-menu-button:hover {
+    background-color: #2a2a2a;
+    color: #ffffff;
+    border-color: #3a3a3a;
+}
+
+.yucp-menu-button:active {
+    background-color: #36BFB1;
+    color: #ffffff;
+    border-color: #36BFB1;
+}
+
+.yucp-menu-button:disabled {
+    opacity: 0.4;
+    color: #606060;
+}
+
+.yucp-menu-dropdown {
+    padding-right: 8px;
+}
+
+.yucp-menu-separator {
+    width: 1px;
+    height: 24px;
+    background-color: #2a2a2a;
+    margin-left: 8px;
+    margin-right: 8px;
+}
+
+.yucp-profile-list-container {
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    align-self: stretch;
+    transition-property: width, padding;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
+}
+
+.yucp-profile-list-header {
+    font-size: 13px;
+    color: #b0b0b0;
+    -unity-font-style: bold;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    width: 100%;
+    min-width: 0;
+    align-self: stretch;
+}
+
+.yucp-profile-search-container {
+    width: 100%;
+    margin-bottom: 12px;
+    min-width: 0;
+}
+
+.yucp-profile-search-field {
+    width: 100%;
+    min-width: 0;
+}
+
+.yucp-profile-list-scroll {
+    flex-grow: 1;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    margin-bottom: 12px;
+    padding: 0;
+    align-self: stretch;
+}
+
+.yucp-profile-actions-section {
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    align-self: stretch;
+    flex-shrink: 0;
+}
+
+.yucp-profile-actions-section > Button.yucp-button,
+.yucp-profile-actions-section > Button.yucp-button-primary,
+.yucp-profile-actions-section > Button.yucp-button-secondary {
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+    margin-right: 0;
+    margin-top: 0;
+    margin-bottom: 4px;
+    align-self: stretch;
+    flex-shrink: 0;
+}
+
+.yucp-profile-action-last {
+    margin-bottom: 0;
+}
+
+.yucp-profile-actions-section > .yucp-profile-secondary-actions {
+    width: 100%;
+    min-width: 0;
+    flex-direction: row;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 0;
+    align-self: stretch;
+    flex-shrink: 0;
+}
+
+.yucp-profile-secondary-actions {
+    width: 100%;
+    min-width: 0;
+    flex-direction: row;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 0;
+    align-self: stretch;
+    flex-shrink: 0;
+}
+
+.yucp-profile-secondary-actions > Button,
+.yucp-profile-secondary-actions > Button.yucp-button,
+.yucp-profile-secondary-actions > Button.yucp-button-action,
+.yucp-profile-secondary-actions > Button.yucp-button-danger {
+    flex: 1 1 auto;
+    margin-top: 0;
+    margin-bottom: 0;
+    margin-left: 0;
+    margin-right: 0;
+    min-width: 0;
+    width: 0;
+    align-self: stretch;
+}
+
+.yucp-profile-action-last-in-row {
+    margin-right: 0;
+}
+
+.yucp-profile-item {
+    background-color: rgba(26, 26, 26, 0.6);
+    border-radius: 6px;
+    border-left-width: 3px;
+    border-left-color: transparent;
+    padding: 10px 12px;
+    margin-bottom: 4px;
+    flex-direction: row;
+    align-items: center;
+    transition-duration: 0.2s, 0.2s, 0.2s;
+    transition-property: background-color, border-left-color;
+    transition-timing-function: ease-out, ease-out, ease-out;
+}
+
+.yucp-profile-item:hover {
+    background-color: rgba(42, 42, 42, 0.7);
+}
+
+.yucp-profile-item-selected {
+    background-color: rgba(42, 42, 42, 0.8);
+    border-left-color: #36BFB1;
+}
+
+/* Sidebar drag & drop and folders (lost when YUCPPackageExporterStyle.uss was removed) */
+.yucp-profile-item-dragging {
+    opacity: 0.8;
+}
+
+.yucp-profile-item-drop-target {
+    border-top-width: 2px;
+    border-top-color: #36BFB1;
+}
+
+.yucp-profile-item-stack-target {
+    background-color: rgba(54, 191, 177, 0.15);
+    border-left-color: #36BFB1;
+    scale: 0.98 0.98;
+}
+
+.yucp-folder-header-active-target {
+    background-color: rgba(54, 191, 177, 0.2);
+    border-left-color: #36BFB1;
+}
+
+.yucp-folder-icon-container {
+    background-color: rgba(54, 191, 177, 0.15);
+    border-color: rgba(54, 191, 177, 0.3);
+}
+
+.yucp-folder-icon {
+    width: 100%;
+    height: 100%;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.yucp-folder-chevron {
+    width: 16px;
+    height: 16px;
+    opacity: 0.6;
+    margin-left: 8px;
+}
+
+.yucp-folder-header:hover .yucp-folder-chevron {
+    opacity: 1;
+}
+
+.yucp-folder-rename-field {
+    flex-grow: 1;
+    margin-right: 8px;
+}
+
+.yucp-profile-item-icon-container {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    margin-right: 12px;
+    background-color: rgba(42, 42, 42, 0.4);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.6);
+    border-radius: 6px;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    position: relative;
+    transition-duration: 0.2s;
+    transition-property: background-color, border-color;
+    transition-timing-function: ease-out;
+}
+
+.yucp-profile-item-icon {
+    position: absolute;
+    width: 107%;
+    height: 107%;
+    left: -3.5%;
+    top: -3.5%;
+}
+
+.yucp-profile-item-icon-placeholder {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    background-color: rgba(42, 42, 42, 0.4);
+    border-width: 1px;
+    border-color: rgba(42, 42, 42, 0.6);
+    border-radius: 6px;
+}
+
+.yucp-profile-item-content {
+    flex-direction: column;
+    min-width: 0;
+    flex-grow: 1;
+}
+
+.yucp-profile-item-name {
+    font-size: 13px;
+    color: #ffffff;
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yucp-profile-item-info {
+    font-size: 11px;
+    color: #808080;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yucp-profile-buttons {
+    flex-direction: row;
+    margin-bottom: 8px;
+    transition-property: flex-direction, height;
+    transition-duration: 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out;
+}
+
+.yucp-profile-buttons Button {
+    flex-grow: 1;
+    margin: 0;
+    transition-property: width, margin, flex-grow, height;
+    transition-duration: 0.5s, 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out, ease-in-out;
+}
+
+.yucp-profile-list-container > Button {
+    margin-left: 8px;
+    margin-right: 8px;
+    transition-property: width, margin, height;
+    transition-duration: 0.5s, 0.5s, 0.5s;
+    transition-timing-function: ease-in-out, ease-in-out, ease-in-out;
+}
+
+.yucp-mobile-toggle {
+    height: 40px;
+    width: 40px;
+    min-width: 40px;
+    background-color: #3a3a3a;
+    border-width: 0;
+    border-radius: 0;
+    margin-right: 12px;
+    padding: 0;
+    -unity-text-align: middle-center;
+    font-size: 16px;
+    color: #ffffff;
+    display: none;
+    opacity: 0;
+    transition-property: background-color, opacity;
+    transition-duration: 0.1s, 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-out, ease-out;
+}
+
+.yucp-mobile-toggle:hover {
+    background-color: #36BFB1;
+}
+
+.yucp-mobile-toggle:active {
+    background-color: #2da89c;
+}
+
+.yucp-left-pane-overlay {
+    background-color: #151515;
+    border-right-width: 0;
+    padding: 20px;
+    transition-property: opacity, left;
+    transition-duration: 0.3s, 0.3s;
+    transition-timing-function: ease-out, ease-out;
+}
+
+.yucp-overlay-backdrop {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    transition-property: opacity;
+    transition-duration: 0.3s;
+    transition-timing-function: ease-out;
+}
+
+.yucp-window-narrow .yucp-mobile-toggle {
+    display: flex;
+    opacity: 1;
+}
+
+.yucp-window-narrow .yucp-menu-button-group {
+    display: none;
+}
+
+.yucp-window-narrow .yucp-menu-spacer {
+    display: none;
+}
+
+.yucp-window-narrow .yucp-profile-buttons {
+    flex-direction: column;
+}
+
+.yucp-window-narrow .yucp-profile-buttons Button {
+    width: 100%;
+}
+
+.yucp-window-narrow .yucp-profile-list-container > Button {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+.yucp-window-narrow .yucp-logo {
+    margin-bottom: 8px;
+}
+
+.yucp-window-medium .yucp-profile-buttons {
+    flex-direction: column;
+}
+
+.yucp-window-medium .yucp-profile-buttons Button {
+    width: 100%;
+    margin: 2px 0;
+}
+
+.yucp-window-medium .yucp-profile-list-container > Button {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+}
+
 /* ============================================================================
    Package Exporter - Component-Specific Styles
-   Shared design system styles are in YucpDesignSystem.uss
+   Shared controls and tokens are in com.yucp.ui (YUCPDesignSystem.uss)
    ============================================================================ */
 
 /* ============================================================================
@@ -23,40 +468,90 @@
     overflow: hidden;
 }
 
-.yucp-popover-content {
-    overflow: hidden;
-    min-width: 0;
+/* Profile sidebar header, per Apple's HIG: the search field leads the sidebar (it filters it), then the
+   list's section header with its actions as borderless symbol buttons on the trailing edge. Leading edges
+   align with the search field; the last glyph is optically aligned with the field's trailing edge. */
+.yucp-sidebar-toolbar {
+    flex-direction: column;
+    margin-bottom: 4px;
+    overflow: visible;
 }
 
-/* Toolbar - Header row */
-.yucp-toolbar {
+.yucp-sidebar-section-row {
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    background-color: rgba(30, 30, 30, 1);
+    height: 24px;
+    margin-top: 12px;
 }
 
-.yucp-toolbar-left {
+/* macOS sidebar section header: 11pt bold, secondary label color, no added tracking */
+.yucp-sidebar-section-row > .yucp-profile-list-header {
+    flex-grow: 1;
+    flex-shrink: 1;
+    width: auto;
+    align-self: center;
+    margin: 0;
+    padding: 0;
+    font-size: 11px;
+    -unity-font-style: bold;
+    letter-spacing: 0;
+    color: rgba(255, 255, 255, 0.5);
+    -unity-text-align: middle-left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.yucp-sidebar-section-actions {
     flex-direction: row;
     align-items: center;
     flex-shrink: 0;
+    margin-right: -5px; /* button padding + glyph side bearing, so the folder glyph lines up with the search field's edge */
 }
 
-.yucp-toolbar-left > * {
-    margin-right: 8px;
-}
-
-.yucp-toolbar-right {
+/* Borderless symbol button (macOS toolbar items have no bezel); hover and press states only */
+.yucp-symbol-button {
+    height: 24px;
+    min-width: 24px;
+    margin: 0 0 0 4px;
+    padding: 0 4px;
     flex-direction: row;
     align-items: center;
-    flex-grow: 1;
-    justify-content: flex-end;
-    min-width: 0;
+    justify-content: center;
+    background-color: transparent;
+    border-width: 0;
+    border-radius: 5px;
 }
 
-.yucp-toolbar-right > * {
-    margin-left: 8px;
+.yucp-symbol-button:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.yucp-symbol-button:active {
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Glyphs share one size and the secondary label color; a selected toolbar item takes the accent color */
+.yucp-symbol {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    --unity-image-tint-color: rgba(255, 255, 255, 0.55);
+}
+
+.yucp-symbol-button:hover .yucp-symbol {
+    --unity-image-tint-color: rgba(255, 255, 255, 0.9);
+}
+
+.yucp-symbol-button.active .yucp-symbol {
+    --unity-image-tint-color: #36BFB1;
+}
+
+/* Pull-down indicator after the sort symbol */
+.yucp-symbol.yucp-symbol-chevron {
+    width: 12px;
+    height: 12px;
+    margin-left: -1px;
 }
 
 /* ============================================================================
@@ -77,7 +572,7 @@ Button {
     padding-left: 12px;
     padding-right: 12px;
     transition-duration: 0.15s;
-    transition-property: background-color, border-color, scale;
+    transition-property: background-color, border-color;
 }
 
 Button:hover {
@@ -90,70 +585,8 @@ Button:active {
 }
 
 /* Primary Action Button (Teal) */
-.yucp-button-primary {
-    background-color: rgba(54, 191, 177, 0.2);
-    border-color: rgba(54, 191, 177, 0.5);
-    color: #36BFB1;
-}
-
-.yucp-button-primary:hover {
-    background-color: rgba(54, 191, 177, 0.3);
-    border-color: rgba(54, 191, 177, 0.7);
-}
 
 /* Text-only / Ghost Button */
-.yucp-button-text {
-    background-color: transparent;
-    border-width: 0;
-    color: rgba(255, 255, 255, 0.5);
-}
-
-.yucp-button-text:hover {
-    background-color: rgba(255, 255, 255, 0.05);
-    color: rgba(255, 255, 255, 0.8);
-}
-
-/* Outline Button - Compact with icon */
-.yucp-btn-outline {
-    background-color: transparent;
-    border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.85);
-    padding: 6px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    height: 30px;
-    transition-duration: 0.15s;
-    transition-property: background-color, border-color;
-    flex-direction: row;
-    align-items: center;
-}
-
-.yucp-btn-outline:hover {
-    background-color: rgba(255, 255, 255, 0.04);
-    border-color: rgba(255, 255, 255, 0.18);
-}
-
-.yucp-btn-outline:active {
-    background-color: rgba(255, 255, 255, 0.06);
-}
-
-.yucp-btn-outline.active {
-    background-color: rgba(54, 191, 177, 0.15);
-    border-color: rgba(54, 191, 177, 0.4);
-    color: rgba(54, 191, 177, 1);
-}
-
-.yucp-btn-outline > * {
-    margin-right: 6px;
-}
-
-
-.yucp-btn-icon {
-    width: 14px;
-    height: 14px;
-    flex-shrink: 0;
-}
 
 .yucp-badge-count {
     margin-left: 6px;
@@ -169,56 +602,8 @@ Button:active {
 }
 
 /* Input - Rounded search field */
-.yucp-input {
-    background-color: rgba(40, 40, 40, 1);
-    border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    padding: 6px 12px;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.9);
-    min-height: 30px;
-    transition-duration: 0.15s;
-    transition-property: border-color, background-color;
-}
-
-.yucp-input:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-}
-
-.yucp-input:focus {
-    border-color: rgba(54, 191, 177, 0.5);
-    background-color: rgba(42, 42, 42, 1);
-}
 
 /* Dropdown / EnumField - Custom Styling */
-.yucp-dropdown {
-    margin: 0;
-    padding: 0;
-    border-width: 0;
-    background-color: transparent;
-}
-
-.yucp-dropdown .unity-enum-field__input {
-    background-color: rgba(40, 40, 40, 1);
-    border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    padding: 2px 8px; /* Slightly tighter padding for compact look */
-    color: rgba(255, 255, 255, 0.9);
-    height: 24px;
-    min-height: 24px;
-    margin: 0;
-}
-
-.yucp-dropdown:hover .unity-enum-field__input {
-    border-color: rgba(255, 255, 255, 0.2);
-    background-color: rgba(45, 45, 45, 1);
-}
-
-.yucp-dropdown .unity-enum-field__arrow {
-    -unity-background-image-tint-color: rgba(255, 255, 255, 0.5);
-}
 
 .yucp-search-container {
     flex-direction: row;
@@ -230,24 +615,6 @@ Button:active {
 
 .yucp-search-container > * {
     margin-right: 8px;
-}
-
-.yucp-search-clear {
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    background-color: transparent;
-    border-width: 0;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 14px;
-    -unity-text-align: middle-center;
-    border-radius: 4px;
-    flex-shrink: 0;
-}
-
-.yucp-search-clear:hover {
-    background-color: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.9);
 }
 
 /* ============================================================================
@@ -270,34 +637,6 @@ Button:active {
 }
 
 /* Popover Sections */
-.yucp-popover-section {
-    margin-bottom: 12px;
-}
-
-.yucp-popover-section-title {
-    font-size: 10px;
-    -unity-font-style: bold;
-    color: rgba(255, 255, 255, 0.5);
-    letter-spacing: 0.5px;
-    margin-bottom: 6px;
-    padding-bottom: 6px;
-    border-bottom-width: 1px;
-    border-bottom-color: rgba(255, 255, 255, 0.08);
-}
-
-.yucp-popover-actions {
-    flex-direction: row;
-    justify-content: flex-end;
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top-width: 1px;
-    border-top-color: rgba(255, 255, 255, 0.08);
-}
-
-.yucp-popover-actions > * {
-    margin-left: 8px;
-}
-
 /* Row Item - Full-width clickable checkbox row */
 .yucp-row-item {
     flex-direction: row;
@@ -337,70 +676,8 @@ Button:active {
 
 /* Sort Option Row - List-style selection */
 /* Sort Option Row - Premium dropdown item */
-.yucp-sort-option {
-    flex-direction: row;
-    align-items: center;
-    padding: 6px 12px;
-    margin-bottom: 2px;
-    border-radius: 4px;
-    transition-duration: 0.1s;
-    transition-property: background-color, color;
-    min-height: 28px;
-    width: 100%;
-    overflow: hidden;
-    cursor: link;
-}
-
-.yucp-sort-option:hover {
-    background-color: rgba(255, 255, 255, 0.08);
-    color: #ffffff;
-}
-
-.yucp-sort-option.selected {
-    background-color: rgba(54, 191, 177, 0.15);
-}
-
-.yucp-sort-option-label {
-    flex-grow: 1;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.7);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.yucp-sort-option:hover .yucp-sort-option-label {
-    color: #ffffff;
-}
-
-.yucp-sort-option.selected .yucp-sort-option-label {
-    color: #36BFB1;
-    -unity-font-style: bold;
-}
-
 /* Indicator - Right-aligned checkmark placeholder */
-.yucp-sort-indicator {
-    width: 16px;
-    height: 16px;
-    min-width: 16px;
-    margin-left: auto; /* Push to right */
-    padding-left: 8px;
-    justify-content: center;
-    align-items: center;
-    opacity: 0;
-}
-
-.yucp-sort-option.selected .yucp-sort-indicator {
-    opacity: 1;
-}
-
 /* We will use a Label inside the indicator for the checkmark character */
-.yucp-sort-indicator-check {
-    font-size: 14px;
-    color: #36BFB1;
-    -unity-text-align: middle-center;
-}
-
 /* Chip/Badge - Pill-shaped tags */
 .yucp-chip {
     flex-direction: row;
@@ -571,15 +848,13 @@ Button:active {
     background-color: #2a2a2a;
     border-radius: 4px;
     transition-duration: 0.2s, 0.2s, 0.2s;
-    transition-property: background-color, border-left-color, scale;
+    transition-property: background-color, border-left-color;
     transition-timing-function: ease-out, ease-out, ease-out;
-    scale: 1 1;
 }
 
 .yucp-asset-item:hover {
     background-color: #3a3a3a;
     border-left-color: rgba(54, 191, 177, 0.4);
-    scale: 1.005 1.005;
 }
 
 .yucp-asset-item-checkbox {
@@ -670,14 +945,12 @@ Button:active {
     border-radius: 6px;
     overflow: hidden;
     transition-duration: 0.2s, 0.2s;
-    transition-property: background-color, scale;
+    transition-property: background-color;
     transition-timing-function: ease-out, ease-out;
-    scale: 1 1;
 }
 
 .yucp-folder-item:hover {
     background-color: #3a3a3a;
-    scale: 1.005 1.005;
 }
 
 .yucp-folder-item-path {
@@ -703,14 +976,12 @@ Button:active {
     -unity-text-align: middle-center;
     flex-shrink: 0;
     transition-duration: 0.2s, 0.2s;
-    transition-property: background-color, scale;
+    transition-property: background-color;
     transition-timing-function: ease-out, ease-out;
-    scale: 1 1;
 }
 
 .yucp-folder-item-remove:hover {
     background-color: #E24A4A;
-    scale: 1.1 1.1;
 }
 
 /* ============================================================================
@@ -1024,16 +1295,14 @@ Button:active {
     min-width: 0;
     min-height: 26px;
     transition-duration: 0.2s, 0.2s, 0.2s, 0.2s;
-    transition-property: background-color, border-color, border-left-color, scale;
+    transition-property: background-color, border-color, border-left-color;
     transition-timing-function: ease-out, ease-out, ease-out, ease-out;
-    scale: 1 1;
 }
 
 .yucp-inspector-folder-header:hover {
     background-color: rgba(30, 30, 30, 0.8);
     border-color: rgba(54, 191, 177, 0.4);
     border-left-color: rgba(54, 191, 177, 0.6);
-    scale: 1.002 1.002;
 }
 
 /* Parent folders - first level under Assets */
@@ -1047,7 +1316,6 @@ Button:active {
 
 .yucp-inspector-folder-header.yucp-folder-parent:hover {
     background-color: rgba(30, 30, 30, 0.9);
-    scale: 1.002 1.002;
 }
 
 /* Child folders - nested levels, minimal vertical space */
@@ -1137,16 +1405,14 @@ Button:active {
     -unity-text-align: middle-center;
     flex-shrink: 0;
     transition-duration: 0.2s, 0.2s, 0.2s;
-    transition-property: color, background-color, scale;
+    transition-property: color, background-color;
     transition-timing-function: ease-out, ease-out, ease-out;
-    scale: 1 1;
 }
 
 .yucp-folder-expand-button:hover {
     color: #48d1c3;
     background-color: rgba(54, 191, 177, 0.1);
     border-radius: 2px;
-    scale: 1.05 1.05;
 }
 
 .yucp-folder-count-badge {
@@ -1636,7 +1902,6 @@ Button:active {
 
 .yucp-window-narrow .yucp-tree-badges {
     display: flex;
-    scale: 0.9 0.9;
     margin-right: 2px;
 }
 
@@ -1677,7 +1942,6 @@ Button:active {
 .yucp-window-narrow .yucp-tree-action-btn:hover {
     background-color: rgba(54, 191, 177, 0.4);
     color: #ffffff;
-    scale: 1.05 1.05;
 }
 
 .yucp-window-narrow .yucp-folder-count-badge {
@@ -2087,7 +2351,6 @@ Button:active {
 
 .yucp-window-narrow .yucp-inspector-folder-actions {
     display: flex;
-    scale: 0.9 0.9;
 }
 
 /* 3. Hide type column in asset items (already done but reinforcing) */
@@ -2105,7 +2368,6 @@ Button:active {
 
 .yucp-window-narrow .yucp-asset-item .yucp-button {
     display: flex; /* Restore action buttons */
-    scale: 0.9 0.9;
 }
 
 /* 5. Override inline padding indentation to prevent excessive shifting 
@@ -2375,9 +2637,6 @@ Button:active {
     padding: 4px;
     min-width: 32px;
     font-size: 16px;
-}
-
-.yucp-metadata-grid {
 }
 
 .yucp-metadata-grid > * {
@@ -2778,7 +3037,7 @@ Button:active {
     -unity-font-style: bold;
     color: rgba(255, 255, 255, 0.6);
     transition-duration: 0.2s;
-    transition-property: background-color, color, scale;
+    transition-property: background-color, color;
     transition-timing-function: ease-out;
     cursor: link;
     justify-content: center;
@@ -2789,7 +3048,6 @@ Button:active {
 .yucp-top-navbar-tab:hover {
     background-color: rgba(255, 255, 255, 0.08);
     color: rgba(255, 255, 255, 0.95);
-    scale: 1.05 1.05;
 }
 
 .yucp-top-navbar-tab.selected {
@@ -3172,12 +3430,11 @@ Button:active {
     height: 32px;
     border-radius: 16px; /* Pill shape */
     transition-duration: 0.15s;
-    transition-property: scale, background-color;
+    transition-property: background-color;
 }
 
 .yucp-sidebar-support-button:hover {
     background-color: #FFE660; /* Even Brighter on hover */
-    scale: 1.03 1.03;
 }
 /* ============================================================================
    BUNDLED PROFILES

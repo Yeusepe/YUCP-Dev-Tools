@@ -17,7 +17,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private const string SourceRootEnvironmentVariable = "YUCP_PATCH_RUNTIME_SOURCE_ROOT";
         private const string OutputDllEnvironmentVariable = "YUCP_PATCH_RUNTIME_OUTPUT_DLL";
 
-        [MenuItem("Tools/YUCP/Others/Package Exporter/Rebuild Patch Runtime DLL")]
         public static void BuildFromMenu()
         {
             Build(waitForCompletion: true, exitWhenFinished: false);

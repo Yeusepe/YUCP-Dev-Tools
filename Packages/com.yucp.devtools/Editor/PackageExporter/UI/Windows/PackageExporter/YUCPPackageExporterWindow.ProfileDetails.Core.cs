@@ -25,6 +25,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 && (profile.foldersToExport.Count > 0 || profile.HasIncludedProfiles());
         }
 
+        private EventCallback<MouseMoveEvent> _bannerHoverMove;
+
         public void UpdateProfileDetails()
         {
             if (_emptyState == null || _profileDetailsContainer == null || _rightPaneScrollView == null)
@@ -39,8 +41,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 if (_topNavBar != null) _topNavBar.style.display = DisplayStyle.None;
                 return;
             }
-            
-            // Save current inspector height to profile before switching
+
+
             if (selectedProfile != null && currentResizableContainer != null)
             {
                 float currentHeight = currentResizableContainer.resolvedStyle.height;
@@ -48,34 +50,34 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     currentHeight = currentResizableContainer.layout.height;
                 }
-                if (currentHeight > 0)
+                if (currentHeight > 0 && !Mathf.Approximately(currentHeight, selectedProfile.InspectorHeight))
                 {
                     Undo.RecordObject(selectedProfile, "Save Inspector Height");
                     selectedProfile.InspectorHeight = currentHeight;
                     EditorUtility.SetDirty(selectedProfile);
                 }
             }
-            
+
             _emptyState.style.display = DisplayStyle.None;
             _profileDetailsContainer.style.display = DisplayStyle.Flex;
-            
-            // Show Top Nav Bar
+
+
             if (_topNavBar != null)
             {
                 _topNavBar.style.display = DisplayStyle.Flex;
-                _topNavBar.SetActiveTab("General"); // Reset to first tab
+                _topNavBar.SetActiveTab("General");
             }
-            
-            // Reset scroll position when switching profiles to prevent scroll position bug
+
+
             var oldScrollView = _profileDetailsContainer.Q<ScrollView>(className: "yucp-inspector-list");
             if (oldScrollView != null)
             {
                 oldScrollView.verticalScroller.value = 0;
             }
-            
+
             _profileDetailsContainer.Clear();
-            
-            // Reset resize tracking
+
+
             currentResizableContainer = null;
             currentResizeRect = Rect.zero;
             _bannerImageContainer = null;
@@ -83,7 +85,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             _metadataSection = null;
             _bannerContainer = null;
             _packageNameField = null;
-            
+
             if (_rightPaneScrollView != null)
             {
                 var existingButtons = _rightPaneScrollView.Query<Button>(className: "yucp-overlay-hover-button").ToList();
@@ -95,36 +97,36 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 _changeBannerButton = null;
             }
-            
-            // Check if multiple profiles are selected
+
+
             if (selectedProfileIndices.Count > 1)
             {
-                // Show bulk editor for multiple profiles
+
                 var bulkEditorSection = CreateBulkEditorSection();
                 _profileDetailsContainer.Add(bulkEditorSection);
-                
-                // Show summary for selected profiles
+
+
                 var summarySection = CreateMultiProfileSummarySection();
                 _profileDetailsContainer.Add(summarySection);
             }
             else
             {
-                // Single profile editor
-                // Remove ScrollView padding so banner can span full width
+
+
                 _rightPaneScrollView.style.paddingLeft = 0;
                 _rightPaneScrollView.style.paddingRight = 0;
                 _rightPaneScrollView.style.paddingTop = 0;
                 _rightPaneScrollView.style.paddingBottom = 0;
-                
-                // Banner Section (inside ScrollView so it scrolls with content) - spans full width
+
+
                 var bannerSection = CreateBannerSection(selectedProfile);
                 _profileDetailsContainer.Add(bannerSection);
-                
-                // Setup parallax scrolling for banner
+
+
                 SetupParallaxScrolling();
-                
-                // Wrap all other sections in a container with padding
-                // Position it over the banner with negative margin
+
+
+
                 var contentWrapper = new VisualElement();
                 contentWrapper.style.position = Position.Relative;
                 contentWrapper.style.paddingLeft = 20;
@@ -135,67 +137,67 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 contentWrapper.style.flexGrow = 0;
                 contentWrapper.style.flexShrink = 1;
                 contentWrapper.style.flexBasis = StyleKeyword.Auto;
-                
-                // Make contentWrapper ignore pointer events in the banner area so hover works
-                // But we can't easily do this, so we'll handle hover on the banner section itself
-                
-                // Package Metadata Section
+
+
+
+
+
                 _metadataSection = CreateMetadataSection(selectedProfile);
                 _metadataSection.name = "section-metadata";
                 contentWrapper.Add(_metadataSection);
-                
-                // Register callback to update button position when metadata section geometry changes
+
+
                 _metadataSection.RegisterCallback<GeometryChangedEvent>(evt => UpdateBannerButtonPosition());
-                
-                // Quick Summary Section
+
+
                 var summarySection = CreateSummarySection(selectedProfile);
                 contentWrapper.Add(summarySection);
-                
-                // Validation Section
+
+
                 var validationSection = CreateValidationSection(selectedProfile);
                 contentWrapper.Add(validationSection);
-                
-                // Export Options Section
+
+
                 var optionsSection = CreateExportOptionsSection(selectedProfile);
                 optionsSection.name = "section-settings";
                 contentWrapper.Add(optionsSection);
-                
+
                 var foldersSection = CreateFoldersSection(selectedProfile);
                 foldersSection.name = "section-content";
                 contentWrapper.Add(foldersSection);
-                
-                // Bundled Profiles Section (for composite profiles)
+
+
                 var bundledProfilesSection = BundledProfilesSection.CreateBundledProfilesSection(selectedProfile, () => UpdateProfileDetails());
                 contentWrapper.Add(bundledProfilesSection);
-                
-                // Export Inspector Section
+
+
                 var inspectorSection = CreateExportInspectorSection(selectedProfile);
                 inspectorSection.name = "section-files";
                 contentWrapper.Add(inspectorSection);
-                
-                // Exclusion Filters Section
+
+
                 var exclusionSection = CreateExclusionFiltersSection(selectedProfile);
                 exclusionSection.name = "section-filters";
                 contentWrapper.Add(exclusionSection);
-                
-                // Dependencies Section
+
+
                 var dependenciesSection = CreateDependenciesSection(selectedProfile);
                 dependenciesSection.name = "section-dependencies";
                 contentWrapper.Add(dependenciesSection);
 
-                // Obfuscation Section
+
                 var obfuscationSection = CreateObfuscationSection(selectedProfile);
                 obfuscationSection.name = "section-advanced";
                 contentWrapper.Add(obfuscationSection);
-                
-                // Quick Actions
+
+
                 var actionsSection = CreateQuickActionsSection(selectedProfile);
                 actionsSection.name = "section-actions";
                 contentWrapper.Add(actionsSection);
-                
+
                 _profileDetailsContainer.Add(contentWrapper);
-                
-                // Add banner button directly to ScrollView so it's definitely on top and clickable
+
+
                 _changeBannerButton = new Button(() => OnChangeBannerClicked(selectedProfile));
                 _changeBannerButton.text = "Change";
                 _changeBannerButton.AddToClassList("yucp-overlay-hover-button");
@@ -205,8 +207,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 _changeBannerButton.style.right = StyleKeyword.Auto;
                 _changeBannerButton.style.opacity = 0f;
                 _changeBannerButton.pickingMode = PickingMode.Ignore;
-                
-                // Register hover events on banner section to show/hide button
+
+
                 Action showButton = () =>
                 {
                     if (_changeBannerButton != null)
@@ -223,51 +225,54 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         _changeBannerButton.pickingMode = PickingMode.Ignore;
                     }
                 };
-                
-                // Improved Hover Logic: use the banner section itself if available, or just the top area
-                _rightPaneScrollView.RegisterCallback<MouseMoveEvent>(evt =>
+
+
+                // The scroll view outlives each rebuild: replace the previous hover handler, don't add another.
+                if (_bannerHoverMove != null) _rightPaneScrollView.UnregisterCallback(_bannerHoverMove);
+                _rightPaneScrollView.RegisterCallback(_bannerHoverMove = evt =>
                 {
                     if (_changeBannerButton == null) return;
-                    
-                    // Simple detection: If we are hovering the top area (where banner is), show button
-                    // The banner is physically at the top of the scroll view before the content wrapper negative margin
-                    // Let's use a simpler heuristic: if Y < 300 (approx banner height) relative to scroll view content
-                    
+
+
+
+
+
                     float localY = evt.localMousePosition.y;
-                    
-                    // If we have metadata section, use its top as the bottom bound of the banner area
-                    float bottomBound = 300f; // Default fallback
+
+
+                    float bottomBound = 300f;
                     if (_metadataSection != null)
                     {
-                        bottomBound = _metadataSection.layout.y; 
-                        if (bottomBound < 50) bottomBound = 250f; // Sanity check
+                        bottomBound = _metadataSection.layout.y;
+                        if (bottomBound < 50) bottomBound = 250f;
                     }
-                    
+
                     bool isHoveringBanner = localY < bottomBound;
-                    
+
                     if (isHoveringBanner && _changeBannerButton.style.opacity.value < 0.5f)
                     {
                         showButton();
                     }
                     else if (!isHoveringBanner && _changeBannerButton.style.opacity.value > 0.5f)
                     {
-                         // Check if we are hovering the button itself (don't hide if moving towards button)
-                         // But pickingMode handles interaction. Visual hide delay?
+
+
                         hideButton();
                     }
                 });
-                
-                // Ensure button itself keeps it visible
+
+
                 _changeBannerButton.RegisterCallback<MouseEnterEvent>(e => showButton());
                 _changeBannerButton.RegisterCallback<MouseLeaveEvent>(e => {
-                     // We rely on the scrollview mouse move to hide it if we leave the button into non-banner area
+
                 });
-                
-                
-                // Update button position when geometry changes
-                _rightPaneScrollView.RegisterCallback<GeometryChangedEvent>(evt => UpdateBannerButtonPosition());
+
+
+
+                _rightPaneScrollView.UnregisterCallback<GeometryChangedEvent>(OnBannerGeometryChanged);
+                _rightPaneScrollView.RegisterCallback<GeometryChangedEvent>(OnBannerGeometryChanged);
                 _rightPaneScrollView.Add(_changeBannerButton);
-                
+
                 if (ProfileHasContentToScan(selectedProfile))
                 {
                     if (!selectedProfile.HasScannedAssets)
@@ -281,7 +286,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         };
                     }
                 }
-                
+
                 if (selectedProfile.dependencies.Count == 0 && ProfileHasContentToScan(selectedProfile))
                 {
                     EditorApplication.delayCall += () =>

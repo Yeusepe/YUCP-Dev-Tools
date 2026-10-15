@@ -9,6 +9,7 @@
         "com.yucp.devtools.Runtime",
         "com.yucp.components.Runtime",
         "com.yucp.components.Editor",
+        "com.yucp.ui.Editor",
         "VRCFury-Editor",
         "VRCFury",
         "com.vrcfury.api",

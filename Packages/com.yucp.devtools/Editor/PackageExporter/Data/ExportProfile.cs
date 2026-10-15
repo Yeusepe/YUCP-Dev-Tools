@@ -225,7 +225,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         [Header("Unity Export Options")]
         [Tooltip("Include dependencies of selected assets")]
         public bool includeDependencies = false;
-        
+
+        [Tooltip("Also bundle dependency files that belong to other installed packages (e.g. the VRChat SDK). " +
+                 "Off by default: a loose copy overwrites the buyer's own, possibly newer, version of that package and can break their project.")]
+        public bool bundleInstalledPackageFiles = false;
+
         [Tooltip("Recursively include all files in selected folders")]
         public bool recurseFolders = true;
         

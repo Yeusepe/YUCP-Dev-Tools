@@ -257,6 +257,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void ValidateAndCleanUnifiedOrder()
         {
+            // Folder membership is stored on the profile assets but the folder list lives in EditorPrefs.
+            // Re-register folders the prefs don't know about, otherwise their profiles are never rendered.
+            var missingFolders = allProfiles
+                .Select(p => p.folderName)
+                .Where(f => !string.IsNullOrEmpty(f) && !projectFolders.Contains(f))
+                .Distinct()
+                .ToList();
+            if (missingFolders.Count > 0)
+            {
+                projectFolders.AddRange(missingFolders);
+                SaveProjectFolders();
+            }
+
             var validOrder = new List<UnifiedOrderItem>();
             var seenFolders = new HashSet<string>();
             var seenProfiles = new HashSet<string>();

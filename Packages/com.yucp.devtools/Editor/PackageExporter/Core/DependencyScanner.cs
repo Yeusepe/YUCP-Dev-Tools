@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.PackageManager;
+using UnityPackageInfo = UnityEditor.PackageManager.PackageInfo;
 using UnityEngine;
+using UnityEngine.Networking;
 using Newtonsoft.Json.Linq;
 
 namespace YUCP.DevTools.Editor.PackageExporter
@@ -14,7 +17,48 @@ namespace YUCP.DevTools.Editor.PackageExporter
     /// </summary>
     public static class DependencyScanner
     {
-        private static readonly Dictionary<string, JObject> RepoJsonCache = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
+        private sealed class RepositoryCacheEntry
+        {
+            public JObject json;
+            public DateTime expires;
+            public DateTime lastWrite;
+            public UnityWebRequest request;
+        }
+
+        private static readonly Dictionary<string, RepositoryCacheEntry> RepoJsonCache =
+            new Dictionary<string, RepositoryCacheEntry>(StringComparer.Ordinal);
+        internal static event Action RepositoriesChanged;
+
+        // Installed versions and the repository list are read on every profile rebuild, once per
+        // dependency; both are cached until Unity or the Creator Companion reports a change.
+        private static Dictionary<string, string> installedVersions;
+        private static List<VpmRepositorySource> repoSources;
+        private static DateTime repoSourcesStamp;
+
+        // ponytail: VPM lookups are kept for 30 s and dropped when a repository finishes loading or the
+        // repository list changes; enough to make rebuilds cheap without serving stale data for long.
+        private static readonly TimeSpan LookupLifetime = TimeSpan.FromSeconds(30);
+        private static readonly Dictionary<string, (DateTime expires, bool ok, List<string> versions, string repoName, string repoUrl, string error)> versionLookups =
+            new Dictionary<string, (DateTime, bool, List<string>, string, string, string)>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, (DateTime expires, bool ok, string repoName, string repoUrl, bool hasDownloadUrl, List<string> checkedUrls, string error)> repoLookups =
+            new Dictionary<string, (DateTime, bool, string, string, bool, List<string>, string)>(StringComparer.OrdinalIgnoreCase);
+
+        private static void ClearLookups()
+        {
+            versionLookups.Clear();
+            repoLookups.Clear();
+        }
+
+        static DependencyScanner()
+        {
+            AssemblyReloadEvents.beforeAssemblyReload += () =>
+            {
+                foreach (var entry in RepoJsonCache.Values)
+                    entry.request?.Dispose();
+            };
+            Events.registeredPackages += _ => installedVersions = null;
+            RepositoriesChanged += ClearLookups;
+        }
 
         private class VpmRepositorySource
         {
@@ -31,6 +75,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public string description;
             public bool isVpmPackage;
             public string packagePath;
+            public PackageSource source;
 
             public PackageInfo(string name, string version, string displayName, string desc, bool isVpm, string path)
             {
@@ -43,153 +88,48 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
-        /// <summary>
-        /// Scan all installed packages in the project
-        /// </summary>
         public static List<PackageInfo> ScanInstalledPackages()
         {
-            return ScanInstalledPackages(logResults: true);
+            var vpmPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string manifest = Path.Combine(Application.dataPath, "../Packages/vpm-manifest.json");
+            if (File.Exists(manifest))
+            {
+                var locked = JObject.Parse(File.ReadAllText(manifest))["locked"] as JObject;
+                if (locked != null)
+                {
+                    foreach (var package in locked.Properties())
+                        vpmPackages.Add(package.Name);
+                }
+            }
+
+            var packages = new List<PackageInfo>();
+            foreach (var package in UnityPackageInfo.GetAllRegisteredPackages())
+            {
+                packages.Add(new PackageInfo(package.name, package.version, package.displayName,
+                    package.description, vpmPackages.Contains(package.name) || HasVpmManifest(package.resolvedPath), package.resolvedPath)
+                {
+                    source = package.source
+                });
+            }
+            return packages;
         }
 
-        private static List<PackageInfo> ScanInstalledPackages(bool logResults)
+        internal static bool HasVpmManifest(string packagePath)
         {
-            var packages = new List<PackageInfo>();
-
-            // Scan Packages folder for package.json files
-            string packagesPath = Path.Combine(Application.dataPath, "..", "Packages");
-
-            if (!Directory.Exists(packagesPath))
-            {
-                Debug.LogWarning("[DependencyScanner] Packages directory not found");
-                return packages;
-            }
-
-            // Get all subdirectories in Packages
-            string[] packageDirs = Directory.GetDirectories(packagesPath);
-
-            foreach (string packageDir in packageDirs)
-            {
-                string packageJsonPath = Path.Combine(packageDir, "package.json");
-
-                if (!File.Exists(packageJsonPath))
-                    continue;
-
-                try
-                {
-                    var packageInfo = ParsePackageJson(packageJsonPath);
-                    if (packageInfo != null)
-                    {
-                        packages.Add(packageInfo);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[DependencyScanner] Failed to parse {packageJsonPath}: {ex.Message}");
-                }
-            }
-
-            // Also check VPM manifest for VRChat-specific packages
-            string vpmManifestPath = Path.Combine(packagesPath, "vpm-manifest.json");
-            if (File.Exists(vpmManifestPath))
-            {
-                try
-                {
-                    var vpmPackages = ParseVpmManifest(vpmManifestPath);
-
-                    // Mark VPM packages
-                    foreach (var pkg in vpmPackages)
-                    {
-                        var existing = packages.Find(p => p.packageName == pkg.packageName);
-                        if (existing != null)
-                        {
-                            existing.isVpmPackage = true;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[DependencyScanner] Failed to parse VPM manifest: {ex.Message}");
-                }
-            }
-
-            if (logResults)
-            {
-                Debug.Log($"[DependencyScanner] Found {packages.Count} installed packages");
-            }
-
-            return packages;
+            string manifestPath = Path.Combine(packagePath, "package.json");
+            return File.Exists(manifestPath) && JObject.Parse(File.ReadAllText(manifestPath))["vpmDependencies"] is JObject;
         }
 
         public static string GetInstalledPackageVersion(string packageName)
         {
-            if (string.IsNullOrWhiteSpace(packageName))
-                return "";
-
-            try
+            if (installedVersions == null)
             {
-                var installedPackage = ScanInstalledPackages(logResults: false)
-                    .FirstOrDefault(p => string.Equals(p.packageName, packageName, StringComparison.OrdinalIgnoreCase));
-
-                return installedPackage?.version ?? "";
+                installedVersions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var package in UnityPackageInfo.GetAllRegisteredPackages())
+                    if (!installedVersions.ContainsKey(package.name))
+                        installedVersions[package.name] = package.version;
             }
-            catch
-            {
-                return "";
-            }
-        }
-
-        /// <summary>
-        /// Parse a package.json file to extract package information
-        /// </summary>
-        private static PackageInfo ParsePackageJson(string packageJsonPath)
-        {
-            string json = File.ReadAllText(packageJsonPath);
-            var jsonObj = JObject.Parse(json);
-
-            string packageName = jsonObj["name"]?.ToString();
-            string version = jsonObj["version"]?.ToString();
-            string displayName = jsonObj["displayName"]?.ToString() ?? packageName;
-            string description = jsonObj["description"]?.ToString() ?? "";
-
-            if (string.IsNullOrEmpty(packageName))
-                return null;
-
-            string packagePath = Path.GetDirectoryName(packageJsonPath);
-
-            return new PackageInfo(packageName, version, displayName, description, false, packagePath);
-        }
-
-        /// <summary>
-        /// Parse VPM manifest to identify VRChat packages
-        /// </summary>
-        private static List<PackageInfo> ParseVpmManifest(string vpmManifestPath)
-        {
-            var packages = new List<PackageInfo>();
-
-            try
-            {
-                string json = File.ReadAllText(vpmManifestPath);
-                var jsonObj = JObject.Parse(json);
-
-                var locked = jsonObj["locked"];
-                if (locked != null)
-                {
-                    foreach (var prop in locked.Children<JProperty>())
-                    {
-                        string packageName = prop.Name;
-                        var versionObj = prop.Value["version"];
-                        string version = versionObj?.ToString() ?? "unknown";
-
-                        packages.Add(new PackageInfo(packageName, version, packageName, "", true, ""));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[DependencyScanner] Failed to parse VPM manifest: {ex.Message}");
-            }
-
-            return packages;
+            return packageName != null && installedVersions.TryGetValue(packageName, out var version) ? version : "";
         }
 
         /// <summary>
@@ -201,8 +141,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             foreach (var pkg in packages)
             {
-                // Skip Unity's built-in packages
-                if (pkg.packageName.StartsWith("com.unity."))
+
+                if (pkg.source == PackageSource.BuiltIn)
                     continue;
 
                 var dependency = new PackageDependency(
@@ -218,95 +158,47 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return dependencies;
         }
 
-        /// <summary>
-        /// Scan export folders for used scripts/components and detect which packages they belong to.
-        /// Automatically enables dependencies that are actively used in the export.
-        /// </summary>
         public static void AutoDetectUsedDependencies(ExportProfile profile)
         {
-            Debug.Log("[DependencyScanner] Auto-detecting used dependencies...");
-
-            if (profile.foldersToExport.Count == 0)
-            {
-                Debug.LogWarning("[DependencyScanner] No export folders configured");
-                return;
-            }
-
-            var installedPackages = ScanInstalledPackages();
-            var usedPackages = new HashSet<string>();
-            bool normalizedAnyFolders = false;
-
-            // Scan all prefabs and scenes in export folders for components
+            var folders = new HashSet<string>(StringComparer.Ordinal);
+            bool changed = false;
             for (int i = 0; i < profile.foldersToExport.Count; i++)
             {
-                string folder = profile.foldersToExport[i];
-                string assetFolder = NormalizeAssetDatabaseFolderPath(folder);
-                if (string.IsNullOrEmpty(assetFolder))
-                {
-                    Debug.LogWarning($"[DependencyScanner] Skipping export folder outside the project or with an invalid path: {folder}");
+                string folder = NormalizeAssetDatabaseFolderPath(profile.foldersToExport[i]);
+                if (folder == null || !AssetDatabase.IsValidFolder(folder))
                     continue;
-                }
 
-                if (!string.Equals(folder, assetFolder, StringComparison.Ordinal))
+                if (profile.foldersToExport[i] != folder)
                 {
-                    profile.foldersToExport[i] = assetFolder;
-                    normalizedAnyFolders = true;
+                    profile.foldersToExport[i] = folder;
+                    changed = true;
                 }
+                folders.Add(folder);
+            }
 
-                if (!AssetDatabase.IsValidFolder(assetFolder))
+            var usedPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (folders.Count > 0)
+            {
+                string[] assets = AssetDatabase.FindAssets("", folders.ToArray())
+                    .Select(AssetDatabase.GUIDToAssetPath).ToArray();
+                foreach (string path in AssetDatabase.GetDependencies(assets, true))
                 {
-                    Debug.LogWarning($"[DependencyScanner] Export folder not found in AssetDatabase: {assetFolder}");
-                    continue;
-                }
-
-                // Find all prefabs and scenes
-                string[] prefabGuids = AssetDatabase.FindAssets("t:Prefab", new[] { assetFolder });
-                string[] sceneGuids = AssetDatabase.FindAssets("t:Scene", new[] { assetFolder });
-
-                var allGuids = prefabGuids.Concat(sceneGuids).ToArray();
-
-                foreach (string guid in allGuids)
-                {
-                    string assetPath = AssetDatabase.GUIDToAssetPath(guid);
-                    var usedInAsset = DetectPackagesInAsset(assetPath, installedPackages);
-
-                    foreach (var packageName in usedInAsset)
-                    {
-                        usedPackages.Add(packageName);
-                    }
+                    var package = UnityPackageInfo.FindForAssetPath(path);
+                    if (package != null)
+                        usedPackages.Add(package.name);
                 }
             }
 
-            if (normalizedAnyFolders)
+            foreach (var dependency in profile.dependencies)
             {
+                if (!dependency.enabled && usedPackages.Contains(dependency.packageName))
+                {
+                    dependency.enabled = true;
+                    changed = true;
+                }
+            }
+            if (changed)
                 EditorUtility.SetDirty(profile);
-            }
-
-            if (usedPackages.Count > 0)
-            {
-                Debug.Log($"[DependencyScanner] Auto-detected {usedPackages.Count} used packages: {string.Join(", ", usedPackages)}");
-
-                // Enable dependencies that are used
-                foreach (var dep in profile.dependencies)
-                {
-                    if (usedPackages.Contains(dep.packageName))
-                    {
-                        dep.enabled = true;
-
-                        if (dep.isVpmDependency)
-                        {
-                            dep.exportMode = DependencyExportMode.Dependency;
-                        }
-
-                        Debug.Log($"[DependencyScanner] Auto-enabled dependency: {dep.packageName}");
-                    }
-                    else
-                    {
-                        // Disable unused dependencies by default
-                        dep.enabled = false;
-                    }
-                }
-            }
         }
 
         private static string NormalizeAssetDatabaseFolderPath(string folder)
@@ -314,86 +206,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             if (string.IsNullOrWhiteSpace(folder))
                 return null;
 
-            string normalized = folder.Trim().Replace('\\', '/');
-            if (Path.IsPathRooted(normalized))
-            {
-                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/');
-                string fullFolder = Path.GetFullPath(folder).Replace('\\', '/');
-
-                if (!fullFolder.Equals(projectRoot, StringComparison.OrdinalIgnoreCase) &&
-                    !fullFolder.StartsWith(projectRoot + "/", StringComparison.OrdinalIgnoreCase))
-                {
-                    return null;
-                }
-
-                normalized = fullFolder.Substring(projectRoot.Length).TrimStart('/');
-            }
-
-            return normalized.TrimStart('/');
-        }
-
-        /// <summary>
-        /// Detect which packages are used in a specific asset (prefab or scene)
-        /// </summary>
-        private static List<string> DetectPackagesInAsset(string assetPath, List<PackageInfo> installedPackages)
-        {
-            var usedPackages = new List<string>();
-
-            try
-            {
-                // Read the asset file as text to look for script references
-                string assetContent = File.ReadAllText(assetPath);
-
-                // Look for MonoScript GUIDs in the file
-                var guidMatches = System.Text.RegularExpressions.Regex.Matches(assetContent, @"guid:\s*([a-f0-9]{32})");
-
-                foreach (System.Text.RegularExpressions.Match match in guidMatches)
-                {
-                    string guid = match.Groups[1].Value;
-                    string scriptPath = AssetDatabase.GUIDToAssetPath(guid);
-
-                    if (string.IsNullOrEmpty(scriptPath))
-                        continue;
-
-                    // Check which package this script belongs to
-                    foreach (var pkg in installedPackages)
-                    {
-                        if (!string.IsNullOrEmpty(pkg.packagePath) && scriptPath.StartsWith(GetRelativePackagePath(pkg.packagePath)))
-                        {
-                            if (!usedPackages.Contains(pkg.packageName))
-                            {
-                                usedPackages.Add(pkg.packageName);
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[DependencyScanner] Failed to scan asset {assetPath}: {ex.Message}");
-            }
-
-            return usedPackages;
-        }
-
-        /// <summary>
-        /// Convert absolute path to Unity-relative path
-        /// </summary>
-        private static string GetRelativePackagePath(string absolutePath)
-        {
-            string projectPath = Path.GetFullPath(Path.Combine(UnityEngine.Application.dataPath, ".."));
-
-            if (absolutePath.StartsWith(projectPath))
-            {
-                string relative = absolutePath.Substring(projectPath.Length);
-                if (relative.StartsWith("\\") || relative.StartsWith("/"))
-                {
-                    relative = relative.Substring(1);
-                }
-                return relative.Replace('\\', '/');
-            }
-
-            return absolutePath.Replace('\\', '/');
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string fullPath = Path.GetFullPath(Path.Combine(projectRoot, folder.Trim()));
+            string relative = FileUtil.GetProjectRelativePath(fullPath.Replace('\\', '/')).TrimEnd('/');
+            if (relative == "Assets" || relative.StartsWith("Assets/", StringComparison.Ordinal) ||
+                relative.StartsWith("Packages/", StringComparison.Ordinal))
+                return relative;
+            return null;
         }
 
         /// <summary>
@@ -406,7 +225,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             JObject packageJson;
 
-            // Load existing package.json if provided
+
             if (!string.IsNullOrEmpty(existingPackageJsonPath) && File.Exists(existingPackageJsonPath))
             {
                 string existingJson = File.ReadAllText(existingPackageJsonPath);
@@ -414,11 +233,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             else
             {
-                // Create new package.json
+
                 packageJson = new JObject();
             }
 
-            // Set basic fields
+
             packageJson["name"] = profile.packageName.ToLower().Replace(" ", ".");
             packageJson["displayName"] = profile.packageName;
             packageJson["version"] = profile.version;
@@ -435,70 +254,64 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 packageJson["author"] = authorObj;
             }
 
-            // Add unity version requirement
+
             packageJson["unity"] = "2022.3";
 
-            // Build dependencies
-            var depsToReference = dependencies.Where(d => d.enabled && d.exportMode == DependencyExportMode.Dependency).ToList();
+            packageJson.Remove("dependencies");
+            packageJson.Remove("vpmDependencies");
+            packageJson.Remove("vpmRepositories");
 
-            if (depsToReference.Count > 0)
+            var regular = new JObject();
+            var vpm = new JObject();
+            var vpmDependencies = new List<PackageDependency>();
+            var installed = UnityPackageInfo.GetAllRegisteredPackages();
+            var installedVpmPackages = new HashSet<string>(ScanInstalledPackages()
+                .Where(package => package.isVpmPackage).Select(package => package.packageName));
+            foreach (var dependency in dependencies)
             {
-                // Separate VPM and regular dependencies
-                var vpmDeps = depsToReference.Where(d => d.isVpmDependency).ToList();
-                var regularDeps = depsToReference.Where(d => !d.isVpmDependency).ToList();
+                if (!dependency.enabled || dependency.exportMode != DependencyExportMode.Dependency)
+                    continue;
+                if (dependency.packageName == (string)packageJson["name"])
+                    throw new InvalidOperationException("A package cannot depend on itself.");
+                if (string.IsNullOrWhiteSpace(dependency.packageName))
+                    throw new InvalidOperationException("A selected dependency has no package name.");
 
-                // Add regular dependencies
-                if (regularDeps.Count > 0)
+                if (dependency.isVpmDependency || installedVpmPackages.Contains(dependency.packageName) ||
+                    !string.IsNullOrWhiteSpace(dependency.vpmRepositoryUrl))
                 {
-                    var depsObj = new JObject();
-                    foreach (var dep in regularDeps)
+                    if (!SemanticVersioning.Range.TryParse(dependency.GetVpmVersionRequirement(), out _))
+                        throw new InvalidOperationException($"Invalid VPM version requirement for {dependency.packageName}.");
+                    vpm[dependency.packageName] = dependency.GetVpmVersionRequirement();
+                    vpmDependencies.Add(new PackageDependency(dependency.packageName, dependency.packageVersion, dependency.displayName, true)
                     {
-                        depsObj[dep.packageName] = dep.packageVersion;
-                    }
-                    packageJson["dependencies"] = depsObj;
+                        versionMode = dependency.versionMode,
+                        specificVersion = dependency.specificVersion,
+                        vpmRepositoryUrl = dependency.vpmRepositoryUrl
+                    });
+                    continue;
                 }
 
-                // Add VPM dependencies (VRChat packages)
-                if (vpmDeps.Count > 0)
-                {
-                    List<PackageDependency> missingVpmDeps;
-                    var resolvedVpmDeps = FilterVpmDependenciesWithDownloadUrl(vpmDeps, out missingVpmDeps);
-
-                    if (missingVpmDeps.Count > 0)
-                    {
-                        string missingList = string.Join(", ", missingVpmDeps.Select(d => d.packageName));
-                        Debug.LogWarning(
-                            $"[DependencyScanner] Skipping VPM dependencies with no download URL: {missingList}"
-                        );
-                    }
-
-                    if (resolvedVpmDeps.Count > 0)
-                    {
-                        var vpmDepsObj = new JObject();
-                        foreach (var dep in resolvedVpmDeps)
-                        {
-                            vpmDepsObj[dep.packageName] = dep.GetVpmVersionRequirement();
-                        }
-                        packageJson["vpmDependencies"] = vpmDepsObj;
-
-                        // Only add custom repositories (do not auto-add discovered ones)
-                        var customRepos = BuildCustomVpmRepositories(resolvedVpmDeps);
-                        if (customRepos.Count > 0)
-                        {
-                            var vpmReposObj = new JObject();
-                            foreach (var repo in customRepos)
-                            {
-                                vpmReposObj[repo.Key] = repo.Value;
-                            }
-                            packageJson["vpmRepositories"] = vpmReposObj;
-                        }
-                    }
-                }
+                string version = dependency.versionMode == DependencyVersionMode.Specific
+                    ? dependency.GetSpecificVersionOrDefault() : dependency.packageVersion;
+                if (!SemanticVersioning.Version.TryParse(version, out _))
+                    throw new InvalidOperationException($"{dependency.packageName} requires an exact Unity package version.");
+                var package = installed.FirstOrDefault(p => p.name == dependency.packageName);
+                if (package != null && (package.source == PackageSource.Git ||
+                    package.source == PackageSource.Local || package.source == PackageSource.LocalTarball))
+                    throw new InvalidOperationException($"{dependency.packageName} is installed from {package.source}. Bundle it or install its registry release before exporting a dependency.");
+                regular[dependency.packageName] = version;
+            }
+            if (regular.Count > 0)
+                packageJson["dependencies"] = regular;
+            if (vpm.Count > 0)
+            {
+                packageJson["vpmDependencies"] = vpm;
+                packageJson["vpmRepositories"] = JObject.FromObject(BuildCustomVpmRepositories(vpmDependencies));
             }
 
-            // The package exporter never authorizes server-mediated delivery — only the server does,
-            // when a package is installed from the creator's VPM URL. Strip any alias contract so every
-            // exported package stays self-contained and imports offline without an install plan.
+
+
+
             if (packageJson.TryGetValue("yucp", out JToken existingYucp) &&
                 existingYucp is JObject existingYucpObject &&
                 (string.Equals(
@@ -513,77 +326,31 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 packageJson.Remove("yucp");
             }
 
-            // Return formatted JSON
+
             return packageJson.ToString(Newtonsoft.Json.Formatting.Indented);
         }
 
-        private static List<PackageDependency> FilterVpmDependenciesWithDownloadUrl(
-            List<PackageDependency> vpmDeps,
-            out List<PackageDependency> missingDeps)
+        public static bool TryGetVpmDependencyRepoInfo(
+            PackageDependency dep,
+            out string repoName,
+            out string repoUrl,
+            out bool hasDownloadUrl,
+            out List<string> checkedUrls,
+            out string lookupError)
         {
-            missingDeps = new List<PackageDependency>();
-
-            try
+            string key = dep == null ? "" : dep.packageName + "|" + dep.vpmRepositoryUrl + "|" + dep.GetVpmVersionRequirement() + "|" + dep.isVpmDependency;
+            if (repoLookups.TryGetValue(key, out var hit) && hit.expires > DateTime.UtcNow)
             {
-                if (vpmDeps == null || vpmDeps.Count == 0)
-                    return new List<PackageDependency>();
-
-                var repoSources = GetVpmRepositorySources();
-
-                foreach (var dep in vpmDeps)
-                {
-                    string packageName = dep.packageName;
-                    if (string.IsNullOrEmpty(packageName))
-                    {
-                        missingDeps.Add(dep);
-                        continue;
-                    }
-
-                    bool foundDownloadUrl = false;
-
-                    if (!string.IsNullOrWhiteSpace(dep.vpmRepositoryUrl))
-                    {
-                        string customUrl = dep.vpmRepositoryUrl.Trim();
-                        if (TryLoadRepoJson(new VpmRepositorySource
-                            {
-                                name = "Custom",
-                                url = customUrl,
-                                localPath = null
-                            }, out var customJson))
-                        {
-                            if (RepoHasDownloadUrlForPackage(customJson, dep, packageName, out _))
-                            {
-                                foundDownloadUrl = true;
-                            }
-                        }
-                    }
-
-                    foreach (var repo in repoSources)
-                    {
-                        if (TryLoadRepoJson(repo, out var repoJson) &&
-                            RepoHasDownloadUrlForPackage(repoJson, dep, packageName, out _))
-                        {
-                            foundDownloadUrl = true;
-                            break;
-                        }
-                    }
-
-                    if (!foundDownloadUrl)
-                    {
-                        missingDeps.Add(dep);
-                    }
-                }
+                (repoName, repoUrl, hasDownloadUrl, lookupError) = (hit.repoName, hit.repoUrl, hit.hasDownloadUrl, hit.error);
+                checkedUrls = new List<string>(hit.checkedUrls);
+                return hit.ok;
             }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[DependencyScanner] Failed to get required repositories: {ex.Message}");
-            }
-
-            var missingSet = new HashSet<PackageDependency>(missingDeps);
-            return vpmDeps.Where(d => !missingSet.Contains(d)).ToList();
+            bool ok = ResolveVpmDependencyRepoInfo(dep, out repoName, out repoUrl, out hasDownloadUrl, out checkedUrls, out lookupError);
+            repoLookups[key] = (DateTime.UtcNow + LookupLifetime, ok, repoName, repoUrl, hasDownloadUrl, new List<string>(checkedUrls), lookupError);
+            return ok;
         }
 
-        public static bool TryGetVpmDependencyRepoInfo(
+        private static bool ResolveVpmDependencyRepoInfo(
             PackageDependency dep,
             out string repoName,
             out string repoUrl,
@@ -611,10 +378,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return true;
             }
 
-            return true;
+            return false;
         }
 
         public static bool TryGetAvailableVpmVersions(
+            PackageDependency dep,
+            out List<string> versions,
+            out string repoName,
+            out string repoUrl,
+            out string lookupError)
+        {
+            string key = dep == null ? "" : dep.packageName + "|" + dep.vpmRepositoryUrl + "|" + dep.isVpmDependency;
+            if (versionLookups.TryGetValue(key, out var hit) && hit.expires > DateTime.UtcNow)
+            {
+                (repoName, repoUrl, lookupError) = (hit.repoName, hit.repoUrl, hit.error);
+                versions = new List<string>(hit.versions);
+                return hit.ok;
+            }
+            bool ok = ResolveAvailableVpmVersions(dep, out versions, out repoName, out repoUrl, out lookupError);
+            versionLookups[key] = (DateTime.UtcNow + LookupLifetime, ok, new List<string>(versions), repoName, repoUrl, lookupError);
+            return ok;
+        }
+
+        private static bool ResolveAvailableVpmVersions(
             PackageDependency dep,
             out List<string> versions,
             out string repoName,
@@ -669,11 +455,25 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
 
-            lookupError = "No downloadable versions found in any repository";
+            lookupError = "Repositories are loading or no downloadable versions were found";
             return false;
         }
 
         private static List<VpmRepositorySource> GetVpmRepositorySources()
+        {
+            string root = GetCreatorCompanionRoot();
+            string settings = string.IsNullOrEmpty(root) ? null : Path.Combine(root, "settings.json");
+            var stamp = settings != null && File.Exists(settings) ? File.GetLastWriteTimeUtc(settings) : DateTime.MinValue;
+            if (repoSources == null || stamp != repoSourcesStamp)
+            {
+                repoSources = ReadVpmRepositorySources();
+                repoSourcesStamp = stamp;
+                ClearLookups();
+            }
+            return new List<VpmRepositorySource>(repoSources);
+        }
+
+        private static List<VpmRepositorySource> ReadVpmRepositorySources()
         {
             var repos = new List<VpmRepositorySource>();
             string creatorCompanionRoot = GetCreatorCompanionRoot();
@@ -772,45 +572,65 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private static bool TryLoadRepoJson(VpmRepositorySource repo, out JObject repoJson)
         {
             repoJson = null;
-
-            if (repo == null)
-                return false;
-
-            string cacheKey = !string.IsNullOrEmpty(repo.localPath) ? repo.localPath : repo.url;
-            if (!string.IsNullOrEmpty(cacheKey) && RepoJsonCache.TryGetValue(cacheKey, out var cachedJson))
-            {
-                repoJson = cachedJson;
-                return true;
-            }
-
             if (!string.IsNullOrEmpty(repo.localPath) && File.Exists(repo.localPath))
             {
-                try
+                DateTime modified = File.GetLastWriteTimeUtc(repo.localPath);
+                if (RepoJsonCache.TryGetValue(repo.localPath, out var local) && local.lastWrite == modified)
                 {
-                    repoJson = JObject.Parse(File.ReadAllText(repo.localPath));
-                    if (!string.IsNullOrEmpty(cacheKey))
-                        RepoJsonCache[cacheKey] = repoJson;
-                    return true;
+                    repoJson = local.json;
+                    if (repoJson != null)
+                        return true;
                 }
-                catch { }
+                else
+                {
+                    local = new RepositoryCacheEntry { lastWrite = modified };
+                    RepoJsonCache[repo.localPath] = local;
+                    try
+                    {
+                        local.json = JObject.Parse(File.ReadAllText(repo.localPath));
+                        repoJson = local.json;
+                        return true;
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning($"[DependencyScanner] Cannot read repository {repo.localPath}: {e.Message}");
+                    }
+                }
             }
 
-            if (!string.IsNullOrEmpty(repo.url))
+            if (!IsValidDownloadUrl(repo.url))
+                return false;
+            if (RepoJsonCache.TryGetValue(repo.url, out var cached) &&
+                (cached.request != null || cached.expires > DateTime.UtcNow))
+            {
+                repoJson = cached.json;
+                return repoJson != null;
+            }
+
+            var entry = new RepositoryCacheEntry();
+            RepoJsonCache[repo.url] = entry;
+            var request = UnityWebRequest.Get(repo.url);
+            request.timeout = 15;
+            entry.request = request;
+            request.SendWebRequest().completed += _ =>
             {
                 try
                 {
-                    using (var client = new System.Net.WebClient())
-                    {
-                        string repoData = client.DownloadString(repo.url);
-                        repoJson = JObject.Parse(repoData);
-                        if (!string.IsNullOrEmpty(cacheKey))
-                            RepoJsonCache[cacheKey] = repoJson;
-                        return true;
-                    }
+                    if (request.result == UnityWebRequest.Result.Success)
+                        entry.json = JObject.Parse(request.downloadHandler.text);
                 }
-                catch { }
-            }
-
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[DependencyScanner] Invalid repository data from {repo.name}: {e.Message}");
+                }
+                finally
+                {
+                    entry.expires = DateTime.UtcNow.AddSeconds(entry.json == null ? 30 : 300);
+                    entry.request = null;
+                    request.Dispose();
+                }
+                RepositoriesChanged?.Invoke();
+            };
             return false;
         }
 
@@ -926,7 +746,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             }
 
-            lookupError = "No download URL found in any repository";
+            lookupError = "Repositories are loading or no matching download URL was found";
             return false;
         }
 
@@ -941,7 +761,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return false;
 
             versions = versionObjects.Properties()
-                .Where(p => IsValidDownloadUrl((p.Value as JObject)?["url"]?.ToString()))
+                .Where(p => SemanticVersioning.Version.TryParse(p.Name, out _) && IsValidDownloadUrl((p.Value as JObject)?["url"]?.ToString()))
                 .Select(p => p.Name)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderByDescending(v => v, Comparer<string>.Create(CompareVersions))
@@ -963,123 +783,40 @@ namespace YUCP.DevTools.Editor.PackageExporter
             return false;
         }
 
-        private static Dictionary<string, string> BuildCustomVpmRepositories(List<PackageDependency> vpmDeps)
+        private static Dictionary<string, string> BuildCustomVpmRepositories(List<PackageDependency> dependencies)
         {
-            var repos = new Dictionary<string, string>();
-
-            foreach (var dep in vpmDeps)
+            var repositories = new Dictionary<string, string>();
+            foreach (var dependency in dependencies)
             {
-                if (dep == null)
+                if (!string.IsNullOrWhiteSpace(dependency.vpmRepositoryUrl))
+                {
+                    string url = dependency.vpmRepositoryUrl.Trim();
+                    if (!IsValidDownloadUrl(url))
+                        throw new InvalidOperationException($"Invalid repository URL for {dependency.packageName}.");
+                    repositories[dependency.packageName] = url;
                     continue;
-
-                // 1) Respect explicit custom repo URL if provided on the dependency.
-                if (!string.IsNullOrWhiteSpace(dep.vpmRepositoryUrl))
-                {
-                    string url = dep.vpmRepositoryUrl.Trim();
-                    if (IsValidDownloadUrl(url))
-                    {
-                        string key = $"{dep.packageName} (Custom)";
-                        if (!repos.ContainsKey(key))
-                        {
-                            repos[key] = url;
-                        }
-                    }
                 }
 
-                // 2) Otherwise, embed the discovered repo URL (if any) so users without that repo can still install.
-                if (TryGetVpmDependencyRepoInfo(
-                        dep,
-                        out var repoName,
-                        out var repoUrl,
-                        out var hasDownloadUrl,
-                        out _,
-                        out _))
-                {
-                    if (hasDownloadUrl && IsValidDownloadUrl(repoUrl))
-                    {
-                        string key = string.IsNullOrWhiteSpace(repoName) ? "VPM Repo" : repoName.Trim();
-                        if (!repos.ContainsKey(key))
-                        {
-                            repos[key] = repoUrl;
-                        }
-                    }
-                }
+                if (!TryGetVpmDependencyRepoInfo(dependency, out _, out string repoUrl, out bool available, out _, out string error) ||
+                    !available || !IsValidDownloadUrl(repoUrl))
+                    throw new InvalidOperationException($"Cannot resolve {dependency.packageName}: {error} Set its repository URL or wait for repository loading to finish and retry.");
+                repositories[dependency.packageName] = repoUrl;
             }
-
-            return repos;
+            return repositories;
         }
 
-        private static bool VersionSatisfiesRequirement(string version, string requirement)
+        internal static bool VersionSatisfiesRequirement(string version, string requirement) =>
+            SemanticVersioning.Version.TryParse(version, out var parsedVersion) &&
+            SemanticVersioning.Range.TryParse(string.IsNullOrWhiteSpace(requirement) ? "*" : requirement, out var range) &&
+            range.IsSatisfied(parsedVersion);
+
+        internal static int CompareVersions(string left, string right)
         {
-            if (string.IsNullOrEmpty(requirement))
-                return true;
-
-            string req = requirement.Trim();
-
-            if (req == "*")
-                return true;
-
-            if (req.StartsWith(">="))
-            {
-                string minVersion = req.Substring(2).Trim();
-                return CompareVersions(version, minVersion) >= 0;
-            }
-
-            if (req.StartsWith("^"))
-            {
-                string baseVersion = req.Substring(1).Trim();
-                var baseParts = ParseVersion(baseVersion);
-                var parts = ParseVersion(version);
-                if (baseParts.major != parts.major)
-                    return false;
-
-                return CompareVersions(version, baseVersion) >= 0;
-            }
-
-            if (req.StartsWith("~"))
-            {
-                string baseVersion = req.Substring(1).Trim();
-                var baseParts = ParseVersion(baseVersion);
-                var parts = ParseVersion(version);
-                if (baseParts.major != parts.major || baseParts.minor != parts.minor)
-                    return false;
-
-                return CompareVersions(version, baseVersion) >= 0;
-            }
-
-            return CompareVersions(version, req) == 0;
-        }
-
-        private static int CompareVersions(string version1, string version2)
-        {
-            var v1 = ParseVersion(version1);
-            var v2 = ParseVersion(version2);
-
-            if (v1.major != v2.major) return v1.major.CompareTo(v2.major);
-            if (v1.minor != v2.minor) return v1.minor.CompareTo(v2.minor);
-            return v1.patch.CompareTo(v2.patch);
-        }
-
-        private static (int major, int minor, int patch) ParseVersion(string version)
-        {
-            if (string.IsNullOrEmpty(version))
-                return (0, 0, 0);
-
-            string normalized = version.Trim().TrimStart('v', 'V');
-            int dashIndex = normalized.IndexOf('-');
-            if (dashIndex > 0)
-                normalized = normalized.Substring(0, dashIndex);
-
-            var parts = normalized.Split('.');
-            int major = parts.Length > 0 ? SafeParseInt(parts[0]) : 0;
-            int minor = parts.Length > 1 ? SafeParseInt(parts[1]) : 0;
-            int patch = parts.Length > 2 ? SafeParseInt(parts[2]) : 0;
-            return (major, minor, patch);
-        }
-
-        private static int SafeParseInt(string value)
-        {
-            return int.TryParse(value, out var parsed) ? parsed : 0;
+            bool leftValid = SemanticVersioning.Version.TryParse(left, out var leftVersion);
+            bool rightValid = SemanticVersioning.Version.TryParse(right, out var rightVersion);
+            if (!leftValid || !rightValid)
+                return leftValid.CompareTo(rightValid);
+            return leftVersion.CompareTo(rightVersion);
         }
     }
 }

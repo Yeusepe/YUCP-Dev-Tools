@@ -21,6 +21,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         private readonly VisualElement _chipsContainer;
         private readonly TextField _inputField;
         private Button _clearButton; // New clear button
+        private readonly Label _placeholder;
         private readonly ListView _autocompleteList;
         private VisualElement _overlayContainer;
         private VisualElement _externalRoot; // External root for overlay attachment
@@ -37,13 +38,28 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         public string value
         {
             get => _inputField.value;
-            set 
+            set
             {
                 _inputField.value = value;
                 // Ensure clear button state is updated when set programmatically
                 if (_clearButton != null)
                    _clearButton.style.display = string.IsNullOrEmpty(value) ? DisplayStyle.None : DisplayStyle.Flex;
+                UpdatePlaceholder();
             }
+        }
+
+        /// <summary>Material Symbols glyph shared with the exporter sidebar (white PNG, tinted in USS).</summary>
+        private static Texture2D LoadSymbol(string symbol)
+        {
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(
+                "Packages/com.yucp.devtools/Editor/PackageExporter/UI/Resources/MaterialSymbols/" + symbol + ".png");
+        }
+
+        /// <summary>Hint shown while the field is empty (TextField has no placeholder in 2022.3).</summary>
+        public string Placeholder
+        {
+            get => _placeholder.text;
+            set => _placeholder.text = value;
         }
 
         public TokenizedSearchField()
@@ -52,10 +68,26 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
 
             var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(
                 "Packages/com.yucp.devtools/Editor/PackageExporter/UI/Components/TokenizedSearchField.uss");
-            if (styleSheet != null) 
+            if (styleSheet != null)
             {
                 styleSheets.Add(styleSheet);
             }
+
+            var searchIcon = new Image { image = LoadSymbol("search") };
+            searchIcon.AddToClassList("yucp-tokenized-field-icon");
+            searchIcon.pickingMode = PickingMode.Ignore;
+            Add(searchIcon);
+
+            _placeholder = new Label();
+            _placeholder.AddToClassList("yucp-tokenized-field-placeholder");
+            _placeholder.pickingMode = PickingMode.Ignore;
+            Add(_placeholder);
+
+            // The whole field is the hit target, not just the text run
+            RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.target == this) _inputField.Focus();
+            });
 
             _chipsContainer = new VisualElement { name = "chips-container" };
             _chipsContainer.style.flexDirection = FlexDirection.Row;
@@ -65,13 +97,13 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             _inputField = new TextField();
             _inputField.AddToClassList("yucp-tokenized-field-input");
             _inputField.isDelayed = false; // Real-time
-            
+
             // Remove default border/background from inner Unity TextField to avoid double-border
             // We must target the inner input element specifically
-            _inputField.RegisterCallback<AttachToPanelEvent>(evt => 
+            _inputField.RegisterCallback<AttachToPanelEvent>(evt =>
             {
                 var inputElement = _inputField.Q("unity-text-input");
-                if (inputElement != null) 
+                if (inputElement != null)
                 {
                     inputElement.style.borderTopWidth = 0;
                     inputElement.style.borderBottomWidth = 0;
@@ -82,7 +114,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                     inputElement.style.marginRight = 0;
                 }
             });
-            
+
             _inputField.style.flexGrow = 1;
             _inputField.style.marginLeft = 0;
             _inputField.style.marginRight = 0;
@@ -91,10 +123,10 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             _inputField.style.borderBottomWidth = 0;
             _inputField.style.borderLeftWidth = 0;
             _inputField.style.borderRightWidth = 0;
-            
+
             _inputField.RegisterValueChangedCallback(OnInputChanged);
             _inputField.RegisterCallback<KeyDownEvent>(OnKeyDown);
-            
+
             // Handle focus loss to close overlay (delayed to allow click)
             _inputField.RegisterCallback<FocusOutEvent>(e => {
                 this.RemoveFromClassList("focused");
@@ -102,7 +134,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             });
             _inputField.RegisterCallback<FocusInEvent>(e => {
                 this.AddToClassList("focused");
-                if(!string.IsNullOrEmpty(_inputField.value)) ShowOverlay(); 
+                if(!string.IsNullOrEmpty(_inputField.value)) ShowOverlay();
             });
 
             Add(_inputField);
@@ -110,32 +142,26 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             // Clear Button (New)
             _clearButton = new Button(() => {
                 // Clear text
-                _inputField.value = ""; 
-                
+                _inputField.value = "";
+
                 // Programmatic value change does NOT trigger callback, so we must invoke manually
                 OnSearchValueChanged?.Invoke("");
-                
+
                 // Update UI state
                 _clearButton.style.display = DisplayStyle.None;
+                UpdatePlaceholder();
                 HideOverlay();
-                
+
                 // Focus back to input
                 _inputField.Focus();
             });
-            _clearButton.text = "×"; // Multiplication sign for nicer X
-            _clearButton.AddToClassList("yucp-search-clear"); // Reuse existing class or new one
+            _clearButton.AddToClassList("yucp-tokenized-field-clear");
+            _clearButton.tooltip = "Clear Search";
             _clearButton.style.display = DisplayStyle.None; // Hidden by default
-            
-            // Inline style for clear button if class is missing context
-            _clearButton.style.backgroundColor = Color.clear;
-            _clearButton.style.borderTopWidth = 0;
-            _clearButton.style.borderBottomWidth = 0;
-            _clearButton.style.borderLeftWidth = 0;
-            _clearButton.style.borderRightWidth = 0;
-            _clearButton.style.fontSize = 14;
-            _clearButton.style.color = new Color(0.6f, 0.6f, 0.6f);
-            _clearButton.style.width = 20;
-            // Removed invalid cursor setting
+            var clearIcon = new Image { image = LoadSymbol("close") };
+            clearIcon.AddToClassList("yucp-tokenized-field-clear-icon");
+            clearIcon.pickingMode = PickingMode.Ignore;
+            _clearButton.Add(clearIcon);
 
             Add(_clearButton);
 
@@ -151,33 +177,33 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             _autocompleteList.makeItem = () => {
                 var container = new VisualElement();
                 container.AddToClassList("yucp-autocomplete-item");
-                
+
                 var label = new Label();
                 label.name = "label";
                 container.Add(label);
-                
+
                 var typeLabel = new Label();
                 typeLabel.name = "type";
                 typeLabel.AddToClassList("yucp-autocomplete-item-type");
                 container.Add(typeLabel);
-                
+
                 return container;
             };
-            
+
             _autocompleteList.bindItem = (e, i) => {
                 var container = e as VisualElement;
                 if (i >= 0 && i < _filteredOptions.Count)
                 {
                     var item = _filteredOptions[i];
                     container.Q<Label>("label").text = item.Label;
-                    container.Q<Label>("type").text = item.IsTag ? "Tag" : "Profile";
+                    container.Q<Label>("type").text = !item.IsTag ? "Profile" : item.Value.StartsWith("-") ? "Exclude" : "Tag";
                 }
             };
-            
+
             _autocompleteList.selectionType = SelectionType.Single;
             _autocompleteList.itemsSource = _filteredOptions;
             _autocompleteList.fixedItemHeight = 28;
-            
+
             // Use specific selection logic
             _autocompleteList.selectionChanged += (objs) => {
                  foreach(var obj in objs)
@@ -189,8 +215,19 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                  }
                  _autocompleteList.ClearSelection();
             };
-            
+
             _overlayContainer.Add(_autocompleteList);
+
+            // The overlay lives on an external root; follow this element's lifetime so it can't get stuck open.
+            RegisterCallback<DetachFromPanelEvent>(_ =>
+            {
+                HideOverlay();
+                if (_isAttachedToExternalRoot) _overlayContainer.RemoveFromHierarchy();
+            });
+            RegisterCallback<AttachToPanelEvent>(_ =>
+            {
+                if (_isAttachedToExternalRoot && _overlayContainer.parent == null) _externalRoot.Add(_overlayContainer);
+            });
         }
 
         /// <summary>
@@ -201,19 +238,19 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         {
             if (root == null) return;
             _externalRoot = root;
-            
+
             // Remove from current parent (self) if already added
             if (_overlayContainer.parent == this)
             {
                 _overlayContainer.RemoveFromHierarchy();
             }
-            
+
             // Add to external root
             if (_overlayContainer.parent != _externalRoot)
             {
                 _externalRoot.Add(_overlayContainer);
             }
-            
+
             _isAttachedToExternalRoot = true;
             _overlayContainer.style.position = Position.Absolute;
         }
@@ -222,7 +259,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         {
             _allOptions = options ?? new List<SearchProposal>();
         }
-        
+
         public void SetActiveTags(List<string> tags)
         {
              _activeTags = new List<string>(tags);
@@ -231,14 +268,16 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
 
         public Func<string, Color> TagColorProvider;
 
-        private void RefreshChips()
+        public void RefreshChips()
         {
             _chipsContainer.Clear();
             foreach(var tag in _activeTags)
             {
+                // "-Tag" chips exclude that tag
+                string chipText = tag.StartsWith("-") ? "NOT " + tag.Substring(1) : tag;
                 var chip = new VisualElement();
                 chip.AddToClassList("yucp-chip");
-                
+
                 if (TagColorProvider != null)
                 {
                     var baseColor = TagColorProvider(tag);
@@ -247,14 +286,14 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                     chip.style.borderRightColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
                     chip.style.borderTopColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
                     chip.style.borderBottomColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
-                    
+
                     // We need to find the label and button after adding to style them too, or just add them now.
-                    
-                    var label = new Label(tag);
+
+                    var label = new Label(chipText);
                     label.AddToClassList("yucp-chip-label");
                     label.style.color = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.95f));
                     chip.Add(label);
-    
+
                     var closeBtn = new Button(() => RemoveTag(tag));
                     closeBtn.text = "×";
                     closeBtn.AddToClassList("yucp-chip-remove");
@@ -264,10 +303,10 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 else
                 {
                     // Default behavior
-                    var label = new Label(tag);
+                    var label = new Label(chipText);
                     label.AddToClassList("yucp-chip-label");
                     chip.Add(label);
-    
+
                     var closeBtn = new Button(() => RemoveTag(tag));
                     closeBtn.text = "×";
                     closeBtn.AddToClassList("yucp-chip-remove");
@@ -276,6 +315,13 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
 
                 _chipsContainer.Add(chip);
             }
+            UpdatePlaceholder();
+        }
+
+        private void UpdatePlaceholder()
+        {
+            bool empty = string.IsNullOrEmpty(_inputField.value) && _activeTags.Count == 0;
+            _placeholder.style.display = empty ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         public void AddTag(string tag)
@@ -287,7 +333,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 OnTagAdded?.Invoke(tag);
             }
         }
-        
+
         public void RemoveTag(string tag)
         {
              if(_activeTags.Contains(tag))
@@ -297,7 +343,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 OnTagRemoved?.Invoke(tag);
             }
         }
-        
+
         private void SelectProposal(SearchProposal p)
         {
             if (p.IsTag)
@@ -322,12 +368,13 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         private void OnInputChanged(ChangeEvent<string> evt)
         {
             OnSearchValueChanged?.Invoke(evt.newValue);
-            
+
             string searchText = evt.newValue;
-            
+
             // Update clear button
             if (_clearButton != null)
                 _clearButton.style.display = string.IsNullOrEmpty(searchText) ? DisplayStyle.None : DisplayStyle.Flex;
+            UpdatePlaceholder();
 
             if (string.IsNullOrWhiteSpace(searchText))
             {
@@ -335,13 +382,19 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 return;
             }
 
+            // A leading "-" searches for tags to exclude ("-Beta" -> NOT Beta)
+            bool exclude = searchText.StartsWith("-");
+            string term = exclude ? searchText.Substring(1) : searchText;
+
             // Filter options: Case insensitive contains
             // Exclude tags that are already active
             _filteredOptions = _allOptions
-                .Where(p => 
-                    p.Label.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0 && 
-                    (!p.IsTag || !_activeTags.Contains(p.Value))
+                .Where(p =>
+                    p.Label.IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    (!exclude || (p.IsTag && !p.Value.StartsWith("Folder: ")))
                 )
+                .Select(p => exclude ? new SearchProposal { Label = "NOT " + p.Label, Value = "-" + p.Value, IsTag = true } : p)
+                .Where(p => !p.IsTag || !_activeTags.Contains(p.Value))
                 .OrderBy(p => p.Label.Length) // Simple relevance
                 .ToList();
 
@@ -349,11 +402,11 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
             {
                 _autocompleteList.itemsSource = _filteredOptions;
                 _autocompleteList.RefreshItems();
-                
+
                 // Adjust height
                 float height = Mathf.Min(250, _filteredOptions.Count * 28 + 10);
                 _overlayContainer.style.height = height;
-                
+
                 ShowOverlay();
             }
             else
@@ -369,7 +422,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
                 // Remove last tag
                 var last = _activeTags.Last();
                 RemoveTag(last);
-                evt.StopPropagation(); 
+                evt.StopPropagation();
             }
             else if (evt.keyCode == KeyCode.DownArrow)
             {
@@ -417,23 +470,23 @@ namespace YUCP.DevTools.Editor.PackageExporter.UI.Components
         private void ShowOverlay()
         {
             _overlayContainer.style.display = DisplayStyle.Flex;
-            
+
             // If attached to external root, position relative to this element's world bounds
             if (_isAttachedToExternalRoot && _externalRoot != null)
             {
                 var myBounds = this.worldBound;
                 var rootBounds = _externalRoot.worldBound;
-                
+
                 // Position below the search field
                 float left = myBounds.x - rootBounds.x;
                 float top = myBounds.yMax - rootBounds.y + 4; // 4px gap
                 float width = myBounds.width;
-                
+
                 _overlayContainer.style.left = left;
                 _overlayContainer.style.top = top;
                 _overlayContainer.style.width = width;
             }
-            
+
             _overlayContainer.BringToFront();
         }
 

@@ -26,6 +26,54 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             return type;
         }
 
+        [TestCase("com.test.toon", "com.test.pro", "11.0.27", "com.test.toon", "com.test.pro")]
+        [TestCase("com.test.toon", "com.test.pro", "11.0.27", "com.test.other", null)]
+        [TestCase("com.test.toon", "com.test.toon", "9.0.0", "com.test.toon", null)]
+        [TestCase("com.test.toon", "com.test.pro", null, "com.test.toon", null)]
+        public void DirectVpmInstaller_RecognizesInstalledReplacement(string requested, string installed, string version, string legacy, string expected)
+        {
+            string path = Path.Combine(Path.GetTempPath(), "yucp-replacement-" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                File.WriteAllText(path, new JObject
+                {
+                    ["name"] = installed,
+                    ["version"] = version,
+                    ["legacyPackages"] = new JArray(legacy)
+                }.ToString());
+                MethodInfo method = GetDirectInstallerType().GetMethod("FindInstalledReplacement", BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That(method, Is.Not.Null);
+                Assert.That(method.Invoke(null, new object[] { requested, new[] { path, path, path + ".missing" } }), Is.EqualTo(expected));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Test]
+        public void DirectVpmInstaller_DoesNotRepeatPromptUntilRetryOrReimport()
+        {
+            string path = Path.Combine(Path.GetTempPath(), "yucp-prompt-" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                File.WriteAllText(path, "{}");
+                MethodInfo method = GetDirectInstallerType().GetMethod("TryBeginDependencyPrompt", BindingFlags.Static | BindingFlags.NonPublic);
+                Assert.That(method, Is.Not.Null);
+                Assert.That(method.Invoke(null, new object[] { path, false }), Is.True);
+                Assert.That(method.Invoke(null, new object[] { path, false }), Is.False);
+                Assert.That(method.Invoke(null, new object[] { path, true }), Is.True);
+                Assert.That(method.Invoke(null, new object[] { path, false }), Is.False);
+                File.SetLastWriteTimeUtc(path, File.GetLastWriteTimeUtc(path).AddSeconds(2));
+                Assert.That(method.Invoke(null, new object[] { path, false }), Is.True);
+                Assert.That(File.ReadAllText(path), Is.EqualTo("{}"));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
         [Test]
         public void PrecompiledInstallerRuntime_BinaryAndMetaExist()
         {
@@ -188,6 +236,10 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
             string staleEmptyRoot = Path.Combine(installedRoot, $"stale-empty-{Guid.NewGuid():N}");
             string staleEmptyMetaPath = staleEmptyRoot + ".meta";
             string metadataPath = Path.Combine(packageRoot, "YUCP_PackageInfo.json");
+            string profileFolder = Path.Combine(Application.dataPath, "YUCP", "ExportProfiles");
+            string profileSentinel = Path.Combine(profileFolder, "installer-preservation-" + Guid.NewGuid().ToString("N") + ".txt");
+            Directory.CreateDirectory(profileFolder);
+            File.WriteAllText(profileSentinel, "Authoring files must stay in Assets.");
 
             Directory.CreateDirectory(tempRoot);
             Directory.CreateDirectory(staleEmptyRoot);
@@ -208,9 +260,12 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 Assert.That(Directory.Exists(staleEmptyRoot), Is.False, "Expected cleanup to prune empty stale package residue.");
                 Assert.That(File.Exists(staleEmptyMetaPath), Is.False, "Expected cleanup to delete the stale residue meta file.");
                 Assert.That(File.Exists(metadataPath), Is.True, "Expected cleanup to preserve actual package metadata.");
+                Assert.That(File.ReadAllText(profileSentinel), Is.EqualTo("Authoring files must stay in Assets."));
             }
             finally
             {
+                File.Delete(profileSentinel);
+                File.Delete(profileSentinel + ".meta");
                 if (Directory.Exists(packageRoot))
                 {
                     Directory.Delete(packageRoot, true);
@@ -407,86 +462,6 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
         }
 
         [Test]
-        public void DirectVpmInstaller_OrganizeYucpArtifacts_DoesNotCreateEmptyPackageFolderWhenNothingNeedsMoving()
-        {
-            Type directInstallerType = GetDirectInstallerType();
-            MethodInfo method = directInstallerType.GetMethod(
-                "OrganizeYucpArtifacts",
-                BindingFlags.Static | BindingFlags.NonPublic);
-
-            Assert.That(method, Is.Not.Null);
-
-            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-            string installedRoot = Path.Combine(projectRoot, "Packages", "yucp.installed-packages");
-            string metadataPath = Path.Combine(Application.dataPath, "YUCP_PackageInfo.json");
-            string exportProfilesPath = Path.Combine(Application.dataPath, "YUCP", "ExportProfiles");
-            string exportProfilesBackupPath = exportProfilesPath + ".precompiled-installer-test-backup";
-            string[] packageFoldersBefore = Directory.Exists(installedRoot)
-                ? Directory.GetDirectories(installedRoot, "package-*", SearchOption.TopDirectoryOnly)
-                : Array.Empty<string>();
-
-            Assert.That(File.Exists(metadataPath), Is.False, "Expected the test project to start without a root metadata file.");
-
-            bool movedExportProfiles = false;
-
-            try
-            {
-                if (Directory.Exists(exportProfilesPath))
-                {
-                    if (Directory.Exists(exportProfilesBackupPath))
-                    {
-                        Directory.Delete(exportProfilesBackupPath, true);
-                    }
-
-                    Directory.Move(exportProfilesPath, exportProfilesBackupPath);
-                    movedExportProfiles = true;
-                }
-
-                method.Invoke(null, Array.Empty<object>());
-
-                string[] packageFoldersAfter = Directory.Exists(installedRoot)
-                    ? Directory.GetDirectories(installedRoot, "package-*", SearchOption.TopDirectoryOnly)
-                    : Array.Empty<string>();
-
-                Assert.That(packageFoldersAfter, Is.EquivalentTo(packageFoldersBefore), "Expected organize to avoid creating an empty package folder when there is no metadata or export profile content to move.");
-            }
-            finally
-            {
-                string[] packageFoldersAfter = Directory.Exists(installedRoot)
-                    ? Directory.GetDirectories(installedRoot, "package-*", SearchOption.TopDirectoryOnly)
-                    : Array.Empty<string>();
-
-                foreach (string directory in packageFoldersAfter.Except(packageFoldersBefore, StringComparer.OrdinalIgnoreCase))
-                {
-                    if (Directory.Exists(directory))
-                    {
-                        Directory.Delete(directory, true);
-                    }
-
-                    string metaFile = directory + ".meta";
-                    if (File.Exists(metaFile))
-                    {
-                        File.Delete(metaFile);
-                    }
-                }
-
-                if (movedExportProfiles)
-                {
-                    if (Directory.Exists(exportProfilesPath))
-                    {
-                        Directory.Delete(exportProfilesPath, true);
-                    }
-
-                    Directory.Move(exportProfilesBackupPath, exportProfilesPath);
-                }
-                else if (Directory.Exists(exportProfilesBackupPath))
-                {
-                    Directory.Delete(exportProfilesBackupPath, true);
-                }
-            }
-        }
-
-        [Test]
         public void LegacyShell_InjectionCanSkipOptionalYucpMetadata()
         {
             string packagePath = null;
@@ -646,6 +621,56 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 {
                     UnityEngine.Object.DestroyImmediate(profile);
                 }
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ExportDefersIncomingCodeUntilTheInstallerCanResolveDependencies(bool embedMetadata)
+        {
+            string bundle = Path.Combine(Path.GetTempPath(), "yucp-bundle-bootstrap-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(bundle);
+            string packagePath = null;
+            var profile = ScriptableObject.CreateInstance<ExportProfile>();
+            try
+            {
+                foreach (string file in new[] { "NeedsVrcFury.cs", "Runtime.asmdef", "Runtime.asmref", "Plugin.dll", "package.json" })
+                    File.WriteAllText(Path.Combine(bundle, file), "{}");
+                packagePath = CreateUnityPackage(new Dictionary<string, byte[]>
+                {
+                    ["script/pathname"] = Encoding.UTF8.GetBytes("Assets/NeedsComponents.cs"),
+                    ["script/asset"] = Encoding.UTF8.GetBytes("class NeedsComponents : Missing.Dependency {}"),
+                    ["prefab/pathname"] = Encoding.UTF8.GetBytes("Assets/Avatar.prefab"),
+                    ["prefab/asset"] = Encoding.UTF8.GetBytes("prefab"),
+                });
+                profile.packageName = "Bootstrap Test";
+                profile.embedYucpMetadata = embedMetadata;
+                Type contextType = typeof(PackageBuilder).GetNestedType("PackageEmbedContext", BindingFlags.NonPublic);
+                object context = Activator.CreateInstance(contextType, new object[] { profile });
+                typeof(PackageBuilder).GetMethod("InjectPackageJsonInstallerAndBundles", BindingFlags.Static | BindingFlags.NonPublic)
+                    .Invoke(null, new object[]
+                    {
+                        packagePath, "{ 'name': 'com.example.bootstrap', 'vpmDependencies': { 'com.example.missing': '1.0.0' } }",
+                        new Dictionary<string, string> { ["com.example.bundle"] = bundle },
+                        new List<AssemblyObfuscationSettings>(), profile, false, null, context, null
+                    });
+                string[] paths = ReadPackagePathnames(packagePath);
+                Assert.That(paths, Does.Contain("Assets/NeedsComponents.cs.yucp_disabled"));
+                Assert.That(paths, Does.Contain("Assets/Avatar.prefab"));
+                foreach (string file in new[] { "NeedsVrcFury.cs", "Runtime.asmdef", "Runtime.asmref", "Plugin.dll" })
+                {
+                    Assert.That(paths, Does.Contain("Packages/com.example.bundle/" + file + ".yucp_disabled"));
+                    Assert.That(paths, Does.Not.Contain("Packages/com.example.bundle/" + file));
+                }
+                Assert.That(paths, Does.Contain("Packages/com.example.bundle/package.json"));
+                string installerRoot = embedMetadata ? "Packages/yucp.installed-packages/Editor" : "Packages/com.yucp.temp/Editor";
+                Assert.That(paths, Does.Contain(installerRoot + "/YUCP.DirectVpmInstaller.Runtime.dll"));
+            }
+            finally
+            {
+                DeleteIfPresent(packagePath);
+                Directory.Delete(bundle, true);
+                UnityEngine.Object.DestroyImmediate(profile);
             }
         }
 

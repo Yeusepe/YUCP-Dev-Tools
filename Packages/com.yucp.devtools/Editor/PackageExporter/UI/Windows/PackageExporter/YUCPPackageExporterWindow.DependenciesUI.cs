@@ -24,45 +24,45 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             var scrollView = container.GetFirstAncestorOfType<ScrollView>();
             float? sectionTopRelativeToViewport = null;
-            
+
             if (scrollView != null && section != null)
             {
                 var sectionWorldBounds = section.worldBound;
                 var scrollViewWorldBounds = scrollView.worldBound;
-                
+
                 if (sectionWorldBounds.height > 0 && scrollViewWorldBounds.height > 0)
                 {
                     float sectionTopInViewport = sectionWorldBounds.y - scrollViewWorldBounds.y;
                     sectionTopRelativeToViewport = sectionTopInViewport;
                 }
             }
-            
+
             var filteredDependencies = profile.dependencies.AsEnumerable();
-            
+
             if (!string.IsNullOrWhiteSpace(dependenciesSearchFilter))
             {
                 filteredDependencies = filteredDependencies.Where(d =>
                     d.packageName.IndexOf(dependenciesSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0 ||
                     (!string.IsNullOrEmpty(d.displayName) && d.displayName.IndexOf(dependenciesSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0));
             }
-            
-            // Apply toggle filters if they exist
+
+
             var enabledFilter = section.Q<Toggle>("enabled-filter");
             var vpmFilter = section.Q<Toggle>("vpm-filter");
-            
+
             if (enabledFilter?.value == true)
             {
                 filteredDependencies = filteredDependencies.Where(d => d.enabled);
             }
-            
+
             if (vpmFilter?.value == true)
             {
                 filteredDependencies = filteredDependencies.Where(d => d.isVpmDependency);
             }
-            
+
             var filteredList = filteredDependencies.ToList();
-            
-            // Dependencies list
+
+
             if (filteredList.Count == 0 && profile.dependencies.Count > 0)
             {
                 var emptyLabel = new Label("No dependencies match the current filter.");
@@ -88,14 +88,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     var depCard = CreateDependencyCard(dep, originalIndex, profile);
                     container.Add(depCard);
                 }
-                
-                // Select all/none buttons
+
+
                 var selectButtons = new VisualElement();
                 selectButtons.style.flexDirection = FlexDirection.Row;
                 selectButtons.style.marginTop = 8;
                 selectButtons.style.marginBottom = 8;
-                
-                var selectAllButton = new Button(() => 
+
+                var selectAllButton = new Button(() =>
                 {
                     foreach (var dep in profile.dependencies)
                     {
@@ -110,8 +110,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 selectAllButton.style.flexGrow = 1;
                 selectAllButton.style.marginRight = 4;
                 selectButtons.Add(selectAllButton);
-                
-                var deselectAllButton = new Button(() => 
+
+                var deselectAllButton = new Button(() =>
                 {
                     foreach (var dep in profile.dependencies)
                     {
@@ -126,10 +126,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 deselectAllButton.style.flexGrow = 1;
                 deselectAllButton.style.marginLeft = 4;
                 selectButtons.Add(deselectAllButton);
-                
+
                 container.Add(selectButtons);
             }
-            
+
             if (scrollView != null && sectionTopRelativeToViewport.HasValue)
             {
                 scrollView.schedule.Execute(() =>
@@ -138,13 +138,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     {
                         var sectionWorldBounds = section.worldBound;
                         var scrollViewWorldBounds = scrollView.worldBound;
-                        
+
                         if (sectionWorldBounds.height > 0)
                         {
                             float currentSectionTop = sectionWorldBounds.y - scrollViewWorldBounds.y;
                             float targetSectionTop = sectionTopRelativeToViewport.Value;
                             float scrollAdjustment = currentSectionTop - targetSectionTop;
-                            
+
                             if (Mathf.Abs(scrollAdjustment) > 1f)
                             {
                                 float newScrollValue = Mathf.Max(0, scrollView.verticalScroller.value + scrollAdjustment);
@@ -161,18 +161,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var section = new VisualElement();
             section.AddToClassList("yucp-section");
             section.name = "dependencies-section";
-            
-            var header = CreateCollapsibleHeader("Package Dependencies", 
-                () => showDependencies, 
-                (value) => { showDependencies = value; }, 
+
+            var header = CreateCollapsibleHeader("Package Dependencies",
+                () => showDependencies,
+                (value) => { showDependencies = value; },
                 () => UpdateProfileDetails());
             section.Add(header);
-            
+
             if (!showDependencies)
             {
                 return section;
             }
-            
+
             var helpBox = new VisualElement();
             helpBox.AddToClassList("yucp-help-box");
             helpBox.AddToClassList("yucp-help-box-info");
@@ -181,7 +181,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             helpBox.Add(helpText);
             section.Add(helpBox);
 
-            // Disclaimer about automatic installation
+
             var disclaimerBox = new VisualElement();
             disclaimerBox.style.flexDirection  = FlexDirection.Row;
             disclaimerBox.style.alignItems     = Align.FlexStart;
@@ -218,15 +218,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             disclaimerText.style.flexGrow   = 1;
             disclaimerBox.Add(disclaimerText);
             section.Add(disclaimerBox);
-            
-            // Search/Filter for dependencies
+
+
             if (profile.dependencies.Count > 0)
             {
                 var searchRow = new VisualElement();
                 searchRow.style.flexDirection = FlexDirection.Row;
                 searchRow.style.marginTop = 8;
                 searchRow.style.marginBottom = 8;
-                
+
                 var searchField = new TextField { value = dependenciesSearchFilter };
                 searchField.AddToClassList("yucp-input");
                 searchField.style.flexGrow = 1;
@@ -235,7 +235,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 searchField.RegisterValueChangedCallback(evt =>
                 {
                     dependenciesSearchFilter = evt.newValue;
-                    // Update dependency list without rebuilding entire UI
+
                     var depListContainer = section.Q<VisualElement>("dep-list-container");
                     if (depListContainer != null)
                     {
@@ -244,8 +244,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 });
                 searchRow.Add(searchField);
-                
-                var clearSearchButton = new Button(() => 
+
+                var clearSearchButton = new Button(() =>
                 {
                     dependenciesSearchFilter = "";
                     var searchField = section.Q<TextField>("dependencies-search-field");
@@ -263,14 +263,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 clearSearchButton.AddToClassList("yucp-button");
                 clearSearchButton.AddToClassList("yucp-button-small");
                 searchRow.Add(clearSearchButton);
-                
+
                 section.Add(searchRow);
-                
-                // Filter toggles
+
+
                 var filterRow = new VisualElement();
                 filterRow.style.flexDirection = FlexDirection.Row;
                 filterRow.style.marginBottom = 8;
-                
+
                 var enabledToggle = new Toggle("Enabled Only") { value = false };
                 enabledToggle.name = "enabled-filter";
                 enabledToggle.AddToClassList("yucp-toggle");
@@ -284,7 +284,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 });
                 filterRow.Add(enabledToggle);
-                
+
                 var vpmToggle = new Toggle("VPM Only") { value = false };
                 vpmToggle.name = "vpm-filter";
                 vpmToggle.AddToClassList("yucp-toggle");
@@ -298,11 +298,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 });
                 filterRow.Add(vpmToggle);
-                
+
                 section.Add(filterRow);
             }
-            
-            // Dependency list container (wraps the list for easy rebuilding)
+
+
             var depListContainer = new VisualElement();
             depListContainer.name = "dep-list-container";
             depListContainer.AddToClassList("yucp-dependency-list-container");
@@ -312,16 +312,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             depListContainer.style.overflow = Overflow.Hidden;
             RebuildDependencyList(profile, section, depListContainer);
             section.Add(depListContainer);
-            
-            // Action buttons
+
+
             var addButton = new Button(() => AddDependency(profile)) { text = "Add dependency manually" };
             addButton.AddToClassList("yucp-button");
             addButton.AddToClassList("yucp-button-action");
             addButton.style.flexGrow = 1;
             addButton.style.marginTop = 8;
             section.Add(addButton);
-            
-            // Action buttons - row 2 (Auto-Detect)
+
+
             if (profile.dependencies.Count > 0 && profile.foldersToExport.Count > 0)
             {
                 var autoDetectButton = new Button(() => AutoDetectUsedDependencies(profile)) { text = "Auto-Detect Used" };
@@ -341,7 +341,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 hintBox.Add(hintText);
                 section.Add(hintBox);
             }
-            
+
             return section;
         }
 
@@ -359,8 +359,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             card.style.width = Length.Percent(100);
             card.style.maxWidth = Length.Percent(100);
             card.style.minWidth = 0;
-            
-            // Header row
+
+
             var headerRow = new VisualElement();
             headerRow.AddToClassList("yucp-dependency-card-header");
             headerRow.style.flexDirection = FlexDirection.Row;
@@ -369,8 +369,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             headerRow.style.width = Length.Percent(100);
             headerRow.style.maxWidth = Length.Percent(100);
             headerRow.style.minWidth = 0;
-            
-            // Enable checkbox
+
+
             var enableToggle = new Toggle { value = dep.enabled };
             enableToggle.AddToClassList("yucp-toggle");
             enableToggle.style.marginRight = 8;
@@ -382,11 +382,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 UpdateProfileDetails();
             });
             headerRow.Add(enableToggle);
-            
-            // Package name label
+
+
             string label = dep.isVpmDependency ? "[VPM] " : "";
             label += string.IsNullOrEmpty(dep.displayName) ? dep.packageName : dep.displayName;
-            
+
             var nameLabel = new Label(label);
             nameLabel.AddToClassList("yucp-label");
             nameLabel.AddToClassList("yucp-dependency-card-name");
@@ -394,9 +394,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
             nameLabel.style.flexGrow = 1;
             nameLabel.style.minWidth = 0;
             headerRow.Add(nameLabel);
-            
-            // Remove button — hidden for license-locked dependencies
-            var removeButton = new Button(() => 
+
+
+            var removeButton = new Button(() =>
             {
                 profile.dependencies.RemoveAt(index);
                 EditorUtility.SetDirty(profile);
@@ -410,20 +410,20 @@ namespace YUCP.DevTools.Editor.PackageExporter
             removeButton.style.flexShrink = 0;
             removeButton.style.display = DisplayStyle.Flex;
             headerRow.Add(removeButton);
-            
+
             card.Add(headerRow);
-            
-            // Warning box for problematic dependencies
+
+
             string packageName = dep.packageName ?? "";
             string displayName = dep.displayName ?? "";
             string combinedName = (packageName + " " + displayName).ToLower();
-            
-            // Check for "temp" or "temporary" but NOT "template"
-            bool hasTempWarning = (combinedName.Contains(" temp ") || combinedName.StartsWith("temp ") || combinedName.EndsWith(" temp") || 
-                                   combinedName == "temp" || combinedName.Contains("temporary")) && 
+
+
+            bool hasTempWarning = (combinedName.Contains(" temp ") || combinedName.StartsWith("temp ") || combinedName.EndsWith(" temp") ||
+                                   combinedName == "temp" || combinedName.Contains("temporary")) &&
                                    !combinedName.Contains("template");
             bool hasDevToolsWarning = combinedName.Contains("yucp dev tools") || combinedName.Contains("yucp.devtools");
-            
+
             if (hasTempWarning || hasDevToolsWarning)
             {
                 string warningMessage = "";
@@ -440,23 +440,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     warningMessage = "'YUCP Dev tools' is for creators and is not recommended to be included for the general public.";
                 }
-                
+
                 var warningBox = new VisualElement();
                 warningBox.name = "dependency-warning-box";
                 warningBox.AddToClassList("yucp-help-box");
                 warningBox.style.marginTop = 8;
                 warningBox.style.marginBottom = 8;
-                warningBox.style.backgroundColor = new Color(0.7f, 0.65f, 0.1f, 0.3f); // Yellow warning color (more yellow, less green)
-                
+                warningBox.style.backgroundColor = new Color(0.7f, 0.65f, 0.1f, 0.3f);
+
                 var warningText = new Label(warningMessage);
                 warningText.AddToClassList("yucp-help-box-text");
-                warningText.style.color = new StyleColor(new Color(0.9f, 0.9f, 0.9f, 1f)); // Light gray/white text to match design
+                warningText.style.color = new StyleColor(new Color(0.9f, 0.9f, 0.9f, 1f));
                 warningBox.Add(warningText);
-                
+
                 card.Add(warningBox);
             }
-            
-            // Warning for VPM dependencies without a resolvable download URL
+
+
             bool showVpmMissingWarning = false;
             bool vpmLookupPerformed = false;
             bool vpmLookupOk = false;
@@ -471,7 +471,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             string installedProjectVersion = dep.isVpmDependency
                 ? DependencyScanner.GetInstalledPackageVersion(dep.packageName)
                 : dep.packageVersion;
-            
+
             if (dep.enabled && dep.exportMode == DependencyExportMode.Dependency && dep.isVpmDependency)
             {
                 vpmLookupOk = DependencyScanner.TryGetVpmDependencyRepoInfo(
@@ -483,8 +483,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     out vpmLookupError
                 );
                 vpmLookupPerformed = true;
-                
-                if (vpmLookupOk && !vpmHasDownloadUrl)
+
+                if (!vpmLookupOk || !vpmHasDownloadUrl)
                 {
                     showVpmMissingWarning = true;
                 }
@@ -497,7 +497,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     out vpmVersionsLookupError
                 );
             }
-            
+
             if (showVpmMissingWarning)
             {
                 var warningBox = new VisualElement();
@@ -506,12 +506,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 warningBox.style.marginTop = 8;
                 warningBox.style.marginBottom = 8;
                 warningBox.style.backgroundColor = new Color(0.7f, 0.25f, 0.25f, 0.25f);
-                
-                var warningText = new Label("This dependency is set to 'Dependency' but no download URL was found in any VPM repository. It will be skipped when generating package.json.");
+
+                var warningText = new Label("Repository data is loading or no matching download was found. Set a repository URL or retry after loading. Required dependencies are never omitted from the export.");
                 warningText.AddToClassList("yucp-help-box-text");
                 warningText.style.color = new StyleColor(new Color(0.9f, 0.9f, 0.9f, 1f));
                 warningBox.Add(warningText);
-                
+
                 if (vpmCheckedUrls != null && vpmCheckedUrls.Count > 0)
                 {
                     var checkedLabel = new Label($"Checked: {string.Join(", ", vpmCheckedUrls)}");
@@ -519,7 +519,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     checkedLabel.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f, 1f));
                     warningBox.Add(checkedLabel);
                 }
-                
+
                 card.Add(warningBox);
             }
 
@@ -527,7 +527,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 dep.versionMode == DependencyVersionMode.Specific &&
                 !string.IsNullOrWhiteSpace(installedProjectVersion) &&
                 !string.IsNullOrWhiteSpace(dep.GetSpecificVersionOrDefault()) &&
-                CompareDependencyVersions(installedProjectVersion, dep.GetSpecificVersionOrDefault()) > 0;
+                DependencyScanner.CompareVersions(installedProjectVersion, dep.GetSpecificVersionOrDefault()) > 0;
 
             if (showDowngradeWarning)
             {
@@ -547,11 +547,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 card.Add(warningBox);
             }
-            
-            // Content area - only show if enabled
+
+
             if (dep.enabled)
             {
-                // Package Name field
+
                 var packageNameRow = CreateFormRow("Package Name", tooltip: "Unique identifier for the package");
                 var packageNameField = new TextField { value = dep.packageName };
                 packageNameField.AddToClassList("yucp-input");
@@ -568,7 +568,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 });
                 packageNameRow.Add(packageNameField);
                 card.Add(packageNameRow);
-                
+
                 if (dep.isVpmDependency)
                 {
                     var versionModeToggle = new Toggle("Download Latest Version")
@@ -664,7 +664,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 else
                 {
-                    // Version field
+
                     var versionRow = CreateFormRow("Version", tooltip: "Package version");
                     var versionField = new TextField { value = dep.packageVersion };
                     versionField.AddToClassList("yucp-input");
@@ -678,8 +678,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     versionRow.Add(versionField);
                     card.Add(versionRow);
                 }
-                
-                // Display Name field
+
+
                 var displayNameRow = CreateFormRow("Display Name", tooltip: "Human-readable name");
                 var displayNameField = new TextField { value = dep.displayName };
                 displayNameField.AddToClassList("yucp-input");
@@ -688,13 +688,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     dep.displayName = evt.newValue;
                     EditorUtility.SetDirty(profile);
-                    UpdateProfileDetails(); // Refresh to update card title
+                    UpdateProfileDetails();
                 });
                 displayNameRow.Add(displayNameField);
                 card.Add(displayNameRow);
 
-                
-                // Export Mode dropdown
+
+
                 var exportModeRow = CreateFormRow("Export Mode", tooltip: "How this dependency should be handled");
                 var exportModeField = new EnumField(dep.exportMode);
                 exportModeField.AddToClassList("yucp-dropdown");
@@ -705,8 +705,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 });
                 exportModeRow.Add(exportModeField);
                 card.Add(exportModeRow);
-                
-                // VPM Package toggle
+
+
                 var vpmToggle = new Toggle("VPM Package") { value = dep.isVpmDependency };
                 vpmToggle.AddToClassList("yucp-toggle");
                 if (!_isCompactMode) vpmToggle.tooltip = "Is this a VRChat Package Manager dependency?";
@@ -714,10 +714,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     dep.isVpmDependency = evt.newValue;
                     EditorUtility.SetDirty(profile);
-                    UpdateProfileDetails(); // Refresh to update card title
+                    UpdateProfileDetails();
                 });
                 card.Add(vpmToggle);
-                
+
                 if (dep.isVpmDependency)
                 {
                     var customRepoRow = CreateFormRow("Custom VPM Index URL", tooltip: "Optional repository index URL for this dependency");
@@ -732,9 +732,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     });
                     customRepoRow.Add(customRepoField);
                     card.Add(customRepoRow);
-                    
+
                     string repoInfoText = "Lookup unavailable";
-                    
+
                     if (!vpmLookupPerformed)
                     {
                         vpmLookupOk = DependencyScanner.TryGetVpmDependencyRepoInfo(
@@ -747,7 +747,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         );
                         vpmLookupPerformed = true;
                     }
-                    
+
                     if (vpmLookupOk)
                     {
                         if (vpmHasDownloadUrl && !string.IsNullOrEmpty(vpmRepoUrl))
@@ -767,7 +767,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     {
                         repoInfoText = vpmLookupError;
                     }
-                    
+
                     var repoRow = CreateFormRow("Resolved VPM Index URL", tooltip: "Repository index URL used to resolve this dependency");
                     var repoLabel = new Label(repoInfoText);
                     repoLabel.AddToClassList("yucp-label-secondary");
@@ -780,40 +780,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     card.Add(repoRow);
                 }
             }
-            
+
             return card;
-        }
-
-        private static int CompareDependencyVersions(string version1, string version2)
-        {
-            var v1 = ParseDependencyVersion(version1);
-            var v2 = ParseDependencyVersion(version2);
-
-            if (v1.major != v2.major) return v1.major.CompareTo(v2.major);
-            if (v1.minor != v2.minor) return v1.minor.CompareTo(v2.minor);
-            return v1.patch.CompareTo(v2.patch);
-        }
-
-        private static (int major, int minor, int patch) ParseDependencyVersion(string version)
-        {
-            if (string.IsNullOrWhiteSpace(version))
-                return (0, 0, 0);
-
-            string normalized = version.Trim().TrimStart('v', 'V');
-            int dashIndex = normalized.IndexOf('-');
-            if (dashIndex > 0)
-                normalized = normalized.Substring(0, dashIndex);
-
-            string[] parts = normalized.Split('.');
-            int major = parts.Length > 0 ? SafeParseDependencyVersionPart(parts[0]) : 0;
-            int minor = parts.Length > 1 ? SafeParseDependencyVersionPart(parts[1]) : 0;
-            int patch = parts.Length > 2 ? SafeParseDependencyVersionPart(parts[2]) : 0;
-            return (major, minor, patch);
-        }
-
-        private static int SafeParseDependencyVersionPart(string value)
-        {
-            return int.TryParse(value, out int parsed) ? parsed : 0;
         }
 
         private VisualElement CreateDependencyVersionPicker(

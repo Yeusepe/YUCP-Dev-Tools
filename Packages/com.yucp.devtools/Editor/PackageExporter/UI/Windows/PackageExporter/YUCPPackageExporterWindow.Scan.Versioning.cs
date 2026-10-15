@@ -16,77 +16,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
     public partial class YUCPPackageExporterWindow
     {
-        private void ScanAndBumpVersionsInProfile(ExportProfile profile)
-        {
-            if (profile == null || profile.foldersToExport == null || profile.foldersToExport.Count == 0)
-            {
-                EditorUtility.DisplayDialog("No Folders", 
-                    "No folders to scan. Add folders to export first.", 
-                    "OK");
-                return;
-            }
-            
-            // Preview first
-            EditorUtility.DisplayProgressBar("Scanning for Version Directives", "Finding files...", 0.3f);
-            
-            var previewResults = ProjectVersionScanner.PreviewBumpInProfile(profile);
-            
-            EditorUtility.ClearProgressBar();
-            
-            if (previewResults.Count == 0)
-            {
-                EditorUtility.DisplayDialog("No Directives Found", 
-                    "No version bump directives (@bump) found in export folders.\n\n" +
-                    "Add directives like:\n" +
-                    "  // @bump semver:patch\n" +
-                    "  // @bump dotted_tail\n" +
-                    "  // @bump wordnum\n\n" +
-                    "to your source files.", 
-                    "OK");
-                return;
-            }
-            
-            // Show preview dialog
-            string previewMessage = SmartVersionBumper.GetBumpSummary(previewResults);
-            bool confirmed = EditorUtility.DisplayDialog(
-                "Version Bump Preview",
-                $"Found {previewResults.Count} version(s) to bump:\n\n{previewMessage}\n\nApply these changes?",
-                "Apply",
-                "Cancel"
-            );
-            
-            if (!confirmed)
-                return;
-            
-            // Apply the bumps
-            EditorUtility.DisplayProgressBar("Bumping Versions", "Updating files...", 0.7f);
-            
-            var results = ProjectVersionScanner.BumpVersionsInProfile(profile, writeBack: true);
-            
-            EditorUtility.ClearProgressBar();
-            
-            int successful = results.Count(r => r.Success);
-            int failed = results.Count(r => !r.Success);
-            
-            string resultMessage = $"Version bump complete!\n\n" +
-                                 $"Successful: {successful}\n" +
-                                 $"Failed: {failed}";
-            
-            if (failed > 0)
-            {
-                resultMessage += "\n\nCheck the console for details on failures.";
-                foreach (var failure in results.Where(r => !r.Success))
-                {
-                    Debug.LogWarning($"[YUCP] Version bump failed: {failure}");
-                }
-            }
-            
-            EditorUtility.DisplayDialog("Version Bump Complete", resultMessage, "OK");
-            
-            // Log successful bumps
-            
-            AssetDatabase.Refresh();
-        }
 
         private void CreateCustomRule(ExportProfile profile)
         {
@@ -96,10 +25,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 "asset",
                 "Create a new custom version rule asset"
             );
-            
+
             if (string.IsNullOrEmpty(savePath))
                 return;
-            
+
             var customRule = ScriptableObject.CreateInstance<CustomVersionRule>();
             customRule.ruleName = "my_custom_rule";
             customRule.displayName = "My Custom Rule";
@@ -108,14 +37,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
             customRule.ruleType = CustomVersionRule.RuleType.Semver;
             customRule.exampleInput = "1.0.0";
             customRule.exampleOutput = "1.0.1";
-            
+
             AssetDatabase.CreateAsset(customRule, savePath);
             AssetDatabase.SaveAssets();
-            
+
             Selection.activeObject = customRule;
             EditorGUIUtility.PingObject(customRule);
-            
-            // Auto-assign to profile
+
+
             if (profile != null)
             {
                 Undo.RecordObject(profile, "Assign Custom Rule");
@@ -124,7 +53,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 EditorUtility.SetDirty(profile);
                 UpdateProfileDetails();
             }
-            
+
             EditorUtility.DisplayDialog(
                 "Custom Rule Created",
                 $"Custom version rule created at:\n{savePath}\n\n" +
@@ -141,9 +70,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (rule == null)
                 return;
-            
+
             string result = rule.TestRule();
-            
+
             EditorUtility.DisplayDialog(
                 $"Test Rule: {rule.displayName}",
                 $"Rule Name: {rule.ruleName}\n" +

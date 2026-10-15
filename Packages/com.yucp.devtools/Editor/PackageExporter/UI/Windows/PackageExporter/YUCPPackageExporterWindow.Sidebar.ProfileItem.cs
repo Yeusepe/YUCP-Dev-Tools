@@ -104,13 +104,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     chip.style.borderTopColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
                     chip.style.borderBottomColor = new StyleColor(new Color(baseColor.r, baseColor.g, baseColor.b, 0.3f));
 
-                    // Add click handler to add tag to search
-                    chip.RegisterCallback<MouseDownEvent>(evt => 
+                    // Add click handler to add tag to search (Alt+click excludes it instead)
+                    chip.tooltip = "Click to filter by this tag, Alt+Click to exclude it, Right-click for color";
+                    chip.RegisterCallback<MouseDownEvent>(evt =>
                     {
                         if (evt.button == 0) // Left click
                         {
-                            _mainSearchField?.AddTag(tag);
-                            _overlaySearchField?.AddTag(tag);
+                            string filterTag = evt.altKey ? "-" + tag : tag;
+                            _mainSearchField?.AddTag(filterTag);
+                            _overlaySearchField?.AddTag(filterTag);
                             evt.StopPropagation();
                         }
                         else if (evt.button == 1) // Right Click
@@ -288,15 +290,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     dragOffset = evt.localMousePosition;
                     dragStartPosition = evt.mousePosition;
                     hasDragged = false;
-                    
-                    // Clean state - no gaps, no transforms
-                    var listContainer = item.parent;
-                    if (listContainer != null)
-                    {
-                        // Clear any existing gaps
-                        rowGaps.Clear();
-                    }
-                    
+                    rowGaps.Clear();
+
                     item.CaptureMouse();
                     evt.StopPropagation();
                 }
@@ -306,435 +301,202 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     evt.StopPropagation();
                 }
             });
-            
-            
+
+
             // Drag handlers on the item
             item.RegisterCallback<MouseMoveEvent>(evt =>
             {
-                if (draggingIndex == index && item.HasMouseCapture())
+                if (draggingIndex != index || !item.HasMouseCapture()) return;
+
+                // Check if we've moved enough to consider it a drag
+                if (!hasDragged && Vector2.Distance(evt.mousePosition, dragStartPosition) > DRAG_THRESHOLD)
                 {
-                    // Check if we've moved enough to consider it a drag
-                    float dragDistance = Vector2.Distance(evt.mousePosition, dragStartPosition);
-                    if (dragDistance > DRAG_THRESHOLD && !hasDragged)
+                    // Start the drag - vFavorites approach: lift the row out of the list and float it at the cursor
+                    var listContainer = GetListRoot(item);
+                    if (listContainer != null)
                     {
-                        // Start the drag - vFavorites approach: remove from layout, position absolutely
                         hasDragged = true;
                         item.AddToClassList("yucp-profile-item-dragging");
-                        
-                        var listContainer = item.parent;
                         _draggingListContainer = listContainer; // Use this container for entire drag (overlay vs main)
-                        if (listContainer != null)
-                        {
-                            // Store original position in world space
-                            Rect originalRect = item.worldBound;
-                            draggedItemY = originalRect.y;
-                            
-                            // Remove from hierarchy and create gap (vFavorites approach)
-                            float itemHeight = item.resolvedStyle.height;
-                            if (itemHeight <= 0) itemHeight = 60f;
-                            float itemMargin = item.resolvedStyle.marginBottom;
-                            if (itemMargin <= 0) itemMargin = 2f;
-                            
-                            // Store original index (vFavorites initFromPage approach)
-                            draggingItemFromPageAtIndex = index;
-                            
-                            // Calculate draggedItemHoldOffset - no longer needed with element-based calculation
-                            // But keeping for potential future use
-                            // draggedItemHoldOffset = 0f;
-                            
-                            // Determine visual index of the dragged item (folders + root profiles)
-                            draggingVisualIndex = 0;
-                            int visualIndex = 0;
-                            foreach (var child in listContainer.Children())
-                            {
-                                if (child.ClassListContains("yucp-folder-content")) continue;
-                                
-                                bool isFolderHeader = child.ClassListContains("yucp-folder-header");
-                                bool isRootProfile = false;
-                                
-                                if (child.ClassListContains("yucp-profile-item") && child.userData is int profileIdx)
-                                {
-                                    var childProfile = allProfiles[profileIdx];
-                                    isRootProfile = string.IsNullOrEmpty(childProfile.folderName) || !projectFolders.Contains(childProfile.folderName);
-                                }
-                                
-                                if (!isFolderHeader && !isRootProfile)
-                                {
-                                    continue;
-                                }
-                                
-                                if (child == item)
-                                {
-                                    draggingVisualIndex = visualIndex;
-                                    break;
-                                }
-                                
-                                visualIndex++;
-                            }
-                            
-                            // Remove from layout (vFavorites approach)
-                            item.RemoveFromHierarchy();
-                            
-                            // Set gap at original visual position
-                            float gapSize = itemHeight + itemMargin;
-                            rowGaps[draggingVisualIndex] = gapSize;
-                            
-                            // Initialize insert index to the original visual index
-                            insertDraggedItemAtIndex = draggingVisualIndex;
-                            
-                            // Reset all other items' transforms before starting drag
-                            foreach (var child in listContainer.Children())
-                            {
-                                if (motionHandles.ContainsKey(child))
-                                {
-                                    var handle = motionHandles[child];
-                                    handle.Animate(new MotionTargets
-                                    {
-                                        HasY = true,
-                                        Y = 0f
-                                    }, new Transition(0f, EasingType.Linear)); // Instant reset
-                                }
-                            }
-                            
-                            // Create container for absolutely positioned dragged item
-                            draggedItemContainer = new VisualElement();
-                            draggedItemContainer.AddToClassList("yucp-profile-item-dragging-container");
-                            draggedItemContainer.style.position = Position.Absolute;
-                            draggedItemContainer.style.left = originalRect.x;
-                            draggedItemContainer.style.top = originalRect.y;
-                            draggedItemContainer.style.width = originalRect.width;
-                            draggedItemContainer.style.height = originalRect.height;
-                            draggedItemContainer.pickingMode = PickingMode.Ignore;
-                            
-                            // Add item to container
-                            draggedItemContainer.Add(item);
-                            
-                            // Add container to root (overlay everything)
-                            rootVisualElement.Add(draggedItemContainer);
-                            
-                            // Apply scale for visual feedback
-                            item.style.scale = new Scale(new Vector2(0.95f, 0.95f));
-                        }
+
+                        Rect originalRect = item.worldBound;
+                        float itemHeight = item.resolvedStyle.height;
+                        if (itemHeight <= 0) itemHeight = 60f;
+                        float itemMargin = item.resolvedStyle.marginBottom;
+                        if (itemMargin <= 0) itemMargin = 2f;
+
+                        // Keep the row's slot open where it was (gap indices follow GetListRows)
+                        draggingVisualIndex = GetListRows(listContainer).IndexOf(item);
+                        item.RemoveFromHierarchy();
+                        rowGaps[draggingVisualIndex] = itemHeight + itemMargin;
+                        insertDraggedItemAtIndex = draggingVisualIndex;
+
+                        // Create container for absolutely positioned dragged item
+                        draggedItemContainer = new VisualElement();
+                        draggedItemContainer.AddToClassList("yucp-profile-item-dragging-container");
+                        draggedItemContainer.style.position = Position.Absolute;
+                        draggedItemContainer.style.left = originalRect.x;
+                        draggedItemContainer.style.top = originalRect.y;
+                        draggedItemContainer.style.width = originalRect.width;
+                        draggedItemContainer.style.height = originalRect.height;
+                        draggedItemContainer.pickingMode = PickingMode.Ignore;
+                        draggedItemContainer.Add(item);
+
+                        // Add container to root (overlay everything)
+                        rootVisualElement.Add(draggedItemContainer);
+
+                        // Apply scale for visual feedback
+                        item.style.scale = new Scale(new Vector2(0.95f, 0.95f));
                     }
-                    
-                    if (hasDragged)
-                    {
-                        // Move the dragged item absolutely (vFavorites approach)
-                        if (draggedItemContainer != null)
-                        {
-                            // Calculate target position from mouse (screen space)
-                            Vector2 targetPos = evt.mousePosition - dragOffset;
-                            draggedItemY = targetPos.y;
-                            
-                            // Update container position (absolute positioning)
-                            draggedItemContainer.style.top = draggedItemY;
-                            draggedItemContainer.style.left = targetPos.x;
-                            
-                            Vector2 mousePos = evt.mousePosition;
-                            
-                            // Get list container (overlay or main, set when drag started)
-                            var listContainer = _draggingListContainer ?? _profileListContainer;
-                            if (listContainer == null)
-                            {
-                                listContainer = rootVisualElement.Q<VisualElement>(className: "yucp-profile-list-container");
-                            }
-                            
-                            if (listContainer != null)
-                            {
-                                // Find folder target or visual drop index (folders + root profiles)
-                                VisualElement folderTarget = null;
-                                int newDropIndex = CalculateDropIndexWithFolders(listContainer, mousePos, index, out folderTarget);
-                                
-                                if (folderTarget != null)
-                                {
-                                    if (insertDraggedItemAtIndex != -1)
-                                    {
-                                        insertDraggedItemAtIndex = -1;
-                                    }
-                                }
-                                else if (newDropIndex >= 0 && newDropIndex != insertDraggedItemAtIndex)
-                                {
-                                    insertDraggedItemAtIndex = newDropIndex;
-                                }
-                                
-                                if (newDropIndex != potentialDropIndex)
-                                {
-                                    potentialDropIndex = newDropIndex;
-                                }
-                                
-                                // Update visual feedback for drop targets
-                                if (folderTarget != null)
-                                {
-                                    UpdateFolderDropTargets(listContainer, folderTarget);
-                                    if (potentialDropIndex >= 0) ClearDropTargets(listContainer);
-                                    ResetStackState();
-                                }
-                                else
-                                {
-                                    UpdateFolderDropTargets(listContainer, null);
-                                    UpdateDropTargets(listContainer, potentialDropIndex, item);
-                                    
-                                    // Stack detection: find profile item under cursor
-                                    VisualElement hitElement = listContainer.panel.Pick(mousePos);
-                                    VisualElement targetItem = null;
-                                    int targetIdx = -1;
-                                    
-                                    var current = hitElement;
-                                    while (current != null && current != listContainer)
-                                    {
-                                        if (current.ClassListContains("yucp-profile-item") && current.userData is int idx && idx != index)
-                                        {
-                                            targetItem = current;
-                                            targetIdx = idx;
-                                            break;
-                                        }
-                                        current = current.parent;
-                                    }
-                                    
-                                    if (targetItem != null && targetIdx >= 0)
-                                    {
-                                        if (stackTargetElement == targetItem)
-                                        {
-                                            float dist = Vector2.Distance(mousePos, stackHoverPosition);
-                                            if (dist <= STACK_POSITION_TOLERANCE)
-                                            {
-                                                double elapsed = EditorApplication.timeSinceStartup - stackHoverStartTime;
-                                                if (elapsed >= STACK_HOVER_THRESHOLD && !isStackReady)
-                                                {
-                                                    isStackReady = true;
-                                                    targetItem.AddToClassList("yucp-profile-item-stack-target");
-                                                }
-                                            }
-                                            else
-                                            {
-                                                stackHoverStartTime = EditorApplication.timeSinceStartup;
-                                                stackHoverPosition = mousePos;
-                                                isStackReady = false;
-                                                targetItem.RemoveFromClassList("yucp-profile-item-stack-target");
-                                            }
-                                        }
-                                        else
-                                        {
-                                            ResetStackState();
-                                            stackTargetElement = targetItem;
-                                            stackTargetIndex = targetIdx;
-                                            stackHoverStartTime = EditorApplication.timeSinceStartup;
-                                            stackHoverPosition = mousePos;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        ResetStackState();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    evt.StopPropagation();
                 }
+
+                if (hasDragged && draggedItemContainer != null)
+                {
+                    // Move the dragged item absolutely (vFavorites approach)
+                    Vector2 targetPos = evt.mousePosition - dragOffset;
+                    draggedItemContainer.style.top = targetPos.y;
+                    draggedItemContainer.style.left = targetPos.x;
+
+                    Vector2 mousePos = evt.mousePosition;
+                    var listContainer = _draggingListContainer;
+                    var rows = GetListRows(listContainer);
+
+                    // Drop slot (or folder to drop into) under the cursor
+                    var dropRow = FindDropRow(listContainer, mousePos, true, out bool after, out var folderTarget);
+                    insertDraggedItemAtIndex = folderTarget != null ? -1 : GetGapIndex(rows, dropRow, after);
+                    UpdateFolderDropTargets(listContainer, folderTarget);
+                    UpdateDropTargets(listContainer, insertDraggedItemAtIndex);
+
+                    // Stack detection: resting on another profile readies "group both into a new folder".
+                    // Bounds, not panel.Pick: the floating dragged row is what sits under the cursor.
+                    var targetItem = folderTarget == null
+                        ? rows.FirstOrDefault(r => r.userData is int && r.worldBound.Contains(mousePos))
+                        : null;
+
+                    if (targetItem == null)
+                    {
+                        ResetStackState();
+                    }
+                    else if (stackTargetElement != targetItem || Vector2.Distance(mousePos, stackHoverPosition) > STACK_POSITION_TOLERANCE)
+                    {
+                        ResetStackState();
+                        stackTargetElement = targetItem;
+                        stackTargetIndex = (int)targetItem.userData;
+                        stackHoverPosition = mousePos;
+                        double started = stackHoverStartTime = EditorApplication.timeSinceStartup;
+
+                        // Timer instead of waiting for the next mouse move, so holding still is enough
+                        item.schedule.Execute(() =>
+                        {
+                            if (!hasDragged || stackTargetElement != targetItem || stackHoverStartTime != started) return;
+                            isStackReady = true;
+                            targetItem.AddToClassList("yucp-profile-item-stack-target");
+                        }).StartingIn((long)(STACK_HOVER_THRESHOLD * 1000));
+                    }
+                }
+
+                evt.StopPropagation();
             });
-            
+
             item.RegisterCallback<MouseUpEvent>(evt =>
             {
-                if (draggingIndex == index && item.HasMouseCapture())
-                {
-                    item.ReleaseMouse();
-                    
-                    if (hasDragged)
-                    {
-                        // We were dragging - handle drop (vFavorites approach)
-                        item.RemoveFromClassList("yucp-profile-item-dragging");
-                        
-                        // Get list container (overlay or main, set when drag started)
-                        var listContainer = _draggingListContainer ?? _profileListContainer;
-                        if (listContainer == null)
-                        {
-                            listContainer = rootVisualElement.Q<VisualElement>(className: "yucp-profile-list-container");
-                        }
-                        
-                        if (listContainer != null)
-                        {
-                            // Use insertDraggedItemAtIndex (vFavorites AcceptDragging approach)
-                            int targetIndex = insertDraggedItemAtIndex >= 0 ? insertDraggedItemAtIndex : index;
-                            
-                            // Check for folder drops
-                            VisualElement hitElement = listContainer.panel.Pick(evt.mousePosition);
-                             // Traverse up to find folder header
-                             VisualElement folderHeader = null;
-                             var current = hitElement;
-                             while(current != null && current != listContainer) {
-                                 if (current.ClassListContains("yucp-folder-header")) {
-                                     folderHeader = current;
-                                     break;
-                                 }
-                                 current = current.parent;
-                             }
+                if (draggingIndex != index || !item.HasMouseCapture()) return;
+                item.ReleaseMouse();
 
-                            if (folderHeader != null && folderHeader.userData is string fName && fName != profile.folderName)
-                            {
-                                 // Dropped onto a different folder
-                                 MoveProfileToFolder(profile, fName);
-                            }
-                            else if (isStackReady && stackTargetIndex >= 0 && stackTargetIndex < allProfiles.Count)
-                            {
-                                // Stack-to-folder: create a new folder with both profiles
-                                var targetProfile = allProfiles[stackTargetIndex];
-                                CreateFolderWithProfiles(profile, targetProfile);
-                            }
-                            else
-                            {
-                                // Perform reorder on drop (vFavorites AcceptDragging: insert at insertDraggedItemAtIndex)
-                                // insertDraggedItemAtIndex is the visual index (0-based position in visible list excluding dragged item)
-                                // In vFavorites: data.curPage.items.AddAt(draggedItem, insertDraggedItemAtIndex)
-                                // The items list already has the dragged item removed, so insertDraggedItemAtIndex is the position in that list
-                                
-                                if (insertDraggedItemAtIndex >= 0 && insertDraggedItemAtIndex != draggingVisualIndex)
-                                {
-                                    ReorderProfiles(draggingItemFromPageAtIndex, insertDraggedItemAtIndex);
-                                }
-                            }
-                            
-                            // Adjust rowGaps (vFavorites: data.curPage.rowGaps[insertDraggedItemAtIndex] -= rowHeight; data.curPage.rowGaps.AddAt(0, insertDraggedItemAtIndex))
-                            if (rowGaps.ContainsKey(targetIndex))
-                            {
-                                float rowHeight = draggingElement != null ? draggingElement.resolvedStyle.height : 60f;
-                                if (rowHeight <= 0) rowHeight = 60f;
-                                rowGaps[targetIndex] = Mathf.Max(0f, rowGaps[targetIndex] - rowHeight);
-                            }
-                            
-                            // Reset stack state
-                            ResetStackState();
-                            
-                            // Clear all visual feedback
-                            ClearDropTargets(listContainer);
-                        }
-                        
-                        // Clean up dragged item container (vFavorites approach)
-                        if (draggedItemContainer != null)
-                        {
-                            // Remove item from container
-                            item.RemoveFromHierarchy();
-                            draggedItemContainer.RemoveFromHierarchy();
-                            draggedItemContainer = null;
-                            
-                            // Reset scale
-                            item.style.scale = new Scale(Vector2.one);
-                            
-                            // Clear gaps and reset all transforms
-                            rowGaps.Clear();
-                            draggingVisualIndex = -1;
-                            draggingItemFromPageAtIndex = -1;
-                            insertDraggedItemAtIndex = -1;
-                            // draggedItemHoldOffset = 0f;
-                            
-                            // Reset all item transforms before refreshing
-                            if (listContainer != null)
-                            {
-                                foreach (var child in listContainer.Children())
-                                {
-                                    if (motionHandles.ContainsKey(child))
-                                    {
-                                        var handle = motionHandles[child];
-                                        handle.Animate(new MotionTargets
-                                        {
-                                            HasY = true,
-                                            Y = 0f
-                                        }, new Transition(0.2f, EasingType.EaseOut));
-                                    }
-                                }
-                            }
-                            
-                            // Refresh list to show item in new position
-                            UpdateProfileList();
-                        }
-                    }
-                    else
+                bool wasDragged = hasDragged;
+                if (wasDragged)
+                {
+                    // We were dragging - handle drop (vFavorites approach)
+                    item.RemoveFromClassList("yucp-profile-item-dragging");
+                    item.style.scale = new Scale(Vector2.one);
+
+                    var listContainer = _draggingListContainer;
+                    if (listContainer != null)
                     {
-                        // It was just a click, not a drag - handle selection
-                        // Create a MouseDownEvent-like event for HandleProfileSelection
-                        // We'll handle selection directly here since we know it's a click
-                        if (evt.ctrlKey || evt.commandKey)
+                        var dropRow = FindDropRow(listContainer, evt.mousePosition, true, out bool after, out var folderHeader);
+                        ClearDropTargets(listContainer);
+                        UpdateFolderDropTargets(listContainer, null);
+
+                        if (folderHeader != null)
                         {
-                            // Toggle selection
-                            if (selectedProfileIndices.Contains(index))
-                            {
-                                selectedProfileIndices.Remove(index);
-                                if (selectedProfile == profile)
-                                {
-                                    selectedProfile = null;
-                                }
-                            }
-                            else
-                            {
-                                selectedProfileIndices.Add(index);
-                                selectedProfile = profile;
-                            }
-                            lastClickedProfileIndex = index;
+                            // Dropped onto a folder
+                            if (folderHeader.userData is string folderName && folderName != profile.folderName)
+                                MoveProfileToFolder(profile, folderName);
                         }
-                        else if (evt.shiftKey)
+                        else if (isStackReady && stackTargetIndex >= 0 && stackTargetIndex < allProfiles.Count)
                         {
-                            // Range selection
-                            if (lastClickedProfileIndex >= 0 && lastClickedProfileIndex < allProfiles.Count)
-                            {
-                                int start = Math.Min(lastClickedProfileIndex, index);
-                                int end = Math.Max(lastClickedProfileIndex, index);
-                                selectedProfileIndices.Clear();
-                                for (int i = start; i <= end; i++)
-                                {
-                                    selectedProfileIndices.Add(i);
-                                }
-                                selectedProfile = profile;
-                            }
-                            else
-                            {
-                                selectedProfileIndices.Clear();
-                                selectedProfileIndices.Add(index);
-                                selectedProfile = profile;
-                            }
-                            lastClickedProfileIndex = index;
+                            // Stack-to-folder: create a new folder with both profiles
+                            CreateFolderWithProfiles(profile, allProfiles[stackTargetIndex]);
                         }
                         else
                         {
-                            // Single selection
-                            selectedProfileIndices.Clear();
+                            // Manual order only exists in the Custom view
+                            currentSortOption = ProfileSortOption.Custom;
+                            MoveProfileNextTo(profile, dropRow, after);
+                        }
+                    }
+
+                    ResetStackState();
+                }
+                else
+                {
+                    // It was just a click, not a drag - handle selection
+                    if (evt.ctrlKey || evt.commandKey)
+                    {
+                        // Toggle selection
+                        if (selectedProfileIndices.Contains(index))
+                        {
+                            selectedProfileIndices.Remove(index);
+                            if (selectedProfile == profile)
+                            {
+                                selectedProfile = null;
+                            }
+                        }
+                        else
+                        {
                             selectedProfileIndices.Add(index);
                             selectedProfile = profile;
-                            lastClickedProfileIndex = index;
                         }
-                        
-                        UpdateProfileList();
-                        UpdateProfileDetails();
-                        UpdateBottomBar();
+                        lastClickedProfileIndex = index;
                     }
-                    
-                    // Clean up drag state
-                    if (draggedItemContainer != null)
+                    else if (evt.shiftKey)
                     {
-                        draggedItemContainer.RemoveFromHierarchy();
-                        draggedItemContainer = null;
+                        // Range selection in on-screen order. The anchor stays put so repeated shift-clicks pivot on it.
+                        if (lastClickedProfileIndex < 0) lastClickedProfileIndex = index;
+                        SelectDisplayedRange(lastClickedProfileIndex, index);
+                        selectedProfile = profile;
                     }
-                    
-                            // Clear gaps and drag state (vFavorites CancelDragging approach)
-                            rowGaps.Clear();
-                            draggingItemFromPageAtIndex = -1;
-                            insertDraggedItemAtIndex = -1;
-                            // draggedItemHoldOffset = 0f;
-                            draggingVisualIndex = -1;
-                    
-                    draggingIndex = -1;
-                    draggingElement = null;
-                    hasDragged = false;
-                    potentialDropIndex = -1;
-                    _draggingListContainer = null;
-                    evt.StopPropagation();
+                    else
+                    {
+                        // Single selection
+                        selectedProfileIndices.Clear();
+                        selectedProfileIndices.Add(index);
+                        selectedProfile = profile;
+                        lastClickedProfileIndex = index;
+                    }
+
+                    UpdateProfileDetails();
+                    UpdateBottomBar();
                 }
+
+                // Clean up drag state (vFavorites CancelDragging approach)
+                if (draggedItemContainer != null)
+                {
+                    draggedItemContainer.RemoveFromHierarchy();
+                    draggedItemContainer = null;
+                }
+                rowGaps.Clear();
+                insertDraggedItemAtIndex = -1;
+                draggingVisualIndex = -1;
+                draggingIndex = -1;
+                draggingElement = null;
+                hasDragged = false;
+                _draggingListContainer = null;
+
+                // Re-render: restores the lifted row and shows the new selection/position
+                UpdateProfileList();
+                evt.StopPropagation();
             });
-            
-            // Click handler with multi-selection support (only if not dragging)
-            // We'll handle selection in MouseDownEvent, but only if we're not starting a drag
-            // The drag logic will prevent selection when dragging starts
-            
             return item;
         }
 

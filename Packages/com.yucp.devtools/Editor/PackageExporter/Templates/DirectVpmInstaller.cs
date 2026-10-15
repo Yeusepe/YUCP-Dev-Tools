@@ -58,6 +58,8 @@ namespace YUCP.DirectVpmInstaller
             "YUCP_FullDomainReload_*.cs"
         };
 
+        private static UnityEditor.PackageManager.Requests.AddAndRemoveRequest _unityDependencyRequest;
+
         static DirectVpmInstaller()
         {
             try
@@ -73,6 +75,11 @@ namespace YUCP.DirectVpmInstaller
             }
 
             EditorApplication.delayCall += CheckAndInstallVpmPackages;
+            AssetDatabase.importPackageCompleted += _ =>
+            {
+                EditorApplication.delayCall -= CheckAndInstallVpmPackages;
+                EditorApplication.delayCall += CheckAndInstallVpmPackages;
+            };
         }
 
         private static bool HasPendingTempInstallJson()
@@ -167,20 +174,6 @@ namespace YUCP.DirectVpmInstaller
                 .Where(File.Exists)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
-        }
-
-        private static string DiskPathToAssetPath(string diskPath)
-        {
-            if (string.IsNullOrWhiteSpace(diskPath))
-                return null;
-
-            string projectRoot = GetProjectRoot()
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            string fullPath = Path.GetFullPath(diskPath);
-            if (!fullPath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase))
-                return null;
-
-            return fullPath.Substring(projectRoot.Length).Replace('\\', '/');
         }
 
         private static Dictionary<string, string> LoadTrustedRepositories(JObject vpmRepositories)
@@ -284,7 +277,17 @@ namespace YUCP.DirectVpmInstaller
                     Debug.LogWarning($"[DirectVpmInstaller] {warning}");
                 }
             }
-            return DependencyInstallChoice.InstallAndAdd;
+            Debug.Log("[DirectVpmInstaller] Waiting for dependency installation choice.");
+            string message = "This package needs the following dependencies:\n\n" + packageList;
+            if (addableRepositories.Count == 0)
+                return EditorUtility.DisplayDialog("Install package dependencies", message, "Install", "Not now")
+                    ? DependencyInstallChoice.InstallOnly : DependencyInstallChoice.NotNow;
+
+            int choice = EditorUtility.DisplayDialogComplex("Install package dependencies",
+                message + "\n\nYou can also add their repositories to Creator Companion for future updates.",
+                "Install and add repositories", "Not now", "Install only");
+            return choice == 0 ? DependencyInstallChoice.InstallAndAdd :
+                choice == 2 ? DependencyInstallChoice.InstallOnly : DependencyInstallChoice.NotNow;
         }
 
         private static bool TryAddRepositoriesForFutureUse(Dictionary<string, string> repositories, out List<string> warnings)
@@ -322,8 +325,8 @@ namespace YUCP.DirectVpmInstaller
                         continue;
                     }
 
-                    // Already a known source: leave the user's entry untouched. Rewriting its url or
-                    // name is what made VCC re-add its own copy and show the source twice.
+
+
                     if (FindUserRepoSetting(settings, repositoryUrl, null) != null)
                         continue;
 
@@ -348,8 +351,8 @@ namespace YUCP.DirectVpmInstaller
                         Debug.LogWarning($"[DirectVpmInstaller] Failed to prefetch repository {repositoryUrl}: {ex.Message}");
                     }
 
-                    // The listing's own id is the authoritative identity; it only becomes known
-                    // after the download above, so re-check before adding a second entry.
+
+
                     if (FindUserRepoSetting(settings, repositoryUrl, repoId) != null)
                         continue;
 
@@ -410,9 +413,9 @@ namespace YUCP.DirectVpmInstaller
             return Path.Combine(reposPath, BuildRepositoryCacheFileName(repositoryName, repoId, repositoryUrl));
         }
 
-        // Two spellings of the same listing must not become two sources. VCC stores the VRChat
-        // repos as ".../official" while packages declare ".../official?download", and trailing
-        // slashes vary freely, so compare on scheme+host+path with the query dropped.
+
+
+
         internal static string NormalizeRepositoryUrl(string url)
         {
             if (string.IsNullOrWhiteSpace(url))
@@ -546,7 +549,16 @@ namespace YUCP.DirectVpmInstaller
                 return false;
 
             packageJsonPath = Path.Combine(GetPackagesRoot(), packageName, "package.json");
-            return true;
+            if (File.Exists(packageJsonPath))
+                return true;
+
+            var package = UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages()
+                .FirstOrDefault(candidate => string.Equals(candidate.name, packageName, StringComparison.OrdinalIgnoreCase));
+            if (package == null)
+                return false;
+
+            packageJsonPath = Path.Combine(package.resolvedPath, "package.json");
+            return File.Exists(packageJsonPath);
         }
 
         private static string GetValidatedPackageDestination(string packageName)
@@ -1222,26 +1234,114 @@ namespace YUCP.DirectVpmInstaller
                 AssetDatabase.AllowAutoRefresh();
                 EditorApplication.UnlockReloadAssemblies();
 
-                Debug.Log("[DirectVpmInstaller] Bundled package enable completed. Triggering full domain reload...");
-                FullDomainReload.Run(() =>
-                {
-                    Debug.Log("[DirectVpmInstaller] Bundled package enable complete after domain reload.");
-                });
+                UnityEditor.PackageManager.Client.Resolve();
+                AssetDatabase.Refresh();
             }
         }
-        
+
+        private static List<string> GetMissingUnityDependencies(JObject dependencies)
+        {
+            var missing = new List<string>();
+            if (dependencies == null)
+                return missing;
+
+            var installed = UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages();
+            foreach (var dependency in dependencies.Properties())
+            {
+                string version = dependency.Value.Type == JTokenType.String ? (string)dependency.Value : null;
+                if (!IsSafePackageName(dependency.Name) || string.IsNullOrWhiteSpace(version) ||
+                    !System.Text.RegularExpressions.Regex.IsMatch(version,
+                        @"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$"))
+                    throw new InvalidDataException($"Invalid Unity dependency: {dependency.Name}@{version}");
+
+                var package = installed.FirstOrDefault(p => p.name == dependency.Name);
+                if (package != null && CompareVersions(package.version, version) >= 0)
+                    continue;
+                if (package != null && package.source != UnityEditor.PackageManager.PackageSource.Registry)
+                    throw new InvalidOperationException($"{dependency.Name} requires {version}, but is installed from {package.source}. Update it in Package Manager before retrying the import.");
+                missing.Add(dependency.Name + "@" + version);
+            }
+            return missing;
+        }
+
+        private static bool StartUnityDependencyInstall(JObject dependencies)
+        {
+            var missing = GetMissingUnityDependencies(dependencies);
+            if (missing.Count == 0)
+                return false;
+            if (!EditorUtility.DisplayDialog("Install Unity dependencies",
+                "Unity Package Manager needs to install:\n\n" + string.Join("\n", missing), "Install", "Not now"))
+                return true;
+
+            EditorApplication.LockReloadAssemblies();
+            try
+            {
+                _unityDependencyRequest = UnityEditor.PackageManager.Client.AddAndRemove(missing.ToArray());
+                EditorApplication.update += PollUnityDependencyInstall;
+            }
+            catch
+            {
+                EditorApplication.UnlockReloadAssemblies();
+                throw;
+            }
+            return true;
+        }
+
+        private static void PollUnityDependencyInstall()
+        {
+            if (!_unityDependencyRequest.IsCompleted)
+                return;
+
+            EditorApplication.update -= PollUnityDependencyInstall;
+            var request = _unityDependencyRequest;
+            _unityDependencyRequest = null;
+            try
+            {
+                if (request.Status == UnityEditor.PackageManager.StatusCode.Success)
+                {
+                    EditorApplication.delayCall -= CheckAndInstallVpmPackages;
+                    EditorApplication.delayCall += CheckAndInstallVpmPackages;
+                }
+                else
+                {
+                    Debug.LogError($"[DirectVpmInstaller] Unity could not install dependencies: {request.Error?.message}. The install descriptor and disabled files were kept. Fix the error in Package Manager and retry the import.");
+                }
+            }
+            finally
+            {
+                InstallerTxn.ClearMarker("lock");
+                InstallerTxn.ClearMarker("pending");
+                EditorApplication.UnlockReloadAssemblies();
+            }
+        }
+
         private static void CheckAndInstallVpmPackages()
         {
-            // Note: Duplicate import prevention is handled by YUCPImportMonitor (global AssetPostprocessor)
-            // in the com.yucp.components package, which runs BEFORE this installer
-            
-            // Clear stale lock if present (crash recovery)
+            ProcessPendingInstall(false);
+        }
+
+        private static bool TryBeginDependencyPrompt(string descriptorPath, bool retry)
+        {
+            string key = "YUCP.DependencyPrompt:" + Path.GetFullPath(descriptorPath) + ":" + File.GetLastWriteTimeUtc(descriptorPath).Ticks;
+            if (!retry && SessionState.GetBool(key, false))
+                return false;
+
+            SessionState.SetBool(key, true);
+            return true;
+        }
+
+        private static void ProcessPendingInstall(bool retryPrompt)
+        {
+            if (_unityDependencyRequest != null)
+                return;
+
+
             try { if (InstallerTxn.HasMarker("lock") && InstallerTxn.IsMarkerStale("lock", TimeSpan.FromMinutes(10))) InstallerTxn.ClearMarker("lock"); } catch { }
 
-            // Clean up any old installer scripts first to prevent duplicate class definitions on re-import
+
             CleanupInstallerScript();
 
-            // Find any YUCP temp install JSON files
+
             string[] tempJsonFiles = Array.Empty<string>();
             try
             {
@@ -1262,7 +1362,7 @@ namespace YUCP.DirectVpmInstaller
             {
                 tempJsonFiles = Directory.GetFiles(Application.dataPath, "YUCP_TempInstall_*.json", SearchOption.TopDirectoryOnly);
             }
-            
+
             if (tempJsonFiles.Length == 0)
             {
                 Debug.Log("[DirectVpmInstaller] No YUCP temp install descriptor was found. Nothing to install on this pass.");
@@ -1278,7 +1378,7 @@ namespace YUCP.DirectVpmInstaller
                 }
                 try { InstallerTxn.ClearMarker("scheduled"); } catch { }
 
-                // If a previous install completed, ensure cleanup convergence
+
                 if (InstallerTxn.HasMarker("complete"))
                 {
                     CleanupInstallerScript();
@@ -1291,14 +1391,14 @@ namespace YUCP.DirectVpmInstaller
                 }
                 return;
             }
-            
-            string packageJsonPath = tempJsonFiles[0]; // Use the first one found
+
+            string packageJsonPath = tempJsonFiles[0];
             Debug.Log($"[DirectVpmInstaller] Found {tempJsonFiles.Length} temp install descriptor(s). Using '{packageJsonPath}'.");
             InstallerTxn.LogDiagnostic($"Using temp install descriptor: {packageJsonPath}");
-            
+
             try
             {
-                // Signal import coordination
+
                 try { InstallerTxn.ClearMarker("scheduled"); } catch { }
                 InstallerTxn.SetMarker("pending");
                 InstallerTxn.SetMarker("lock");
@@ -1307,7 +1407,7 @@ namespace YUCP.DirectVpmInstaller
                 string bundledPackageVersion = packageInfo["version"]?.Value<string>();
                 Debug.Log($"[DirectVpmInstaller] Processing package descriptor name='{bundledPackageName ?? "<missing>"}' version='{bundledPackageVersion ?? "<missing>"}'.");
                 bool disabledFilesNeedEnable = FindDisabledFilesInProject().Length > 0;
-                // Check if this bundled package is already installed
+
                 if (!string.IsNullOrEmpty(bundledPackageName))
                 {
                     string existingPackagePath = Path.Combine(Application.dataPath, "..", "Packages", bundledPackageName);
@@ -1320,7 +1420,7 @@ namespace YUCP.DirectVpmInstaller
                             {
                                 var existingData = JObject.Parse(File.ReadAllText(existingPackageJson));
                                 string existingVersion = existingData["version"]?.Value<string>();
-                                
+
                                 if (!string.IsNullOrEmpty(existingVersion) && !string.IsNullOrEmpty(bundledPackageVersion))
                                 {
                                     if (CompareVersions(existingVersion, bundledPackageVersion) >= 0)
@@ -1332,11 +1432,11 @@ namespace YUCP.DirectVpmInstaller
                                         }
                                         else
                                         {
-                                            // Already installed at >= the bundled version, and no disabled files pending.
-                                            // Do NOT enable + finalize here: that path skips the dependency check, which is
-                                            // how bundled scripts got enabled while a declared dependency (e.g. VRCFury) was
-                                            // still missing -> CS0246 and no install prompt. Fall through to the vpmDependencies
-                                            // check below, which prompts/installs anything missing and only then finalizes.
+
+
+
+
+
                                             Debug.Log($"[DirectVpmInstaller] Bundled package {bundledPackageName}@{bundledPackageVersion} is already installed (current: {existingVersion}). Verifying declared dependencies before finalizing.");
                                             InstallerTxn.LogDiagnostic($"Already-installed package; verifying vpmDependencies before finalizing. package={bundledPackageName} current={existingVersion} incoming={bundledPackageVersion}");
                                         }
@@ -1354,48 +1454,42 @@ namespace YUCP.DirectVpmInstaller
                         }
                     }
                 }
-                
+
+                if (StartUnityDependencyInstall(packageInfo["dependencies"] as JObject))
+                    return;
+
                 var vpmDependencies = packageInfo["vpmDependencies"] as JObject;
                 var vpmRepositories = packageInfo["vpmRepositories"] as JObject;
-                
+
                 if (vpmDependencies == null || vpmDependencies.Count == 0)
                 {
                     EnableBundledPackagesAndFinalize(packageJsonPath, "No VPM dependencies were declared. Enabling bundled packages directly.");
                     return;
                 }
-                
-                // Seed repository list from the bundled package (if any)
+
+
                 var addableRepositories = LoadTrustedRepositories(vpmRepositories);
                 var repositories = new Dictionary<string, string>(addableRepositories, StringComparer.OrdinalIgnoreCase);
                 AddBuiltInRepositories(repositories);
 
-                // Direct (top-level) dependencies for the UI prompt
+
                 var packagesToInstall = new List<Tuple<string, string>>();
                 var installWarnings = new List<string>();
                 var installFailures = new List<string>();
-                var packageDisplayNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-                // Work queue + set to install dependencies recursively (transitive closure)
+
                 var installQueue = new Queue<Tuple<string, string>>();
                 var plannedPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                
+
                 foreach (var dep in vpmDependencies.Properties())
                 {
                     string packageName = dep.Name;
                     string versionRequirement = dep.Value.ToString();
-                    
+
                     if (ShouldInstallPackage(packageName, versionRequirement, out string installWarning))
                     {
                         var tuple = new Tuple<string, string>(packageName, versionRequirement);
                         packagesToInstall.Add(tuple);
-                        if (TryResolvePackageDownload(packageName, versionRequirement, repositories, out ResolvedPackageDownload previewResolution) &&
-                            !string.IsNullOrEmpty(previewResolution.friendlyWarningMessage))
-                        {
-                            AddUniqueMessage(installWarnings, previewResolution.friendlyWarningMessage);
-                        }
-                        packageDisplayNames[packageName] = previewResolution != null
-                            ? GetFriendlyPackageLabel(previewResolution.displayName, packageName)
-                            : GetFriendlyPackageLabel(null, packageName);
                         if (plannedPackages.Add(packageName))
                         {
                             installQueue.Enqueue(tuple);
@@ -1407,7 +1501,7 @@ namespace YUCP.DirectVpmInstaller
                         Debug.LogWarning($"[DirectVpmInstaller] {installWarning}");
                     }
                 }
-                
+
                 if (packagesToInstall.Count == 0)
                 {
                     string satisfiedMessage = $"No dependency install popup was shown because all {vpmDependencies.Count} declared VPM dependenc{(vpmDependencies.Count == 1 ? "y is" : "ies are")} already installed or otherwise satisfied. YUCP will enable bundled files directly.";
@@ -1426,59 +1520,53 @@ namespace YUCP.DirectVpmInstaller
                     EnableBundledPackagesAndFinalize(packageJsonPath, "All VPM dependencies are already installed. Enabling bundled packages directly.");
                     return;
                 }
-                
+
+                if (!TryBeginDependencyPrompt(packageJsonPath, retryPrompt))
+                    return;
+
                 string packageList = string.Join("\n", packagesToInstall.Select(p =>
-                {
-                    string label = packageDisplayNames.TryGetValue(p.Item1, out string knownLabel)
-                        ? knownLabel
-                        : GetFriendlyPackageLabel(null, p.Item1);
-                    string displayName = string.Equals(label, p.Item1, StringComparison.OrdinalIgnoreCase)
-                        ? label
-                        : $"{label} ({p.Item1})";
-                    return $"  - {displayName}@{FormatVersionRequirementForDisplay(p.Item2)}";
-                }));
+                    $"  - {p.Item1}@{FormatVersionRequirementForDisplay(p.Item2)}"));
                 DependencyInstallChoice installChoice = PromptForDependencyInstallChoice(packageList, installWarnings, addableRepositories);
-                
+
                 if (installChoice == DependencyInstallChoice.NotNow)
                 {
-                    Debug.LogWarning("[DirectVpmInstaller] Dependencies not installed. Compilation errors may occur.");
-                    CleanupTemporaryFiles(packageJsonPath, "Package requirements were not installed, so YUCP left package files disabled. Re-import the package and choose Install, or install the missing requirements manually.");
+                    Debug.LogWarning("[DirectVpmInstaller] Installation postponed. The descriptor and disabled files were kept for retry.");
                     return;
                 }
 
                 bool addRepositoriesForFutureUse = installChoice == DependencyInstallChoice.InstallAndAdd;
-                
-                // Lock assemblies and disable auto-refresh
+
+
                 EditorApplication.LockReloadAssemblies();
                 AssetDatabase.DisallowAutoRefresh();
                 AssetDatabase.StartAssetEditing();
-                
+
                 try
                 {
                     Debug.Log("[DirectVpmInstaller] Installing dependencies with compilation locked (including transitive vpmDependencies)...");
-                    
-                    // Install all requested packages, then recursively install their vpmDependencies
+
+
                     bool allSucceeded = true;
                     while (installQueue.Count > 0)
                     {
                         var package = installQueue.Dequeue();
-                        
-                        // Double-check we still need this package (it may have been installed as a transitive dependency)
+
+
                         if (!ShouldInstallPackage(package.Item1, package.Item2, out string queuedWarning))
                         {
                             if (!string.IsNullOrEmpty(queuedWarning))
                                 Debug.LogWarning($"[DirectVpmInstaller] {queuedWarning}");
                             continue;
                         }
-                        
+
                         if (!InstallPackage(package.Item1, package.Item2, repositories, out string friendlyFailureMessage))
                         {
                             allSucceeded = false;
                             AddUniqueMessage(installFailures, friendlyFailureMessage);
                             continue;
                         }
-                        
-                        // After successful install, read its package.json and enqueue its own vpmDependencies
+
+
                         try
                         {
                             EnqueueTransitiveDependencies(package.Item1, repositories, installQueue, plannedPackages);
@@ -1488,19 +1576,19 @@ namespace YUCP.DirectVpmInstaller
                             Debug.LogWarning($"[DirectVpmInstaller] Failed to resolve transitive dependencies for {package.Item1}: {exDeps.Message}");
                         }
                     }
-                    
+
                 if (allSucceeded)
                 {
                     Debug.Log("[DirectVpmInstaller] Dependencies installed. Enabling bundled packages...");
-                    
-                    // Enable bundled packages while still locked with transaction/rollback safety
+
+
                     string txnId = InstallerTxn.Begin();
                     Debug.Log($"[DirectVpmInstaller] Started enable transaction {txnId} after dependency installation.");
                     bool enableOk = false;
                     try
                     {
                         EnableBundledPackagesTransactional();
-                        // Post-commit manifest verification happens after commit below
+
                         enableOk = true;
                     }
                     catch (Exception exEnable)
@@ -1513,17 +1601,17 @@ namespace YUCP.DirectVpmInstaller
                     {
                         if (enableOk)
                         {
-                            // Verify enabled files match expected hashes BEFORE clearing transaction state
+
                             if (!InstallerTxn.VerifyManifest())
                                 throw new Exception("Post-install manifest verification failed");
                             InstallerTxn.Commit();
                         }
                     }
-                    
-                    // NOTE: Do NOT add bundled packages to vpm-manifest.json - they are local packages, not from repositories
-                    // Adding them causes VPM Resolver to try to resolve them from repos, resulting in "package not found" errors
-                    
-                    // Fix self-references in the installed package's package.json (if it exists)
+
+
+
+
+
                     if (!string.IsNullOrEmpty(bundledPackageName))
                     {
                         string installedPackagePath = Path.Combine(Application.dataPath, "..", "Packages", bundledPackageName);
@@ -1535,10 +1623,10 @@ namespace YUCP.DirectVpmInstaller
                                 string packageJsonContent = File.ReadAllText(installedPackageJson);
                                 var packageJson = JObject.Parse(packageJsonContent);
                                 bool modified = false;
-                                
+
                                 string normalizedPackageName = bundledPackageName.ToLower().Replace(" ", ".");
-                                
-                                // Check vpmDependencies
+
+
                                 var vpmDeps = packageJson["vpmDependencies"] as JObject;
                                 if (vpmDeps != null)
                                 {
@@ -1552,22 +1640,22 @@ namespace YUCP.DirectVpmInstaller
                                             toRemove.Add(depName);
                                         }
                                     }
-                                    
+
                                     foreach (var depName in toRemove)
                                     {
                                         vpmDeps.Remove(depName);
                                         modified = true;
                                         Debug.Log($"[DirectVpmInstaller] Removed self-referential vpmDependency: {depName} from installed package.json");
                                     }
-                                    
+
                                     if (vpmDeps.Count == 0)
                                     {
                                         packageJson.Remove("vpmDependencies");
                                         modified = true;
                                     }
                                 }
-                                
-                                // Check dependencies
+
+
                                 var deps = packageJson["dependencies"] as JObject;
                                 if (deps != null)
                                 {
@@ -1581,21 +1669,21 @@ namespace YUCP.DirectVpmInstaller
                                             toRemove.Add(depName);
                                         }
                                     }
-                                    
+
                                     foreach (var depName in toRemove)
                                     {
                                         deps.Remove(depName);
                                         modified = true;
                                         Debug.Log($"[DirectVpmInstaller] Removed self-referential dependency: {depName} from installed package.json");
                                     }
-                                    
+
                                     if (deps.Count == 0)
                                     {
                                         packageJson.Remove("dependencies");
                                         modified = true;
                                     }
                                 }
-                                
+
                                 if (modified)
                                 {
                                     File.WriteAllText(installedPackageJson, packageJson.ToString(Newtonsoft.Json.Formatting.Indented));
@@ -1608,7 +1696,7 @@ namespace YUCP.DirectVpmInstaller
                             }
                         }
                     }
-                    
+
                     if (addRepositoriesForFutureUse)
                     {
                         if (!TryAddRepositoriesForFutureUse(addableRepositories, out List<string> addRepoWarnings))
@@ -1625,65 +1713,46 @@ namespace YUCP.DirectVpmInstaller
                         }
                     }
 
-                    // Clean up temporary files
+
                     InstallerTxn.SetMarker("complete");
                         CleanupTemporaryFiles(packageJsonPath);
                 }
                     else
                     {
                         ShowInstallFailureDialog(installFailures);
-                        CleanupTemporaryFiles(packageJsonPath);
+                        InstallerTxn.SetMarker("error");
                     }
                 }
                 finally
                 {
-                    // Unlock everything in one atomic operation
+
                     AssetDatabase.StopAssetEditing();
                     AssetDatabase.AllowAutoRefresh();
                     EditorApplication.UnlockReloadAssemblies();
-                    
-                    Debug.Log("[DirectVpmInstaller] Unlocked. Triggering full domain reload...");
-                    
-                    // Force a focus-grade full domain reload (includes UPM resolve, compile, and reload)
-                    FullDomainReload.Run(() =>
-                    {
-                        Debug.Log("[DirectVpmInstaller] Installation complete. Domain fully reloaded with all dependencies functional.");
-                    });
+
+                    UnityEditor.PackageManager.Client.Resolve();
+                    AssetDatabase.Refresh();
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[DirectVpmInstaller] Error: {ex.Message}");
                 try { InstallerTxn.SetMarker("error"); } catch { }
-                try
-                {
-                    if (!string.IsNullOrEmpty(packageJsonPath))
-                    {
-                        CleanupTemporaryFiles(packageJsonPath);
-                    }
-                    else
-                    {
-                        PruneEmptyInstalledPackageResidue();
-                    }
-                }
-                catch (Exception cleanupEx)
-                {
-                    Debug.LogWarning($"[DirectVpmInstaller] Failed to cleanup after installer error: {cleanupEx.Message}");
-                }
+                Debug.LogWarning("[DirectVpmInstaller] The install descriptor was kept. Fix the error and retry the import.");
             }
             finally
             {
                 try { InstallerTxn.ClearMarker("scheduled"); } catch { }
-                // Clear coordination markers
-                try { InstallerTxn.ClearMarker("lock"); } catch { }
-                try { InstallerTxn.ClearMarker("pending"); } catch { }
+                if (_unityDependencyRequest == null)
+                {
+                    try { InstallerTxn.ClearMarker("lock"); } catch { }
+                    try { InstallerTxn.ClearMarker("pending"); } catch { }
+                }
             }
         }
-        
+
         private static void EnableBundledPackagesTransactional()
         {
-            var movedFiles = new List<Tuple<string, string>>(); // Track for potential rollback
-            
             try
             {
                 string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
@@ -1695,20 +1764,20 @@ namespace YUCP.DirectVpmInstaller
                     Debug.LogWarning($"[DirectVpmInstaller] Neither Assets nor Packages folders exist under project root: {projectRoot}");
                     return;
                 }
-                
-                // Preflight checks: free space, write permissions
+
+
                 if (!HasSufficientDiskSpace(packagesPath, 100 * 1024 * 1024L))
                     throw new Exception("Insufficient disk space for installation");
                 TestWritePermission(packagesPath);
 
-                // Find all .yucp_disabled files in both Assets and Packages. Main exported assets can land in
-                // Assets/, while bundled local packages land in Packages/.
+
+
                 string[] disabledFiles = scanRoots
                     .SelectMany(root => Directory.GetFiles(root, "*.yucp_disabled", SearchOption.AllDirectories))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray();
                 int discoveredCount = disabledFiles.Length;
-                // Apply ignore patterns if present
+
                 var ignored = LoadInstallerIgnore(packagesPath);
                 if (ignored.Count > 0)
                 {
@@ -1729,7 +1798,7 @@ namespace YUCP.DirectVpmInstaller
                 {
                     Debug.Log($"[DirectVpmInstaller] ...and {disabledFiles.Length - 10} more .yucp_disabled file(s).");
                 }
-                
+
                 foreach (string disabledFile in disabledFiles)
                 {
                     try
@@ -1745,7 +1814,7 @@ namespace YUCP.DirectVpmInstaller
                         InstallerTxn.LogDiagnostic($"Failed to enable {disabledFile}: {fileEx}");
                     }
                 }
-                
+
                 if (enabledCount > 0)
                 {
                     Debug.Log($"[DirectVpmInstaller] Enabled {enabledCount} bundled package file(s).");
@@ -1756,8 +1825,8 @@ namespace YUCP.DirectVpmInstaller
                     ShowDisabledFilesStuckDialog($"YUCP could not enable {failedCount} disabled file(s). The import was rolled back.", failedFiles);
                     throw new Exception($"Failed to enable {failedCount} .yucp_disabled file(s): {string.Join(", ", failedFiles.Take(5))}{(failedFiles.Count > 5 ? " ..." : "")}");
                 }
-                
-                // Final cleanup pass: remove only orphaned .yucp_disabled.meta files and report any remaining disabled assets.
+
+
                 InstallerTxn.CleanupOrphanedDisabledFiles();
 
                 string[] remainingDisabledFiles = scanRoots
@@ -1774,9 +1843,9 @@ namespace YUCP.DirectVpmInstaller
             catch (Exception ex)
             {
                 Debug.LogError($"[DirectVpmInstaller] Critical error enabling bundled packages: {ex.Message}");
-                
-                // Attempt rollback
-                // Rollback handled by caller via InstallerTxn.Rollback()
+
+
+
                 throw;
             }
         }
@@ -1836,68 +1905,31 @@ namespace YUCP.DirectVpmInstaller
 
         private static bool WildcardMatch(string text, string pattern)
         {
-            // Simple wildcard (*) match, case-insensitive
+
             var regex = "^" + System.Text.RegularExpressions.Regex.Escape(pattern).Replace("\\*", ".*") + "$";
             return System.Text.RegularExpressions.Regex.IsMatch(text, regex, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         }
-        
-        // Cleanup moved to InstallerTxn
-        
-        private static void RollbackMovedFiles(List<Tuple<string, string>> movedFiles)
-        {
-            if (movedFiles == null || movedFiles.Count == 0)
-                return;
-            
-            Debug.LogWarning($"[DirectVpmInstaller] Attempting to rollback {movedFiles.Count} moved files...");
-            
-            foreach (var move in movedFiles)
-            {
-                try
-                {
-                    string originalPath = move.Item1; // .yucp_disabled
-                    string newPath = move.Item2;      // enabled path
-                    
-                    if (File.Exists(newPath) && !File.Exists(originalPath))
-                    {
-                        File.Move(newPath, originalPath);
-                        
-                        string newMeta = newPath + ".meta";
-                        string originalMeta = originalPath + ".meta";
-                        if (File.Exists(newMeta))
-                        {
-                            File.Move(newMeta, originalMeta);
-                        }
-                        
-                        Debug.Log($"[DirectVpmInstaller] Rolled back: {Path.GetFileName(originalPath)}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[DirectVpmInstaller] Failed to rollback file: {ex.Message}");
-                }
-            }
-        }
-        
+
         private static void CleanupTemporaryFiles(string packageJsonPath, string disabledFilesContext = null)
         {
             try
             {
-                // Delete the temporary package.json
+
                 if (File.Exists(packageJsonPath))
                 {
                     File.Delete(packageJsonPath);
                     string metaPath = packageJsonPath + ".meta";
                     if (File.Exists(metaPath))
                         File.Delete(metaPath);
-                    
+
                     Debug.Log($"[DirectVpmInstaller] Cleaned up temporary file: {packageJsonPath}");
                 }
-                
-                // Leave generated installer scripts in place until the next domain comes up.
-                // They are responsible for performing the post-reload self-cleanup pass.
-                
-                // Report remaining .yucp_disabled files instead of deleting them blindly. A remaining disabled file
-                // means the installer/resolver could not make a safe enable decision and needs diagnostics.
+
+
+
+
+
+
                 string[] disabledFiles = FindDisabledFilesInProject();
                 if (disabledFiles.Length > 0)
                 {
@@ -1908,12 +1940,11 @@ namespace YUCP.DirectVpmInstaller
                     InstallerTxn.LogDiagnostic($"Remaining .yucp_disabled files after cleanup: {disabledFiles.Length}; context={context}; samples={string.Join(", ", disabledFiles.Take(10))}");
                     ShowDisabledFilesStuckDialog(context, disabledFiles);
                 }
-                
-                // Organize YUCP-generated artifacts (e.g. YUCP_PackageInfo.json) into a local package
-                OrganizeYucpArtifacts();
+
+
                 PruneEmptyInstalledPackageResidue();
-                
-                // Refresh AssetDatabase to reflect file deletions and moves
+
+
                 AssetDatabase.Refresh();
             }
             catch (Exception ex)
@@ -1937,160 +1968,6 @@ namespace YUCP.DirectVpmInstaller
             }
 
             return false;
-        }
-
-        /// <summary>
-        /// Move YUCP-generated artifacts (metadata and helper assets) out of Assets/
-        /// into a dedicated local package under Packages/yucp.installed-packages.
-        /// This runs regardless of whether com.yucp.components is installed.
-        /// </summary>
-        private static void OrganizeYucpArtifacts()
-        {
-            try
-            {
-                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
-                string packagesRoot = Path.Combine(projectRoot, "Packages");
-                string installedRoot = Path.Combine(packagesRoot, "yucp.installed-packages");
-                string exportProfilesDiskPath = Path.Combine(Application.dataPath, "YUCP", "ExportProfiles");
-
-                if (!Directory.Exists(packagesRoot))
-                    Directory.CreateDirectory(packagesRoot);
-                if (!Directory.Exists(installedRoot))
-                    Directory.CreateDirectory(installedRoot);
-
-                // Read package name from YUCP_PackageInfo.json if present
-                string metadataDiskPath = Path.Combine(Application.dataPath, "YUCP_PackageInfo.json");
-                try
-                {
-                    if (Directory.Exists(installedRoot))
-                    {
-                        string[] candidates = Directory.GetFiles(installedRoot, "YUCP_PackageInfo.json", SearchOption.AllDirectories);
-                        if (candidates.Length > 0)
-                            metadataDiskPath = candidates[0];
-                    }
-                }
-                catch { }
-                bool metadataExists = File.Exists(metadataDiskPath);
-                bool metadataAlreadyInInstalled = metadataExists &&
-                    metadataDiskPath.StartsWith(installedRoot, StringComparison.OrdinalIgnoreCase);
-                bool hasExportProfiles = Directory.Exists(exportProfilesDiskPath);
-
-                if (!metadataExists && !hasExportProfiles)
-                {
-                    return;
-                }
-
-                string packageFolderDiskPath = metadataAlreadyInInstalled
-                    ? Path.GetDirectoryName(metadataDiskPath)
-                    : null;
-
-                if (metadataExists && string.IsNullOrEmpty(packageFolderDiskPath))
-                {
-                    string packageFolderName = null;
-                    try
-                    {
-                        string json = File.ReadAllText(metadataDiskPath);
-                        var meta = JsonUtility.FromJson<YucpPackageMetadata>(json);
-                        if (meta != null && !string.IsNullOrEmpty(meta.packageName))
-                        {
-                            packageFolderName = MakeSafeFolderName(meta.packageName);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[DirectVpmInstaller] Failed to read YUCP_PackageInfo.json metadata: {ex.Message}");
-                    }
-                    if (string.IsNullOrEmpty(packageFolderName))
-                    {
-                        packageFolderName = "package-" + Guid.NewGuid().ToString("N");
-                    }
-
-                    packageFolderDiskPath = Path.Combine(installedRoot, packageFolderName);
-                }
-
-                if (string.IsNullOrEmpty(packageFolderDiskPath))
-                {
-                    packageFolderDiskPath = Path.Combine(installedRoot, "package-" + Guid.NewGuid().ToString("N"));
-                }
-
-                if (!Directory.Exists(packageFolderDiskPath))
-                {
-                    Directory.CreateDirectory(packageFolderDiskPath);
-                }
-
-                // Move YUCP_PackageInfo.json into the installed-packages container if it exists (disk-level move)
-                if (metadataExists && !metadataAlreadyInInstalled)
-                {
-                    string targetMetadataDiskPath = Path.Combine(packageFolderDiskPath, "YUCP_PackageInfo.json");
-                    try
-                    {
-                        // Ensure parent exists
-                        Directory.CreateDirectory(Path.GetDirectoryName(targetMetadataDiskPath) ?? packageFolderDiskPath);
-
-                        // Delete existing target if it exists
-                        if (File.Exists(targetMetadataDiskPath))
-                        {
-                            File.Delete(targetMetadataDiskPath);
-                        }
-                        string dstMeta = targetMetadataDiskPath + ".meta";
-                        if (File.Exists(dstMeta))
-                        {
-                            File.Delete(dstMeta);
-                        }
-
-                        // Move JSON
-                        File.Move(metadataDiskPath, targetMetadataDiskPath);
-                        // Move .meta if present
-                        string srcMeta = metadataDiskPath + ".meta";
-                        if (File.Exists(srcMeta))
-                        {
-                            File.Move(srcMeta, dstMeta);
-                        }
-
-                        Debug.Log($"[DirectVpmInstaller] Moved YUCP_PackageInfo.json to '{targetMetadataDiskPath}'");
-                    }
-                    catch (Exception moveEx)
-                    {
-                        Debug.LogWarning($"[DirectVpmInstaller] Failed to move YUCP_PackageInfo.json to installed-packages: {moveEx.Message}");
-                    }
-                }
-
-                // Optionally move YUCP/ExportProfiles into the same container if present (disk-level move).
-                // This keeps exporter profiles from cluttering the Assets root.
-                if (hasExportProfiles)
-                {
-                    string targetProfilesDiskParent = Path.Combine(packageFolderDiskPath, "YUCP");
-                    string targetProfilesDiskPath = Path.Combine(targetProfilesDiskParent, "ExportProfiles");
-                    try
-                    {
-                        Directory.CreateDirectory(targetProfilesDiskParent);
-                        
-                        // Delete existing target directory if it exists
-                        if (Directory.Exists(targetProfilesDiskPath))
-                        {
-                            Directory.Delete(targetProfilesDiskPath, true);
-                        }
-                        // Also delete .meta if present
-                        string targetMeta = targetProfilesDiskPath + ".meta";
-                        if (File.Exists(targetMeta))
-                        {
-                            File.Delete(targetMeta);
-                        }
-                        
-                        Directory.Move(exportProfilesDiskPath, targetProfilesDiskPath);
-
-                        Debug.Log($"[DirectVpmInstaller] Moved ExportProfiles folder to '{targetProfilesDiskPath}'");
-                    }
-                    catch (Exception moveEx)
-                    {
-                        Debug.LogWarning($"[DirectVpmInstaller] Failed to move ExportProfiles folder to installed-packages: {moveEx.Message}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[DirectVpmInstaller] OrganizeYucpArtifacts failed: {ex.Message}");
-            }
         }
 
         private static void PruneEmptyInstalledPackageResidue()
@@ -2125,15 +2002,6 @@ namespace YUCP.DirectVpmInstaller
             }
         }
 
-        [Serializable]
-        private class YucpPackageMetadata
-        {
-            public string packageName;
-            public string version;
-            public string author;
-            public string description;
-        }
-
         /// <summary>
         /// Generate a filesystem-safe folder name from a package name.
         /// </summary>
@@ -2162,7 +2030,7 @@ namespace YUCP.DirectVpmInstaller
                 safe = "package-" + Guid.NewGuid().ToString("N");
             return safe;
         }
-        
+
         private static bool ShouldInstallPackage(string packageName, string versionRequirement, out string warningMessage)
         {
             warningMessage = null;
@@ -2171,6 +2039,13 @@ namespace YUCP.DirectVpmInstaller
                 warningMessage = $"Skipping invalid package name '{packageName}'.";
                 return false;
             }
+
+            var registeredManifests = UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages()
+                .Select(package => Path.Combine(package.resolvedPath, "package.json"));
+            var embeddedManifests = Directory.GetDirectories(GetPackagesRoot())
+                .Select(directory => Path.Combine(directory, "package.json"));
+            if (FindInstalledReplacement(packageName, registeredManifests.Concat(embeddedManifests)) != null)
+                return false;
 
             string installedVersion = GetInstalledPackageVersion(packageName);
             if (string.IsNullOrEmpty(installedVersion))
@@ -2193,6 +2068,31 @@ namespace YUCP.DirectVpmInstaller
             return !VersionSatisfiesRequirement(installedVersion, normalizedRequirement);
         }
 
+        private static string FindInstalledReplacement(string packageName, IEnumerable<string> manifestPaths)
+        {
+            foreach (string path in manifestPaths.Distinct(StringComparer.OrdinalIgnoreCase).Where(File.Exists))
+            {
+                try
+                {
+                    var manifest = JObject.Parse(File.ReadAllText(path));
+                    string name = manifest.Value<string>("name");
+                    if (!IsSafePackageName(name) || string.IsNullOrWhiteSpace(manifest.Value<string>("version")) ||
+                        string.Equals(name, packageName, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    // legacyPackages ya esta integrado en este package: https://vcc.docs.vrchat.com/vpm/packages/#vpm-manifest-additions
+                    if (manifest["legacyPackages"] is JArray legacyPackages && legacyPackages
+                        .Any(legacy => legacy.Type == JTokenType.String && string.Equals((string)legacy, packageName, StringComparison.OrdinalIgnoreCase)))
+                        return name;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[DirectVpmInstaller] Could not read installed package manifest '{path}': {ex.Message}");
+                }
+            }
+            return null;
+        }
+
         private static string GetInstalledPackageVersion(string packageName)
         {
             if (!TryGetInstalledPackageJsonPath(packageName, out string packageJsonPath))
@@ -2210,7 +2110,7 @@ namespace YUCP.DirectVpmInstaller
                 return null;
             }
         }
-        
+
         private static bool InstallPackage(string packageName, string versionRequirement, Dictionary<string, string> repositories, out string friendlyFailureMessage)
         {
             friendlyFailureMessage = null;
@@ -2236,9 +2136,9 @@ namespace YUCP.DirectVpmInstaller
 
                 packageLabel = GetFriendlyPackageLabel(resolution.displayName, packageName);
 
-                // A package that follows the newest build reaches this point even
-                // when nothing changed, so stop before downloading and reloading
-                // the domain over a version the project already has.
+
+
+
                 string alreadyInstalledVersion = GetInstalledPackageVersion(packageName);
                 if (!string.IsNullOrEmpty(alreadyInstalledVersion) &&
                     CompareVersions(alreadyInstalledVersion, resolution.resolvedVersion) >= 0)
@@ -2328,11 +2228,11 @@ namespace YUCP.DirectVpmInstaller
 
                 MoveDirectoryIntoPlace(stagingDirectory, packageDestination);
                 stagingDirectory = null;
-                
-                // Add to VPM manifest so VCC recognizes it as installed
-                // VPM packages from repositories should be in both dependencies and locked
+
+
+
                 AddToVpmManifest(packageName, resolution.resolvedVersion, addToDependencies: true, versionRequirement: versionRequirement);
-                
+
                 Debug.Log($"[DirectVpmInstaller] Installed {packageName}@{resolution.resolvedVersion}");
                 return true;
             }
@@ -2367,28 +2267,28 @@ namespace YUCP.DirectVpmInstaller
                 }
             }
         }
-        
+
         private static void AddToVpmManifest(string packageName, string version, bool addToDependencies = true, string versionRequirement = null)
         {
             try
             {
                 string manifestPath = Path.Combine(Application.dataPath, "..", "Packages", "vpm-manifest.json");
                 JObject manifest;
-                
+
                 if (File.Exists(manifestPath))
                 {
                     manifest = JObject.Parse(File.ReadAllText(manifestPath));
                 }
                 else
                 {
-                    // Create new manifest if it doesn't exist
+
                     manifest = new JObject();
                     manifest["dependencies"] = new JObject();
                     manifest["locked"] = new JObject();
                 }
-                
-                // Add to dependencies section only if this is a VPM package from a repository
-                // Bundled packages (local imports) should NOT be in dependencies
+
+
+
                 if (addToDependencies)
                 {
                     var dependencies = manifest["dependencies"] as JObject;
@@ -2397,10 +2297,10 @@ namespace YUCP.DirectVpmInstaller
                         dependencies = new JObject();
                         manifest["dependencies"] = dependencies;
                     }
-                    // The requirement, not the resolved version: dependencies is
-                    // what the project asks for and locked is what it got. Writing
-                    // the resolved version here turns every install into a pin, so
-                    // the package never moves again.
+
+
+
+
                     dependencies[packageName] = new JObject
                     {
                         ["version"] = string.IsNullOrWhiteSpace(versionRequirement)
@@ -2410,15 +2310,15 @@ namespace YUCP.DirectVpmInstaller
                 }
                 else
                 {
-                    // Remove from dependencies if it exists (bundled packages shouldn't be there)
+
                     var dependencies = manifest["dependencies"] as JObject;
                     if (dependencies != null && dependencies[packageName] != null)
                     {
                         dependencies.Remove(packageName);
                     }
                 }
-                
-                // Always add to locked section (both VPM and bundled packages are installed)
+
+
                 var locked = manifest["locked"] as JObject;
                 if (locked == null)
                 {
@@ -2429,8 +2329,8 @@ namespace YUCP.DirectVpmInstaller
                 {
                     ["version"] = version
                 };
-                
-                // Save manifest
+
+
                 File.WriteAllText(manifestPath, manifest.ToString(Newtonsoft.Json.Formatting.Indented));
                 Debug.Log($"[DirectVpmInstaller] Added {packageName}@{version} to vpm-manifest.json (locked{(addToDependencies ? " + dependencies" : " only")})");
             }
@@ -2439,57 +2339,57 @@ namespace YUCP.DirectVpmInstaller
                 Debug.LogWarning($"[DirectVpmInstaller] Failed to update vpm-manifest.json: {ex.Message}");
             }
         }
-        
+
         private static bool VersionSatisfiesRequirement(string installedVersion, string requirement)
         {
             requirement = NormalizeRequirement(requirement);
 
             if (string.IsNullOrEmpty(requirement) || requirement == "*")
                 return true;
-            
+
             if (requirement.StartsWith(">="))
             {
                 string minVersion = requirement.Substring(2).Trim();
                 return CompareVersions(installedVersion, minVersion) >= 0;
             }
-            
+
             if (requirement.StartsWith("^"))
             {
                 string baseVersion = requirement.Substring(1).Trim();
                 var baseParts = ParseVersion(baseVersion);
                 var installedParts = ParseVersion(installedVersion);
-                
+
                 if (baseParts.major != installedParts.major)
                     return false;
-                
+
                 return CompareVersions(installedVersion, baseVersion) >= 0;
             }
-            
+
             if (requirement.StartsWith("~"))
             {
                 string baseVersion = requirement.Substring(1).Trim();
                 var baseParts = ParseVersion(baseVersion);
                 var installedParts = ParseVersion(installedVersion);
-                
+
                 if (baseParts.major != installedParts.major || baseParts.minor != installedParts.minor)
                     return false;
-                
+
                 return CompareVersions(installedVersion, baseVersion) >= 0;
             }
-            
+
             return CompareVersions(installedVersion, requirement) == 0;
         }
-        
+
         private static int CompareVersions(string version1, string version2)
         {
             var v1 = ParseVersion(version1);
             var v2 = ParseVersion(version2);
-            
+
             if (v1.major != v2.major) return v1.major.CompareTo(v2.major);
             if (v1.minor != v2.minor) return v1.minor.CompareTo(v2.minor);
             return v1.patch.CompareTo(v2.patch);
         }
-        
+
         private static (int major, int minor, int patch) ParseVersion(string version)
         {
             if (string.IsNullOrWhiteSpace(version))
@@ -2499,12 +2399,12 @@ namespace YUCP.DirectVpmInstaller
             int dashIndex = version.IndexOf('-');
             if (dashIndex > 0)
                 version = version.Substring(0, dashIndex);
-            
+
             var parts = version.Split('.');
             int major = parts.Length > 0 ? SafeParseVersionPart(parts[0]) : 0;
             int minor = parts.Length > 1 ? SafeParseVersionPart(parts[1]) : 0;
             int patch = parts.Length > 2 ? SafeParseVersionPart(parts[2]) : 0;
-            
+
             return (major, minor, patch);
         }
 
@@ -2532,15 +2432,15 @@ namespace YUCP.DirectVpmInstaller
         {
             return int.TryParse(value, out int parsed) ? parsed : 0;
         }
-        
+
         private static void CleanupInstallerScript()
         {
             try
             {
-                // Find and delete all YUCP installer scripts
+
                 string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                 int deletedCount = 0;
-                
+
                 foreach (string editorPath in GetInstallerEditorPaths(projectRoot))
                 {
                     if (!Directory.Exists(editorPath))
@@ -2558,7 +2458,7 @@ namespace YUCP.DirectVpmInstaller
                             string metaFile = file + ".meta";
                             if (File.Exists(metaFile))
                                 File.Delete(metaFile);
-                            
+
                             deletedCount++;
                         }
                         catch (Exception ex)
@@ -2569,7 +2469,7 @@ namespace YUCP.DirectVpmInstaller
                 }
 
                 TryDeleteEmptyInstalledPackagesEditorFolder(projectRoot);
-                
+
                 if (deletedCount > 0)
                 {
                     Debug.Log($"[DirectVpmInstaller] Cleaned up {deletedCount} installer script(s) to prevent duplicate assembly errors");
@@ -2638,7 +2538,7 @@ namespace YUCP.DirectVpmInstaller
                     string depName = dep.Name;
                     string versionRequirement = dep.Value.ToString();
 
-                    // Skip if already installed or if the request would require a downgrade.
+
                     if (!ShouldInstallPackage(depName, versionRequirement, out string installWarning))
                     {
                         if (!string.IsNullOrEmpty(installWarning))
@@ -2646,7 +2546,7 @@ namespace YUCP.DirectVpmInstaller
                         continue;
                     }
 
-                    // Skip if we've already planned to install this package
+
                     if (!plannedPackages.Add(depName))
                         continue;
 
@@ -2658,11 +2558,11 @@ namespace YUCP.DirectVpmInstaller
                 Debug.LogWarning($"[DirectVpmInstaller] Failed to read transitive vpmDependencies for {packageName}: {ex.Message}");
             }
         }
-        
-        [MenuItem("Tools/YUCP/Others/Installation/Install VPM Dependencies")]
+
+        [MenuItem("Tools/YUCP/Packages/Install VPM Dependencies")]
         public static void ManualInstallVpmDependencies()
         {
-            CheckAndInstallVpmPackages();
+            ProcessPendingInstall(true);
         }
     }
 }

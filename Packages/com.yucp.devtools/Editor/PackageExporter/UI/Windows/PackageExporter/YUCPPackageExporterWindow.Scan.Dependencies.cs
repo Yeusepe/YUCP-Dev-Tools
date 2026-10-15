@@ -22,29 +22,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 EditorUtility.DisplayProgressBar("Scanning Dependencies", "Finding installed packages...", 0.3f);
             }
-            
+
             try
             {
                 var foundPackages = DependencyScanner.ScanInstalledPackages();
-                
+
                 if (foundPackages.Count == 0)
                 {
                     if (!silent)
                     {
                         EditorUtility.ClearProgressBar();
-                        EditorUtility.DisplayDialog("No Packages Found", 
-                            "No installed packages were found in the project.", 
+                        EditorUtility.DisplayDialog("No Packages Found",
+                            "No installed packages were found in the project.",
                             "OK");
                     }
                     return;
                 }
-                
+
                 if (!silent)
                 {
                     EditorUtility.DisplayProgressBar("Scanning Dependencies", "Processing packages...", 0.6f);
                 }
-                
-                // Preserve existing dependency settings before clearing (including custom/manual entries)
+
+
                 var existingSettings = new Dictionary<string, PackageDependency>(StringComparer.OrdinalIgnoreCase);
                 foreach (var existingDep in profile.dependencies)
                 {
@@ -53,26 +53,25 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         existingSettings[existingDep.packageName] = existingDep;
                     }
                 }
-                
+
                 profile.dependencies.Clear();
-                
-                // Normalize package name for comparison (same normalization as in GeneratePackageJson)
+
+
                 string normalizedPackageName = profile.packageName.ToLower().Replace(" ", ".");
-                
+
                 var dependencies = DependencyScanner.ConvertToPackageDependencies(foundPackages);
                 foreach (var dep in dependencies)
                 {
-                    // Skip the package itself - prevent self-referential dependencies
+
                     if (string.Equals(dep.packageName, normalizedPackageName, StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
-                    
+
                     if (existingSettings.TryGetValue(dep.packageName, out var settings))
                     {
                         dep.enabled = settings.enabled;
                         dep.exportMode = settings.exportMode;
-                        dep.isVpmDependency = settings.isVpmDependency;
                         dep.packageVersion = string.IsNullOrEmpty(dep.packageVersion) ? settings.packageVersion : dep.packageVersion;
                         dep.versionMode = settings.versionMode;
                         dep.specificVersion = string.IsNullOrEmpty(settings.specificVersion) ? dep.packageVersion : settings.specificVersion;
@@ -85,55 +84,50 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                     profile.dependencies.Add(dep);
                 }
-                
-                // Re-add any manual/custom dependencies not found in installed packages
+
+
                 foreach (var existing in existingSettings.Values)
                 {
-                    if (string.IsNullOrEmpty(existing.packageName))
+                    if (string.IsNullOrEmpty(existing.packageName) ||
+                        string.Equals(existing.packageName, normalizedPackageName, StringComparison.OrdinalIgnoreCase))
                         continue;
-                    
+
                     bool exists = profile.dependencies.Any(d =>
                         string.Equals(d.packageName, existing.packageName, StringComparison.OrdinalIgnoreCase));
-                    
+
                     if (!exists)
                     {
                         profile.dependencies.Add(existing);
                     }
                 }
-                
-                if (!profile.dependencies.Any(d => d.packageName == "com.yucp.devtools"))
-                {
-                    var devtoolsDep = new PackageDependency("com.yucp.devtools", "*", "YUCP Dev Tools", false);
-                    profile.dependencies.Add(devtoolsDep);
-                }
-                
+
                 if (!silent)
                 {
                     EditorUtility.DisplayProgressBar("Scanning Dependencies", "Auto-detecting usage...", 0.8f);
                 }
-                
+
                 if (profile.foldersToExport.Count > 0)
                 {
                     DependencyScanner.AutoDetectUsedDependencies(profile);
                 }
-                
+
                 EditorUtility.SetDirty(profile);
-                AssetDatabase.SaveAssets();
-                
+                AssetDatabase.SaveAssetIfDirty(profile);
+
                 if (!silent)
                 {
                     int vpmCount = dependencies.Count(d => d.isVpmDependency);
                     int autoEnabled = dependencies.Count(d => d.enabled);
-                    
+
                     string message = $"Found {dependencies.Count} packages:\n\n" +
                                    $"• {vpmCount} VRChat (VPM) packages\n" +
                                    $"• {dependencies.Count - vpmCount} Unity packages\n" +
                                    $"• {autoEnabled} auto-enabled (detected in use)\n\n" +
                                    "Dependencies detected in your export folders have been automatically enabled.";
-                    
+
                     EditorUtility.DisplayDialog("Scan Complete", message, "OK");
                 }
-                
+
                 UpdateProfileDetails();
             }
             finally
@@ -192,9 +186,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 SyncPermanentIgnoreFolderGuids(profile);
                 EditorUtility.SetDirty(profile);
-                AssetDatabase.SaveAssets();
+                AssetDatabase.SaveAssetIfDirty(profile);
 
-                // Automatically rescan without popup
+
                 ScanAssetsForInspector(profile, silent: true);
             }
             else
@@ -303,8 +297,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 SyncPermanentIgnoreFolderGuids(profile);
                 EditorUtility.SetDirty(profile);
-                AssetDatabase.SaveAssets();
-                                
+                AssetDatabase.SaveAssetIfDirty(profile);
+
                 ScanAssetsForInspector(profile, silent: true);
             }
         }
@@ -392,32 +386,32 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (profile.dependencies.Count == 0)
             {
-                EditorUtility.DisplayDialog("No Dependencies", 
-                    "Scan for installed packages first before auto-detecting.", 
+                EditorUtility.DisplayDialog("No Dependencies",
+                    "Scan for installed packages first before auto-detecting.",
                     "OK");
                 return;
             }
-            
+
             EditorUtility.DisplayProgressBar("Auto-Detecting Dependencies", "Scanning assets...", 0.5f);
-            
+
             try
             {
                 DependencyScanner.AutoDetectUsedDependencies(profile);
-                
+
                 EditorUtility.ClearProgressBar();
-                
+
                 int enabledCount = profile.dependencies.Count(d => d.enabled);
                 int disabledCount = profile.dependencies.Count - enabledCount;
-                
+
                 string message = $"Auto-detection complete!\n\n" +
-                               $"• {enabledCount} dependencies enabled (used in export)\n" +
-                               $"• {disabledCount} dependencies disabled (not used)\n\n" +
+                               $"• {enabledCount} dependencies enabled\n" +
+                               $"• {disabledCount} dependencies disabled\n\n" +
                                "Review the dependency list and adjust as needed.";
-                
+
                 EditorUtility.DisplayDialog("Auto-Detection Complete", message, "OK");
-                
+
                 EditorUtility.SetDirty(profile);
-                AssetDatabase.SaveAssets();
+                AssetDatabase.SaveAssetIfDirty(profile);
                 UpdateProfileDetails();
             }
             finally

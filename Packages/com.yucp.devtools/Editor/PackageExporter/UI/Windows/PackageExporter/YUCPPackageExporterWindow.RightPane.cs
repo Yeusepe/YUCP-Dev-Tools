@@ -458,6 +458,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             // View Options
             menu.AddSeparator("");
+            AddSortMenuItems(menu, "Sort Profiles By/");
             menu.AddItem(new GUIContent("Compact View"), _isCompactMode, ToggleCompactMode);
             menu.AddItem(new GUIContent("Show Help Boxes"), _showInfoHelpBoxes, ToggleShowInfoHelpBoxes);
 

@@ -183,13 +183,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
             Debug.Log($"[YUCP] Created export profile: {assetPath}");
         }
         
-        [MenuItem("Tools/YUCP/Others/Package Exporter/Create Export Profile")]
+        [MenuItem("Tools/YUCP/Package Exporter/Create Export Profile")]
         public static void CreateExportProfileFromMenu()
         {
             CreateExportProfileInternal();
         }
         
-        [MenuItem("Tools/YUCP/Others/Package Exporter/Open Export Profiles Folder")]
+        [MenuItem("Tools/YUCP/Package Exporter/Open Export Profiles Folder")]
         public static void OpenExportProfilesFolder()
         {
             string profilesDir = "Assets/YUCP/ExportProfiles";
@@ -206,7 +206,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             EditorGUIUtility.PingObject(obj);
         }
         
-        [MenuItem("Tools/YUCP/Others/Package Exporter/Check ConfuserEx Installation")]
+        [MenuItem("Tools/YUCP/Package Exporter/Check ConfuserEx Installation")]
         public static void CheckConfuserExInstallation()
         {
             string status = ConfuserExManager.GetStatusInfo();
@@ -264,7 +264,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
-        [MenuItem("Tools/YUCP/Others/Package Exporter/Smart Version Bump/Scan for @bump Directives")]
+        [MenuItem("Tools/YUCP/Package Exporter/Scan Version Bump Directives")]
         public static void ScanProjectForVersionDirectives()
         {
             var stats = ProjectVersionScanner.GetProjectStats();
@@ -285,7 +285,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             );
         }
 
-        [MenuItem("Tools/YUCP/Others/Installation/Open DevTools Listing")]
+        [MenuItem("Tools/YUCP/Package Exporter/Open Listing Website")]
         public static void OpenDevToolsListing()
         {
             YUCPPackageExporterWindow.OpenListingWebsiteWithFocusCallback();

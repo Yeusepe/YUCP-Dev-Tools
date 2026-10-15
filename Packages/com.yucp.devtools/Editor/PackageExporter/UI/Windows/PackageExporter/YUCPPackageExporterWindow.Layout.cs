@@ -32,13 +32,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 root.styleSheets.Add(toastStyle);
             }
             
-            // Load shared design system stylesheet first
-            var sharedStyleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(
-                "Packages/com.yucp.devtools/Editor/Styles/YucpDesignSystem.uss");
-            if (sharedStyleSheet != null)
-            {
-                root.styleSheets.Add(sharedStyleSheet);
-            }
+            // The YUCP design system (com.yucp.ui), then the exporter's own layout
+            YUCP.UI.DesignSystem.Utilities.YUCPUIToolkitHelper.LoadDesignSystemStyles(root);
             
             // Load component-specific stylesheet
             var styleSheet = AssetDatabase.LoadAssetAtPath<StyleSheet>(

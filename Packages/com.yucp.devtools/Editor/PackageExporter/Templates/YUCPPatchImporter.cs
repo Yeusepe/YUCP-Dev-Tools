@@ -2309,7 +2309,7 @@ namespace YUCP.PatchCleanup
             public List<GuidSwapInfo> swaps = new List<GuidSwapInfo>();
         }
 
-        [MenuItem("Tools/YUCP/Others/Utilities/Revert GUID Override")]
+        [MenuItem("Tools/YUCP/Packages/Patches/Revert GUID Override")]
         public static void RevertGuidOverride()
         {
             try

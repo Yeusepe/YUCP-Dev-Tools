@@ -191,12 +191,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             tokenizedTags.SetSelectedTags(profile.GetAllTags());
             
             // Tag Color Changed Handler
-            tokenizedTags.OnTagColorChanged += (tag, color) => 
-            {
-                SetTagColor(tag, color);
-                UpdateProfileList();
-                UpdateProfileDetails(); // Refresh details to show new color in input immediately
-            };
+            // Rebuilding the details panel here would destroy this input (and its open menus) mid-pick.
+            tokenizedTags.OnTagColorChanged += ApplyTagColor;
             
             // Tag Deleted Handler
             tokenizedTags.OnTagDeleted += (tag) => 

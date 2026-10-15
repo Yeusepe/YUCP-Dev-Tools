@@ -19,39 +19,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private void ScanAssetsForInspector(ExportProfile profile, bool silent = false)
         {
             EditorUtility.DisplayProgressBar("Scanning Assets", "Discovering assets from export folders...", 0f);
-            
+
             try
             {
-                var allAssets = new List<DiscoveredAsset>();
-                
-                // Scan parent profile assets
-                var parentAssets = AssetCollector.ScanExportFolders(profile, profile.includeDependencies, profile.packageName);
-                allAssets.AddRange(parentAssets);
-                
-                // Scan bundled profiles if this is a composite profile
-                if (profile.HasIncludedProfiles())
-                {
-                    List<ExportProfile> resolved;
-                    List<string> cycles;
-                    CompositeProfileResolver.ResolveIncludedProfiles(profile, out resolved, out cycles);
-                    
-                    foreach (var bundledProfile in resolved)
-                    {
-                        if (bundledProfile != null)
-                        {
-                            EditorUtility.DisplayProgressBar("Scanning Assets", $"Scanning bundled profile: {bundledProfile.packageName}...", 0.5f);
-                            var bundledAssets = AssetCollector.ScanExportFolders(bundledProfile, bundledProfile.includeDependencies, bundledProfile.packageName);
-                            allAssets.AddRange(bundledAssets);
-                        }
-                    }
-                }
-                
-                AssetCollector.PreserveIncludedState(profile.discoveredAssets, allAssets);
-                profile.discoveredAssets = allAssets;
-                profile.ApplyExcludedPathsToDiscoveredAssets();
-                profile.MarkScanned();
-                EditorUtility.SetDirty(profile);
-                
+                RescanProfileAssets(profile);
+
                 if (!silent)
                 {
                     EditorUtility.DisplayDialog(
@@ -60,7 +32,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         AssetCollector.GetAssetSummary(profile.discoveredAssets),
                         "OK");
                 }
-                
+
                 UpdateProfileDetails();
             }
             catch (Exception ex)
@@ -75,6 +47,87 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 EditorUtility.ClearProgressBar();
             }
+        }
+
+        /// <summary>Re-discovers a profile's assets (including bundled profiles). No UI besides a progress bar.</summary>
+        private static void RescanProfileAssets(ExportProfile profile)
+        {
+            var allAssets = new List<DiscoveredAsset>();
+
+
+            var parentAssets = AssetCollector.ScanExportFolders(profile, profile.includeDependencies, profile.packageName);
+            allAssets.AddRange(parentAssets);
+
+
+            if (profile.HasIncludedProfiles())
+            {
+                List<ExportProfile> resolved;
+                List<string> cycles;
+                CompositeProfileResolver.ResolveIncludedProfiles(profile, out resolved, out cycles);
+
+                foreach (var bundledProfile in resolved)
+                {
+                    if (bundledProfile != null)
+                    {
+                        EditorUtility.DisplayProgressBar("Scanning Assets", $"Scanning bundled profile: {bundledProfile.packageName}...", 0.5f);
+                        var bundledAssets = AssetCollector.ScanExportFolders(bundledProfile, bundledProfile.includeDependencies, bundledProfile.packageName);
+                        allAssets.AddRange(bundledAssets);
+                    }
+                }
+            }
+
+            AssetCollector.PreserveIncludedState(profile.discoveredAssets, allAssets);
+            profile.discoveredAssets = allAssets;
+            profile.ApplyExcludedPathsToDiscoveredAssets();
+            profile.MarkScanned();
+            EditorUtility.SetDirty(profile);
+        }
+
+        /// <summary>Rescans the assets of every given profile that has something to scan.</summary>
+        private void RescanProfiles(IEnumerable<ExportProfile> profiles)
+        {
+            var targets = profiles.Where(ProfileHasContentToScan).ToList();
+            if (targets.Count == 0)
+            {
+                _toast?.ShowInfo("No profiles have folders or bundled profiles to scan.", "Rescan");
+                return;
+            }
+
+            int scanned = 0;
+            var failed = new List<string>();
+            try
+            {
+                foreach (var profile in targets)
+                {
+                    if (EditorUtility.DisplayCancelableProgressBar("Rescanning Profiles",
+                            $"{GetProfileDisplayName(profile)} ({scanned + failed.Count + 1}/{targets.Count})",
+                            (float)(scanned + failed.Count) / targets.Count))
+                        break;
+
+                    try
+                    {
+                        RescanProfileAssets(profile);
+                        scanned++;
+                    }
+                    catch (Exception ex)
+                    {
+                        failed.Add(GetProfileDisplayName(profile));
+                        Debug.LogError($"[Package Exporter] Asset scan failed for '{GetProfileDisplayName(profile)}': {ex.Message}");
+                    }
+                }
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+
+            UpdateProfileList();
+            UpdateProfileDetails();
+
+            if (failed.Count > 0)
+                _toast?.ShowWarning($"Rescanned {scanned} profile(s); {failed.Count} failed: {string.Join(", ", failed)}. See Console.", "Rescan");
+            else
+                _toast?.ShowSuccess($"Rescanned {scanned} of {targets.Count} profile(s).", "Rescan Complete");
         }
 
         private string GetAssetTypeIcon(string assetType)
@@ -102,26 +155,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             string[] sizes = { "B", "KB", "MB", "GB" };
             double len = bytes;
             int order = 0;
-            
+
             while (len >= 1024 && order < sizes.Length - 1)
             {
                 order++;
                 len = len / 1024;
             }
-            
+
             return $"{len:0.##} {sizes[order]}";
         }
 
-        private void ClearAssetScan(ExportProfile profile)
-        {
-            if (EditorUtility.DisplayDialog("Clear Scan", 
-                "Clear all discovered assets and rescan later?", "Clear", "Cancel"))
-            {
-                profile.ClearScan();
-                EditorUtility.SetDirty(profile);
-                UpdateProfileDetails();
-            }
-        }
 
     }
 }

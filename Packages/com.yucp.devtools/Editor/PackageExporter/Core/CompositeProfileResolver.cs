@@ -21,7 +21,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             Missing,
             Cycle
         }
-        
+
         /// <summary>
         /// Resolve all included profiles recursively, detecting cycles.
         /// </summary>
@@ -33,29 +33,29 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             resolved = new List<ExportProfile>();
             cycles = new List<string>();
-            
+
             if (root == null || !root.HasIncludedProfiles())
             {
                 return true;
             }
-            
+
             var visited = new HashSet<ExportProfile>();
             var recursionStack = new HashSet<ExportProfile>();
             var profilePath = new List<string>();
-            
+
             bool hasCycles = false;
             var resolvedList = new List<ExportProfile>();
             var cyclesList = new List<string>();
-            
+
             void ResolveRecursive(ExportProfile profile, List<string> currentPath)
             {
                 if (profile == null)
                     return;
-                
-                // Check for cycle
+
+
                 if (recursionStack.Contains(profile))
                 {
-                    // Found a cycle - build cycle path string
+
                     int cycleStart = currentPath.IndexOf(profile.packageName);
                     if (cycleStart >= 0)
                     {
@@ -69,17 +69,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     hasCycles = true;
                     return;
                 }
-                
-                // Check if already visited (prevents duplicate processing)
+
+
                 if (visited.Contains(profile))
                     return;
-                
-                // Mark as being processed
+
+
                 recursionStack.Add(profile);
                 visited.Add(profile);
                 currentPath.Add(profile.packageName);
-                
-                // Process included profiles
+
+
                 var included = profile.GetIncludedProfiles();
                 foreach (var includedProfile in included)
                 {
@@ -88,18 +88,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         ResolveRecursive(includedProfile, new List<string>(currentPath));
                     }
                 }
-                
-                // Remove from recursion stack
+
+
                 recursionStack.Remove(profile);
-                
-                // Add to resolved list (only if not already there)
+
+
                 if (!resolvedList.Contains(profile))
                 {
                     resolvedList.Add(profile);
                 }
             }
-            
-            // Start resolution from root's included profiles
+
+
             var rootIncluded = root.GetIncludedProfiles();
             foreach (var includedProfile in rootIncluded)
             {
@@ -108,12 +108,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     ResolveRecursive(includedProfile, new List<string> { root.packageName });
                 }
             }
-            
+
             resolved = resolvedList;
             cycles = cyclesList;
             return !hasCycles;
         }
-        
+
         /// <summary>
         /// Merge asset lists from parent and all included profiles.
         /// Applies each profile's ignore rules, then applies parent's exclude rules last.
@@ -126,25 +126,25 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             assetSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var allAssets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            
-            // Collect assets from each included profile
+
+
             foreach (var includedProfile in includedProfiles)
             {
                 if (includedProfile == null)
                     continue;
-                
-                // Use PackageBuilder's method to collect assets (respects profile's ignore rules)
+
+
                 List<string> includedAssets = PackageBuilder.CollectAssetsToExport(includedProfile);
-                
-                // Add to unified list and track source
+
+
                 foreach (string assetPath in includedAssets)
                 {
-                    // Normalize path for comparison
+
                     string normalizedPath = NormalizeAssetPath(assetPath);
-                    
+
                     if (!string.IsNullOrEmpty(normalizedPath))
                     {
-                        // Only add if not already present (parent wins on conflicts)
+
                         if (!allAssets.Contains(normalizedPath))
                         {
                             allAssets.Add(normalizedPath);
@@ -153,22 +153,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
             }
-            
-            // Collect parent profile's assets
+
+
             List<string> parentAssets = PackageBuilder.CollectAssetsToExport(parent);
             foreach (string assetPath in parentAssets)
             {
                 string normalizedPath = NormalizeAssetPath(assetPath);
-                
+
                 if (!string.IsNullOrEmpty(normalizedPath))
                 {
-                    // Parent assets always override included assets
+
                     allAssets.Add(normalizedPath);
                     assetSourceMap[normalizedPath] = parent.packageName;
                 }
             }
-            
-            // Apply parent's exclude rules LAST (so parent can override included profiles)
+
+
             var finalAssets = new List<string>();
             foreach (string assetPath in allAssets)
             {
@@ -177,10 +177,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     finalAssets.Add(assetPath);
                 }
             }
-            
+
             return finalAssets;
         }
-        
+
         /// <summary>
         /// Detect asset conflicts (same asset in multiple profiles)
         /// </summary>
@@ -191,21 +191,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var conflicts = new List<string>();
             var assetCounts = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            
-            // Count occurrences of each asset
+
+
             foreach (var kvp in sourceMap)
             {
                 string assetPath = kvp.Key;
                 string sourceProfile = kvp.Value;
-                
+
                 if (!assetCounts.ContainsKey(assetPath))
                 {
                     assetCounts[assetPath] = new List<string>();
                 }
                 assetCounts[assetPath].Add(sourceProfile);
             }
-            
-            // Find conflicts (assets in multiple profiles)
+
+
             foreach (var kvp in assetCounts)
             {
                 if (kvp.Value.Count > 1)
@@ -213,10 +213,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     conflicts.Add($"{kvp.Key} appears in: {string.Join(", ", kvp.Value)}");
                 }
             }
-            
+
             return conflicts;
         }
-        
+
         /// <summary>
         /// Validate included profiles for a given profile
         /// </summary>
@@ -226,13 +226,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
         public static bool ValidateIncludedProfiles(ExportProfile profile, out List<string> errors)
         {
             errors = new List<string>();
-            
+
             if (profile == null || !profile.HasIncludedProfiles())
             {
                 return true;
             }
-            
-            // Check for cycles
+
+
             List<ExportProfile> resolved;
             List<string> cycles;
             if (!ResolveIncludedProfiles(profile, out resolved, out cycles))
@@ -242,118 +242,39 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     errors.Add($"Cycle detected: {cycle}");
                 }
             }
-            
-            // Check for missing profiles
-            var includedGuids = profile.GetIncludedProfiles();
-            var allProfiles = GetAllExportProfiles();
-            var missingProfiles = new List<string>();
-            
-            // Check for missing profiles by comparing resolved profiles with GUIDs
-            var resolvedProfiles = profile.GetIncludedProfiles();
-            var resolvedGuids = new HashSet<string>();
-            foreach (var resolvedProfile in resolvedProfiles)
+
+            var includedProfiles = profile.GetIncludedProfiles();
+            int missing = 0;
+            using (var serialized = new SerializedObject(profile))
             {
-                if (resolvedProfile != null)
+                var guids = serialized.FindProperty("includedProfileGuids");
+                for (int i = 0; i < guids.arraySize; i++)
                 {
-                    string guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(resolvedProfile));
-                    if (!string.IsNullOrEmpty(guid))
-                    {
-                        resolvedGuids.Add(guid);
-                    }
+                    string guid = guids.GetArrayElementAtIndex(i).stringValue;
+                    if (!string.IsNullOrEmpty(guid) &&
+                        AssetDatabase.LoadAssetAtPath<ExportProfile>(AssetDatabase.GUIDToAssetPath(guid)) == null)
+                        missing++;
                 }
             }
-            
-            // Get GUIDs from profile using reflection
-            var profileType = typeof(ExportProfile);
-            var guidField = profileType.GetField("includedProfileGuids", 
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            
-            if (guidField != null)
-            {
-                var guids = guidField.GetValue(profile) as List<string>;
-                if (guids != null)
-                {
-                    foreach (string guid in guids)
-                    {
-                        if (string.IsNullOrEmpty(guid))
-                            continue;
-                        
-                        if (!resolvedGuids.Contains(guid))
-                        {
-                            missingProfiles.Add(guid);
-                        }
-                    }
-                }
-            }
-            
-            if (missingProfiles.Count > 0)
-            {
-                errors.Add($"{missingProfiles.Count} included profile(s) are missing or deleted");
-            }
-            
-            // Check for included profiles with validation errors
-            foreach (var includedProfile in includedGuids)
+            if (missing > 0)
+                errors.Add($"{missing} included profile(s) are missing or deleted");
+
+
+            foreach (var includedProfile in includedProfiles)
             {
                 if (includedProfile == null)
                     continue;
-                
+
                 if (!includedProfile.Validate(out string validationError))
                 {
                     errors.Add($"Included profile '{includedProfile.packageName}' has errors: {validationError}");
                 }
             }
-            
+
             return errors.Count == 0;
         }
 
-        private static bool ValidateProfileGraph(
-            ExportProfile root,
-            Func<ExportProfile, List<ExportProfile>> getChildren,
-            string relationshipName,
-            out List<string> errors)
-        {
-            var collectedErrors = new List<string>();
-            if (root == null || getChildren == null)
-            {
-                errors = collectedErrors;
-                return true;
-            }
 
-            var visited = new HashSet<ExportProfile>();
-            var recursionStack = new HashSet<ExportProfile>();
-            var currentPath = new List<string>();
-
-            void Walk(ExportProfile profile)
-            {
-                if (profile == null)
-                    return;
-
-                if (recursionStack.Contains(profile))
-                {
-                    currentPath.Add(profile.packageName);
-                    collectedErrors.Add($"Cycle detected in {relationshipName} profiles: {string.Join(" → ", currentPath)}");
-                    currentPath.RemoveAt(currentPath.Count - 1);
-                    return;
-                }
-
-                if (!visited.Add(profile))
-                    return;
-
-                recursionStack.Add(profile);
-                currentPath.Add(profile.packageName);
-
-                foreach (var child in getChildren(profile) ?? new List<ExportProfile>())
-                    Walk(child);
-
-                currentPath.RemoveAt(currentPath.Count - 1);
-                recursionStack.Remove(profile);
-            }
-
-            Walk(root);
-            errors = collectedErrors;
-            return collectedErrors.Count == 0;
-        }
-        
         /// <summary>
         /// Get status of a profile (for UI display)
         /// </summary>
@@ -361,19 +282,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (profile == null)
                 return ProfileStatus.Missing;
-            
-            // Check if profile exists
+
+
             string assetPath = AssetDatabase.GetAssetPath(profile);
             if (string.IsNullOrEmpty(assetPath))
                 return ProfileStatus.Missing;
-            
-            // Check for validation errors
+
+
             if (!profile.Validate(out _))
                 return ProfileStatus.HasErrors;
-            
+
             return ProfileStatus.Valid;
         }
-        
+
         /// <summary>
         /// Check if adding a profile would create a cycle
         /// </summary>
@@ -381,23 +302,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (parent == null || candidate == null)
                 return false;
-            
-            // If candidate is the parent, it's a direct cycle
+
+
             if (parent == candidate)
                 return true;
-            
-            // Check if candidate includes parent (directly or indirectly)
+
+
             List<ExportProfile> resolved;
             List<string> cycles;
-            
-            // Temporarily add candidate to parent and check for cycles
+
+
             parent.AddIncludedProfile(candidate);
             bool hasCycle = !ResolveIncludedProfiles(parent, out resolved, out cycles);
             parent.RemoveIncludedProfile(candidate);
-            
+
             return hasCycle;
         }
-        
+
         /// <summary>
         /// Get all export profiles in the project
         /// </summary>
@@ -405,7 +326,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             string[] guids = AssetDatabase.FindAssets("t:ExportProfile");
             var profiles = new List<ExportProfile>();
-            
+
             foreach (string guid in guids)
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
@@ -415,10 +336,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     profiles.Add(profile);
                 }
             }
-            
+
             return profiles;
         }
-        
+
         /// <summary>
         /// Normalize asset path for comparison (handles both Unity-relative and full paths)
         /// </summary>
@@ -426,17 +347,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (string.IsNullOrEmpty(assetPath))
                 return assetPath;
-            
-            // If already Unity-relative, return as-is
+
+
             if (assetPath.StartsWith("Assets/") || assetPath.StartsWith("Packages/"))
             {
                 return assetPath.Replace('\\', '/');
             }
-            
-            // Convert full path to Unity-relative if possible
+
+
             string projectPath = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, ".."));
             string fullPath = System.IO.Path.GetFullPath(assetPath);
-            
+
             if (fullPath.StartsWith(projectPath, StringComparison.OrdinalIgnoreCase))
             {
                 string relative = fullPath.Substring(projectPath.Length);
@@ -446,8 +367,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
                 return relative.Replace('\\', '/');
             }
-            
-            // Return normalized full path
+
+
             return fullPath.Replace('\\', '/');
         }
     }

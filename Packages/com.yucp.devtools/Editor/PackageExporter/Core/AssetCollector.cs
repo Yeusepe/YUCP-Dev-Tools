@@ -160,7 +160,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             
             // Use Unity's AssetDatabase to get dependencies
             var allDependencies = new HashSet<string>();
-            
+            var exportedPackages = GetExportedPackageNames(profile);
+
             foreach (string assetPath in directAssets)
             {
                 try
@@ -191,6 +192,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         
                         // Skip if in an ignored folder - check before adding
                         if (ShouldIgnoreFile(fullDepPath, profile))
+                            continue;
+
+                        // Skip files owned by other installed packages (e.g. VRCSDK3A.dll) unless the profile opts in
+                        if (GetSkippedPackageName(dep, profile, exportedPackages) != null)
                             continue;
 
                         // If dependency is inside an export folder, treat it as direct (not dependency)
@@ -337,7 +342,57 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             return null;
         }
-        
+
+        /// <summary>
+        /// Name of the package a path lives in ("Packages/com.vrchat.avatars/..." -> "com.vrchat.avatars"),
+        /// or null for project assets. Accepts Unity paths or full paths (including Library/PackageCache).
+        /// </summary>
+        public static string GetPackageNameForPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return null;
+
+            string unityPath = Path.IsPathRooted(path) ? GetUnityPathFromFullPath(path) : path.Replace("\\", "/");
+            if (unityPath == null || !unityPath.StartsWith("Packages/", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            string rest = unityPath.Substring("Packages/".Length);
+            int slash = rest.IndexOf('/');
+            string name = slash < 0 ? rest : rest.Substring(0, slash);
+            return name.Length > 0 ? name : null;
+        }
+
+        /// <summary>Packages the profile exports from itself, plus YUCP's injected runtime. Their files are never skipped.</summary>
+        public static HashSet<string> GetExportedPackageNames(ExportProfile profile)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "com.yucp.temp" };
+            if (profile?.foldersToExport != null)
+            {
+                foreach (string folder in profile.foldersToExport)
+                {
+                    string name = GetPackageNameForPath(folder);
+                    if (name != null)
+                        names.Add(name);
+                }
+            }
+            return names;
+        }
+
+        /// <summary>
+        /// Package a dependency belongs to when it must not be bundled: it lives in another installed package
+        /// (VPM/UPM, e.g. the VRChat SDK) that this profile doesn't export. A loose copy overwrites the buyer's own,
+        /// possibly newer, version of that package. Returns null when the dependency can be bundled, which is
+        /// always the case once the profile opts in with <see cref="ExportProfile.bundleInstalledPackageFiles"/>.
+        /// </summary>
+        public static string GetSkippedPackageName(string dependencyPath, ExportProfile profile, ICollection<string> exportedPackages)
+        {
+            if (profile != null && profile.bundleInstalledPackageFiles)
+                return null;
+
+            string name = GetPackageNameForPath(dependencyPath);
+            return name != null && !exportedPackages.Contains(name) ? name : null;
+        }
+
         /// <summary>
         /// Check if a folder should be ignored (public method for use by PackageBuilder and others)
         /// </summary>

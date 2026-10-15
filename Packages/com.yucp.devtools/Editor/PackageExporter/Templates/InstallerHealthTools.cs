@@ -10,14 +10,14 @@ namespace YUCP.DirectVpmInstaller
 {
     internal static class InstallerHealthTools
     {
-        [MenuItem("Tools/YUCP/Others/Installation/Validate Install")] 
+        [MenuItem("Tools/YUCP/Packages/Validate Install")]
         private static void ValidateInstall()
         {
             var report = BuildReport(dryRun: true);
             EditorUtility.DisplayDialog("YUCP Validate Install", report, "OK");
         }
 
-        [MenuItem("Tools/YUCP/Others/Installation/Repair Install")] 
+        [MenuItem("Tools/YUCP/Packages/Repair Install")]
         private static void RepairInstall()
         {
             var report = BuildReport(dryRun: false);
@@ -25,7 +25,7 @@ namespace YUCP.DirectVpmInstaller
             AssetDatabase.Refresh();
         }
 
-        [MenuItem("Tools/YUCP/Others/Installation/Clean Import Artifacts")]
+        [MenuItem("Tools/YUCP/Packages/Clean Import Artifacts")]
         private static void CleanImportArtifacts()
         {
             int cleanedCount = 0;
@@ -157,7 +157,7 @@ namespace YUCP.DirectVpmInstaller
             }
         }
 
-        [MenuItem("Tools/YUCP/Others/Installation/Fix Self Referencing Dependency")]
+        [MenuItem("Tools/YUCP/Packages/Fix Self Referencing Dependency")]
         private static void FixSelfReferencingDependency()
         {
             int fixedCount = 0;

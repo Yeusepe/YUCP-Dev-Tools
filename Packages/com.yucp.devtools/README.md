@@ -1,6 +1,6 @@
 # YUCP DevTools
 
-Development tools for YUCP package creators and avatar variant management.
+Development tools for YUCP package creators.
 
 ![YUCP DevTools](Website/banner.png)
 
@@ -77,41 +77,8 @@ Development tools for YUCP package creators and avatar variant management.
 #### Templates & Utilities
 - **Export Profile Templates** - Pre-configured templates for quick setup
 - **Direct VPM Installer** - Install VPM dependencies directly from packages
-- **AutoFinalize System** - Automatic editor refresh after compilation
 - **Backup System** - Automatic prefab backup before patch application
 - **Installation Health Tools** - Validate, repair, and clean installation artifacts
-
-### Model Revision Manager (Beta)
-
-#### Variant Management
-- **ModelRevisionBase** - Central configuration for managing avatar variants
-- **ModelRevisionVariant Component** - Component-based variant tracking
-- **Variant Registration** - Register and manage multiple variants from a single base
-- **Variant Status Tracking** - Track sync status (Synced, HasOverrides, HasConflicts, OutOfSync)
-
-#### Transfer Systems
-- **Blendshape Transfer** - Automatically transfer blendshapes between model revisions
-- **Bone Mapping** - Intelligent bone path resolution across variants
-- **Component Transfers** - Transfer components between variants with path resolution
-- **Animation Remapping** - Optional animation curve remapping between variants
-- **Avatar Descriptor Sync** - Synchronize Avatar Descriptor settings
-
-#### Override System
-- **Per-Variant Overrides** - Material, mesh, and component overrides per variant
-- **Manual Overrides** - Mark components as manual overrides
-- **Variant-Specific Mappings** - Override base mappings per variant
-- **Transfer Direction Control** - Configure send/receive transfer settings per variant
-
-#### Build-Time Processing
-- **VRCFury Integration** - Automatic build-time processing with VRCFury actions
-- **Bone Path Resolution** - Automatic bone path resolution during build
-- **Conflict Detection** - Detection and logging of transfer conflicts
-- **Transfer History** - Maintain transfer reports and history
-
-#### Visual Tools
-- **Model Revision Wizard** - Visual wizard for setup and configuration
-- **Tree View Inspector** - Visual tree view of all variants and configurations
-- **Validation System** - Validate variant configurations before processing
 
 ### Texture Array Builder
 
@@ -157,24 +124,26 @@ Development tools for YUCP package creators and avatar variant management.
 
 1. Add this VPM repository to your VRChat Creator Companion:
    ```
-   https://dev.vpm.yucp.club/index.json
+   https://vpm.yucp.club/index.json
    ```
 
 2. Open your project in VCC
 3. Click "Manage Project"
 4. Find "YUCP DevTools" and click "+" to install
-5. YUCP Components will be installed automatically as a dependency
+5. YUCP Components, YUCP UI, and YUCP Motion will be installed automatically as dependencies
 
 ### Manual Installation
 
 1. Download the latest `.unitypackage` from [Releases](https://github.com/Yeusepe/YUCP-Dev-Tools/releases)
 2. Import into your Unity project
-3. Install [YUCP Components](https://vpm.yucp.club) as a dependency
+3. Install [YUCP Components and YUCP UI](https://vpm.yucp.club/) and [YUCP Motion](https://dev.vpm.yucp.club/) as dependencies
 
 ## Requirements
 
 - Unity 2022.3 or later
-- [YUCP Components](https://vpm.yucp.club) >= 0.2.9 (automatically installed via VPM)
+- [YUCP Components](https://vpm.yucp.club) >= 0.3.45 (automatically installed via VPM)
+- [YUCP UI](https://vpm.yucp.club/) >= 0.1.0 (automatically installed via VPM)
+- [YUCP Motion](https://dev.vpm.yucp.club/) >= 0.1.0 (automatically installed via VPM)
 - VRChat SDK3 Avatars (automatically installed via VPM)
 - VRCFury
 
@@ -214,19 +183,6 @@ Development tools for YUCP package creators and avatar variant management.
 - `Ctrl/Cmd+F` - Focus search
 - `F5` - Refresh profiles
 
-### Model Revision Manager
-
-#### Quick Start
-1. Create a ModelRevisionBase: `Assets > Create > YUCP > Model Revision Base`
-2. Assign the base prefab
-3. Add ModelRevisionVariant component to avatar variant prefabs
-4. Configure blendshape and component mappings in the base
-5. Open manager: `Tools > YUCP > Others > Development > Model Revision Manager`
-6. Build your avatar - transfers process automatically at build time
-
-#### Wizard
-The Model Revision Wizard provides a guided setup process for configuring variants.
-
 ### Texture Array Builder
 
 #### Quick Start
@@ -243,7 +199,6 @@ For detailed documentation:
 - **Custom Version Rules**: See `/Editor/PackageExporter/CUSTOM_VERSION_RULES.md`
 - **CLI & GitHub Actions**: See `/Editor/PackageExporter/CLI-and-GitHub-Actions.md`
 - **Version Rule Examples**: See `/Editor/PackageExporter/Examples/README.md`
-- **Model Revision Manager**: See component tooltips and inline help
 - **YUCP Components**: https://github.com/Yeusepe/YUCP-Components
 
 ## Support

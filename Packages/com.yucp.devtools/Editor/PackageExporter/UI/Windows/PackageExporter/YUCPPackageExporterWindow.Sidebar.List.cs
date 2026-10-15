@@ -40,21 +40,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void UpdateHeaderButtons()
         {
-            // Find and update sort button
-            var sortButton = rootVisualElement.Q<Button>(className: "yucp-btn-outline");
-            if (sortButton != null)
-            {
-                var label = sortButton.Q<Label>(className: "yucp-sort-label");
-                if (label != null)
-                {
-                    label.text = GetSortLabel(currentSortOption);
-                }
-                
-                if (currentSortOption != ProfileSortOption.Custom)
-                    sortButton.AddToClassList("active");
-                else
-                    sortButton.RemoveFromClassList("active");
-            }
+            // Main and overlay sidebars each have one
+            rootVisualElement.Query<Button>("profile-sort-button").ForEach(UpdateSortButton);
         }
 
         private void RefreshSearchOptions(YUCP.DevTools.Editor.PackageExporter.UI.Components.TokenizedSearchField field)
@@ -124,192 +111,135 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             
             field.SetAvailableOptions(options);
+            field.RefreshChips(); // picks up tag recolors
+        }
+
+        /// <summary>
+        /// allProfiles indices in the order they are on screen (collapsed folders excluded).
+        /// Keyboard navigation and range selection walk this, not allProfiles.
+        /// </summary>
+        private List<int> _displayedProfileIndices = new List<int>();
+
+        /// <summary>Search text, tag and folder filters. "-text" and "-Tag" exclude instead of include.</summary>
+        private bool ProfileMatchesFilters(ExportProfile profile)
+        {
+            string text = (_currentSearchText ?? "").Trim();
+            bool excludeText = text.StartsWith("-");
+            if (excludeText) text = text.Substring(1);
+            if (text.Length > 0 &&
+                (GetProfileDisplayName(profile).IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0) == excludeText)
+                return false;
+
+            var profileTags = profile.GetAllTags();
+            var includeTags = selectedFilterTags.Where(t => !t.StartsWith("-")).ToList();
+            if (includeTags.Count > 0 && !includeTags.Any(profileTags.Contains))
+                return false;
+            if (selectedFilterTags.Any(t => t.StartsWith("-") && profileTags.Contains(t.Substring(1))))
+                return false;
+
+            return string.IsNullOrEmpty(selectedFilterFolder) || profile.folderName == selectedFilterFolder;
+        }
+
+        private bool IsInProjectFolder(ExportProfile profile)
+        {
+            return !string.IsNullOrEmpty(profile.folderName) && projectFolders.Contains(profile.folderName);
+        }
+
+        private static string GetProfileGuid(ExportProfile profile)
+        {
+            return AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(profile));
         }
 
         private void RenderProfileListWithFolders(VisualElement container, string searchText)
         {
             if (container == null) return;
             container.Clear();
-            
+
             bool hasSearchFilter = !string.IsNullOrWhiteSpace(searchText);
-            
-            // Ensure unified order is up to date
-            ValidateAndCleanUnifiedOrder();
-            
-            // Apply filters and sorting to profiles
-            var filteredProfiles = allProfiles.AsEnumerable();
-            
-            // Apply search filter
-            if (hasSearchFilter)
+            bool hasAnyFilter = hasSearchFilter || selectedFilterTags.Count > 0 || !string.IsNullOrEmpty(selectedFilterFolder);
+            var displayed = new List<int>();
+
+            void AddProfileItem(VisualElement parent, ExportProfile profile)
             {
-                filteredProfiles = filteredProfiles.Where(p => 
-                    GetProfileDisplayName(p).ToLowerInvariant().Contains(searchText.ToLowerInvariant()));
-            }
-            
-            // Apply tag filter
-            if (selectedFilterTags.Count > 0)
-            {
-                filteredProfiles = filteredProfiles.Where(p => 
-                {
-                    var profileTags = p.GetAllTags();
-                    return selectedFilterTags.Any(tag => profileTags.Contains(tag));
-                });
-            }
-            
-            // Apply folder filter
-            if (!string.IsNullOrEmpty(selectedFilterFolder))
-            {
-                filteredProfiles = filteredProfiles.Where(p => p.folderName == selectedFilterFolder);
-            }
-            
-            // Apply sorting
-            filteredProfiles = SortProfiles(filteredProfiles.ToList(), currentSortOption);
-            
-            // Rebuild folder structure with filtered and sorted profiles
-            var profileGuidToProfile = filteredProfiles.ToDictionary(
-                p => AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(p)),
-                p => p
-            );
-            
-            // If we are sorting by anything other than default Custom/Manual, 
-            // OR if we have a search query, we should probably render a Flat List to respect the sort order/search results.
-            // UnifiedOrder enforces manual positioning which conflicts with dynamic sorting.
-            
-            bool isCustomSort = currentSortOption != ProfileSortOption.Custom;
-            
-            if (isCustomSort)
-            {
-                // RENDER FLAT LIST (Respects Sort)
-                // Just render all filtered profiles in order
-                int index = 0;
-                foreach (var profile in filteredProfiles)
-                {
-                    var item = CreateProfileItem(profile, index); 
-                    if (item != null)
-                    {
-                        container.Add(item);
-                        
-                        // Add gap for drag and drop (though drag drop might be disabled in this mode)
-                        var gap = new VisualElement();
-                        gap.AddToClassList("yucp-list-gap");
-                        container.Add(gap);
-                    }
-                    index++;
-                }
-                
-                // If empty
-                if (!filteredProfiles.Any())
-                {
-                   // Container empty, maybe show 'No results' but empty state is handled by parent if needed, 
-                   // or we just leave it empty.
-                }
-                
-                return; // Done
+                int index = allProfiles.IndexOf(profile);
+                parent.Add(CreateProfileItem(profile, index));
+                displayed.Add(index);
             }
 
-            // DEFAULT: Render Unified Order (Folders + Manual Sort)
-            
-            var folderToProfiles = filteredProfiles
-                .Where(p => !string.IsNullOrEmpty(p.folderName) && projectFolders.Contains(p.folderName))
-                .GroupBy(p => p.folderName)
-                .ToDictionary(g => g.Key, g => g.ToList());
-            
-            // Build filtered unified order
-            var filteredUnifiedOrder = new List<UnifiedOrderItem>();
-            foreach (var orderItem in unifiedOrder)
+            // Ensure unified order is up to date
+            ValidateAndCleanUnifiedOrder();
+
+            // Apply filters and sorting to profiles
+            var filteredProfiles = SortProfiles(allProfiles.Where(ProfileMatchesFilters).ToList(), currentSortOption);
+
+            // Any sort other than Custom renders a flat list, since unifiedOrder's manual
+            // positioning (and folders) would conflict with it.
+            if (currentSortOption != ProfileSortOption.Custom)
             {
-                if (orderItem.isFolder)
+                foreach (var profile in filteredProfiles)
                 {
-                    // Only include folder if it has filtered profiles
-                    if (folderToProfiles.ContainsKey(orderItem.identifier) && 
-                        folderToProfiles[orderItem.identifier].Count > 0)
-                    {
-                        filteredUnifiedOrder.Add(orderItem);
-                    }
-                }
-                else
-                {
-                    // Only include profile if it's in the filtered list
-                    if (profileGuidToProfile.ContainsKey(orderItem.identifier))
-                    {
-                        filteredUnifiedOrder.Add(orderItem);
-                    }
+                    AddProfileItem(container, profile);
+
+                    var gap = new VisualElement();
+                    gap.AddToClassList("yucp-list-gap");
+                    container.Add(gap);
                 }
             }
-            
-            // Track what we've rendered to avoid duplicates
-            var renderedProfiles = new HashSet<ExportProfile>();
-            var renderedFolders = new HashSet<string>();
-            
-            // Render items in filtered unified order
-            foreach (var orderItem in filteredUnifiedOrder)
+            else
             {
-                if (orderItem.isFolder)
+                // DEFAULT: Render Unified Order (Folders + Manual Sort)
+                var profileGuidToProfile = filteredProfiles.ToDictionary(GetProfileGuid, p => p);
+                var folderToProfiles = filteredProfiles
+                    .Where(IsInProjectFolder)
+                    .GroupBy(p => p.folderName)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                foreach (var orderItem in unifiedOrder)
                 {
-                    // Render folder
-                    string folderName = orderItem.identifier;
-                    
-                    if (!projectFolders.Contains(folderName))
-                        continue; // Skip invalid folders
-                    
-                    // Get profiles in this folder (already filtered and sorted)
-                    var folderProfiles = folderToProfiles.TryGetValue(folderName, out var profiles) 
-                        ? profiles 
-                        : new List<ExportProfile>();
-                    
-                    // Skip if no matching profiles
-                    if (folderProfiles.Count == 0)
-                        continue;
-                    
-                    // Create folder header
-                    var folderHeader = CreateFolderHeader(folderName, folderProfiles.Count);
-                    container.Add(folderHeader);
-                    renderedFolders.Add(folderName);
-                    
-                    // Render profiles in folder if not collapsed (or if searching)
-                    if (!collapsedFolders.Contains(folderName) || hasSearchFilter)
+                    if (orderItem.isFolder)
                     {
-                        var folderContent = new VisualElement();
-                        folderContent.AddToClassList("yucp-folder-content");
-                        
-                        foreach (var profile in folderProfiles)
+                        string folderName = orderItem.identifier;
+                        if (!projectFolders.Contains(folderName))
+                            continue;
+
+                        var folderProfiles = folderToProfiles.TryGetValue(folderName, out var profiles)
+                            ? profiles
+                            : new List<ExportProfile>();
+
+                        // Empty folders stay visible (so new folders show up), unless a filter hides their contents
+                        if (folderProfiles.Count == 0 && hasAnyFilter)
+                            continue;
+
+                        container.Add(CreateFolderHeader(folderName, folderProfiles.Count));
+
+                        // Render profiles in folder if not collapsed (or if searching)
+                        if (!collapsedFolders.Contains(folderName) || hasSearchFilter)
                         {
-                            var item = CreateProfileItem(profile, allProfiles.IndexOf(profile));
-                            folderContent.Add(item);
-                            renderedProfiles.Add(profile);
+                            var folderContent = new VisualElement();
+                            folderContent.AddToClassList("yucp-folder-content");
+                            foreach (var profile in folderProfiles)
+                            {
+                                AddProfileItem(folderContent, profile);
+                            }
+                            container.Add(folderContent);
                         }
-                        container.Add(folderContent);
                     }
-                }
-                else
-                {
-                    // Render profile (only if not in a folder that's already rendered)
-                    if (profileGuidToProfile.TryGetValue(orderItem.identifier, out var profile))
+                    else if (profileGuidToProfile.TryGetValue(orderItem.identifier, out var profile) && !IsInProjectFolder(profile))
                     {
-                        // Skip if already rendered (in a folder)
-                        if (renderedProfiles.Contains(profile))
-                            continue;
-                        
-                        // Skip if in a folder (folders handle their own profiles)
-                        if (!string.IsNullOrEmpty(profile.folderName) && projectFolders.Contains(profile.folderName))
-                            continue;
-                        
-                        // Profile is already filtered, no need to check again
-                        
-                        var item = CreateProfileItem(profile, allProfiles.IndexOf(profile));
-                        container.Add(item);
-                        renderedProfiles.Add(profile);
+                        AddProfileItem(container, profile);
                     }
                 }
             }
-            
+
+            _displayedProfileIndices = displayed;
+
             // Check if we have any items to show
             if (container.childCount == 0)
             {
                 string emptyMessage = "No profiles found";
-                if (hasSearchFilter || selectedFilterTags.Count > 0 || !string.IsNullOrEmpty(selectedFilterFolder))
+                if (hasAnyFilter)
                     emptyMessage = "No profiles match your filters";
-                
+
                 var emptyLabel = new Label(emptyMessage);
                 emptyLabel.AddToClassList("yucp-label-secondary");
                 emptyLabel.style.unityTextAlign = TextAnchor.MiddleCenter;

@@ -10,7 +10,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
 	/// <summary>
 	/// Generates binary diff patches (.hdiff files) from Base (v1) vs Modified (v2) FBX.
-	/// Adapted from CocoTools approach: https://github.com/coco1337/CocoTools
+	/// Adapted from CocoTools approach: https:
 	/// </summary>
 	public static class PatchBuilder
 	{
@@ -18,7 +18,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 		{
 			public PatchPackage patch;
 			public List<UnityEngine.Object> generatedSidecars = new List<UnityEngine.Object>();
-			public List<string> generatedSidecarPaths = new List<string>(); // Store paths explicitly
+			public List<string> generatedSidecarPaths = new List<string>();
 		}
 
 		public static BuildResult Build(string baseFbxPath, string modifiedFbxPath, PatchPackage.Policy policy, PatchPackage.UIHints hints, PatchPackage.SeedMaps seeds)
@@ -35,11 +35,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 			var result = new BuildResult { patch = patch };
 
-			// Load meshes for both FBXs
+
 			var baseMeshes = LoadMeshesByName(baseFbxPath);
 			var modMeshes = LoadMeshesByName(modifiedFbxPath);
 
-			// Mesh deltas (same name, same vertex count)
+
 			foreach (var kvp in map.meshMap)
 			{
 				if (!baseMeshes.TryGetValue(kvp.Key, out var baseMesh) || !modMeshes.TryGetValue(kvp.Value, out var modMesh))
@@ -88,7 +88,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					patch.ops.Add(op);
 				}
 
-				// UV channels: if modified has extra channel, capture it (simple MVP)
+
 				int baseUvChannels = CountUvChannels(baseMesh);
 				int modUvChannels = CountUvChannels(modMesh);
 				for (int ch = 0; ch < 8; ch++)
@@ -118,7 +118,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					}
 				}
 
-				// Blendshape scale or frame synthesis (simple: if bs exists in both, record scale 1; if only in modified, capture frame at 100 weight from modified)
+
 				var baseBs = GetBlendshapeSet(baseMesh);
 				var modBs = GetBlendshapeSet(modMesh);
 				foreach (var name in modBs)
@@ -156,7 +156,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				}
 			}
 
-			// Material overrides are author-selected accessories; for MVP we defer to accessories list (handled by exporter UI)
+
 			return result;
 		}
 
@@ -244,19 +244,19 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 		private static string GetTempAuthoringAssetPath(string fileName)
 		{
-			// Use Packages/com.yucp.temp/Patches for patch assets
-			// Folders should already exist (created by EnsureAuthoringFolder)
+
+
 			string dir = "Packages/com.yucp.temp/Patches";
-			
-			// Verify physical folder exists (more reliable than IsValidFolder for Packages)
+
+
 			string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
 			string physicalPath = Path.Combine(projectPath, dir.Replace('/', Path.DirectorySeparatorChar));
-			
+
 			if (!Directory.Exists(physicalPath))
 			{
 				throw new InvalidOperationException($"Folder {dir} does not exist. Ensure EnsureAuthoringFolder() was called first.");
 			}
-			
+
 			return $"{dir}/{fileName}";
 		}
 
@@ -266,35 +266,35 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				name = name.Replace(c, '_');
 			return name;
 		}
-		
+
 		private static string CreateHdiffFile(string baseFbxPath, string modifiedFbxPath, string friendlyName, string fileTag = null)
 		{
-			// Generate .hdiff file
-			// Adapted from CocoTools CocoDiff.cs ExecuteProcess() - uses Directory.GetCurrentDirectory()
+
+
 			string projectPath = Directory.GetCurrentDirectory();
-			
-			// Get physical paths - CocoTools uses Path.Combine(Directory.GetCurrentDirectory(), AssetDatabase.GetAssetPath(...))
+
+
 			string basePhysicalPath = ResolvePhysicalPath(projectPath, baseFbxPath);
 			string modifiedPhysicalPath = ResolvePhysicalPath(projectPath, modifiedFbxPath);
-			
-			// Normalize paths (ensure they exist)
+
+
 			basePhysicalPath = Path.GetFullPath(basePhysicalPath);
 			modifiedPhysicalPath = Path.GetFullPath(modifiedPhysicalPath);
-			
+
 			if (!File.Exists(basePhysicalPath))
 			{
 				Debug.LogError($"[PatchBuilder] Base FBX file not found: {basePhysicalPath}");
 				return null;
 			}
-			
+
 			if (!File.Exists(modifiedPhysicalPath))
 			{
 				Debug.LogError($"[PatchBuilder] Modified FBX file not found: {modifiedPhysicalPath}");
 				return null;
 			}
-			
-			// Generate output path for .hdiff file
-			// Adapted from CocoTools: output in same directory as target file, or in Patches folder
+
+
+
 			string safeName = SanitizeFileName(friendlyName);
 			string safeTag = string.IsNullOrEmpty(fileTag) ? null : SanitizeFileName(fileTag);
 			string hdiffFileName = string.IsNullOrEmpty(safeTag)
@@ -303,16 +303,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			string hdiffDir = GetTempAuthoringAssetPath("");
 			string hdiffDirPhysical = Path.GetFullPath(Path.Combine(projectPath, hdiffDir.Replace('/', Path.DirectorySeparatorChar)));
 			string hdiffOutputPath = Path.Combine(hdiffDirPhysical, hdiffFileName);
-			
-			// Ensure directory exists
+
+
 			Directory.CreateDirectory(hdiffDirPhysical);
-			
-			// Normalize output path and ensure Windows-style backslashes (DLL may require this)
+
+
 			hdiffOutputPath = Path.GetFullPath(hdiffOutputPath);
 			basePhysicalPath = Path.GetFullPath(basePhysicalPath);
 			modifiedPhysicalPath = Path.GetFullPath(modifiedPhysicalPath);
-			
-			// Delete existing .hdiff file if it exists (HDiffPatch doesn't overwrite by default)
+
+
 			if (File.Exists(hdiffOutputPath))
 			{
 				try
@@ -325,10 +325,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					Debug.LogWarning($"[PatchBuilder] Could not delete existing .hdiff file: {ex.Message}");
 				}
 			}
-			
-			// Create binary diff using HDiffPatch
+
+
 			Debug.Log($"[PatchBuilder] Creating .hdiff file:\n  Base: {basePhysicalPath}\n  Modified: {modifiedPhysicalPath}\n  Output: {hdiffOutputPath}");
-			
+
 			var diffResult = HDiffPatchWrapper.CreateDiff(
 				basePhysicalPath,
 				modifiedPhysicalPath,
@@ -336,7 +336,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				(str) => Debug.Log($"[PatchBuilder] HDiff: {str}"),
 				(str) => Debug.LogError($"[PatchBuilder] HDiff Error: {str}")
 			);
-			
+
 			if (diffResult != THDiffResult.HDIFF_SUCCESS)
 			{
 				Debug.LogError($"[PatchBuilder] Failed to create .hdiff file: {diffResult}\n" +
@@ -345,14 +345,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					$"  Output path: {hdiffOutputPath} (dir exists: {Directory.Exists(Path.GetDirectoryName(hdiffOutputPath))})");
 				return null;
 			}
-			
+
 			if (!File.Exists(hdiffOutputPath))
 			{
 				Debug.LogError($"[PatchBuilder] .hdiff file was not created at: {hdiffOutputPath}");
 				return null;
 			}
-			
-			// Generate .meta file for .hdiff file so Unity recognizes it as an exportable asset
+
+
 			string hdiffMetaPath = hdiffOutputPath + ".meta";
 			if (!File.Exists(hdiffMetaPath))
 			{
@@ -374,11 +374,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					Debug.LogWarning($"[PatchBuilder] Could not create .meta file for .hdiff: {ex.Message}");
 				}
 			}
-			
-			// Store relative path to .hdiff file
+
+
 			string hdiffRelativePath = Path.Combine(hdiffDir, hdiffFileName).Replace(Path.DirectorySeparatorChar, '/');
-			
-			// Force AssetDatabase to see the updated .hdiff immediately (avoids SourceAssetDB timestamp issues)
+
+
 			try
 			{
 				AssetDatabase.ImportAsset(hdiffRelativePath, ImportAssetOptions.ForceUpdate);
@@ -388,11 +388,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			{
 				Debug.LogWarning($"[PatchBuilder] Failed to import .hdiff asset: {ex.Message}");
 			}
-			
+
 			Debug.Log($"[PatchBuilder] Successfully created .hdiff file: {hdiffRelativePath}");
 			return hdiffRelativePath;
 		}
-		
+
 		public static DerivedFbxAsset.PatchEntry CreatePatchEntry(string baseFbxPath, string baseGuid, string modifiedFbxPath, string friendlyName)
 		{
 			string fileTag = null;
@@ -404,11 +404,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			{
 				fileTag = Path.GetFileNameWithoutExtension(baseFbxPath);
 			}
-			
+
 			string hdiffRelativePath = CreateHdiffFile(baseFbxPath, modifiedFbxPath, friendlyName, fileTag);
 			if (string.IsNullOrEmpty(hdiffRelativePath))
 				return null;
-			
+
 			return new DerivedFbxAsset.PatchEntry
 			{
 				baseGuid = baseGuid ?? string.Empty,
@@ -480,13 +480,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				UnityEngine.Object.DestroyImmediate(asset);
 				return null;
 			}
-			
+
 			asset.entries = entries;
 			asset.canonicalBaseGuid = baseGuid;
-			
-			// Extract and embed the meta file content from the original derived FBX
+
+
 			ExtractAndEmbedMetaFile(modifiedFbxPath, asset);
-			
+
 			return asset;
 		}
 
@@ -603,7 +603,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			string metaPath = filePath + ".meta";
 			if (File.Exists(metaPath))
 				return;
-			
+
 			try
 			{
 				string metaGuid = System.Guid.NewGuid().ToString("N");
@@ -630,7 +630,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			{
 				byte[] prefix = System.Text.Encoding.UTF8.GetBytes("YUCP|mask|");
 				shaMask.TransformBlock(prefix, 0, prefix.Length, null, 0);
-				
+
 				byte[] buffer = new byte[64 * 1024];
 				int read;
 				while ((read = fs.Read(buffer, 0, buffer.Length)) > 0)
@@ -638,10 +638,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					shaBase.TransformBlock(buffer, 0, read, null, 0);
 					shaMask.TransformBlock(buffer, 0, read, null, 0);
 				}
-				
+
 				shaBase.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
 				shaMask.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
-				
+
 				baseHash = shaBase.Hash;
 				mask = shaMask.Hash;
 			}
@@ -655,23 +655,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			return sb.ToString();
 		}
 
-		private static byte[] HexToBytes(string hex)
-		{
-			if (string.IsNullOrEmpty(hex))
-				return Array.Empty<byte>();
-			byte[] bytes = new byte[hex.Length / 2];
-			for (int i = 0; i < bytes.Length; i++)
-			{
-				bytes[i] = Convert.ToByte(hex.Substring(i * 2, 2), 16);
-			}
-			return bytes;
-		}
 
 		private static List<byte[]> SplitKeyAllOfN(byte[] key, int parts)
 		{
 			var shares = new List<byte[]>(parts);
 			byte[] xor = new byte[key.Length];
-			
+
 			for (int i = 0; i < parts - 1; i++)
 			{
 				byte[] share = new byte[key.Length];
@@ -679,7 +668,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				shares.Add(share);
 				xor = XorBytes(xor, share);
 			}
-			
+
 			byte[] last = XorBytes(key, xor);
 			shares.Add(last);
 			return shares;
@@ -701,7 +690,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 			try
 			{
 				byte[] plaintext = File.ReadAllBytes(inputPath);
-				
+
 				using (var aes = Aes.Create())
 				{
 					aes.KeySize = 256;
@@ -709,7 +698,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					aes.Padding = PaddingMode.PKCS7;
 					aes.Key = key;
 					aes.GenerateIV();
-					
+
 					byte[] ciphertext;
 					using (var ms = new MemoryStream())
 					using (var cs = new CryptoStream(ms, aes.CreateEncryptor(), CryptoStreamMode.Write))
@@ -718,7 +707,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						cs.FlushFinalBlock();
 						ciphertext = ms.ToArray();
 					}
-					
+
 					byte[] hmacKey;
 					using (var sha = SHA256.Create())
 					{
@@ -728,7 +717,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						Buffer.BlockCopy(key, 0, data, prefix.Length, key.Length);
 						hmacKey = sha.ComputeHash(data);
 					}
-					
+
 					byte[] hmac;
 					using (var h = new HMACSHA256(hmacKey))
 					{
@@ -737,7 +726,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						Buffer.BlockCopy(ciphertext, 0, ivAndCipher, aes.IV.Length, ciphertext.Length);
 						hmac = h.ComputeHash(ivAndCipher);
 					}
-					
+
 					byte[] magic = System.Text.Encoding.ASCII.GetBytes("YUCPHDIF1");
 					using (var fs = new FileStream(outputPath, FileMode.Create, FileAccess.Write))
 					{
@@ -747,7 +736,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 						fs.Write(ciphertext, 0, ciphertext.Length);
 					}
 				}
-				
+
 				return true;
 			}
 			catch (Exception ex)
@@ -802,7 +791,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 			return normalized;
 		}
-		
+
 		/// <summary>
 		/// Extracts and embeds the meta file content from the original derived FBX.
 		/// This preserves humanoid Avatar mappings and ModelImporter settings.
@@ -815,32 +804,32 @@ namespace YUCP.DevTools.Editor.PackageExporter
 				Debug.LogWarning("[PatchBuilder] Cannot extract meta file: modifiedFbxPath is null or empty");
 				return;
 			}
-			
+
 			try
 			{
 				string projectPath = Directory.GetCurrentDirectory();
 				string metaPath = Path.Combine(projectPath, modifiedFbxPath) + ".meta";
 				metaPath = Path.GetFullPath(metaPath);
-				
+
 				if (!File.Exists(metaPath))
 				{
 					Debug.LogWarning($"[PatchBuilder] Meta file not found for original derived FBX: {metaPath}. " +
 						$"Humanoid Avatar mappings will need to be reconfigured after import.");
 					return;
 				}
-				
-				// Read the entire meta file content
+
+
 				string metaContent = File.ReadAllText(metaPath);
-				
-				// Remove the GUID line - it will be replaced with the target GUID when recreating
-				// This prevents conflicts and ensures the correct GUID is used
+
+
+
 				metaContent = System.Text.RegularExpressions.Regex.Replace(
 					metaContent,
 					@"guid:\s*[a-f0-9]{32}",
 					"guid: PLACEHOLDER_GUID",
 					System.Text.RegularExpressions.RegexOptions.IgnoreCase
 				);
-				
+
 				asset.embeddedMetaFileContent = EmbeddedTextEncodingUtility.Encode(metaContent);
 				Debug.Log($"[PatchBuilder] Extracted and embedded meta file content from '{modifiedFbxPath}' (preserves humanoid Avatar mappings)");
 			}
@@ -850,25 +839,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
 					$"Humanoid Avatar mappings will need to be reconfigured after import.");
 			}
 		}
-		
+
 		public static void EmbedMetaFile(string modifiedFbxPath, DerivedFbxAsset asset)
 		{
 			ExtractAndEmbedMetaFile(modifiedFbxPath, asset);
 		}
-		
-		private static PatchPackage.SeedMaps ConvertSeedMaps(DerivedFbxAsset.SeedMaps seeds)
-		{
-			if (seeds == null) return new PatchPackage.SeedMaps();
-			
-			var result = new PatchPackage.SeedMaps();
-			foreach (var pair in seeds.boneAliases)
-				result.boneAliases.Add(new PatchPackage.StringPair { from = pair.from, to = pair.to });
-			foreach (var pair in seeds.materialAliases)
-				result.materialAliases.Add(new PatchPackage.StringPair { from = pair.from, to = pair.to });
-			foreach (var pair in seeds.blendshapeAliases)
-				result.blendshapeAliases.Add(new PatchPackage.StringPair { from = pair.from, to = pair.to });
-			
-			return result;
-		}
+
 	}
 }

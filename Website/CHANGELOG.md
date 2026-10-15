@@ -1,4 +1,13 @@
-# Changelog## 2026-07-31- `com.yucp.devtools`:
+# Changelog
+
+## [2026-10-15]
+
+### com.yucp.devtools 0.3.22
+- Require YUCP UI 0.1.0 and Components 0.3.45 from the main YUCP repository.
+- Update Package Exporter profiles, sidebar, search, dependency scanning, and installer runtime.
+- Remove the retired Model Revision Manager and legacy guardian/AutoFinalize templates.
+
+## 2026-07-31- `com.yucp.devtools`:
   - Enhanced the `DirectVpmInstaller` template with expanded installer logic.## 2026-07-28- `com.yucp.devtools` 0.3.19:
   - Fixed clean-install compilation against the current importer by removing the obsolete `ProtectedPayloadManifestEntry` dependency.
   - Kept signed-manifest canonicalization compatible with the importer by omitting the unused legacy `protectedPayloads` field.- `com.yucp.devtools` 0.3.18:

@@ -78,21 +78,18 @@
     border-radius: 50%;
     display: flex;
     visibility: visible;
-    transition-property: background-color, color, scale;
+    transition-property: background-color, color;
     transition-duration: 0.15s, 0.15s, 0.15s;
     transition-timing-function: ease-out, ease-out, ease-out;
-    scale: 1 1;
 }
 
 .yucp-tag-chip-remove:hover {
     background-color: rgba(226, 74, 74, 0.25);
     color: rgba(226, 74, 74, 1);
-    scale: 1.1 1.1;
 }
 
 .yucp-tag-chip-remove:active {
     background-color: rgba(226, 74, 74, 0.35);
-    scale: 0.95 0.95;
 }
 
 /* Autocomplete Overlay */

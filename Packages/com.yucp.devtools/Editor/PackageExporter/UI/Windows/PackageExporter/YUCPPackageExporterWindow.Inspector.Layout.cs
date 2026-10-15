@@ -16,6 +16,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 {
     public partial class YUCPPackageExporterWindow
     {
+        private EventCallback<MouseMoveEvent> _inspectorResizeRootMove;
+        private EventCallback<MouseUpEvent> _inspectorResizeRootUp;
+
         private VisualElement CreateExportInspectorSection(ExportProfile profile)
         {
             var section = new VisualElement();
@@ -517,10 +520,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                     });
                     
-                    // Also register on root for better tracking when mouse leaves the container
+                    // Also register on root for better tracking when mouse leaves the container.
+                    // The section is rebuilt often; replace the previous build's handler so they don't pile up.
                     if (rootVisualElement != null)
                     {
-                        rootVisualElement.RegisterCallback<MouseMoveEvent>(evt =>
+                        if (_inspectorResizeRootMove != null)
+                            rootVisualElement.UnregisterCallback(_inspectorResizeRootMove, TrickleDown.TrickleDown);
+                        rootVisualElement.RegisterCallback(_inspectorResizeRootMove = evt =>
                         {
                             if (isResizingInspector && assetListContainer.HasMouseCapture())
                             {
@@ -562,7 +568,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     // Also handle mouse up on root to ensure we release mouse capture
                     if (rootVisualElement != null)
                     {
-                        rootVisualElement.RegisterCallback<MouseUpEvent>(evt =>
+                        if (_inspectorResizeRootUp != null)
+                            rootVisualElement.UnregisterCallback(_inspectorResizeRootUp);
+                        rootVisualElement.RegisterCallback(_inspectorResizeRootUp = evt =>
                         {
                             if (evt.button == 0 && isResizingInspector)
                             {

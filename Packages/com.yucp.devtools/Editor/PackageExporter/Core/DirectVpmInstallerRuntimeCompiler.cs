@@ -26,19 +26,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
         private static readonly string[] SourceFileNames =
         {
             "DirectVpmInstaller.cs",
-            "FullDomainReload.cs",
-            "GuardianTransaction.cs",
             "InstallerHealthTools.cs",
             "InstallerPreflight.cs",
             "InstallerTransactionManager.cs",
-            "PackageGuardianMini.cs",
             "YUCPPatchCleanup.cs",
             "YUCPPatchImporter.cs",
         };
 
-        [MenuItem(
-            "Tools/YUCP/Others/Package Exporter/" +
-            "Rebuild Direct VPM Installer Runtime DLL")]
         public static void BuildFromMenu()
         {
             Build(waitForCompletion: true, exitWhenFinished: false);

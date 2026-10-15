@@ -424,7 +424,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var overlay = new VisualElement();
             overlay.style.width = 500;
             overlay.style.maxHeight = 600;
-            // Match main window background color from YucpDesignSystem.uss: #151515
+            // Match the window background (--yucp-bg-primary): #151515
             overlay.style.backgroundColor = new Color(0.082f, 0.082f, 0.082f, 1f); // #151515
             overlay.style.borderTopLeftRadius = 8;
             overlay.style.borderTopRightRadius = 8;

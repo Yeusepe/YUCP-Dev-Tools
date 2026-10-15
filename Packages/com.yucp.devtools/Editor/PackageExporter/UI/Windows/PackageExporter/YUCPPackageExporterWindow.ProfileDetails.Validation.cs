@@ -20,47 +20,47 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var section = new VisualElement();
             section.name = "validation-section";
-            
+
             if (!profile.Validate(out string errorMessage))
             {
                 var errorContainer = new VisualElement();
                 errorContainer.AddToClassList("yucp-validation-error");
-                
+
                 var errorText = new Label($"Validation Error: {errorMessage}");
                 errorText.AddToClassList("yucp-validation-error-text");
                 errorContainer.Add(errorText);
-                
+
                 section.Add(errorContainer);
             }
             else
             {
                 var successContainer = new VisualElement();
                 successContainer.AddToClassList("yucp-validation-success");
-                
+
                 var successText = new Label("Profile is valid and ready to export");
                 successText.AddToClassList("yucp-validation-success-text");
                 successContainer.Add(successText);
-                
+
                 section.Add(successContainer);
             }
-            
-            // Add warnings section (non-critical issues)
+
+
             var warnings = CollectWarnings(profile);
             if (warnings.Count > 0)
             {
                 var warningsContainer = new VisualElement();
                 warningsContainer.AddToClassList("yucp-help-box");
-                warningsContainer.style.backgroundColor = new Color(0.7f, 0.65f, 0.1f, 0.3f); // Yellow warning color
+                warningsContainer.style.backgroundColor = new Color(0.7f, 0.65f, 0.1f, 0.3f);
                 warningsContainer.style.marginTop = 8;
                 warningsContainer.style.borderLeftWidth = 3;
-                warningsContainer.style.borderLeftColor = new Color(0.9f, 0.85f, 0.2f, 1f); // Yellow border
-                
+                warningsContainer.style.borderLeftColor = new Color(0.9f, 0.85f, 0.2f, 1f);
+
                 var warningsLabel = new Label("Warnings:");
                 warningsLabel.AddToClassList("yucp-label");
                 warningsLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
                 warningsLabel.style.marginBottom = 4;
                 warningsContainer.Add(warningsLabel);
-                
+
                 foreach (var warning in warnings)
                 {
                     var warningText = new Label($"• {warning}");
@@ -68,18 +68,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     warningText.style.color = new StyleColor(new Color(0.9f, 0.9f, 0.9f, 1f));
                     warningsContainer.Add(warningText);
                 }
-                
+
                 section.Add(warningsContainer);
             }
-            
+
             return section;
         }
 
         private List<string> CollectWarnings(ExportProfile profile)
         {
             var warnings = new List<string>();
-            
-            // Check for derived FBXs with missing origin files
+
+
             if (profile.discoveredAssets != null)
             {
                 foreach (var asset in profile.discoveredAssets)
@@ -99,14 +99,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                         else
                         {
-                            // Check if the base file exists (basePath from AssetDatabase is relative)
+
                             string baseAssetPath = basePath;
                             if (!Path.IsPathRooted(baseAssetPath))
                             {
                                 string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
                                 baseAssetPath = Path.GetFullPath(Path.Combine(projectPath, baseAssetPath));
                             }
-                            
+
                             if (!File.Exists(baseAssetPath))
                             {
                                 warnings.Add($"Derived FBX '{assetName}' origin file not found: {basePath}");
@@ -115,8 +115,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
             }
-            
-            // Check for problematic dependencies
+
+
             if (profile.dependencies != null)
             {
                 foreach (var dep in profile.dependencies)
@@ -126,21 +126,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         string packageName = dep.packageName ?? "";
                         string displayName = dep.displayName ?? "";
                         string combinedName = (packageName + " " + displayName).ToLower();
-                        
-                        // Check for Temp/Temporary (but not template)
-                        bool hasTemp = (combinedName.Contains(" temp ") || combinedName.StartsWith("temp ") || 
-                                       combinedName.EndsWith(" temp") || combinedName == "temp" || 
+
+
+                        bool hasTemp = (combinedName.Contains(" temp ") || combinedName.StartsWith("temp ") ||
+                                       combinedName.EndsWith(" temp") || combinedName == "temp" ||
                                        combinedName.Contains("temporary")) && !combinedName.Contains("template");
-                        
-                        // Check for YUCP Dev tools
+
+
                         bool hasDevTools = combinedName.Contains("yucp dev tools") || combinedName.Contains("yucp.devtools");
-                        
+
                         if (hasTemp)
                         {
                             string depName = string.IsNullOrEmpty(displayName) ? packageName : displayName;
                             warnings.Add($"Dependency '{depName}' contains 'Temp' or 'Temporary' - not recommended for general distribution");
                         }
-                        
+
                         if (hasDevTools)
                         {
                             string depName = string.IsNullOrEmpty(displayName) ? packageName : displayName;
@@ -149,15 +149,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
             }
-            
-            // Check for composite profile issues
+
+
             if (profile.HasIncludedProfiles())
             {
                 List<ExportProfile> resolved;
                 List<string> cycles;
                 CompositeProfileResolver.ResolveIncludedProfiles(profile, out resolved, out cycles);
-                
-                // Cycle warnings
+
+
                 if (cycles.Count > 0)
                 {
                     foreach (string cycle in cycles)
@@ -165,14 +165,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         warnings.Add($"Cycle detected in bundled profiles: {cycle}");
                     }
                 }
-                
-                // Missing profile warnings
+
+
                 var bundledProfiles = profile.GetIncludedProfiles();
                 var allGuids = new List<string>();
                 var profileType = typeof(ExportProfile);
-                var guidField = profileType.GetField("includedProfileGuids", 
+                var guidField = profileType.GetField("includedProfileGuids",
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                
+
                 if (guidField != null)
                 {
                     var guids = guidField.GetValue(profile) as List<string>;
@@ -181,7 +181,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         allGuids = guids;
                     }
                 }
-                
+
                 var resolvedGuids = new HashSet<string>();
                 foreach (var resolvedProfile in resolved)
                 {
@@ -194,7 +194,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                     }
                 }
-                
+
                 int missingCount = 0;
                 foreach (string guid in allGuids)
                 {
@@ -203,13 +203,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         missingCount++;
                     }
                 }
-                
+
                 if (missingCount > 0)
                 {
                     warnings.Add($"{missingCount} bundled profile(s) are missing or deleted");
                 }
-                
-                // Bundled profile validation errors
+
+
                 foreach (var bundledProfile in bundledProfiles)
                 {
                     if (bundledProfile != null)
@@ -220,13 +220,13 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         }
                     }
                 }
-                
-                // Asset conflict warnings (if we have discovered assets)
+
+
                 if (profile.discoveredAssets != null && profile.discoveredAssets.Count > 0)
                 {
                     var assetSourceMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                     var assetCounts = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-                    
+
                     foreach (var asset in profile.discoveredAssets)
                     {
                         if (!string.IsNullOrEmpty(asset.sourceProfileName))
@@ -239,7 +239,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                             assetCounts[normalizedPath].Add(asset.sourceProfileName);
                         }
                     }
-                    
+
                     foreach (var kvp in assetCounts)
                     {
                         if (kvp.Value.Count > 1)
@@ -254,7 +254,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     }
                 }
             }
-            
+
             return warnings;
         }
 
@@ -269,44 +269,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 parent.Insert(index, CreateValidationSection(profile));
             }
         }
-        
-        private static int GetTriangleCountForOwnershipTarget(string assetPath, string targetMeshName)
-        {
-            try
-            {
-                string unityPath = assetPath.Replace('\\', '/');
-                if (Path.IsPathRooted(unityPath))
-                {
-                    string projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..")).Replace('\\', '/');
-                    if (unityPath.StartsWith(projectPath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        unityPath = unityPath.Substring(projectPath.Length).TrimStart('/');
-                    }
-                }
-                
-                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(unityPath);
-                if (prefab == null) return 0;
-                
-                Mesh target = FindTargetMeshForOwnership(prefab, targetMeshName);
-                if (target == null) return 0;
-                
-                int count = 0;
-                for (int s = 0; s < target.subMeshCount; s++)
-                {
-                    count += target.GetTriangles(s).Length / 3;
-                }
-                return count;
-            }
-            catch
-            {
-                return 0;
-            }
-        }
-        
+
+
         private static Mesh FindTargetMeshForOwnership(GameObject prefab, string targetMeshName)
         {
             if (prefab == null) return null;
-            
+
             if (!string.IsNullOrEmpty(targetMeshName))
             {
                 foreach (var smr in prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true))
@@ -320,11 +288,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                         return mf.sharedMesh;
                 }
             }
-            
+
             var firstSmr = prefab.GetComponentInChildren<SkinnedMeshRenderer>(true);
             if (firstSmr != null && firstSmr.sharedMesh != null)
                 return firstSmr.sharedMesh;
-            
+
             var firstMf = prefab.GetComponentInChildren<MeshFilter>(true);
             return firstMf != null ? firstMf.sharedMesh : null;
         }

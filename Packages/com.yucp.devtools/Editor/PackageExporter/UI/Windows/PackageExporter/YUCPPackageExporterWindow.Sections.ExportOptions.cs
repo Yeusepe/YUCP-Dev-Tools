@@ -54,7 +54,31 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
             });
             togglesContainer.Add(includeDepsToggle);
-            
+
+            // Opt-in: loose copies of another package's files (e.g. the VRChat SDK) overwrite the buyer's own version
+            var bundlePackageFilesToggle = new Toggle("Bundle Installed Package Files") { value = profile.bundleInstalledPackageFiles };
+            bundlePackageFilesToggle.AddToClassList("yucp-toggle");
+            bundlePackageFilesToggle.tooltip =
+                "Also include dependency files that belong to other installed packages, such as VRCSDK3A.dll from the VRChat SDK.\n\n" +
+                "Leave this off unless you really need it: importing your package would overwrite the buyer's own (often newer) " +
+                "copy of that package, which can break their project. List the package under Dependencies instead.";
+            bundlePackageFilesToggle.SetEnabled(profile.includeDependencies);
+            bundlePackageFilesToggle.RegisterValueChangedCallback(evt =>
+            {
+                if (profile != null)
+                {
+                    Undo.RecordObject(profile, "Change Bundle Installed Package Files");
+                    profile.bundleInstalledPackageFiles = evt.newValue;
+                    EditorUtility.SetDirty(profile);
+                    // The Export Inspector's dependency list depends on this, so rescan
+                    if (ProfileHasContentToScan(profile))
+                        ScanAssetsForInspector(profile, silent: true);
+                    else
+                        UpdateProfileDetails();
+                }
+            });
+            togglesContainer.Add(bundlePackageFilesToggle);
+
             var recurseFoldersToggle = new Toggle("Recurse Folders") { value = profile.recurseFolders };
             recurseFoldersToggle.AddToClassList("yucp-toggle");
             recurseFoldersToggle.tooltip = "Search subfolders when collecting assets to export";

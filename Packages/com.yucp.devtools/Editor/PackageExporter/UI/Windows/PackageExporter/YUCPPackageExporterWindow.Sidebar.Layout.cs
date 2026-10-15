@@ -25,7 +25,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             // Create sidebar configuration
             var config = new YucpSidebar.SidebarConfig
             {
-                HeaderText = "Export Profiles",
+                HeaderText = "Profiles", // succinct section header; the window already says it's the exporter
                 ShowSearch = true,
                 OnSearchChanged = (searchText) => UpdateProfileList(),
                 ActionButtons = new List<YucpSidebar.SidebarActionButton>
@@ -65,7 +65,15 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             
             var container = sidebar.CreateSidebar(isOverlay);
-            
+
+            // Rows stop right-clicks themselves, so this only fires on empty list space
+            sidebar.ScrollView.RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.button != 1) return;
+                ShowProfileListContextMenu();
+                evt.StopPropagation();
+            });
+
             // Store references
             if (isOverlay)
             {

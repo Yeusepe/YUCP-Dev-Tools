@@ -20,18 +20,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var section = new VisualElement();
             section.AddToClassList("yucp-section");
-            
-            var header = CreateCollapsibleHeader("Export Folders", 
-                () => showFolders, 
-                (value) => { showFolders = value; }, 
+
+            var header = CreateCollapsibleHeader("Export Folders",
+                () => showFolders,
+                (value) => { showFolders = value; },
                 () => UpdateProfileDetails());
             section.Add(header);
-            
+
             if (!showFolders)
             {
                 return section;
             }
-            
+
             if (profile.foldersToExport.Count == 0)
             {
                 var warning = new VisualElement();
@@ -45,34 +45,34 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 var folderList = new VisualElement();
                 folderList.AddToClassList("yucp-folder-list");
-                
+
                 for (int i = 0; i < profile.foldersToExport.Count; i++)
                 {
-                    int index = i; // Capture for closure
+                    int index = i;
                     var folderItem = new VisualElement();
                     folderItem.AddToClassList("yucp-folder-item");
-                    
+
                     var pathLabel = new Label(profile.foldersToExport[i]);
                     pathLabel.AddToClassList("yucp-folder-item-path");
                     folderItem.Add(pathLabel);
-                    
+
                     var removeButton = new Button(() => RemoveFolder(profile, index)) { text = "×" };
                     removeButton.AddToClassList("yucp-button");
                     removeButton.AddToClassList("yucp-folder-item-remove");
                     folderItem.Add(removeButton);
-                    
+
                     folderList.Add(folderItem);
                 }
-                
+
                 section.Add(folderList);
             }
-            
+
             var addButton = new Button(() => AddFolder(profile)) { text = "+ Add Folder" };
             addButton.AddToClassList("yucp-button");
             addButton.AddToClassList("yucp-button-action");
             addButton.style.marginTop = 8;
             section.Add(addButton);
-            
+
             return section;
         }
 
@@ -80,18 +80,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var section = new VisualElement();
             section.AddToClassList("yucp-section");
-            
-            var header = CreateCollapsibleHeader("Exclusion Filters", 
-                () => showExclusionFilters, 
-                (value) => { showExclusionFilters = value; }, 
+
+            var header = CreateCollapsibleHeader("Exclusion Filters",
+                () => showExclusionFilters,
+                (value) => { showExclusionFilters = value; },
                 () => UpdateProfileDetails());
             section.Add(header);
-            
+
             if (!showExclusionFilters)
             {
                 return section;
             }
-            
+
             var helpBox = new VisualElement();
             helpBox.AddToClassList("yucp-help-box");
             helpBox.style.marginTop = 8;
@@ -99,18 +99,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
             helpText.AddToClassList("yucp-help-box-text");
             helpBox.Add(helpText);
             section.Add(helpBox);
-            
-            // File Patterns
+
+
             var filePatternsLabel = new Label("File Patterns");
             filePatternsLabel.AddToClassList("yucp-label");
             filePatternsLabel.style.marginTop = 8;
             filePatternsLabel.style.marginBottom = 4;
             filePatternsLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             section.Add(filePatternsLabel);
-            
+
             var filePatternsContainer = new VisualElement();
             filePatternsContainer.style.marginBottom = 8;
-            
+
             for (int i = 0; i < profile.excludeFilePatterns.Count; i++)
             {
                 int index = i;
@@ -140,7 +140,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 filePatternsContainer.Add(patternItem);
             }
             section.Add(filePatternsContainer);
-            
+
             var addFilePatternButton = new Button(() =>
             {
                 profile.excludeFilePatterns.Add("*.tmp");
@@ -151,17 +151,17 @@ namespace YUCP.DevTools.Editor.PackageExporter
             addFilePatternButton.AddToClassList("yucp-button");
             addFilePatternButton.style.marginBottom = 12;
             section.Add(addFilePatternButton);
-            
-            // Folder Names
+
+
             var folderNamesLabel = new Label("Folder Names");
             folderNamesLabel.AddToClassList("yucp-label");
             folderNamesLabel.style.marginTop = 8;
             folderNamesLabel.style.marginBottom = 4;
             folderNamesLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             section.Add(folderNamesLabel);
-            
+
             var folderNamesContainer = new VisualElement();
-            
+
             for (int i = 0; i < profile.excludeFolderNames.Count; i++)
             {
                 int index = i;
@@ -191,7 +191,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 folderNamesContainer.Add(folderItem);
             }
             section.Add(folderNamesContainer);
-            
+
             var addFolderNameButton = new Button(() =>
             {
                 profile.excludeFolderNames.Add(".git");
@@ -201,34 +201,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }) { text = "+ Add Folder Name (e.g., .git)" };
             addFolderNameButton.AddToClassList("yucp-button");
             section.Add(addFolderNameButton);
-            
+
             return section;
         }
 
-        private VisualElement CreateStringListItem(string value, Action onRemove)
-        {
-            var item = new VisualElement();
-            item.AddToClassList("yucp-folder-item");
-            
-            var textField = new TextField { value = value };
-            textField.AddToClassList("yucp-input");
-            textField.style.flexGrow = 1;
-            textField.isReadOnly = true;
-            item.Add(textField);
-            
-            var removeButton = new Button(onRemove) { text = "×" };
-            removeButton.AddToClassList("yucp-button");
-            removeButton.AddToClassList("yucp-folder-item-remove");
-            item.Add(removeButton);
-            
-            return item;
-        }
 
         private VisualElement CreateEditableStringListItem(string value, Action<string> onValueChanged, Action onRemove)
         {
             var item = new VisualElement();
             item.AddToClassList("yucp-folder-item");
-            
+
             var textField = new TextField { value = value };
             textField.AddToClassList("yucp-input");
             textField.style.flexGrow = 1;
@@ -238,12 +220,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 onValueChanged?.Invoke(evt.newValue);
             });
             item.Add(textField);
-            
+
             var removeButton = new Button(onRemove) { text = "×" };
             removeButton.AddToClassList("yucp-button");
             removeButton.AddToClassList("yucp-folder-item-remove");
             item.Add(removeButton);
-            
+
             return item;
         }
 

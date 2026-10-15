@@ -1,12 +1,12 @@
-![Devtools](https://github.com/user-attachments/assets/8df2ac98-4d2e-47d8-ba60-2db922f087ec)
-
 # YUCP DevTools
-Development tools for YUCP package creators and avatar variant management.
+
+Development tools for YUCP package creators.
+
+![YUCP DevTools](Website/banner.png)
+
 ## Features
 
 ### Package Exporter
-
-
 
 #### Core Export Features
 - **Profile-Based Export System** - Save and reuse export configurations with customizable metadata
@@ -38,19 +38,9 @@ Development tools for YUCP package creators and avatar variant management.
 
 #### Derived FBX Export
 - **HDiff Binary Patching** - Export FBX variants as small binary patches using HDiff algorithm
-- **Single Base Mode** - Create derived FBX from a single base FBX with binary diff
-- **Kitbash Mode** - Multi-source FBX assembly from recipe-based synthetic bases (requires `YUCP_KITBASH_ENABLED`)
-- **Per-Triangle Mapping** - Track triangle sources for complex kitbash operations
+- **Multi-Base Patching** - Create derived FBX patches against multiple base FBXs for robust reconstruction
 - **Reference Preservation** - Maintain prefab compatibility with original FBX GUIDs
 - **Automatic Patch Application** - Patches applied automatically on package import via YUCPPatchImporter
-
-#### Kitbash System (Advanced)
-- **Synthetic Base Builder** - Build synthetic FBX files from kitbash recipes
-- **Ownership Mapping** - Paint and manage triangle ownership for multi-source meshes
-- **Ownership Paint Tool** - Scene view tool for painting mesh ownership
-- **Recipe System** - Define kitbash recipes with multiple source parts
-- **Cache System** - Intelligent caching of synthetic bases based on recipe hashes
-- **Requires Unity FBX Exporter** - Uses Unity's FBX Exporter package for export
 
 #### Dependency Management
 - **Automatic Dependency Scanner** - Auto-detect VPM and Unity package dependencies
@@ -87,41 +77,8 @@ Development tools for YUCP package creators and avatar variant management.
 #### Templates & Utilities
 - **Export Profile Templates** - Pre-configured templates for quick setup
 - **Direct VPM Installer** - Install VPM dependencies directly from packages
-- **AutoFinalize System** - Automatic editor refresh after compilation
 - **Backup System** - Automatic prefab backup before patch application
 - **Installation Health Tools** - Validate, repair, and clean installation artifacts
-
-### Model Revision Manager (Beta)
-
-#### Variant Management
-- **ModelRevisionBase** - Central configuration for managing avatar variants
-- **ModelRevisionVariant Component** - Component-based variant tracking
-- **Variant Registration** - Register and manage multiple variants from a single base
-- **Variant Status Tracking** - Track sync status (Synced, HasOverrides, HasConflicts, OutOfSync)
-
-#### Transfer Systems
-- **Blendshape Transfer** - Automatically transfer blendshapes between model revisions
-- **Bone Mapping** - Intelligent bone path resolution across variants
-- **Component Transfers** - Transfer components between variants with path resolution
-- **Animation Remapping** - Optional animation curve remapping between variants
-- **Avatar Descriptor Sync** - Synchronize Avatar Descriptor settings
-
-#### Override System
-- **Per-Variant Overrides** - Material, mesh, and component overrides per variant
-- **Manual Overrides** - Mark components as manual overrides
-- **Variant-Specific Mappings** - Override base mappings per variant
-- **Transfer Direction Control** - Configure send/receive transfer settings per variant
-
-#### Build-Time Processing
-- **VRCFury Integration** - Automatic build-time processing with VRCFury actions
-- **Bone Path Resolution** - Automatic bone path resolution during build
-- **Conflict Detection** - Detection and logging of transfer conflicts
-- **Transfer History** - Maintain transfer reports and history
-
-#### Visual Tools
-- **Model Revision Wizard** - Visual wizard for setup and configuration
-- **Tree View Inspector** - Visual tree view of all variants and configurations
-- **Validation System** - Validate variant configurations before processing
 
 ### Texture Array Builder
 
@@ -159,8 +116,6 @@ Development tools for YUCP package creators and avatar variant management.
 
 #### Development Tools
 - **Derived FBX Debug Window** - Debug window for derived FBX operations
-- **Ownership Map Window** - Visual tool for managing kitbash ownership maps
-- **Kitbash Setup Wizard** - Guided setup for kitbash workflows
 - **Patch Cleanup** - Tools for cleaning up patch-related files
 
 ## Installation
@@ -169,24 +124,26 @@ Development tools for YUCP package creators and avatar variant management.
 
 1. Add this VPM repository to your VRChat Creator Companion:
    ```
-   https://dev.vpm.yucp.club/index.json
+   https://vpm.yucp.club/index.json
    ```
 
 2. Open your project in VCC
 3. Click "Manage Project"
 4. Find "YUCP DevTools" and click "+" to install
-5. YUCP Components will be installed automatically as a dependency
+5. YUCP Components, YUCP UI, and YUCP Motion will be installed automatically as dependencies
 
 ### Manual Installation
 
 1. Download the latest `.unitypackage` from [Releases](https://github.com/Yeusepe/YUCP-Dev-Tools/releases)
 2. Import into your Unity project
-3. Install [YUCP Components](https://vpm.yucp.club) as a dependency
+3. Install [YUCP Components and YUCP UI](https://vpm.yucp.club/) and [YUCP Motion](https://dev.vpm.yucp.club/) as dependencies
 
 ## Requirements
 
 - Unity 2022.3 or later
-- [YUCP Components](https://vpm.yucp.club) >= 0.2.9 (automatically installed via VPM)
+- [YUCP Components](https://vpm.yucp.club) >= 0.3.45 (automatically installed via VPM)
+- [YUCP UI](https://vpm.yucp.club/) >= 0.1.0 (automatically installed via VPM)
+- [YUCP Motion](https://dev.vpm.yucp.club/) >= 0.1.0 (automatically installed via VPM)
 - VRChat SDK3 Avatars (automatically installed via VPM)
 - VRCFury
 
@@ -214,7 +171,7 @@ Development tools for YUCP package creators and avatar variant management.
 - **Bundled Profiles**: Add other export profiles to bundle their assets together
 - **Custom Version Rules**: Create custom versioning with `Assets > Create > YUCP > Custom Version Rule`
 - **@bump Directives**: Add `// @bump rule_name` comments in code files for automatic version bumping
-- **Derived FBX**: Mark FBX files as derived in Model Importer to export as patches
+- **Derived FBX**: Mark FBX files as derived in Model Importer to export as derived FBXs
 
 #### Keyboard Shortcuts
 - `Ctrl/Cmd+E` - Export selected profiles
@@ -225,19 +182,6 @@ Development tools for YUCP package creators and avatar variant management.
 - `Delete/Backspace` - Delete profile
 - `Ctrl/Cmd+F` - Focus search
 - `F5` - Refresh profiles
-
-### Model Revision Manager
-
-#### Quick Start
-1. Create a ModelRevisionBase: `Assets > Create > YUCP > Model Revision Base`
-2. Assign the base prefab
-3. Add ModelRevisionVariant component to avatar variant prefabs
-4. Configure blendshape and component mappings in the base
-5. Open manager: `Tools > YUCP > Others > Development > Model Revision Manager`
-6. Build your avatar - transfers process automatically at build time
-
-#### Wizard
-The Model Revision Wizard provides a guided setup process for configuring variants.
 
 ### Texture Array Builder
 
@@ -253,8 +197,8 @@ The Model Revision Wizard provides a guided setup process for configuring varian
 For detailed documentation:
 - **Package Exporter Guide**: See `/Editor/PackageExporter/Templates/README_Template.md`
 - **Custom Version Rules**: See `/Editor/PackageExporter/CUSTOM_VERSION_RULES.md`
+- **CLI & GitHub Actions**: See `/Editor/PackageExporter/CLI-and-GitHub-Actions.md`
 - **Version Rule Examples**: See `/Editor/PackageExporter/Examples/README.md`
-- **Model Revision Manager**: See component tooltips and inline help
 - **YUCP Components**: https://github.com/Yeusepe/YUCP-Components
 
 ## Support

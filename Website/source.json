@@ -7,10 +7,10 @@
     "Url": "https://dev.vpm.yucp.club/",
     "Email": "contact@yucp.club"
   },
-  "Description": "Development tools for YUCP packages including package exporter and model revision manager.",
+  "Description": "Development tools for YUCP packages including the package exporter and texture array builder.",
   "InfoLink": {
     "Text": "Documentation",
-    "Url": "https://github.com/Yeusepe/YUCP-DevTools"
+    "Url": "https://github.com/Yeusepe/YUCP-Dev-Tools"
   },
   "BannerUrl": "banner.png"
 }

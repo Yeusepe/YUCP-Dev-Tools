@@ -11,11 +11,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
     {
         private void OnKeyDown(KeyDownEvent evt)
         {
-            // Don't handle shortcuts if export is in progress
+
             if (isExporting)
                 return;
 
-            // Handle Escape key (always, regardless of focus)
+
             if (evt.keyCode == KeyCode.Escape)
             {
                 HandleEscapeKey();
@@ -23,36 +23,36 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
 
-            // If we're inside a text-editing control, do NOT steal standard editing shortcuts.
-            // (Otherwise Ctrl+A selects profiles instead of selecting text, etc.)
+
+
             var focusedElement = rootVisualElement.focusController?.focusedElement as VisualElement;
             bool isTextEditingContext = IsTextEditingContext(focusedElement) || IsTextEditingContext(evt.target as VisualElement);
-            
-            // Get modifier keys
+
+
             bool modifierPressed = IsModifierPressed(evt);
             bool shiftPressed = evt.shiftKey;
             bool altPressed = evt.altKey;
 
-            // When typing in any text field, don't run global shortcuts.
-            // Let the focused control handle the event.
+
+
             if (isTextEditingContext)
             {
                 return;
             }
 
-            // Standard global shortcuts (only when NOT editing text)
+
             if (!isTextEditingContext && modifierPressed && evt.keyCode == KeyCode.Z && !shiftPressed)
             {
-                // Undo (Ctrl+Z / Cmd+Z)
+
                 Undo.PerformUndo();
                 evt.StopPropagation();
                 return;
             }
 
-            if (!isTextEditingContext && ((modifierPressed && evt.keyCode == KeyCode.Y) || 
+            if (!isTextEditingContext && ((modifierPressed && evt.keyCode == KeyCode.Y) ||
                 (modifierPressed && shiftPressed && evt.keyCode == KeyCode.Z)))
             {
-                // Redo (Ctrl+Y / Cmd+Shift+Z)
+
                 Undo.PerformRedo();
                 evt.StopPropagation();
                 return;
@@ -60,16 +60,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             if (!isTextEditingContext && modifierPressed && evt.keyCode == KeyCode.A && !shiftPressed && !altPressed)
             {
-                // Select All Profiles (Ctrl+A / Cmd+A)
+
                 HandleSelectAll();
                 evt.StopPropagation();
                 return;
             }
 
-            // Profile management shortcuts
+
             if (evt.keyCode == KeyCode.Delete || evt.keyCode == KeyCode.Backspace)
             {
-                // Delete (Delete / Backspace)
+
                 HandleDelete();
                 evt.StopPropagation();
                 return;
@@ -77,7 +77,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             if (modifierPressed && evt.keyCode == KeyCode.D && !shiftPressed)
             {
-                // Duplicate (Ctrl+D / Cmd+D)
+
                 HandleDuplicate();
                 evt.StopPropagation();
                 return;
@@ -85,7 +85,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             if (modifierPressed && shiftPressed && evt.keyCode == KeyCode.D)
             {
-                // Clone (Ctrl+Shift+D / Cmd+Shift+D)
+
                 HandleClone();
                 evt.StopPropagation();
                 return;
@@ -93,16 +93,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             if (evt.keyCode == KeyCode.F2 || (evt.keyCode == KeyCode.Return && !modifierPressed))
             {
-                // Rename (F2 / Enter)
+
                 HandleRename();
                 evt.StopPropagation();
                 return;
             }
 
-            // Export shortcuts
+
             if (modifierPressed && evt.keyCode == KeyCode.E && !shiftPressed)
             {
-                // Export Selected (Ctrl+E / Cmd+E)
+
                 HandleExportSelected();
                 evt.StopPropagation();
                 return;
@@ -110,7 +110,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             if (modifierPressed && shiftPressed && evt.keyCode == KeyCode.E)
             {
-                // Export All (Ctrl+Shift+E / Cmd+Shift+E)
+
                 HandleExportAll();
                 evt.StopPropagation();
                 return;
@@ -118,22 +118,22 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             if (modifierPressed && evt.keyCode == KeyCode.Return)
             {
-                // Quick Export Current (Ctrl+Enter / Cmd+Enter)
+
                 HandleQuickExport();
                 evt.StopPropagation();
                 return;
             }
 
-            // Navigation shortcuts
+
             if (modifierPressed && evt.keyCode == KeyCode.F && !shiftPressed && !altPressed)
             {
-                // Focus Search (Ctrl+F / Cmd+F)
+
                 HandleFocusSearch();
                 evt.StopPropagation();
                 return;
             }
 
-            // Arrow key navigation
+
             if (evt.keyCode == KeyCode.UpArrow || evt.keyCode == KeyCode.DownArrow)
             {
                 HandleArrowKeyNavigation(evt.keyCode == KeyCode.UpArrow, shiftPressed, modifierPressed);
@@ -155,10 +155,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return;
             }
 
-            // Folder operations
+
             if (modifierPressed && shiftPressed && evt.keyCode == KeyCode.N)
             {
-                // Create Folder (Ctrl+Shift+N / Cmd+Shift+N)
+
                 HandleCreateFolder();
                 evt.StopPropagation();
                 return;
@@ -166,16 +166,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             if (evt.keyCode == KeyCode.RightArrow || evt.keyCode == KeyCode.LeftArrow)
             {
-                // Expand/Collapse Folder (Right/Left Arrow when on folder)
+
                 HandleFolderExpandCollapse(evt.keyCode == KeyCode.RightArrow);
                 evt.StopPropagation();
                 return;
             }
 
-            // Utility shortcuts
+
             if (modifierPressed && altPressed && evt.keyCode == KeyCode.P)
             {
-                // Select in Project (Ctrl+Alt+P / Cmd+Alt+P)
+
                 HandleSelectInProject();
                 evt.StopPropagation();
                 return;
@@ -183,7 +183,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             if (modifierPressed && altPressed && evt.keyCode == KeyCode.E)
             {
-                // Show in Explorer (Ctrl+Alt+E / Cmd+Alt+E)
+
                 HandleShowInExplorer();
                 evt.StopPropagation();
                 return;
@@ -191,34 +191,27 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
             if (evt.keyCode == KeyCode.F5)
             {
-                // Refresh (F5)
+
                 HandleRefresh();
                 evt.StopPropagation();
                 return;
             }
         }
 
-        private bool IsTypingInTextField()
-        {
-            var focusedElement = rootVisualElement.focusController?.focusedElement;
-            return focusedElement is TextField || 
-                   focusedElement is TextInputBaseField<string> ||
-                   focusedElement is IMGUIContainer;
-        }
 
         private bool IsTextEditingContext(VisualElement element)
         {
-            // Focus is often on internal "text input" child elements, so walk up the hierarchy.
+
             for (var current = element; current != null; current = current.parent as VisualElement)
             {
                 if (current is IMGUIContainer) return true;
                 if (current is TextField) return true;
-                
+
                 var t = current.GetType();
                 if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(TextInputBaseField<>))
                     return true;
             }
-            
+
             return false;
         }
 
@@ -233,23 +226,23 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void HandleEscapeKey()
         {
-            // Close any open popovers/dialogs
-            ClosePopover();
-            
-            // Close export options overlay
+
+            YUCP.DevTools.Editor.PackageExporter.UI.Components.TokenizedTagInput.CloseTagMenu();
+
+
             if (_exportOptionsOverlay != null)
             {
                 ToggleExportOptions(false);
             }
-            
-            // Cancel rename if in progress
+
+
             if (folderBeingRenamed != null)
             {
                 folderBeingRenamed = null;
                 UpdateProfileList();
             }
-            
-            // Clear selection
+
+
             selectedProfileIndices.Clear();
             selectedProfile = null;
             UpdateProfileList();
@@ -259,89 +252,71 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void HandleSelectAll()
         {
-            // Get all visible profiles (respecting filters)
+
             var visibleIndices = GetVisibleProfileIndices();
-            
+
             if (visibleIndices.Count == 0)
                 return;
-            
+
             selectedProfileIndices.Clear();
             foreach (var index in visibleIndices)
             {
                 selectedProfileIndices.Add(index);
             }
-            
-            // Select the first one as the primary selection
+
+
             if (visibleIndices.Count > 0)
             {
                 selectedProfile = allProfiles[visibleIndices[0]];
                 lastClickedProfileIndex = visibleIndices[0];
             }
-            
+
             UpdateProfileList();
             UpdateProfileDetails();
             UpdateBottomBar();
         }
 
+        /// <summary>Profiles currently on screen, in on-screen order (see RenderProfileListWithFolders).</summary>
         private List<int> GetVisibleProfileIndices()
         {
-            var visibleIndices = new List<int>();
-            
-            // Apply filters to get visible profiles
-            var filteredProfiles = allProfiles.AsEnumerable();
-            
-            // Apply search filter
-            if (!string.IsNullOrWhiteSpace(_currentSearchText))
+            return _displayedProfileIndices;
+        }
+
+        /// <summary>Selects every displayed profile between two profiles (inclusive), in on-screen order.</summary>
+        private void SelectDisplayedRange(int anchorIndex, int targetIndex)
+        {
+            int from = _displayedProfileIndices.IndexOf(anchorIndex);
+            int to = _displayedProfileIndices.IndexOf(targetIndex);
+
+            selectedProfileIndices.Clear();
+            if (from < 0 || to < 0)
             {
-                filteredProfiles = filteredProfiles.Where(p => 
-                    GetProfileDisplayName(p).ToLowerInvariant().Contains(_currentSearchText.ToLowerInvariant()));
+                selectedProfileIndices.Add(targetIndex);
+                return;
             }
-            
-            // Apply tag filter
-            if (selectedFilterTags.Count > 0)
+
+            for (int i = Math.Min(from, to); i <= Math.Max(from, to); i++)
             {
-                filteredProfiles = filteredProfiles.Where(p => 
-                {
-                    var profileTags = p.GetAllTags();
-                    return selectedFilterTags.Any(tag => profileTags.Contains(tag));
-                });
+                selectedProfileIndices.Add(_displayedProfileIndices[i]);
             }
-            
-            // Apply folder filter
-            if (!string.IsNullOrEmpty(selectedFilterFolder))
-            {
-                filteredProfiles = filteredProfiles.Where(p => p.folderName == selectedFilterFolder);
-            }
-            
-            // Get indices of filtered profiles
-            foreach (var profile in filteredProfiles)
-            {
-                int index = allProfiles.IndexOf(profile);
-                if (index >= 0)
-                {
-                    visibleIndices.Add(index);
-                }
-            }
-            
-            return visibleIndices;
         }
 
         private void HandleDelete()
         {
             if (selectedProfileIndices.Count == 0)
                 return;
-            
+
             var profilesToDelete = selectedProfileIndices.OrderByDescending(i => i)
                 .Select(i => allProfiles[i])
                 .ToList();
-            
+
             if (profilesToDelete.Count == 0)
                 return;
-            
+
             string message = profilesToDelete.Count == 1
                 ? $"Are you sure you want to delete '{GetProfileDisplayName(profilesToDelete[0])}'?"
                 : $"Are you sure you want to delete {profilesToDelete.Count} profiles?";
-            
+
             if (!EditorUtility.DisplayDialog("Delete Profile(s)", message, "Delete", "Cancel"))
                 return;
 
@@ -352,11 +327,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (selectedProfileIndices.Count == 0)
                 return;
-            
+
             var profilesToDuplicate = selectedProfileIndices.OrderBy(i => i)
                 .Select(i => allProfiles[i])
                 .ToList();
-            
+
             foreach (var profile in profilesToDuplicate)
             {
                 DuplicateProfile(profile);
@@ -367,11 +342,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (selectedProfileIndices.Count == 0)
                 return;
-            
+
             var profilesToClone = selectedProfileIndices.OrderBy(i => i)
                 .Select(i => allProfiles[i])
                 .ToList();
-            
+
             foreach (var profile in profilesToClone)
             {
                 CloneProfile(profile);
@@ -382,7 +357,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (selectedProfileIndices.Count != 1 || selectedProfile == null)
                 return;
-            
+
             StartRenameProfile(selectedProfile);
         }
 
@@ -390,7 +365,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (selectedProfileIndices.Count == 0)
                 return;
-            
+
             ExportSelectedProfiles();
         }
 
@@ -398,7 +373,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (allProfiles.Count == 0)
                 return;
-            
+
             ExportAllProfiles();
         }
 
@@ -406,18 +381,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (selectedProfileIndices.Count != 1 || selectedProfile == null)
                 return;
-            
+
             ExportProfile(selectedProfile);
         }
 
         private void HandleFocusSearch()
         {
-            // Focus the appropriate search field based on current view
+
             var searchField = _isOverlayOpen ? _overlaySearchField : _mainSearchField;
-            
+
             if (searchField != null)
             {
-                // Find the TextField within the TokenizedSearchField
+
                 var textField = searchField.Q<TextField>();
                 if (textField != null)
                 {
@@ -429,110 +404,30 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void HandleArrowKeyNavigation(bool isUp, bool extendSelection, bool moveProfile)
         {
-            if (allProfiles.Count == 0)
+            if (moveProfile)
+            {
+                if (selectedProfileIndices.Count == 1 && selectedProfile != null)
+                {
+                    MoveProfileOneRow(selectedProfile, isUp);
+                    ScrollProfileIntoView(allProfiles.IndexOf(selectedProfile));
+                }
                 return;
-            
+            }
+
             var visibleIndices = GetVisibleProfileIndices();
             if (visibleIndices.Count == 0)
                 return;
-            
-            if (moveProfile)
-            {
-                // Move profile up/down in order
-                if (selectedProfileIndices.Count == 1)
-                {
-                    int currentIndex = selectedProfileIndices.First();
-                    int visibleIndex = visibleIndices.IndexOf(currentIndex);
-                    
-                    if (isUp && visibleIndex > 0)
-                    {
-                        int targetVisibleIndex = visibleIndex - 1;
-                        int targetIndex = visibleIndices[targetVisibleIndex];
-                        ReorderProfiles(currentIndex, targetVisibleIndex);
-                    }
-                    else if (!isUp && visibleIndex < visibleIndices.Count - 1)
-                    {
-                        int targetVisibleIndex = visibleIndex + 1;
-                        int targetIndex = visibleIndices[targetVisibleIndex];
-                        ReorderProfiles(currentIndex, targetVisibleIndex);
-                    }
-                }
-            }
+
+            // Step from the focused profile (the last one clicked or navigated to) in on-screen order
+            int position = visibleIndices.IndexOf(GetFocusedProfileIndex());
+            if (position < 0)
+                position = isUp ? visibleIndices.Count - 1 : 0;
+            else if (isUp ? position == 0 : position == visibleIndices.Count - 1)
+                return;
             else
-            {
-                // Navigate selection
-                int currentIndex = -1;
-                if (selectedProfileIndices.Count > 0)
-                {
-                    // Use the last clicked index or first selected
-                    currentIndex = lastClickedProfileIndex >= 0 ? lastClickedProfileIndex : selectedProfileIndices.First();
-                }
-                
-                int currentVisibleIndex = visibleIndices.IndexOf(currentIndex);
-                
-                if (currentVisibleIndex < 0)
-                {
-                    // No current selection, select first/last
-                    currentVisibleIndex = isUp ? visibleIndices.Count - 1 : 0;
-                }
-                else
-                {
-                    // Move to next/previous
-                    if (isUp && currentVisibleIndex > 0)
-                    {
-                        currentVisibleIndex--;
-                    }
-                    else if (!isUp && currentVisibleIndex < visibleIndices.Count - 1)
-                    {
-                        currentVisibleIndex++;
-                    }
-                    else
-                    {
-                        return; // Already at boundary
-                    }
-                }
-                
-                int targetIndex = visibleIndices[currentVisibleIndex];
-                
-                if (extendSelection)
-                {
-                    // Extend selection range
-                    if (selectedProfileIndices.Count == 0)
-                    {
-                        selectedProfileIndices.Add(targetIndex);
-                    }
-                    else
-                    {
-                        int startIndex = Math.Min(selectedProfileIndices.Min(), targetIndex);
-                        int endIndex = Math.Max(selectedProfileIndices.Max(), targetIndex);
-                        
-                        selectedProfileIndices.Clear();
-                        for (int i = startIndex; i <= endIndex; i++)
-                        {
-                            if (visibleIndices.Contains(i))
-                            {
-                                selectedProfileIndices.Add(i);
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    // Single selection
-                    selectedProfileIndices.Clear();
-                    selectedProfileIndices.Add(targetIndex);
-                }
-                
-                selectedProfile = allProfiles[targetIndex];
-                lastClickedProfileIndex = targetIndex;
-                
-                UpdateProfileList();
-                UpdateProfileDetails();
-                UpdateBottomBar();
-                
-                // Scroll into view
-                ScrollProfileIntoView(targetIndex);
-            }
+                position += isUp ? -1 : 1;
+
+            NavigateToProfile(visibleIndices[position], extendSelection);
         }
 
         private void HandleHomeEndNavigation(bool isHome, bool extendSelection)
@@ -540,37 +435,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var visibleIndices = GetVisibleProfileIndices();
             if (visibleIndices.Count == 0)
                 return;
-            
-            int targetIndex = isHome ? visibleIndices[0] : visibleIndices[visibleIndices.Count - 1];
-            
-            if (extendSelection && selectedProfileIndices.Count > 0)
-            {
-                int startIndex = isHome ? Math.Min(selectedProfileIndices.Min(), targetIndex) : selectedProfileIndices.Min();
-                int endIndex = isHome ? selectedProfileIndices.Max() : Math.Max(selectedProfileIndices.Max(), targetIndex);
-                
-                selectedProfileIndices.Clear();
-                for (int i = startIndex; i <= endIndex; i++)
-                {
-                    if (visibleIndices.Contains(i))
-                    {
-                        selectedProfileIndices.Add(i);
-                    }
-                }
-            }
-            else
-            {
-                selectedProfileIndices.Clear();
-                selectedProfileIndices.Add(targetIndex);
-            }
-            
-            selectedProfile = allProfiles[targetIndex];
-            lastClickedProfileIndex = targetIndex;
-            
-            UpdateProfileList();
-            UpdateProfileDetails();
-            UpdateBottomBar();
-            
-            ScrollProfileIntoView(targetIndex);
+
+            NavigateToProfile(isHome ? visibleIndices[0] : visibleIndices[visibleIndices.Count - 1], extendSelection);
         }
 
         private void HandlePageUpDownNavigation(bool isPageUp)
@@ -578,78 +444,89 @@ namespace YUCP.DevTools.Editor.PackageExporter
             var visibleIndices = GetVisibleProfileIndices();
             if (visibleIndices.Count == 0)
                 return;
-            
-            int currentIndex = -1;
-            if (selectedProfileIndices.Count > 0)
+
+            int position = visibleIndices.IndexOf(GetFocusedProfileIndex());
+            if (position < 0)
             {
-                currentIndex = lastClickedProfileIndex >= 0 ? lastClickedProfileIndex : selectedProfileIndices.First();
+                position = isPageUp ? visibleIndices.Count - 1 : 0;
             }
-            
-            int currentVisibleIndex = visibleIndices.IndexOf(currentIndex);
-            if (currentVisibleIndex < 0)
-            {
-                currentVisibleIndex = isPageUp ? visibleIndices.Count - 1 : 0;
-            }
-            
-            // Calculate page size based on visible items in scroll view
+
             int pageSize = CalculatePageSize();
-            
-            int targetVisibleIndex;
-            if (isPageUp)
+            position = isPageUp
+                ? Math.Max(0, position - pageSize)
+                : Math.Min(visibleIndices.Count - 1, position + pageSize);
+
+            NavigateToProfile(visibleIndices[position], false);
+        }
+
+        /// <summary>The profile keyboard navigation moves from: the one last clicked or navigated to.</summary>
+        private int GetFocusedProfileIndex()
+        {
+            if (selectedProfile != null)
+                return allProfiles.IndexOf(selectedProfile);
+            return selectedProfileIndices.Count > 0 ? selectedProfileIndices.First() : -1;
+        }
+
+        /// <summary>Focuses a profile; with extendSelection, selects everything between the anchor and it.</summary>
+        private void NavigateToProfile(int targetIndex, bool extendSelection)
+        {
+            if (extendSelection)
             {
-                targetVisibleIndex = Math.Max(0, currentVisibleIndex - pageSize);
+                if (lastClickedProfileIndex < 0 || !_displayedProfileIndices.Contains(lastClickedProfileIndex))
+                {
+                    int focused = GetFocusedProfileIndex();
+                    lastClickedProfileIndex = focused >= 0 ? focused : targetIndex;
+                }
+                SelectDisplayedRange(lastClickedProfileIndex, targetIndex);
             }
             else
             {
-                targetVisibleIndex = Math.Min(visibleIndices.Count - 1, currentVisibleIndex + pageSize);
+                selectedProfileIndices.Clear();
+                selectedProfileIndices.Add(targetIndex);
+                lastClickedProfileIndex = targetIndex;
             }
-            
-            int targetIndex = visibleIndices[targetVisibleIndex];
-            
-            selectedProfileIndices.Clear();
-            selectedProfileIndices.Add(targetIndex);
+
             selectedProfile = allProfiles[targetIndex];
-            lastClickedProfileIndex = targetIndex;
-            
+
             UpdateProfileList();
             UpdateProfileDetails();
             UpdateBottomBar();
-            
+
             ScrollProfileIntoView(targetIndex);
         }
 
         private int CalculatePageSize()
         {
-            // Estimate page size based on scroll view height and item height
+
             if (_profileListScrollView == null)
-                return 10; // Default
-            
+                return 10;
+
             float scrollViewHeight = _profileListScrollView.resolvedStyle.height;
-            float itemHeight = 60f; // Approximate item height
-            
+            float itemHeight = 60f;
+
             if (scrollViewHeight <= 0 || itemHeight <= 0)
                 return 10;
-            
+
             return Math.Max(1, (int)(scrollViewHeight / itemHeight));
         }
 
         private void ScrollProfileIntoView(int profileIndex)
         {
-            // Find the profile item element and scroll it into view
+
             if (_profileListContainer == null)
                 return;
-            
+
             var profileItem = _profileListContainer.Children()
-                .FirstOrDefault(child => 
+                .FirstOrDefault(child =>
                 {
                     if (child.userData is int idx && idx == profileIndex)
                         return true;
-                    
-                    // Also check nested items (in folders)
+
+
                     var nested = child.Query(className: "yucp-profile-item").ToList();
                     return nested.Exists(item => item.userData is int idx2 && idx2 == profileIndex);
                 });
-            
+
             if (profileItem != null && _profileListScrollView != null)
             {
                 _profileListScrollView.ScrollTo(profileItem);
@@ -658,25 +535,21 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
         private void HandleCreateFolder()
         {
+            // Group a multi-selection; otherwise just make an empty folder
             if (selectedProfileIndices.Count >= 2)
-            {
-                // Group selected profiles into a new folder
                 GroupSelectedProfilesIntoFolder();
-            }
             else
-            {                
-                GroupSelectedProfilesIntoFolder();
-            }
+                CreateFolder(Array.Empty<ExportProfile>());
         }
 
         private void HandleFolderExpandCollapse(bool expand)
         {
-            // Check if selected profile is in a folder, or if we can determine folder from selection
+
             if (selectedProfile == null || string.IsNullOrEmpty(selectedProfile.folderName))
                 return;
-            
+
             string folderName = selectedProfile.folderName;
-            
+
             if (expand)
             {
                 collapsedFolders.Remove(folderName);
@@ -685,10 +558,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
             {
                 collapsedFolders.Add(folderName);
             }
-            
-            // Save collapsed state (method already exists in Profiles.Folders.cs)
+
+
             SaveCollapsedFolders();
-            
+
             UpdateProfileList();
         }
 
@@ -696,7 +569,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (selectedProfile == null)
                 return;
-            
+
             Selection.activeObject = selectedProfile;
             EditorGUIUtility.PingObject(selectedProfile);
         }
@@ -705,8 +578,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             if (selectedProfile == null)
                 return;
-            
-            if (!string.IsNullOrEmpty(selectedProfile.profileSaveLocation) && 
+
+            if (!string.IsNullOrEmpty(selectedProfile.profileSaveLocation) &&
                 System.IO.Directory.Exists(selectedProfile.profileSaveLocation))
             {
                 EditorUtility.RevealInFinder(selectedProfile.profileSaveLocation);
