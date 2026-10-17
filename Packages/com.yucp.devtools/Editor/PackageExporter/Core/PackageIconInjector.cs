@@ -38,10 +38,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return false;
             }
             
-            string tempDir = GetTemporaryDirectory();
+            string tempDir = ExportTempCleanup.CreatePath("YUCP_PackageIcon_");
             
             try
             {
+                Directory.CreateDirectory(tempDir);
                 Debug.Log($"[PackageIconInjector] Extracting package to: {tempDir}");
                 
                 // Extract the package
@@ -54,40 +55,18 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 Debug.Log($"[PackageIconInjector] Package with icon created: {outputPath}");
                 
-                // Cleanup
-                Directory.Delete(tempDir, true);
-                
                 return true;
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[PackageIconInjector] Failed to add icon: {ex.Message}");
                 
-                // Cleanup on error
-                if (Directory.Exists(tempDir))
-                {
-                    try
-                    {
-                        Directory.Delete(tempDir, true);
-                    }
-                    catch
-                    {
-                        // Ignore cleanup errors
-                    }
-                }
-                
                 return false;
             }
-        }
-        
-        /// <summary>
-        /// Create a temporary directory for package manipulation
-        /// </summary>
-        private static string GetTemporaryDirectory()
-        {
-            string tempDirectory = Path.Combine(Path.GetTempPath(), "YUCP_PackageIcon_" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempDirectory);
-            return tempDirectory;
+            finally
+            {
+                ExportTempCleanup.Delete(tempDir);
+            }
         }
         
         /// <summary>

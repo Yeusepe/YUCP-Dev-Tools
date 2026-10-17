@@ -230,13 +230,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return false;
             }
             
+            string workingDir = null;
             try
             {
                 progressCallback?.Invoke(0.05f, "Starting obfuscation process...");
                 
                 // Create temp working directory
                 progressCallback?.Invoke(0.08f, "Creating temporary workspace...");
-                string workingDir = Path.Combine(Path.GetTempPath(), "YUCP_Obfuscation_" + Guid.NewGuid().ToString("N"));
+                workingDir = ExportTempCleanup.CreatePath("YUCP_Obfuscation_");
                 Directory.CreateDirectory(workingDir);
                 
                 
@@ -440,16 +441,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 
                 progressCallback?.Invoke(0.98f, "Cleaning up temporary files...");
                 
-                // Clean up working directory
-                try
-                {
-                    Directory.Delete(workingDir, true);
-                }
-                catch
-                {
-                    // Ignore cleanup errors
-                }
-                
                 progressCallback?.Invoke(1.0f, "Obfuscation complete! All assemblies protected.");
                 
                 return true;
@@ -459,6 +450,10 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 Debug.LogError($"[ConfuserEx] Obfuscation failed: {ex.Message}");
                 Debug.LogException(ex);
                 return false;
+            }
+            finally
+            {
+                ExportTempCleanup.Delete(workingDir);
             }
         }
         
@@ -479,65 +474,72 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     RedirectStandardError = true,
                     CreateNoWindow = true
                 };
-                
-                
+
+
                 using (Process process = Process.Start(startInfo))
                 {
-                    // Read output asynchronously with progress updates
-                    string output = "";
-                    string error = "";
-                    
-                    var outputTask = process.StandardOutput.ReadToEndAsync();
-                    var errorTask = process.StandardError.ReadToEndAsync();
-                    
-                    // Update progress while waiting for completion
-                    int waitCount = 0;
-                    while (!process.HasExited)
+                    try
                     {
-                        // Yield control back to Unity
-                        EditorApplication.delayCall += () => { };
-                        
-                        System.Threading.Thread.Sleep(500); // Wait 500ms
-                        waitCount++;
-                        
-                        // Update progress every 2 seconds (every 4 iterations)
-                        if (waitCount % 4 == 0)
+                        // Read output asynchronously with progress updates
+                        string output = "";
+                        string error = "";
+
+                        var outputTask = process.StandardOutput.ReadToEndAsync();
+                        var errorTask = process.StandardError.ReadToEndAsync();
+
+                        // Update progress while waiting for completion
+                        int waitCount = 0;
+                        while (!process.HasExited)
                         {
-                            float progress = 0.4f + (waitCount / 100f) * 0.4f; // Progress from 0.4 to 0.8 over time
-                            progressCallback?.Invoke(progress, $"Obfuscating assemblies... ({waitCount * 0.5f:F0}s elapsed)");
-                        }
-                        
-                        // Safety timeout - if it takes more than 5 minutes, something is wrong
-                        if (waitCount > 600) // 5 minutes
-                        {
-                            Debug.LogError("[ConfuserEx] Process timed out after 5 minutes");
-                            try
+                            // Yield control back to Unity
+                            EditorApplication.delayCall += () => { };
+
+                            System.Threading.Thread.Sleep(500); // Wait 500ms
+                            waitCount++;
+
+                            // Update progress every 2 seconds (every 4 iterations)
+                            if (waitCount % 4 == 0)
                             {
-                                process.Kill();
+                                float progress = 0.4f + (waitCount / 100f) * 0.4f; // Progress from 0.4 to 0.8 over time
+                                progressCallback?.Invoke(progress, $"Obfuscating assemblies... ({waitCount * 0.5f:F0}s elapsed)");
                             }
-                            catch { }
+
+                            // Safety timeout - if it takes more than 5 minutes, something is wrong
+                            if (waitCount > 600) // 5 minutes
+                            {
+                                Debug.LogError("[ConfuserEx] Process timed out after 5 minutes");
+                                return false;
+                            }
+                        }
+
+                        // Get the output
+                        output = outputTask.Result;
+                        error = errorTask.Result;
+
+
+                        if (!string.IsNullOrEmpty(error))
+                        {
+                            Debug.LogWarning($"[ConfuserEx] Errors:\n{error}");
+                        }
+
+                        if (process.ExitCode != 0)
+                        {
+                            Debug.LogError($"[ConfuserEx] Process exited with code {process.ExitCode}");
                             return false;
                         }
+
+                        progressCallback?.Invoke(0.8f, "Obfuscation completed successfully!");
+                        return true;
                     }
-                    
-                    // Get the output
-                    output = outputTask.Result;
-                    error = errorTask.Result;
-                    
-                    
-                    if (!string.IsNullOrEmpty(error))
+                    finally
                     {
-                        Debug.LogWarning($"[ConfuserEx] Errors:\n{error}");
+                        // Release the workspace before the caller deletes it, including callback failures.
+                        if (!process.HasExited)
+                        {
+                            process.Kill();
+                            process.WaitForExit();
+                        }
                     }
-                    
-                    if (process.ExitCode != 0)
-                    {
-                        Debug.LogError($"[ConfuserEx] Process exited with code {process.ExitCode}");
-                        return false;
-                    }
-                    
-                    progressCallback?.Invoke(0.8f, "Obfuscation completed successfully!");
-                    return true;
                 }
             }
             catch (Exception ex)
@@ -546,9 +548,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 return false;
             }
         }
-        
-        
-        
+
+
+
         /// <summary>
         /// Restore original DLLs from backups (in case obfuscation needs to be undone)
         /// </summary>

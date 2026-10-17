@@ -484,10 +484,10 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 ConstructorInfo embedContextCtor = embedContextType.GetConstructor(
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
                     binder: null,
-                    types: new[] { typeof(ExportProfile) },
+                    types: new[] { typeof(ExportProfile), typeof(ICollection<string>) },
                     modifiers: null);
                 Assert.That(embedContextCtor, Is.Not.Null);
-                object embedContext = embedContextCtor.Invoke(new object[] { profile });
+                object embedContext = embedContextCtor.Invoke(new object[] { profile, null });
                 Assert.That(embedContext, Is.Not.Null);
 
                 MethodInfo method = typeof(PackageBuilder).GetMethod(
@@ -570,10 +570,10 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 ConstructorInfo embedContextCtor = embedContextType.GetConstructor(
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
                     binder: null,
-                    types: new[] { typeof(ExportProfile) },
+                    types: new[] { typeof(ExportProfile), typeof(ICollection<string>) },
                     modifiers: null);
                 Assert.That(embedContextCtor, Is.Not.Null);
-                object embedContext = embedContextCtor.Invoke(new object[] { profile });
+                object embedContext = embedContextCtor.Invoke(new object[] { profile, null });
                 Assert.That(embedContext, Is.Not.Null);
 
                 MethodInfo method = typeof(PackageBuilder).GetMethod(
@@ -646,7 +646,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
                 profile.packageName = "Bootstrap Test";
                 profile.embedYucpMetadata = embedMetadata;
                 Type contextType = typeof(PackageBuilder).GetNestedType("PackageEmbedContext", BindingFlags.NonPublic);
-                object context = Activator.CreateInstance(contextType, new object[] { profile });
+                object context = Activator.CreateInstance(contextType, new object[] { profile, null });
                 typeof(PackageBuilder).GetMethod("InjectPackageJsonInstallerAndBundles", BindingFlags.Static | BindingFlags.NonPublic)
                     .Invoke(null, new object[]
                     {

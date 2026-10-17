@@ -27,7 +27,7 @@ namespace YUCP.DevTools.Editor.PackageExporter.Tests
 
                 Assert.That(method, Is.Not.Null);
 
-                iconPath = method.Invoke(null, new object[] { texture, "UnitTestIcon" }) as string;
+                iconPath = method.Invoke(null, new object[] { texture, "UnitTestIcon", null }) as string;
 
                 Assert.That(iconPath, Is.Not.Null.And.Not.Empty);
                 Assert.That(iconPath, Does.EndWith(".png"));

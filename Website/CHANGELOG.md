@@ -1,5 +1,12 @@
 # Changelog
 
+## [2026-10-16]
+
+### com.yucp.devtools 0.3.23
+- Clean temporary files after successful and failed package exports, including icon copies, repacking, and obfuscation workspaces.
+- Recover abandoned exporter files and tool downloads at Unity startup after crashes or forced shutdowns.
+- Preserve files used by running exports and report locked files for cleanup on a later startup.
+
 ## [2026-10-15]
 
 ### com.yucp.motion 0.1.2

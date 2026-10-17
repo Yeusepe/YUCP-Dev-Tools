@@ -63,14 +63,16 @@ namespace YUCP.DevTools.Editor.PackageExporter
             public readonly List<EmbeddedAsset> Assets = new List<EmbeddedAsset>();
             public readonly HashSet<string> MetadataFallbackAssetPaths =
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            private readonly ICollection<string> temporaryFiles;
 
             public string IconPath;
             public string BannerPath;
             public readonly Dictionary<ProductLink, string> ProductLinkIconPaths = new Dictionary<ProductLink, string>();
             public readonly List<string> GalleryImagePaths = new List<string>();
 
-            public PackageEmbedContext(ExportProfile profile)
+            public PackageEmbedContext(ExportProfile profile, ICollection<string> temporaryFiles = null)
             {
+                this.temporaryFiles = temporaryFiles;
                 string baseName = profile != null ? (profile.packageName ?? profile.profileName ?? profile.name) : "package";
                 SafePackageName = MakeSafeFolderName(baseName);
                 UsesInstalledPackageWorkspace = ShouldEmbedOptionalYucpMetadata(profile);
@@ -87,7 +89,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 
 
-                string cachePath = SaveTextureToLibraryCache(texture, baseName);
+                string cachePath = SaveTextureToLibraryCache(texture, baseName, temporaryFiles);
                 if (!string.IsNullOrEmpty(cachePath))
                 {
                     return RegisterEmbeddedFile(cachePath, subfolder, baseName);
@@ -232,6 +234,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
         {
             var result = new ExportResult();
             var startTime = DateTime.Now;
+            var temporaryFiles = new List<string>();
 
 
             s_isExporting = true;
@@ -490,7 +493,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                   }
 
                 bool shouldEmbedYucpMetadata = ShouldEmbedOptionalYucpMetadata(profile);
-                var embedContext = new PackageEmbedContext(profile);
+                var embedContext = new PackageEmbedContext(profile, temporaryFiles);
                 if (shouldEmbedYucpMetadata && profile.icon != null && !IsDefaultGridPlaceholder(profile.icon))
                 {
                     string exportAssetPath;
@@ -573,7 +576,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 progressCallback?.Invoke(0.6f, "Exporting Unity package...");
 
-                string tempPackagePath = Path.Combine(Path.GetTempPath(), $"YUCP_Temp_{Guid.NewGuid():N}.unitypackage");
+                string tempPackagePath = ExportTempCleanup.CreatePath("YUCP_Temp_", ".unitypackage");
+                temporaryFiles.Add(tempPackagePath);
 
                  ExportPackageOptions options = ExportPackageOptions.Default;
                  if (profile.recurseFolders)
@@ -819,11 +823,12 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 {
                     progressCallback?.Invoke(0.8f, "Adding package icon...");
 
-                    string iconSourcePath = ResolvePackageIconSourcePath(profile.icon, profile.packageName ?? "PackageIcon");
+                    string iconSourcePath = ResolvePackageIconSourcePath(profile.icon, profile.packageName ?? "PackageIcon", temporaryFiles);
                     if (!string.IsNullOrEmpty(iconSourcePath))
                     {
 
-                        string iconTempPath = Path.Combine(Path.GetTempPath(), $"YUCP_ContentWithIcon_{Guid.NewGuid():N}.unitypackage");
+                        string iconTempPath = ExportTempCleanup.CreatePath("YUCP_ContentWithIcon_", ".unitypackage");
+                        temporaryFiles.Add(iconTempPath);
 
                         if (PackageIconInjector.AddIconToPackage(tempPackagePath, iconSourcePath, iconTempPath))
                         {
@@ -845,11 +850,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 progressCallback?.Invoke(0.9f, "Cleaning up temporary files...");
 
-
-                if (File.Exists(tempPackagePath))
-                {
-                    File.Delete(tempPackagePath);
-                }
 
                 string tempEditorPath = "Packages/com.yucp.temp/Editor";
                 if (AssetDatabase.IsValidFolder(tempEditorPath))
@@ -969,7 +969,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             finally
             {
-
+                ExportTempCleanup.Delete(temporaryFiles.ToArray());
                 s_isExporting = false;
                 EditorPrefs.DeleteKey(TempPatchExportMarkerKey);
             }
@@ -1598,6 +1598,11 @@ namespace YUCP.DevTools.Editor.PackageExporter
         /// </summary>
         public static string SaveTextureToLibraryCache(Texture2D texture, string baseName)
         {
+            return SaveTextureToLibraryCache(texture, baseName, null);
+        }
+
+        private static string SaveTextureToLibraryCache(Texture2D texture, string baseName, ICollection<string> temporaryFiles)
+        {
             if (texture == null) return null;
 
             try
@@ -1610,8 +1615,9 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
                 // Generate unique filename
                 string sanitizedName = SanitizeFileName(baseName);
-                string fileName = $"{sanitizedName}_{texture.GetInstanceID()}.png";
-                string filePath = Path.Combine(tempDir, fileName);
+                string filePath = temporaryFiles != null
+                    ? ExportTempCleanup.CreatePath("YUCP_Texture_", ".png", tempDir)
+                    : Path.Combine(tempDir, $"{sanitizedName}_{texture.GetInstanceID()}.png");
 
                 byte[] pngData = TryEncodeTextureToPng(texture, baseName);
 
@@ -1622,6 +1628,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                 }
 
                 // Write PNG file
+                temporaryFiles?.Add(filePath);
                 File.WriteAllBytes(filePath, pngData);
 
                 // Return the cached file path
@@ -1634,14 +1641,14 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
         }
 
-        private static string ResolvePackageIconSourcePath(Texture2D texture, string baseName)
+        private static string ResolvePackageIconSourcePath(Texture2D texture, string baseName, ICollection<string> temporaryFiles = null)
         {
             if (texture == null)
             {
                 return null;
             }
 
-            string cachedPngPath = SaveTextureToLibraryCache(texture, baseName);
+            string cachedPngPath = SaveTextureToLibraryCache(texture, baseName, temporaryFiles);
             if (!string.IsNullOrEmpty(cachedPngPath) && File.Exists(cachedPngPath))
             {
                 return cachedPngPath;
@@ -2494,7 +2501,8 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 
 
-            string tempExtractDir = Path.Combine(Path.GetTempPath(), $"YUCP_PackageExtract_{Guid.NewGuid():N}");
+            string tempExtractDir = ExportTempCleanup.CreatePath("YUCP_PackageExtract_");
+            string tempOutputPath = unityPackagePath + ".tmp";
 
             try
             {
@@ -3009,7 +3017,6 @@ namespace YUCP.DevTools.Editor.PackageExporter
 
 
 #if UNITY_EDITOR && UNITY_2022_3_OR_NEWER
-                string tempOutputPath = unityPackagePath + ".tmp";
                 progressCallback?.Invoke(0.799f, "Repacking final package archive...");
 
                 using (var outputStream = File.Create(tempOutputPath))
@@ -3030,18 +3037,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
             }
             finally
             {
-
-                if (Directory.Exists(tempExtractDir))
-                {
-                    try
-                    {
-                        Directory.Delete(tempExtractDir, true);
-                    }
-                    catch
-                    {
-
-                    }
-                }
+                ExportTempCleanup.Delete(tempOutputPath, tempExtractDir);
             }
         }
 

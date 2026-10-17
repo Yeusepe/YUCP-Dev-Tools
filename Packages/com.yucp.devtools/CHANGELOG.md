@@ -5,6 +5,16 @@ All notable changes to YUCP DevTools will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.23] - 2026-10-16
+
+### Fixed
+- Clean temporary export packages, icon copies, generated images, extraction folders, and obfuscation workspaces after successful and failed exports.
+- Stop interrupted obfuscation processes before deleting their temporary workspace.
+
+### Added
+- Recover abandoned exporter files and tool downloads when Unity starts after a crash or forced shutdown.
+- Track temporary-file ownership to preserve running exports, and report locked files for cleanup on a later startup.
+
 ## [0.3.22] - 2026-10-15
 
 ### Changed
