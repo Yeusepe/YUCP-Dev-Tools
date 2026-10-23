@@ -141,8 +141,8 @@ Development tools for YUCP package creators.
 ## Requirements
 
 - Unity 2022.3 or later
-- [YUCP Components](https://vpm.yucp.club) >= 0.3.45 (automatically installed via VPM)
-- [YUCP UI](https://vpm.yucp.club/) >= 0.1.0 (automatically installed via VPM)
+- [YUCP Components](https://vpm.yucp.club) >= 0.3.46 (automatically installed via VPM)
+- [YUCP UI](https://vpm.yucp.club/) >= 0.1.1 (automatically installed via VPM)
 - [YUCP Motion](https://dev.vpm.yucp.club/) >= 0.1.0 (automatically installed via VPM)
 - VRChat SDK3 Avatars (automatically installed via VPM)
 - VRCFury
