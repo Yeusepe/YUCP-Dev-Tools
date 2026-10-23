@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-10-23]
+
+### com.yucp.devtools 0.3.24
+- Require Components 0.3.46 and UI 0.1.1 so package installs use the current Live Grip API and shared UI identifiers.
+
 ## [2026-10-16]
 
 ### com.yucp.devtools 0.3.23
