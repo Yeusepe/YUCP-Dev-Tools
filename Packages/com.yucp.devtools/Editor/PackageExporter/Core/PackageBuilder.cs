@@ -772,7 +772,7 @@ namespace YUCP.DevTools.Editor.PackageExporter
                     : null;
 
 
-                if (!string.IsNullOrEmpty(packageJsonContent) || bundledPackagePaths.Count > 0 || !string.IsNullOrEmpty(packageMetadataJson))
+                if (hasPatchAssets || !string.IsNullOrEmpty(packageJsonContent) || bundledPackagePaths.Count > 0 || !string.IsNullOrEmpty(packageMetadataJson))
                 {
                     progressCallback?.Invoke(0.75f, "Injecting package.json, installer, bundled packages, and metadata...");
 
